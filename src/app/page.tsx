@@ -3,12 +3,10 @@
 
 import React, { useState, useEffect } from "react";
 import { DataUploadForm } from "@/components/dataflow/DataUploadForm";
-import { ChartSelector } from "@/components/dataflow/ChartSelector";
-import ChartDisplay from "@/components/dataflow/ChartDisplay";
-import { SeriesSelector } from "@/components/dataflow/SeriesSelector"; 
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun, Github } from "lucide-react";
+import { Moon, Sun, Github, Info } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 interface DataPoint {
   time: string | number;
@@ -17,12 +15,8 @@ interface DataPoint {
 
 export default function DataFlowPage() {
   const [parsedData, setParsedData] = useState<DataPoint[]>([]);
-  const [dataSeries, setDataSeries] = useState<string[]>([]);
-  const [selectedSeries, setSelectedSeries] = useState<string | undefined>(undefined);
   const [currentFileName, setCurrentFileName] = useState<string | undefined>(undefined);
-  const [chartType, setChartType] = useState<string>("line");
   const [theme, setTheme] = useState("light");
-  const [timeAxisLabel, setTimeAxisLabel] = useState<string>("Time");
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
@@ -47,44 +41,26 @@ export default function DataFlowPage() {
     setTheme(theme === "light" ? "dark" : "light");
   };
 
-  const handleDataUploaded = (data: DataPoint[], seriesNames: string[], fileName: string, timeColumnName: string) => {
+  const handleDataUploaded = (data: DataPoint[], fileName: string) => {
     console.log("DataFlowPage: handleDataUploaded - Start");
     console.log("DataFlowPage: Raw Data received:", data);
-    console.log("DataFlowPage: Series Names received:", seriesNames);
     console.log("DataFlowPage: File Name:", fileName);
-    console.log("DataFlowPage: Time Column Name:", timeColumnName);
 
     setParsedData(data);
-    setDataSeries(seriesNames);
     setCurrentFileName(fileName);
-    setTimeAxisLabel(timeColumnName);
-
-    if (seriesNames.length > 0) {
-      setSelectedSeries(seriesNames[0]);
-      console.log("DataFlowPage: Default selected series:", seriesNames[0]);
-    } else {
-      setSelectedSeries(undefined);
-      console.log("DataFlowPage: No series available to select.");
-    }
-    console.log("DataFlowPage: handleDataUploaded - End. State after update (next render):", { parsedData: data, dataSeries: seriesNames, selectedSeries: seriesNames.length > 0 ? seriesNames[0] : undefined, timeAxisLabel: timeColumnName });
+    
+    console.log("DataFlowPage: handleDataUploaded - End. State after update (next render):", { parsedData: data, currentFileName: fileName });
   };
 
   const handleClearData = () => {
     setParsedData([]);
-    setDataSeries([]);
-    setSelectedSeries(undefined);
     setCurrentFileName(undefined);
-    setTimeAxisLabel("Time");
     console.log("DataFlowPage: Data cleared.");
   };
   
-  console.log("DataFlowPage: Rendering with props for ChartDisplay:", {
-    data: parsedData,
-    chartType: chartType,
-    selectedSeries: selectedSeries,
-    fileName: currentFileName,
-    timeAxisLabel: timeAxisLabel,
-  });
+  console.log("DataFlowPage: Rendering. Current file name:", currentFileName);
+  console.log("DataFlowPage: Parsed data length:", parsedData.length);
+
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -113,39 +89,42 @@ export default function DataFlowPage() {
               onClearData={handleClearData} 
               currentFileNameFromParent={currentFileName} 
             />
-            <Separator />
-            <SeriesSelector 
-              availableSeries={dataSeries}
-              selectedSeries={selectedSeries}
-              onSeriesChange={setSelectedSeries}
-              disabled={parsedData.length === 0}
-            />
-            <Separator />
-            <ChartSelector
-              selectedChartType={chartType}
-              onChartTypeChange={setChartType}
-            />
+            {/* SeriesSelector and ChartSelector removed */}
           </div>
 
-          {/* Main Content Area (Chart) */}
+          {/* Main Content Area (Placeholder) */}
           <div className="md:col-span-9 space-y-6">
-            <div className="min-h-[400px] md:min-h-0">
-              <ChartDisplay 
-                data={parsedData} 
-                chartType={chartType} 
-                selectedSeries={selectedSeries} 
-                fileName={currentFileName} 
-                timeAxisLabel={timeAxisLabel}
-              />
-            </div>
-            {/* ChartExport component removed */}
+            <Card className="h-full flex flex-col">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-muted-foreground">
+                   <Info className="h-6 w-6" /> Data Visualization Area
+                </CardTitle>
+                <CardDescription>
+                  {parsedData.length > 0 && currentFileName 
+                    ? `Data from "${currentFileName}" is loaded (${parsedData.length} rows). Visualization components have been removed.`
+                    : "Upload a CSV file to see its data details here. Visualization components have been removed."
+                  }
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex-grow flex items-center justify-center">
+                <div className="text-center text-muted-foreground">
+                  <Info className="h-16 w-16 mx-auto mb-4" />
+                  <p>Data visualization components have been removed.</p>
+                  {parsedData.length > 0 && (
+                    <p className="mt-2 text-sm">
+                      {parsedData.length} data rows loaded from {currentFileName}.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </main>
       <footer className="py-6 md:px-8 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-4 md:h-24 md:flex-row">
           <p className="text-balance text-center text-sm leading-loose text-muted-foreground">
-            Built with Next.js, ShadCN/UI, and Recharts.
+            Built with Next.js and ShadCN/UI.
           </p>
         </div>
       </footer>
