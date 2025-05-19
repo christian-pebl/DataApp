@@ -53,7 +53,7 @@ export default function DataFlowPage() {
     setDataSeries(seriesNames);
     setCurrentFileName(fileName);
     if (seriesNames.length > 0) {
-      setSelectedSeries(seriesNames[0]); // Select the first series by default
+      setSelectedSeries(seriesNames[0]); 
     } else {
       setSelectedSeries(undefined);
     }
@@ -92,7 +92,11 @@ export default function DataFlowPage() {
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 h-full">
           {/* Controls Panel */}
           <div className="md:col-span-3 space-y-6">
-            <DataUploadForm onDataUploaded={handleDataUploaded} onClearData={handleClearData} />
+            <DataUploadForm 
+              onDataUploaded={handleDataUploaded} 
+              onClearData={handleClearData} 
+              currentFileNameFromParent={currentFileName} 
+            />
             <Separator />
             <SeriesSelector 
               availableSeries={dataSeries}

@@ -18,10 +18,11 @@ interface DataPoint {
 interface DataUploadFormProps {
   onDataUploaded: (data: DataPoint[], seriesNames: string[], fileName: string) => void;
   onClearData: () => void;
+  currentFileNameFromParent?: string; // Added prop to get parent's current file name
 }
 
-export function DataUploadForm({ onDataUploaded, onClearData }: DataUploadFormProps) {
-  const [fileName, setFileName] = useState<string | null>(null);
+export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFromParent }: DataUploadFormProps) {
+  const [fileName, setFileName] = useState<string | null>(null); // Local fileName for immediate UI feedback
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
 
@@ -33,7 +34,7 @@ export function DataUploadForm({ onDataUploaded, onClearData }: DataUploadFormPr
       return;
     }
 
-    setFileName(file.name);
+    setFileName(file.name); // Set local filename for display
 
     try {
       const fileContent = await file.text();
@@ -42,13 +43,10 @@ export function DataUploadForm({ onDataUploaded, onClearData }: DataUploadFormPr
       if (file.name.endsWith(".csv")) {
         parsedResult = parseCsv(fileContent);
       } else if (file.name.endsWith(".json")) {
-        // JSON parsing needs to be adapted if it's also meant to support multiple series
-        // For now, assuming JSON provides a 'value' field or this needs specific handling
         const jsonData = parseJson(fileContent);
         if (jsonData.length > 0 && jsonData.every(item => typeof item.value === 'number')) {
              parsedResult = { data: jsonData, seriesNames: ["value"] };
         } else if (jsonData.length > 0) {
-            // Attempt to find series from JSON if no 'value' key but other numeric keys
             const firstItemKeys = Object.keys(jsonData[0]).filter(k => k !== 'time' && typeof jsonData[0][k] === 'number');
             if (firstItemKeys.length > 0) {
                 parsedResult = { data: jsonData, seriesNames: firstItemKeys };
@@ -57,34 +55,45 @@ export function DataUploadForm({ onDataUploaded, onClearData }: DataUploadFormPr
       } else {
         toast({
           variant: "destructive",
-          title: "Unsupported File Type",
-          description: "Please upload a CSV or JSON file.",
+          title: "Unsupported File Format",
+          description: "Please upload a CSV (.csv) or JSON (.json) file.",
         });
+        setFileName(null); 
         setIsProcessing(false);
+        if (event.target) event.target.value = ""; 
         return;
       }
 
       if (!parsedResult || parsedResult.data.length === 0 || parsedResult.seriesNames.length === 0) {
+        let description = "Could not parse data from the file. ";
+        if (file.name.endsWith(".csv")) {
+          description += "Please ensure your CSV file has a header row, a 'time' column (or similar like 'date', 'timestamp') as the first column, and at least one other column with numerical data.";
+        } else if (file.name.endsWith(".json")) {
+          description += "Please ensure your JSON file is an array of objects, where each object has a 'time' (or 'timestamp'/'date') field and at least one other field with numerical data.";
+        } else {
+          description += "The file might be empty, incorrectly formatted, or not contain any usable data series."
+        }
         toast({
           variant: "destructive",
-          title: "Parsing Error",
-          description: "Could not parse data, file is empty, or no valid data series found. Ensure CSV has headers and numeric data columns, or JSON has 'time' and numeric value fields.",
+          title: "Data Parsing Error",
+          description: description,
         });
+        setFileName(null); 
       } else {
         onDataUploaded(parsedResult.data, parsedResult.seriesNames, file.name);
         toast({
-          title: "File Uploaded",
-          description: `${file.name} processed successfully.`,
+          title: "File Uploaded Successfully",
+          description: `${file.name} has been processed.`,
         });
       }
     } catch (error) {
       console.error("Error processing file:", error);
       toast({
         variant: "destructive",
-        title: "Processing Error",
-        description: `An error occurred: ${error instanceof Error ? error.message : String(error)}`,
+        title: "File Processing Error",
+        description: `An unexpected error occurred while trying to process the file: ${error instanceof Error ? error.message : String(error)}. Please check the file and try again.`,
       });
-      setFileName(null);
+      setFileName(null); 
     } finally {
       setIsProcessing(false);
       if (event.target) {
@@ -95,66 +104,80 @@ export function DataUploadForm({ onDataUploaded, onClearData }: DataUploadFormPr
 
   const parseCsv = (csvText: string): { data: DataPoint[]; seriesNames: string[] } | null => {
     const lines = csvText.trim().split(/\r\n|\n/);
-    if (lines.length < 2) return null; // Must have headers and at least one data row
+    if (lines.length < 2) return null; 
 
     const headers = lines[0].split(',').map(h => h.trim());
-    if (headers.length < 2) return null; // Must have at least a time column and one data column
-
+    const timeHeaderCandidates = ['time', 'date', 'timestamp'];
     const timeHeader = headers[0];
-    const seriesNames = headers.slice(1); // All other columns are data series
+    // Not strictly enforcing 'time' to allow flexibility like 'Date' or 'Timestamp' for the first column.
+    if (headers.length < 2) return null; 
+
+    const seriesNames = headers.slice(1).filter(name => name); 
+    if (seriesNames.length === 0) return null; 
 
     const data = lines.slice(1).map(line => {
       const values = line.split(',');
       const timeValue = values[0]?.trim();
-      if (!timeValue) return null;
+      if (!timeValue) return null; 
 
       const dataPoint: DataPoint = { time: timeValue };
-      let hasNumericValue = false;
+      let hasNumericValueInRow = false;
       seriesNames.forEach((seriesName, index) => {
-        const seriesValue = parseFloat(values[index + 1]?.trim());
+        const rawValue = values[index + 1]?.trim();
+        if (rawValue === undefined || rawValue === "") { 
+            dataPoint[seriesName] = NaN; 
+            return; 
+        }
+        const seriesValue = parseFloat(rawValue);
         if (!isNaN(seriesValue)) {
           dataPoint[seriesName] = seriesValue;
-          hasNumericValue = true;
+          hasNumericValueInRow = true;
         } else {
-          dataPoint[seriesName] = NaN; // Or handle as needed, e.g., skip series or point
+          dataPoint[seriesName] = NaN; 
         }
       });
-      return hasNumericValue ? dataPoint : null;
+      return hasNumericValueInRow ? dataPoint : null; 
     }).filter(item => item !== null) as DataPoint[];
 
     if (data.length === 0) return null;
     return { data, seriesNames };
   };
 
-  const parseJson = (jsonText: string): DataPoint[] => { // Keep original JSON parsing for simplicity, can be expanded
+  const parseJson = (jsonText: string): DataPoint[] => { 
     const jsonData = JSON.parse(jsonText);
     if (!Array.isArray(jsonData)) {
       throw new Error("JSON data must be an array of objects.");
     }
     return jsonData.map((item: any) => {
       const time = item.time ?? item.timestamp ?? item.date;
-      // Retain flexibility: if 'value' exists, use it. Otherwise, other numeric keys might be picked up by logic in handleFileChange.
+      if (time === undefined) return null; 
+
       const dataPoint: DataPoint = { time: String(time) };
+      let hasNumericValue = false;
       Object.keys(item).forEach(key => {
         if (key !== 'time' && key !== 'timestamp' && key !== 'date') {
-          if (typeof item[key] === 'number') {
+          if (typeof item[key] === 'number' && !isNaN(item[key])) { 
             dataPoint[key] = item[key];
+            hasNumericValue = true;
+          } else if (typeof item[key] === 'string') { 
+            const parsedNum = parseFloat(item[key]);
+            if (!isNaN(parsedNum)) {
+                dataPoint[key] = parsedNum;
+                hasNumericValue = true;
+            }
           }
         }
       });
-      if (time !== undefined && Object.keys(dataPoint).some(k => k !== 'time' && typeof dataPoint[k] === 'number')) {
-        return dataPoint;
-      }
-      return null;
+      return hasNumericValue ? dataPoint : null; 
     }).filter(item => item !== null) as DataPoint[];
   };
   
   const handleClear = () => {
-    setFileName(null);
-    onClearData();
+    setFileName(null); // Clear local file name display
+    onClearData(); // Call parent's clear function
     toast({
       title: "Data Cleared",
-      description: "Chart data has been cleared.",
+      description: "Chart data and uploaded file information have been cleared.",
     });
   };
 
@@ -165,7 +188,7 @@ export function DataUploadForm({ onDataUploaded, onClearData }: DataUploadFormPr
           <UploadCloud className="h-6 w-6 text-primary" />
           Import Data
         </CardTitle>
-        <CardDescription>Upload a CSV file. First column is 'time', subsequent columns are data series.</CardDescription>
+        <CardDescription>Upload a CSV or JSON file. For CSV, the first column should be 'time' (or similar like 'date', 'timestamp'), and subsequent columns are data series. JSON should be an array of objects with a 'time' key and numeric data keys.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
@@ -173,16 +196,21 @@ export function DataUploadForm({ onDataUploaded, onClearData }: DataUploadFormPr
           <Input
             id="file-upload"
             type="file"
-            accept=".csv,.json" // Keeping JSON for now, though primary focus is CSV
+            accept=".csv,.json"
             onChange={handleFileChange}
             disabled={isProcessing}
             className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
           />
         </div>
-        {fileName && <p className="text-sm text-muted-foreground">Loaded: {fileName}</p>}
-        {isProcessing && <p className="text-sm text-accent">Processing...</p>}
-        <Button onClick={handleClear} variant="outline" className="w-full" disabled={!fileName && !isProcessing}>
-          Clear Data
+        {fileName && <p className="text-sm text-muted-foreground">Selected: {fileName}</p>}
+        {isProcessing && <p className="text-sm text-primary animate-pulse">Processing file...</p>}
+        <Button 
+            onClick={handleClear} 
+            variant="outline" 
+            className="w-full" 
+            disabled={isProcessing || !currentFileNameFromParent} // Use parent's file name status
+        >
+          Clear Data & Chart
         </Button>
       </CardContent>
     </Card>
