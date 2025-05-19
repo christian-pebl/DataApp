@@ -1,11 +1,10 @@
 
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { DataUploadForm } from "@/components/dataflow/DataUploadForm";
 import { ChartSelector } from "@/components/dataflow/ChartSelector";
-import ChartDisplay, { type ChartDisplayHandle } from "@/components/dataflow/ChartDisplay";
-import { ChartExport } from "@/components/dataflow/ChartExport";
+import ChartDisplay from "@/components/dataflow/ChartDisplay";
 import { SeriesSelector } from "@/components/dataflow/SeriesSelector"; 
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
@@ -22,7 +21,6 @@ export default function DataFlowPage() {
   const [selectedSeries, setSelectedSeries] = useState<string | undefined>(undefined);
   const [currentFileName, setCurrentFileName] = useState<string | undefined>(undefined);
   const [chartType, setChartType] = useState<string>("line");
-  const chartDisplayRef = useRef<ChartDisplayHandle>(null);
   const [theme, setTheme] = useState("light");
   const [timeAxisLabel, setTimeAxisLabel] = useState<string>("Time");
 
@@ -50,15 +48,25 @@ export default function DataFlowPage() {
   };
 
   const handleDataUploaded = (data: DataPoint[], seriesNames: string[], fileName: string, timeColumnName: string) => {
+    console.log("DataFlowPage: handleDataUploaded - Start");
+    console.log("DataFlowPage: Raw Data received:", data);
+    console.log("DataFlowPage: Series Names received:", seriesNames);
+    console.log("DataFlowPage: File Name:", fileName);
+    console.log("DataFlowPage: Time Column Name:", timeColumnName);
+
     setParsedData(data);
     setDataSeries(seriesNames);
     setCurrentFileName(fileName);
     setTimeAxisLabel(timeColumnName);
+
     if (seriesNames.length > 0) {
-      setSelectedSeries(seriesNames[0]); 
+      setSelectedSeries(seriesNames[0]);
+      console.log("DataFlowPage: Default selected series:", seriesNames[0]);
     } else {
       setSelectedSeries(undefined);
+      console.log("DataFlowPage: No series available to select.");
     }
+    console.log("DataFlowPage: handleDataUploaded - End. State after update (next render):", { parsedData: data, dataSeries: seriesNames, selectedSeries: seriesNames.length > 0 ? seriesNames[0] : undefined, timeAxisLabel: timeColumnName });
   };
 
   const handleClearData = () => {
@@ -67,11 +75,16 @@ export default function DataFlowPage() {
     setSelectedSeries(undefined);
     setCurrentFileName(undefined);
     setTimeAxisLabel("Time");
+    console.log("DataFlowPage: Data cleared.");
   };
   
-  const getSvgRef = () => {
-    return chartDisplayRef.current?.getSvgRef() ?? { current: null };
-  };
+  console.log("DataFlowPage: Rendering with props for ChartDisplay:", {
+    data: parsedData,
+    chartType: chartType,
+    selectedSeries: selectedSeries,
+    fileName: currentFileName,
+    timeAxisLabel: timeAxisLabel,
+  });
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -114,11 +127,10 @@ export default function DataFlowPage() {
             />
           </div>
 
-          {/* Main Content Area (Chart + Export) */}
+          {/* Main Content Area (Chart) */}
           <div className="md:col-span-9 space-y-6">
             <div className="min-h-[400px] md:min-h-0">
               <ChartDisplay 
-                ref={chartDisplayRef} 
                 data={parsedData} 
                 chartType={chartType} 
                 selectedSeries={selectedSeries} 
@@ -126,12 +138,7 @@ export default function DataFlowPage() {
                 timeAxisLabel={timeAxisLabel}
               />
             </div>
-            {parsedData.length > 0 && selectedSeries && (
-              <ChartExport 
-                svgRef={getSvgRef()} 
-                fileName={currentFileName ? `${currentFileName.split('.')[0]}_${selectedSeries}` : selectedSeries} 
-              />
-            )}
+            {/* ChartExport component removed */}
           </div>
         </div>
       </main>

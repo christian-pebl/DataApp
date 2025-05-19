@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { forwardRef, useImperativeHandle, useRef } from "react";
+import React from "react";
 import {
   LineChart,
   Line,
@@ -21,7 +21,7 @@ import { AlertTriangle, Info, BarChartHorizontalBig } from "lucide-react";
 
 interface DataPoint {
   time: string | number;
-  [key: string]: string | number;
+  [key: string]: number | string; // Allow string for time, number for series values after parsing
 }
 
 interface ChartDisplayProps {
@@ -32,21 +32,14 @@ interface ChartDisplayProps {
   timeAxisLabel?: string;
 }
 
-export interface ChartDisplayHandle {
-  getSvgRef: () => React.RefObject<SVGSVGElement | null>;
-}
-
-const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, chartType, selectedSeries, fileName, timeAxisLabel }, ref) => {
-  const internalSvgRef = useRef<SVGSVGElement | null>(null);
-
-  useImperativeHandle(ref, () => ({
-    getSvgRef: () => internalSvgRef,
-  }));
+const ChartDisplay: React.FC<ChartDisplayProps> = ({ data, chartType, selectedSeries, fileName, timeAxisLabel }) => {
+  console.log("ChartDisplay: Props received", { data, chartType, selectedSeries, fileName, timeAxisLabel });
 
   const baseChartTitle = fileName ? `${fileName.split('.')[0]}` : "Data Visualization";
   const chartTitle = selectedSeries ? `${selectedSeries} from ${baseChartTitle}` : baseChartTitle;
 
   if (!data || data.length === 0) {
+    console.log("ChartDisplay: No data to display.");
     return (
       <Card className="h-full flex flex-col">
         <CardHeader>
@@ -66,6 +59,7 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
   }
 
   if (!selectedSeries) {
+    console.log("ChartDisplay: Data loaded, but no series selected.");
     return (
       <Card className="h-full flex flex-col">
         <CardHeader>
@@ -84,33 +78,46 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
     );
   }
 
-  // Using data directly without custom sorting for simplification
-  const chartData = data;
+  // Ensure data for the selected series is numeric. Recharts expects numbers for the Y-axis.
+  const chartData = data.map(point => ({
+    ...point,
+    [selectedSeries]: typeof point[selectedSeries] === 'string' ? parseFloat(point[selectedSeries] as string) : point[selectedSeries]
+  })).filter(point => typeof point[selectedSeries] === 'number' && !isNaN(point[selectedSeries] as number));
+  
+  console.log(`ChartDisplay: Processed chartData for series "${selectedSeries}":`, chartData);
+
+  if (chartData.length === 0) {
+    console.log(`ChartDisplay: No valid numeric data found for selected series "${selectedSeries}".`);
+     return (
+      <Card className="h-full flex flex-col">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-6 w-6 text-destructive" /> Error
+          </CardTitle>
+          <CardDescription>
+            No valid numeric data points found for the selected series: "{selectedSeries}".
+            Please check if this column contains numbers in your CSV file.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex-grow flex items-center justify-center">
+            <p className="text-muted-foreground">Try selecting a different series or check your file.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
 
   const renderChart = () => {
     const chartProps = {
       data: chartData,
-      // Simplified margins
-      margin: { top: 5, right: 30, left: 20, bottom: 30 }, 
+      margin: { top: 5, right: 20, left: 20, bottom: 20 },
     };
 
     const commonComponents = (
       <>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-        <XAxis
-          dataKey="time"
-          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-          stroke="hsl(var(--border))"
-          interval="preserveStartEnd" // Keep this to avoid too many ticks
-          // Simplified X-axis label, can be removed if still problematic
-          label={{ value: timeAxisLabel || "Time", position: 'insideBottom', offset: -15, fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-        />
-        <YAxis
-          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-          stroke="hsl(var(--border))"
-          // Simplified Y-axis label
-          label={selectedSeries ? { value: selectedSeries, angle: -90, position: 'insideLeft', fill: 'hsl(var(--muted-foreground))', fontSize: 12, dx: -10 } : undefined}
-        />
+        <XAxis dataKey="time" label={{ value: timeAxisLabel || "Time", position: 'insideBottom', offset: -10, fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+        <YAxis label={{ value: selectedSeries, angle: -90, position: 'insideLeft', fill: 'hsl(var(--muted-foreground))', fontSize: 12, dx: -10 }} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
         <Tooltip
           contentStyle={{
             backgroundColor: 'hsl(var(--background))',
@@ -120,7 +127,6 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
           labelStyle={{ color: 'hsl(var(--foreground))' }}
         />
         <Legend wrapperStyle={{ color: 'hsl(var(--foreground))', paddingTop: '10px' }} />
-        {/* Brush component removed for simplification */}
       </>
     );
 
@@ -129,26 +135,27 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
     switch (chartType) {
       case "line":
         return (
-          <LineChart {...chartProps} ref={internalSvgRef as any}>
+          <LineChart {...chartProps}>
             {commonComponents}
-            <Line type="monotone" dataKey={dataKeyValue} name={selectedSeries} stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3, fill: 'hsl(var(--primary))' }} activeDot={{ r: 6 }} />
+            <Line type="monotone" dataKey={dataKeyValue} name={selectedSeries} stroke="#8884d8" strokeWidth={2} dot={{ r: 3, fill: '#8884d8' }} activeDot={{ r: 6 }} />
           </LineChart>
         );
       case "bar":
         return (
-          <BarChart {...chartProps} ref={internalSvgRef as any}>
+          <BarChart {...chartProps}>
             {commonComponents}
-            <Bar dataKey={dataKeyValue} name={selectedSeries} fill="hsl(var(--accent))" stroke="hsl(var(--foreground))" />
+            <Bar dataKey={dataKeyValue} name={selectedSeries} fill="#82ca9d" stroke="hsl(var(--foreground))"/>
           </BarChart>
         );
       case "scatter":
         return (
-          <ScatterChart {...chartProps} ref={internalSvgRef as any}>
+          <ScatterChart {...chartProps}>
             {commonComponents}
-            <Scatter name={selectedSeries} dataKey={dataKeyValue} fill="hsl(var(--primary))" />
+            <Scatter name={selectedSeries} dataKey={dataKeyValue} fill="#ffc658" />
           </ScatterChart>
         );
       default:
+        console.error("ChartDisplay: Unknown chart type selected:", chartType);
         return <p>Unknown chart type selected.</p>;
     }
   };
@@ -157,16 +164,16 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
     <Card className="h-full flex flex-col shadow-lg">
       <CardHeader>
         <CardTitle className="text-xl font-semibold">{chartTitle}</CardTitle>
-        <CardDescription>Interactive time series visualization for '{selectedSeries}'</CardDescription>
+        <CardDescription>Displaying '{selectedSeries}' as a {chartType} chart.</CardDescription>
       </CardHeader>
-      <CardContent className="flex-grow pt-4 pb-8"> {/* Ensure CardContent allows growth */}
+      <CardContent className="flex-grow pt-4 pb-8">
         <ResponsiveContainer width="100%" height="100%">
           {renderChart()}
         </ResponsiveContainer>
       </CardContent>
     </Card>
   );
-});
+};
 
 ChartDisplay.displayName = "ChartDisplay";
 export default ChartDisplay;
