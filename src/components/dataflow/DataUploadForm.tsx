@@ -63,7 +63,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     }
     updateStepStatus('headerParse', 'success', "Header row found.");
 
-    const delimiterRegex = /\s*[,;\t]\s*|\s+/;
+    const delimiterRegex = /\s*[,;\t]\s*|\s+/; // Handles comma, semicolon, tab, or space delimiters
     const headers = lines[0].trim().split(delimiterRegex).map(h => h.trim()).filter(h => h);
 
     if (headers.length < 1) {
@@ -91,16 +91,12 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       const values = trimmedLine.split(delimiterRegex).map(v => v.trim());
       
       const timeValue = values[0];
-      if (!timeValue && values.slice(1).some(v => v && v.trim() !== "")) { // If time is missing but other data exists
-        // This specific error might be too noisy if many rows have it.
-        // updateStepStatus('dataRowFormat', 'error', `Row ${i + 1} is missing a time value but has other data. Skipping row.`);
-        // For now, we just skip such rows or let NaN propagate if they are included.
-        // Let's choose to skip rows where time is absolutely critical and missing.
+      if (!timeValue && values.slice(1).some(v => v && v.trim() !== "")) { 
         continue;
       }
-      if (!timeValue && values.length === 1 && values[0] === "") continue; // skip completely empty lines that might result from split
+      if (!timeValue && values.length === 1 && values[0] === "") continue; 
 
-      const dataPoint: DataPoint = { time: timeValue || "N/A" }; // Use N/A if timeValue is empty but row is processed
+      const dataPoint: DataPoint = { time: timeValue || "N/A" }; 
       let hasNumericValueInRow = false;
       let rowHasParsingIssue = false;
 
@@ -109,23 +105,22 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
         const rawValue = values[headerIndex];
 
         if (rawValue === undefined || rawValue.trim() === "") {
-          dataPoint[seriesName] = NaN; // Treat empty strings as NaN
+          dataPoint[seriesName] = NaN; 
           return;
         }
-        const cleanedValue = rawValue.replace(/,/g, ''); // Remove commas for thousands separators
+        const cleanedValue = rawValue.replace(/,/g, ''); 
         const seriesValue = parseFloat(cleanedValue);
 
         if (!isNaN(seriesValue)) {
           dataPoint[seriesName] = seriesValue;
           hasNumericValueInRow = true;
         } else {
-          dataPoint[seriesName] = NaN; // Store NaN if parsing fails
+          dataPoint[seriesName] = NaN; 
           someRowsHadNonNumericData = true;
           rowHasParsingIssue = true;
         }
       });
       
-      // Only add row if it has at least one numeric value or if it's not entirely empty beyond time
       if (hasNumericValueInRow || (timeValue && values.slice(1).some(v => v && v.trim() !== ""))) {
          data.push(dataPoint);
          if (!rowHasParsingIssue && hasNumericValueInRow) {
@@ -142,7 +137,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     let dataRowMessage = `Processed ${data.length} data rows. ${validDataRowsCount} rows are fully numeric.`;
     if (someRowsHadNonNumericData) {
       dataRowMessage += " Some non-numeric values encountered and treated as missing (NaN).";
-      updateStepStatus('dataRowFormat', 'success', dataRowMessage); // Success with a note
+      updateStepStatus('dataRowFormat', 'success', dataRowMessage); 
     } else {
       updateStepStatus('dataRowFormat', 'success', dataRowMessage);
     }
@@ -152,13 +147,13 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
   };
 
   const processFile = async (file: File): Promise<{ data: DataPoint[]; seriesNames: string[] } | null> => {
-    setValidationSteps(initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }))); // Reset messages
+    setValidationSteps(initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }))); 
     setCurrentFileForValidation(file.name);
     updateStepStatus('fileSelection', 'success', `Selected: ${file.name}`);
 
     if (!file.name.endsWith(".csv")) {
-      updateStepStatus('fileType', 'error', "Unsupported file type. Please upload a CSV (.csv) file.");
-      toast({ variant: "destructive", title: "Unsupported File Type", description: "Please upload a CSV file." });
+      updateStepStatus('fileType', 'error', "Unsupported file type. Please select a .csv file and try again.");
+      toast({ variant: "destructive", title: "Upload Failed", description: "Unsupported file type. Please select a .csv file and try again." });
       return null;
     }
     updateStepStatus('fileType', 'success');
@@ -168,34 +163,27 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       fileContent = await file.text();
       updateStepStatus('fileRead', 'success');
     } catch (e) {
-      updateStepStatus('fileRead', 'error', "Could not read file content.");
-      toast({ variant: "destructive", title: "File Read Error", description: "Could not read the file." });
+      updateStepStatus('fileRead', 'error', "Could not read file content. Please ensure the file is accessible and try again.");
+      toast({ variant: "destructive", title: "File Read Error", description: "Could not read the file. Please try again." });
       return null;
     }
 
-    if (file.name.endsWith(".csv")) {
-      const result = parseAndValidateCsv(fileContent);
-      if (!result) {
-         toast({
-           variant: "destructive",
-           title: "CSV Data Validation Failed",
-           description: "Please check the validation checklist above for details and ensure your CSV file meets the requirements.",
-         });
-      }
-      return result;
+    const result = parseAndValidateCsv(fileContent);
+    if (!result) {
+       toast({
+         variant: "destructive",
+         title: "CSV Data Validation Failed",
+         description: "Please check the validation checklist above for details and ensure your CSV file meets the requirements. You can then try uploading again.",
+       });
     }
-    // Fallback for non-CSV if we were to support JSON again, but problem statement implies CSV only
-    updateStepStatus('fileType', 'error', "Logic error: Should only process CSV here.");
-    return null;
+    return result;
   };
 
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     setIsProcessing(true);
-    // Reset validation steps fully for a new file upload attempt
     setValidationSteps([]); 
     setCurrentFileForValidation(null);
-
 
     const file = event.target.files?.[0];
     if (!file) {
@@ -203,7 +191,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       return;
     }
 
-    setCurrentDisplayedFileName(file.name);
+    setCurrentDisplayedFileName(file.name); // Display name immediately
 
     const parsedResult = await processFile(file);
 
@@ -214,14 +202,16 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           description: `${file.name} has been processed. Select a series to visualize!`,
         });
     } else {
-        // Errors are handled within processFile and parseAndValidateCsv via updateStepStatus and toasts
-        // Clear the displayed file name if parsing fails and we intend to clear the input
-        setCurrentDisplayedFileName(null); 
+        // Error messages are handled by `processFile` or `parseAndValidateCsv`
+        // `currentDisplayedFileName` will show the name of the file that failed validation until a new file is selected or cleared.
+        // If we want to clear the name on error, we'd do it here:
+        // setCurrentDisplayedFileName(null); 
+        // However, keeping it can be useful to see which file failed validation in the checklist.
     }
 
     setIsProcessing(false);
     if (event.target) {
-      event.target.value = ""; // Reset file input for re-upload
+      event.target.value = ""; 
     }
   };
   
@@ -253,13 +243,12 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           <Input
             id="file-upload"
             type="file"
-            accept=".csv" // Only accept .csv
+            accept=".csv" 
             onChange={handleFileChange}
             disabled={isProcessing}
             className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
           />
         </div>
-        {currentDisplayedFileName && !isProcessing && validationSteps.length === 0 && <p className="text-sm text-muted-foreground">Selected: {currentDisplayedFileName}</p>}
         
         {validationSteps.length > 0 && (
           <div className="mt-4 space-y-2 border-t pt-4">
@@ -275,7 +264,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
                   <div className="flex-grow">
                     <span className={cn(
                       step.status === 'error' && 'text-destructive font-semibold',
-                      step.status === 'success' && 'text-green-600',
+                      step.status === 'success' && 'text-green-600', // Keeping success green
                       'block'
                     )}>
                       {step.label}
@@ -295,9 +284,11 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
             </ul>
           </div>
         )}
-
-        {isProcessing && validationSteps.length === 0 && <p className="text-sm text-primary animate-pulse">Preparing for validation...</p>}
         
+        {/* This condition was changed: Show "Preparing for validation..." only if isProcessing AND no steps are shown yet. */}
+        {isProcessing && validationSteps.length === 0 && <p className="text-sm text-primary animate-pulse">Preparing for validation...</p>}
+        {/* Removed: currentDisplayedFileName && !isProcessing && validationSteps.length === 0 condition as it might be confusing */}
+
         <Button 
             onClick={handleClear} 
             variant="outline" 
@@ -310,5 +301,6 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     </Card>
   );
 }
+    
 
     
