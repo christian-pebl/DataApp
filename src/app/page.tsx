@@ -6,30 +6,31 @@ import { DataUploadForm } from "@/components/dataflow/DataUploadForm";
 import { ChartSelector } from "@/components/dataflow/ChartSelector";
 import ChartDisplay, { type ChartDisplayHandle } from "@/components/dataflow/ChartDisplay";
 import { ChartExport } from "@/components/dataflow/ChartExport";
+import { SeriesSelector } from "@/components/dataflow/SeriesSelector"; // Import new component
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun, Github } from "lucide-react"; // Github icon for branding/link
+import { Moon, Sun, Github } from "lucide-react";
 
 interface DataPoint {
   time: string | number;
-  value: number;
-  [key: string]: any;
+  [key: string]: string | number; // Allows multiple data series
 }
 
 export default function DataFlowPage() {
   const [parsedData, setParsedData] = useState<DataPoint[]>([]);
+  const [dataSeries, setDataSeries] = useState<string[]>([]);
+  const [selectedSeries, setSelectedSeries] = useState<string | undefined>(undefined);
   const [currentFileName, setCurrentFileName] = useState<string | undefined>(undefined);
   const [chartType, setChartType] = useState<string>("line");
   const chartDisplayRef = useRef<ChartDisplayHandle>(null);
-  const [theme, setTheme] = useState("light"); // Default to light theme
+  const [theme, setTheme] = useState("light");
 
   useEffect(() => {
-    // Detect system theme or load from local storage
     const storedTheme = localStorage.getItem("theme");
-    const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches; // Corrected typo: systemPréfèreDark -> systemPrefersDark
+    const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     if (storedTheme) {
       setTheme(storedTheme);
-    } else if (systemPrefersDark) { // Used corrected variable
+    } else if (systemPrefersDark) {
       setTheme("dark");
     }
   }, []);
@@ -47,13 +48,21 @@ export default function DataFlowPage() {
     setTheme(theme === "light" ? "dark" : "light");
   };
 
-  const handleDataUploaded = (data: DataPoint[], fileName: string) => {
+  const handleDataUploaded = (data: DataPoint[], seriesNames: string[], fileName: string) => {
     setParsedData(data);
+    setDataSeries(seriesNames);
     setCurrentFileName(fileName);
+    if (seriesNames.length > 0) {
+      setSelectedSeries(seriesNames[0]); // Select the first series by default
+    } else {
+      setSelectedSeries(undefined);
+    }
   };
 
   const handleClearData = () => {
     setParsedData([]);
+    setDataSeries([]);
+    setSelectedSeries(undefined);
     setCurrentFileName(undefined);
   };
   
@@ -85,17 +94,30 @@ export default function DataFlowPage() {
           <div className="md:col-span-3 space-y-6">
             <DataUploadForm onDataUploaded={handleDataUploaded} onClearData={handleClearData} />
             <Separator />
+            <SeriesSelector 
+              availableSeries={dataSeries}
+              selectedSeries={selectedSeries}
+              onSeriesChange={setSelectedSeries}
+              disabled={parsedData.length === 0}
+            />
+            <Separator />
             <ChartSelector
               selectedChartType={chartType}
               onChartTypeChange={setChartType}
             />
             <Separator />
-            <ChartExport svgRef={getSvgRef()} fileName={currentFileName} />
+            <ChartExport svgRef={getSvgRef()} fileName={currentFileName ? `${currentFileName.split('.')[0]}_${selectedSeries}` : selectedSeries} />
           </div>
 
           {/* Chart Display Area */}
-          <div className="md:col-span-9 min-h-[400px] md:min-h-0"> {/* Ensure chart area has substantial height */}
-            <ChartDisplay ref={chartDisplayRef} data={parsedData} chartType={chartType} fileName={currentFileName} />
+          <div className="md:col-span-9 min-h-[400px] md:min-h-0">
+            <ChartDisplay 
+              ref={chartDisplayRef} 
+              data={parsedData} 
+              chartType={chartType} 
+              selectedSeries={selectedSeries} 
+              fileName={currentFileName} 
+            />
           </div>
         </div>
       </main>

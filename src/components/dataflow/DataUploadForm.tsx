@@ -12,12 +12,11 @@ import { useToast } from "@/hooks/use-toast";
 
 interface DataPoint {
   time: string | number;
-  value: number;
-  [key: string]: any; // Allow for additional properties if needed
+  [key: string]: string | number; // Allows multiple data series
 }
 
 interface DataUploadFormProps {
-  onDataUploaded: (data: DataPoint[], fileName: string) => void;
+  onDataUploaded: (data: DataPoint[], seriesNames: string[], fileName: string) => void;
   onClearData: () => void;
 }
 
@@ -38,12 +37,23 @@ export function DataUploadForm({ onDataUploaded, onClearData }: DataUploadFormPr
 
     try {
       const fileContent = await file.text();
-      let parsedData: DataPoint[] = [];
+      let parsedResult: { data: DataPoint[]; seriesNames: string[] } | null = null;
 
       if (file.name.endsWith(".csv")) {
-        parsedData = parseCsv(fileContent);
+        parsedResult = parseCsv(fileContent);
       } else if (file.name.endsWith(".json")) {
-        parsedData = parseJson(fileContent);
+        // JSON parsing needs to be adapted if it's also meant to support multiple series
+        // For now, assuming JSON provides a 'value' field or this needs specific handling
+        const jsonData = parseJson(fileContent);
+        if (jsonData.length > 0 && jsonData.every(item => typeof item.value === 'number')) {
+             parsedResult = { data: jsonData, seriesNames: ["value"] };
+        } else if (jsonData.length > 0) {
+            // Attempt to find series from JSON if no 'value' key but other numeric keys
+            const firstItemKeys = Object.keys(jsonData[0]).filter(k => k !== 'time' && typeof jsonData[0][k] === 'number');
+            if (firstItemKeys.length > 0) {
+                parsedResult = { data: jsonData, seriesNames: firstItemKeys };
+            }
+        }
       } else {
         toast({
           variant: "destructive",
@@ -54,14 +64,14 @@ export function DataUploadForm({ onDataUploaded, onClearData }: DataUploadFormPr
         return;
       }
 
-      if (parsedData.length === 0) {
+      if (!parsedResult || parsedResult.data.length === 0 || parsedResult.seriesNames.length === 0) {
         toast({
           variant: "destructive",
           title: "Parsing Error",
-          description: "Could not parse data or file is empty. Ensure 'time' and 'value' fields.",
+          description: "Could not parse data, file is empty, or no valid data series found. Ensure CSV has headers and numeric data columns, or JSON has 'time' and numeric value fields.",
         });
       } else {
-        onDataUploaded(parsedData, file.name);
+        onDataUploaded(parsedResult.data, parsedResult.seriesNames, file.name);
         toast({
           title: "File Uploaded",
           description: `${file.name} processed successfully.`,
@@ -77,48 +87,63 @@ export function DataUploadForm({ onDataUploaded, onClearData }: DataUploadFormPr
       setFileName(null);
     } finally {
       setIsProcessing(false);
-       // Reset file input to allow re-uploading the same file
       if (event.target) {
         event.target.value = "";
       }
     }
   };
 
-  const parseCsv = (csvText: string): DataPoint[] => {
+  const parseCsv = (csvText: string): { data: DataPoint[]; seriesNames: string[] } | null => {
     const lines = csvText.trim().split(/\r\n|\n/);
-    if (lines.length < 1) return [];
+    if (lines.length < 2) return null; // Must have headers and at least one data row
 
     const headers = lines[0].split(',').map(h => h.trim());
-    const timeIndex = headers.findIndex(h => h.toLowerCase() === 'time' || h.toLowerCase() === 'timestamp' || h.toLowerCase() === 'date');
-    const valueIndex = headers.findIndex(h => h.toLowerCase() === 'value');
+    if (headers.length < 2) return null; // Must have at least a time column and one data column
 
-    // If no headers or specific keys not found, assume first column is time, second is value
-    const effectiveTimeIndex = timeIndex !== -1 ? timeIndex : 0;
-    const effectiveValueIndex = valueIndex !== -1 ? valueIndex : 1;
-    
-    const dataStartIndex = (timeIndex !== -1 || valueIndex !== -1) ? 1 : 0; // Skip header row if headers were found
+    const timeHeader = headers[0];
+    const seriesNames = headers.slice(1); // All other columns are data series
 
-    return lines.slice(dataStartIndex).map(line => {
+    const data = lines.slice(1).map(line => {
       const values = line.split(',');
-      const time = values[effectiveTimeIndex]?.trim();
-      const value = parseFloat(values[effectiveValueIndex]?.trim());
-      if (time && !isNaN(value)) {
-        return { time, value };
-      }
-      return null;
+      const timeValue = values[0]?.trim();
+      if (!timeValue) return null;
+
+      const dataPoint: DataPoint = { time: timeValue };
+      let hasNumericValue = false;
+      seriesNames.forEach((seriesName, index) => {
+        const seriesValue = parseFloat(values[index + 1]?.trim());
+        if (!isNaN(seriesValue)) {
+          dataPoint[seriesName] = seriesValue;
+          hasNumericValue = true;
+        } else {
+          dataPoint[seriesName] = NaN; // Or handle as needed, e.g., skip series or point
+        }
+      });
+      return hasNumericValue ? dataPoint : null;
     }).filter(item => item !== null) as DataPoint[];
+
+    if (data.length === 0) return null;
+    return { data, seriesNames };
   };
 
-  const parseJson = (jsonText: string): DataPoint[] => {
+  const parseJson = (jsonText: string): DataPoint[] => { // Keep original JSON parsing for simplicity, can be expanded
     const jsonData = JSON.parse(jsonText);
     if (!Array.isArray(jsonData)) {
       throw new Error("JSON data must be an array of objects.");
     }
     return jsonData.map((item: any) => {
       const time = item.time ?? item.timestamp ?? item.date;
-      const value = item.value;
-      if (time !== undefined && typeof value === 'number') {
-        return { time: String(time), value };
+      // Retain flexibility: if 'value' exists, use it. Otherwise, other numeric keys might be picked up by logic in handleFileChange.
+      const dataPoint: DataPoint = { time: String(time) };
+      Object.keys(item).forEach(key => {
+        if (key !== 'time' && key !== 'timestamp' && key !== 'date') {
+          if (typeof item[key] === 'number') {
+            dataPoint[key] = item[key];
+          }
+        }
+      });
+      if (time !== undefined && Object.keys(dataPoint).some(k => k !== 'time' && typeof dataPoint[k] === 'number')) {
+        return dataPoint;
       }
       return null;
     }).filter(item => item !== null) as DataPoint[];
@@ -140,7 +165,7 @@ export function DataUploadForm({ onDataUploaded, onClearData }: DataUploadFormPr
           <UploadCloud className="h-6 w-6 text-primary" />
           Import Data
         </CardTitle>
-        <CardDescription>Upload a CSV or JSON file with 'time' and 'value' columns/keys.</CardDescription>
+        <CardDescription>Upload a CSV file. First column is 'time', subsequent columns are data series.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
@@ -148,7 +173,7 @@ export function DataUploadForm({ onDataUploaded, onClearData }: DataUploadFormPr
           <Input
             id="file-upload"
             type="file"
-            accept=".csv,.json"
+            accept=".csv,.json" // Keeping JSON for now, though primary focus is CSV
             onChange={handleFileChange}
             disabled={isProcessing}
             className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
