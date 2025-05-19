@@ -7,199 +7,229 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UploadCloud } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 interface DataPoint {
   time: string | number;
-  [key: string]: string | number; // Allows multiple data series
+  [key: string]: string | number;
 }
 
 interface DataUploadFormProps {
   onDataUploaded: (data: DataPoint[], seriesNames: string[], fileName: string) => void;
   onClearData: () => void;
-  currentFileNameFromParent?: string; // Added prop to get parent's current file name
+  currentFileNameFromParent?: string;
 }
 
+interface ValidationStep {
+  id: string;
+  label: string;
+  status: 'pending' | 'success' | 'error';
+  message?: string;
+}
+
+const initialValidationSteps: ValidationStep[] = [
+  { id: 'fileSelection', label: 'File selected', status: 'pending' },
+  { id: 'fileType', label: 'Checking file type (must be .csv)', status: 'pending' },
+  { id: 'fileRead', label: 'Reading file content', status: 'pending' },
+  { id: 'headerParse', label: 'Checking for header row', status: 'pending' },
+  { id: 'timeColumnCheck', label: 'Verifying first column as time/date', status: 'pending' },
+  { id: 'variableColumnCheck', label: 'Verifying variable column headers', status: 'pending' },
+  { id: 'dataRowFormat', label: 'Checking data rows for numeric values', status: 'pending' },
+  { id: 'dataReady', label: 'Data processed successfully', status: 'pending' },
+];
+
 export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFromParent }: DataUploadFormProps) {
-  const [fileName, setFileName] = useState<string | null>(null); // Local fileName for immediate UI feedback
+  const [currentDisplayedFileName, setCurrentDisplayedFileName] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [validationSteps, setValidationSteps] = useState<ValidationStep[]>([]);
+  const [currentFileForValidation, setCurrentFileForValidation] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    setIsProcessing(true);
-    const file = event.target.files?.[0];
-    if (!file) {
-      setIsProcessing(false);
-      return;
-    }
-
-    setFileName(file.name); // Set local filename for display
-
-    try {
-      const fileContent = await file.text();
-      let parsedResult: { data: DataPoint[]; seriesNames: string[] } | null = null;
-
-      if (file.name.endsWith(".csv")) {
-        parsedResult = parseCsv(fileContent);
-      } else if (file.name.endsWith(".json")) {
-        const jsonData = parseJson(fileContent);
-        // Basic validation for JSON structure - assuming array of objects
-        // Further validation if 'value' is the only series or if multiple series exist
-        if (jsonData.length > 0 && jsonData.every(item => typeof item.value === 'number')) {
-             parsedResult = { data: jsonData, seriesNames: ["value"] }; // Default series name "value"
-        } else if (jsonData.length > 0) {
-            // Attempt to find numeric series keys from the first item
-            const firstItemKeys = Object.keys(jsonData[0]).filter(k => k !== 'time' && k !== 'timestamp' && k !== 'date' && typeof jsonData[0][k] === 'number');
-            if (firstItemKeys.length > 0) {
-                parsedResult = { data: jsonData, seriesNames: firstItemKeys };
-            }
-        }
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Unsupported File Type",
-          description: "Please upload a CSV (.csv) or JSON (.json) file.",
-        });
-        setFileName(null); 
-        setIsProcessing(false);
-        if (event.target) event.target.value = ""; 
-        return;
-      }
-
-      if (!parsedResult || parsedResult.data.length === 0 || parsedResult.seriesNames.length === 0) {
-        let description = "Could not parse data from the file. ";
-        if (file.name.endsWith(".csv")) {
-          description += "Please ensure your CSV file has a header row, with the first column being a time/date. Subsequent columns should contain numerical data. Columns should be separated by commas, tabs, or spaces. Numbers like '1,234.56' will be treated as '1234.56'.";
-        } else if (file.name.endsWith(".json")) {
-          description += "Please ensure your JSON file is an array of objects, where each object has a 'time' (or 'timestamp'/'date') field and at least one other field with numerical data.";
-        } else {
-          description += "The file might be empty, incorrectly formatted, or not contain any usable data series."
-        }
-        toast({
-          variant: "destructive",
-          title: "Data Parsing Error",
-          description: description,
-        });
-        setFileName(null); 
-      } else {
-        onDataUploaded(parsedResult.data, parsedResult.seriesNames, file.name);
-        toast({
-          title: "File Uploaded Successfully",
-          description: `${file.name} has been processed. Select a series to visualize!`,
-        });
-      }
-    } catch (error) {
-      console.error("Error processing file:", error);
-      toast({
-        variant: "destructive",
-        title: "File Processing Error",
-        description: `An unexpected error occurred while trying to process the file: ${error instanceof Error ? error.message : String(error)}. Please check the file and try again.`,
-      });
-      setFileName(null); 
-    } finally {
-      setIsProcessing(false);
-      // Reset file input so the same file can be re-uploaded if needed after an error
-      if (event.target) {
-        event.target.value = "";
-      }
-    }
+  const updateStepStatus = (stepId: string, status: 'success' | 'error', message?: string) => {
+    setValidationSteps(prevSteps =>
+      prevSteps.map(step =>
+        step.id === stepId ? { ...step, status, message: message || (status === 'error' ? 'Failed' : 'Completed') } : step
+      )
+    );
   };
 
-  const parseCsv = (csvText: string): { data: DataPoint[]; seriesNames: string[] } | null => {
+  const parseAndValidateCsv = (csvText: string): { data: DataPoint[]; seriesNames: string[] } | null => {
     const lines = csvText.trim().split(/\r\n|\n/);
-    if (lines.length < 2) return null; // Must have header and at least one data row
+    if (lines.length < 2) {
+      updateStepStatus('headerParse', 'error', "CSV must have a header row and at least one data row.");
+      return null;
+    }
+    updateStepStatus('headerParse', 'success', "Header row found.");
 
-    // Regex to split by comma, semicolon, tab, or one or more spaces, trimming whitespace around delimiters
     const delimiterRegex = /\s*[,;\t]\s*|\s+/;
+    const headers = lines[0].trim().split(delimiterRegex).map(h => h.trim()).filter(h => h);
 
-    const headers = lines[0].trim().split(delimiterRegex).map(h => h.trim()).filter(h => h); // Filter out empty headers
-    
-    if (headers.length < 2) return null; // Must have a time column and at least one data column
+    if (headers.length < 1) {
+      updateStepStatus('timeColumnCheck', 'error', "CSV header row is missing or has no column names.");
+      return null;
+    }
+    updateStepStatus('timeColumnCheck', 'success', `Time column identified: '${headers[0]}'`);
 
-    const timeHeader = headers[0]; // Assume first column is time
-    const seriesNames = headers.slice(1).filter(name => name); // Ensure series names are not empty
-    if (seriesNames.length === 0) return null; // No valid data series found
+    const seriesNames = headers.slice(1).filter(name => name);
+    if (seriesNames.length === 0) {
+      updateStepStatus('variableColumnCheck', 'error', "No data variable columns found after the first (time) column.");
+      return null;
+    }
+    updateStepStatus('variableColumnCheck', 'success', `Variable columns identified: ${seriesNames.join(', ')}`);
 
-    const data = lines.slice(1).map(line => {
+    const data: DataPoint[] = [];
+    let someRowsHadNonNumericData = false;
+    let validDataRowsCount = 0;
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
       const trimmedLine = line.trim();
-      if (!trimmedLine) return null; // Skip empty lines
+      if (!trimmedLine) continue;
 
       const values = trimmedLine.split(delimiterRegex).map(v => v.trim());
-      if (values.length < headers.length) { 
-        // Handle potentially shorter lines by padding with NaN or similar, or skip
-        // For now, let's skip if it doesn't at least have a time value
-        if (!values[0]) return null;
-      }
-
+      
       const timeValue = values[0];
-      if (!timeValue) return null;
+      if (!timeValue && values.slice(1).some(v => v && v.trim() !== "")) { // If time is missing but other data exists
+        // This specific error might be too noisy if many rows have it.
+        // updateStepStatus('dataRowFormat', 'error', `Row ${i + 1} is missing a time value but has other data. Skipping row.`);
+        // For now, we just skip such rows or let NaN propagate if they are included.
+        // Let's choose to skip rows where time is absolutely critical and missing.
+        continue;
+      }
+      if (!timeValue && values.length === 1 && values[0] === "") continue; // skip completely empty lines that might result from split
 
-      const dataPoint: DataPoint = { time: timeValue };
+      const dataPoint: DataPoint = { time: timeValue || "N/A" }; // Use N/A if timeValue is empty but row is processed
       let hasNumericValueInRow = false;
+      let rowHasParsingIssue = false;
 
-      seriesNames.forEach((seriesName, index) => {
-        const headerIndex = headers.indexOf(seriesName); // Find original index of this seriesName in headers
-        const rawValue = values[headerIndex]; // Use original header index to get value
+      seriesNames.forEach((seriesName) => {
+        const headerIndex = headers.indexOf(seriesName);
+        const rawValue = values[headerIndex];
 
-        if (rawValue === undefined || rawValue === "") {
-          dataPoint[seriesName] = NaN; // Handle missing values for a series
+        if (rawValue === undefined || rawValue.trim() === "") {
+          dataPoint[seriesName] = NaN; // Treat empty strings as NaN
           return;
         }
-        // Remove commas from numbers (e.g., "1,234.56" -> "1234.56") before parsing
-        const cleanedValue = rawValue.replace(/,/g, '');
+        const cleanedValue = rawValue.replace(/,/g, ''); // Remove commas for thousands separators
         const seriesValue = parseFloat(cleanedValue);
 
         if (!isNaN(seriesValue)) {
           dataPoint[seriesName] = seriesValue;
           hasNumericValueInRow = true;
         } else {
-          dataPoint[seriesName] = NaN; // Store NaN if parsing fails for this specific value
+          dataPoint[seriesName] = NaN; // Store NaN if parsing fails
+          someRowsHadNonNumericData = true;
+          rowHasParsingIssue = true;
         }
       });
-      return hasNumericValueInRow ? dataPoint : null; // Only include rows with at least one valid number
-    }).filter(item => item !== null) as DataPoint[];
+      
+      // Only add row if it has at least one numeric value or if it's not entirely empty beyond time
+      if (hasNumericValueInRow || (timeValue && values.slice(1).some(v => v && v.trim() !== ""))) {
+         data.push(dataPoint);
+         if (!rowHasParsingIssue && hasNumericValueInRow) {
+            validDataRowsCount++;
+         }
+      }
+    }
 
-    if (data.length === 0) return null;
+    if (data.length === 0) {
+      updateStepStatus('dataRowFormat', 'error', "No processable data rows found. Check for numeric values in variable columns or ensure time values are present.");
+      return null;
+    }
+    
+    let dataRowMessage = `Processed ${data.length} data rows. ${validDataRowsCount} rows are fully numeric.`;
+    if (someRowsHadNonNumericData) {
+      dataRowMessage += " Some non-numeric values encountered and treated as missing (NaN).";
+      updateStepStatus('dataRowFormat', 'success', dataRowMessage); // Success with a note
+    } else {
+      updateStepStatus('dataRowFormat', 'success', dataRowMessage);
+    }
+    
+    updateStepStatus('dataReady', 'success', "Data is ready for visualization.");
     return { data, seriesNames };
   };
 
+  const processFile = async (file: File): Promise<{ data: DataPoint[]; seriesNames: string[] } | null> => {
+    setValidationSteps(initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }))); // Reset messages
+    setCurrentFileForValidation(file.name);
+    updateStepStatus('fileSelection', 'success', `Selected: ${file.name}`);
 
-  const parseJson = (jsonText: string): DataPoint[] => { 
-    // Basic JSON parsing, assumes an array of objects.
-    // Each object should have a 'time' (or 'timestamp'/'date') key,
-    // and other keys for data series with numerical values.
-    const jsonData = JSON.parse(jsonText);
-    if (!Array.isArray(jsonData)) {
-      throw new Error("JSON data must be an array of objects.");
+    if (!file.name.endsWith(".csv")) {
+      updateStepStatus('fileType', 'error', "Unsupported file type. Please upload a CSV (.csv) file.");
+      toast({ variant: "destructive", title: "Unsupported File Type", description: "Please upload a CSV file." });
+      return null;
     }
-    return jsonData.map((item: any) => {
-      const time = item.time ?? item.timestamp ?? item.date;
-      if (time === undefined) return null; // Skip items without a time key
+    updateStepStatus('fileType', 'success');
 
-      const dataPoint: DataPoint = { time: String(time) };
-      let hasNumericValue = false;
-      Object.keys(item).forEach(key => {
-        if (key !== 'time' && key !== 'timestamp' && key !== 'date') {
-          if (typeof item[key] === 'number' && !isNaN(item[key])) { // Ensure it's a valid number
-            dataPoint[key] = item[key];
-            hasNumericValue = true;
-          } else if (typeof item[key] === 'string') { // Try to parse if it's a string
-            const parsedNum = parseFloat(item[key].replace(/,/g, '')); // Also handle commas in JSON string numbers
-            if (!isNaN(parsedNum)) {
-                dataPoint[key] = parsedNum;
-                hasNumericValue = true;
-            }
-          }
-        }
-      });
-      return hasNumericValue ? dataPoint : null; // Only include if there's at least one numeric data point
-    }).filter(item => item !== null) as DataPoint[];
+    let fileContent;
+    try {
+      fileContent = await file.text();
+      updateStepStatus('fileRead', 'success');
+    } catch (e) {
+      updateStepStatus('fileRead', 'error', "Could not read file content.");
+      toast({ variant: "destructive", title: "File Read Error", description: "Could not read the file." });
+      return null;
+    }
+
+    if (file.name.endsWith(".csv")) {
+      const result = parseAndValidateCsv(fileContent);
+      if (!result) {
+         toast({
+           variant: "destructive",
+           title: "CSV Data Validation Failed",
+           description: "Please check the validation checklist above for details and ensure your CSV file meets the requirements.",
+         });
+      }
+      return result;
+    }
+    // Fallback for non-CSV if we were to support JSON again, but problem statement implies CSV only
+    updateStepStatus('fileType', 'error', "Logic error: Should only process CSV here.");
+    return null;
+  };
+
+
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    setIsProcessing(true);
+    // Reset validation steps fully for a new file upload attempt
+    setValidationSteps([]); 
+    setCurrentFileForValidation(null);
+
+
+    const file = event.target.files?.[0];
+    if (!file) {
+      setIsProcessing(false);
+      return;
+    }
+
+    setCurrentDisplayedFileName(file.name);
+
+    const parsedResult = await processFile(file);
+
+    if (parsedResult) {
+        onDataUploaded(parsedResult.data, parsedResult.seriesNames, file.name);
+        toast({
+          title: "File Uploaded Successfully",
+          description: `${file.name} has been processed. Select a series to visualize!`,
+        });
+    } else {
+        // Errors are handled within processFile and parseAndValidateCsv via updateStepStatus and toasts
+        // Clear the displayed file name if parsing fails and we intend to clear the input
+        setCurrentDisplayedFileName(null); 
+    }
+
+    setIsProcessing(false);
+    if (event.target) {
+      event.target.value = ""; // Reset file input for re-upload
+    }
   };
   
   const handleClear = () => {
-    setFileName(null); // Clear local file name display
-    onClearData(); // Call parent's clear function
+    setCurrentDisplayedFileName(null);
+    onClearData();
+    setValidationSteps([]); 
+    setCurrentFileForValidation(null);
     toast({
       title: "Data Cleared",
       description: "Chart data and uploaded file information have been cleared.",
@@ -213,7 +243,9 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           <UploadCloud className="h-6 w-6 text-primary" />
           Import Data
         </CardTitle>
-        <CardDescription>Upload a CSV or JSON file. For CSV, the first column should be 'time' (or similar like 'date', 'timestamp'), and subsequent columns are data series (separated by comma, tab, or spaces). JSON should be an array of objects with a 'time' key and numeric data keys.</CardDescription>
+        <CardDescription>
+          Upload a CSV file. The first column should be time/date. Subsequent columns are data series with headers in the first row and numeric data below.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
@@ -221,19 +253,56 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           <Input
             id="file-upload"
             type="file"
-            accept=".csv,.json"
+            accept=".csv" // Only accept .csv
             onChange={handleFileChange}
             disabled={isProcessing}
             className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
           />
         </div>
-        {fileName && <p className="text-sm text-muted-foreground">Selected: {fileName}</p>}
-        {isProcessing && <p className="text-sm text-primary animate-pulse">Parsing your data...</p>}
+        {currentDisplayedFileName && !isProcessing && validationSteps.length === 0 && <p className="text-sm text-muted-foreground">Selected: {currentDisplayedFileName}</p>}
+        
+        {validationSteps.length > 0 && (
+          <div className="mt-4 space-y-2 border-t pt-4">
+            {currentFileForValidation && <p className="text-sm font-medium mb-2">Validation for: <span className="font-semibold">{currentFileForValidation}</span></p>}
+            <ul className="space-y-1">
+              {validationSteps.map(step => (
+                <li key={step.id} className="flex items-start text-sm">
+                  <div className="flex-shrink-0 w-5 h-5 mr-2 mt-0.5">
+                    {step.status === 'pending' && <Hourglass className="h-full w-full text-muted-foreground animate-spin" />}
+                    {step.status === 'success' && <CheckCircle2 className="h-full w-full text-green-500" />}
+                    {step.status === 'error' && <XCircle className="h-full w-full text-red-500" />}
+                  </div>
+                  <div className="flex-grow">
+                    <span className={cn(
+                      step.status === 'error' && 'text-destructive font-semibold',
+                      step.status === 'success' && 'text-green-600',
+                      'block'
+                    )}>
+                      {step.label}
+                    </span>
+                    {step.message && step.status !== 'pending' && (
+                        <span className={cn(
+                            "text-xs block",
+                            step.status === 'error' ? 'text-red-700' : 'text-muted-foreground'
+                        )}>
+                           &ndash; {step.message}
+                        </span>
+                    )}
+                     {step.status === 'pending' && <span className="text-xs text-muted-foreground block">&ndash; Pending...</span>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {isProcessing && validationSteps.length === 0 && <p className="text-sm text-primary animate-pulse">Preparing for validation...</p>}
+        
         <Button 
             onClick={handleClear} 
             variant="outline" 
             className="w-full" 
-            disabled={isProcessing || !currentFileNameFromParent} // Use parent's file name status
+            disabled={isProcessing || !currentFileNameFromParent}
         >
           Clear Data & Chart
         </Button>
@@ -242,3 +311,4 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
   );
 }
 
+    
