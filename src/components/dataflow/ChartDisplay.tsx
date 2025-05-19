@@ -22,7 +22,7 @@ import { AlertTriangle, Info, BarChartHorizontalBig } from "lucide-react";
 
 interface DataPoint {
   time: string | number;
-  [key: string]: string | number; 
+  [key: string]: string | number;
 }
 
 interface ChartDisplayProps {
@@ -43,7 +43,7 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
   useImperativeHandle(ref, () => ({
     getSvgRef: () => internalSvgRef,
   }));
-  
+
   const baseChartTitle = fileName ? `${fileName.split('.')[0]}` : "Data Visualization";
   const chartTitle = selectedSeries ? `${selectedSeries} from ${baseChartTitle}` : baseChartTitle;
 
@@ -84,7 +84,7 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
       </Card>
     );
   }
-  
+
   const sortedData = [...data].sort((a, b) => {
     const timeA = new Date(a.time).getTime();
     const timeB = new Date(b.time).getTime();
@@ -99,36 +99,37 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
     }
     return 0;
   });
-  
+
   const renderChart = () => {
     const chartProps = {
       data: sortedData,
-      margin: { top: 5, right: 30, left: 20, bottom: 70 }, // Increased bottom margin for X-axis label + Brush
+      margin: { top: 5, right: 30, left: 20, bottom: 100 }, // Increased bottom margin
     };
 
     const commonComponents = (
       <>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-        <XAxis 
-          dataKey="time" 
-          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} 
+        <XAxis
+          dataKey="time"
+          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
           stroke="hsl(var(--border))"
           angle={-30}
           textAnchor="end"
-          height={60} // Height for ticks
+          height={60} // Space for angled ticks
           interval="preserveStartEnd"
-          label={{
+          label={{ // X-axis Title (e.g., "Time")
             value: timeAxisLabel || "Time",
-            position: 'insideBottom',
-            offset: -25, // Adjusted offset to place it below angled ticks
+            position: 'insideBottom', // Positioned inside, near the axis line
+            offset: -35, // Adjust offset to be clearly above angled ticks but below plot. Negative moves up.
             fill: 'hsl(var(--muted-foreground))',
-            fontSize: 12
+            fontSize: 14,
+            dy:10 // additional downward shift for the label itself
           }}
         />
-        <YAxis 
-          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} 
+        <YAxis
+          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
           stroke="hsl(var(--border))"
-          label={selectedSeries ? { value: selectedSeries, angle: -90, position: 'insideLeft', fill: 'hsl(var(--muted-foreground))', fontSize: 12 } : undefined}
+          label={selectedSeries ? { value: selectedSeries, angle: -90, position: 'insideLeft', fill: 'hsl(var(--muted-foreground))', fontSize: 14, dx: -5 } : undefined}
         />
         <Tooltip
           contentStyle={{
@@ -139,19 +140,19 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
           labelStyle={{ color: 'hsl(var(--foreground))' }}
         />
         <Legend wrapperStyle={{ color: 'hsl(var(--foreground))', paddingTop: '10px' }} />
-        <Brush 
-            dataKey="time" 
-            height={30} 
-            stroke="hsl(var(--primary))" 
+        <Brush
+            dataKey="time"
+            height={30}
+            stroke="hsl(var(--primary))"
             fill="hsl(var(--background))"
             travellerWidth={10}
-            y={undefined} // Let Recharts position it (usually at the bottom)
-            style={{ marginTop: '10px' }} // Add some margin above the brush
+            // y prop is omitted to let Recharts auto-calculate position
+            // style prop is omitted for default styling/positioning by Recharts
         />
       </>
     );
 
-    const dataKeyValue = selectedSeries || "value";
+    const dataKeyValue = selectedSeries; // `selectedSeries` is guaranteed to be defined here due to earlier check
 
     switch (chartType) {
       case "line":
