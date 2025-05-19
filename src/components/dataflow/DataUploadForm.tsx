@@ -2,12 +2,13 @@
 "use client";
 
 import type { ChangeEvent } from "react";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -45,7 +46,22 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
   const [isProcessing, setIsProcessing] = useState(false);
   const [validationSteps, setValidationSteps] = useState<ValidationStep[]>([]);
   const [currentFileForValidation, setCurrentFileForValidation] = useState<string | null>(null);
+  const [accordionValue, setAccordionValue] = useState<string>(""); // For controlling accordion open state
   const { toast } = useToast();
+
+  useEffect(() => {
+    // If not processing and validation steps exist, decide if accordion should be open
+    if (!isProcessing && validationSteps.length > 0) {
+      const hasError = validationSteps.some(step => step.status === 'error');
+      if (hasError) {
+        setAccordionValue("validation-details"); // Open accordion if there's an error
+      } else {
+        // Optionally close it on success if it was previously open due to an error
+        // For now, let's keep it closed unless an error forces it open.
+        // setAccordionValue(""); 
+      }
+    }
+  }, [isProcessing, validationSteps]);
 
   const updateStepStatus = (stepId: string, status: 'success' | 'error', message?: string) => {
     setValidationSteps(prevSteps =>
@@ -63,7 +79,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     }
     updateStepStatus('headerParse', 'success', "Header row found.");
 
-    const delimiterRegex = /\s*[,;\t]\s*|\s+/; 
+    const delimiterRegex = /\s*[,;\t]\s*|\s+/;
     const headers = lines[0].trim().split(delimiterRegex).map(h => h.trim()).filter(h => h);
 
     if (headers.length < 1) {
@@ -150,11 +166,13 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
   const processFile = async (file: File): Promise<{ data: DataPoint[]; seriesNames: string[]; timeColumnName: string } | null> => {
     setValidationSteps(initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }))); 
     setCurrentFileForValidation(file.name);
+    setAccordionValue(""); // Close accordion initially
     updateStepStatus('fileSelection', 'success', `Selected: ${file.name}`);
 
     if (!file.name.endsWith(".csv")) {
       updateStepStatus('fileType', 'error', "Unsupported file type. Please select a .csv file and try again.");
       toast({ variant: "destructive", title: "Upload Failed", description: "Unsupported file type. Please select a .csv file and try again." });
+      setAccordionValue("validation-details"); // Open accordion on error
       return null;
     }
     updateStepStatus('fileType', 'success');
@@ -166,6 +184,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     } catch (e) {
       updateStepStatus('fileRead', 'error', "Could not read file content. Please ensure the file is accessible and try again.");
       toast({ variant: "destructive", title: "File Read Error", description: "Could not read the file. Please try again." });
+      setAccordionValue("validation-details"); // Open accordion on error
       return null;
     }
 
@@ -176,10 +195,13 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
          title: "CSV Data Validation Failed",
          description: "Please check the validation checklist above for details and ensure your CSV file meets the requirements. You can then try uploading again.",
        });
+       setAccordionValue("validation-details"); // Open accordion on error
+    } else {
+      // Optionally close on success if desired, or keep it closed if already closed.
+      // setAccordionValue(""); 
     }
     return result;
   };
-
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     setIsProcessing(true);
@@ -214,11 +236,32 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     onClearData();
     setValidationSteps([]); 
     setCurrentFileForValidation(null);
+    setAccordionValue("");
     toast({
       title: "Data Cleared",
       description: "Chart data and uploaded file information have been cleared.",
     });
   };
+
+  const getSummaryStep = (): ValidationStep | null => {
+    if (!validationSteps.length) return null;
+
+    if (isProcessing) {
+      const firstPending = validationSteps.find(step => step.status === 'pending');
+      if (firstPending) return { ...firstPending, label: `Processing: ${firstPending.label}` };
+      const lastProcessing = validationSteps.filter(s => s.status !== 'pending').pop();
+      if(lastProcessing) return {...lastProcessing, status: 'pending', label: `Processing: ${lastProcessing.label}`}; // Show last completed as processing
+    } else {
+      const firstError = validationSteps.find(step => step.status === 'error');
+      if (firstError) return firstError;
+      const lastSuccess = validationSteps.filter(step => step.status === 'success').pop();
+      if (lastSuccess && lastSuccess.id === 'dataReady') return lastSuccess; // Prioritize "Data ready"
+      if (lastSuccess) return lastSuccess; // Any other last success
+    }
+    return validationSteps[validationSteps.length -1]; // Fallback to very last step
+  };
+
+  const summaryStep = getSummaryStep();
 
   return (
     <Card>
@@ -244,39 +287,63 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           />
         </div>
         
-        {validationSteps.length > 0 && (
-          <div className="mt-4 space-y-2 border-t pt-4">
-            {currentFileForValidation && <p className="text-sm font-medium mb-2">Validation for: <span className="font-semibold">{currentFileForValidation}</span></p>}
-            <ul className="space-y-1">
-              {validationSteps.map(step => (
-                <li key={step.id} className="flex items-start text-sm">
-                  <div className="flex-shrink-0 w-5 h-5 mr-2 mt-0.5">
-                    {step.status === 'pending' && <Hourglass className="h-full w-full text-muted-foreground animate-spin" />}
-                    {step.status === 'success' && <CheckCircle2 className="h-full w-full text-green-500" />}
-                    {step.status === 'error' && <XCircle className="h-full w-full text-red-500" />}
-                  </div>
-                  <div className="flex-grow">
-                    <span className={cn(
-                      step.status === 'error' && 'text-destructive font-semibold',
-                      step.status === 'success' && 'text-green-600', 
-                      'block'
-                    )}>
-                      {step.label}
-                    </span>
-                    {step.message && step.status !== 'pending' && (
+        {currentFileForValidation && (
+          <p className="text-sm font-medium">
+            Status for: <span className="font-semibold">{currentFileForValidation}</span>
+          </p>
+        )}
+
+        {validationSteps.length > 0 && summaryStep && (
+          <Accordion type="single" collapsible value={accordionValue} onValueChange={setAccordionValue} className="w-full">
+            <AccordionItem value="validation-details" className="border-b-0">
+              <AccordionTrigger className={cn(
+                "flex items-center justify-between text-sm p-3 rounded-md hover:no-underline hover:bg-muted/50",
+                summaryStep.status === 'error' && 'bg-destructive/10 text-destructive hover:bg-destructive/20',
+                summaryStep.status === 'success' && validationSteps.every(s => s.status === 'success' || s.status === 'pending') && !isProcessing && 'bg-green-500/10 text-green-700 hover:bg-green-500/20',
+                isProcessing && 'bg-blue-500/10 text-blue-700 hover:bg-blue-500/20'
+              )}>
+                <div className="flex items-center gap-2">
+                  {isProcessing || summaryStep.status === 'pending' ? <Hourglass className="h-4 w-4 animate-spin" /> :
+                   summaryStep.status === 'success' ? <CheckCircle2 className="h-4 w-4 text-green-600" /> :
+                   <XCircle className="h-4 w-4 text-destructive" />}
+                  <span className="truncate">{summaryStep.label}</span>
+                  {summaryStep.message && summaryStep.status !== 'pending' && <span className="text-xs text-muted-foreground truncate hidden sm:inline"> - {summaryStep.message}</span>}
+                </div>
+                {/* Chevron managed by AccordionTrigger internally, but we can customize if needed */}
+              </AccordionTrigger>
+              <AccordionContent className="pt-2 pb-0">
+                <ul className="space-y-1 border rounded-md p-3 bg-muted/20">
+                  {validationSteps.map(step => (
+                    <li key={step.id} className="flex items-start text-sm">
+                      <div className="flex-shrink-0 w-5 h-5 mr-2 mt-0.5">
+                        {step.status === 'pending' && <Hourglass className="h-full w-full text-muted-foreground animate-spin" />}
+                        {step.status === 'success' && <CheckCircle2 className="h-full w-full text-green-500" />}
+                        {step.status === 'error' && <XCircle className="h-full w-full text-red-500" />}
+                      </div>
+                      <div className="flex-grow">
                         <span className={cn(
-                            "text-xs block",
-                            step.status === 'error' ? 'text-red-700' : 'text-muted-foreground'
+                          step.status === 'error' && 'text-destructive font-semibold',
+                          step.status === 'success' && 'text-green-600', 
+                          'block'
                         )}>
-                           &ndash; {step.message}
+                          {step.label}
                         </span>
-                    )}
-                     {step.status === 'pending' && <span className="text-xs text-muted-foreground block">&ndash; Pending...</span>}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
+                        {step.message && step.status !== 'pending' && (
+                            <span className={cn(
+                                "text-xs block",
+                                step.status === 'error' ? 'text-red-700' : 'text-muted-foreground'
+                            )}>
+                               &ndash; {step.message}
+                            </span>
+                        )}
+                         {step.status === 'pending' && <span className="text-xs text-muted-foreground block">&ndash; Pending...</span>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         )}
         
         {isProcessing && validationSteps.length === 0 && <p className="text-sm text-primary animate-pulse">Preparing for validation...</p>}
