@@ -44,10 +44,13 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
         parsedResult = parseCsv(fileContent);
       } else if (file.name.endsWith(".json")) {
         const jsonData = parseJson(fileContent);
+        // Basic validation for JSON structure - assuming array of objects
+        // Further validation if 'value' is the only series or if multiple series exist
         if (jsonData.length > 0 && jsonData.every(item => typeof item.value === 'number')) {
-             parsedResult = { data: jsonData, seriesNames: ["value"] };
+             parsedResult = { data: jsonData, seriesNames: ["value"] }; // Default series name "value"
         } else if (jsonData.length > 0) {
-            const firstItemKeys = Object.keys(jsonData[0]).filter(k => k !== 'time' && typeof jsonData[0][k] === 'number');
+            // Attempt to find numeric series keys from the first item
+            const firstItemKeys = Object.keys(jsonData[0]).filter(k => k !== 'time' && k !== 'timestamp' && k !== 'date' && typeof jsonData[0][k] === 'number');
             if (firstItemKeys.length > 0) {
                 parsedResult = { data: jsonData, seriesNames: firstItemKeys };
             }
@@ -55,7 +58,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       } else {
         toast({
           variant: "destructive",
-          title: "Unsupported File Format",
+          title: "Unsupported File Type",
           description: "Please upload a CSV (.csv) or JSON (.json) file.",
         });
         setFileName(null); 
@@ -67,7 +70,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       if (!parsedResult || parsedResult.data.length === 0 || parsedResult.seriesNames.length === 0) {
         let description = "Could not parse data from the file. ";
         if (file.name.endsWith(".csv")) {
-          description += "Please ensure your CSV file has a header row, a 'time' column (or similar like 'date', 'timestamp') as the first column, and at least one other column with numerical data.";
+          description += "Please ensure your CSV file has a header row, with the first column being a time/date. Subsequent columns should contain numerical data. Columns should be separated by commas, tabs, or spaces. Numbers like '1,234.56' will be treated as '1234.56'.";
         } else if (file.name.endsWith(".json")) {
           description += "Please ensure your JSON file is an array of objects, where each object has a 'time' (or 'timestamp'/'date') field and at least one other field with numerical data.";
         } else {
@@ -83,7 +86,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
         onDataUploaded(parsedResult.data, parsedResult.seriesNames, file.name);
         toast({
           title: "File Uploaded Successfully",
-          description: `${file.name} has been processed.`,
+          description: `${file.name} has been processed. Select a series to visualize!`,
         });
       }
     } catch (error) {
@@ -96,6 +99,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       setFileName(null); 
     } finally {
       setIsProcessing(false);
+      // Reset file input so the same file can be re-uploaded if needed after an error
       if (event.target) {
         event.target.value = "";
       }
@@ -104,63 +108,84 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
 
   const parseCsv = (csvText: string): { data: DataPoint[]; seriesNames: string[] } | null => {
     const lines = csvText.trim().split(/\r\n|\n/);
-    if (lines.length < 2) return null; 
+    if (lines.length < 2) return null; // Must have header and at least one data row
 
-    const headers = lines[0].split(',').map(h => h.trim());
-    const timeHeaderCandidates = ['time', 'date', 'timestamp'];
-    const timeHeader = headers[0];
-    // Not strictly enforcing 'time' to allow flexibility like 'Date' or 'Timestamp' for the first column.
-    if (headers.length < 2) return null; 
+    // Regex to split by comma, semicolon, tab, or one or more spaces, trimming whitespace around delimiters
+    const delimiterRegex = /\s*[,;\t]\s*|\s+/;
 
-    const seriesNames = headers.slice(1).filter(name => name); 
-    if (seriesNames.length === 0) return null; 
+    const headers = lines[0].trim().split(delimiterRegex).map(h => h.trim()).filter(h => h); // Filter out empty headers
+    
+    if (headers.length < 2) return null; // Must have a time column and at least one data column
+
+    const timeHeader = headers[0]; // Assume first column is time
+    const seriesNames = headers.slice(1).filter(name => name); // Ensure series names are not empty
+    if (seriesNames.length === 0) return null; // No valid data series found
 
     const data = lines.slice(1).map(line => {
-      const values = line.split(',');
-      const timeValue = values[0]?.trim();
-      if (!timeValue) return null; 
+      const trimmedLine = line.trim();
+      if (!trimmedLine) return null; // Skip empty lines
+
+      const values = trimmedLine.split(delimiterRegex).map(v => v.trim());
+      if (values.length < headers.length) { 
+        // Handle potentially shorter lines by padding with NaN or similar, or skip
+        // For now, let's skip if it doesn't at least have a time value
+        if (!values[0]) return null;
+      }
+
+      const timeValue = values[0];
+      if (!timeValue) return null;
 
       const dataPoint: DataPoint = { time: timeValue };
       let hasNumericValueInRow = false;
+
       seriesNames.forEach((seriesName, index) => {
-        const rawValue = values[index + 1]?.trim();
-        if (rawValue === undefined || rawValue === "") { 
-            dataPoint[seriesName] = NaN; 
-            return; 
+        const headerIndex = headers.indexOf(seriesName); // Find original index of this seriesName in headers
+        const rawValue = values[headerIndex]; // Use original header index to get value
+
+        if (rawValue === undefined || rawValue === "") {
+          dataPoint[seriesName] = NaN; // Handle missing values for a series
+          return;
         }
-        const seriesValue = parseFloat(rawValue);
+        // Remove commas from numbers (e.g., "1,234.56" -> "1234.56") before parsing
+        const cleanedValue = rawValue.replace(/,/g, '');
+        const seriesValue = parseFloat(cleanedValue);
+
         if (!isNaN(seriesValue)) {
           dataPoint[seriesName] = seriesValue;
           hasNumericValueInRow = true;
         } else {
-          dataPoint[seriesName] = NaN; 
+          dataPoint[seriesName] = NaN; // Store NaN if parsing fails for this specific value
         }
       });
-      return hasNumericValueInRow ? dataPoint : null; 
+      return hasNumericValueInRow ? dataPoint : null; // Only include rows with at least one valid number
     }).filter(item => item !== null) as DataPoint[];
 
     if (data.length === 0) return null;
     return { data, seriesNames };
   };
 
+
   const parseJson = (jsonText: string): DataPoint[] => { 
+    // Basic JSON parsing, assumes an array of objects.
+    // Each object should have a 'time' (or 'timestamp'/'date') key,
+    // and other keys for data series with numerical values.
     const jsonData = JSON.parse(jsonText);
     if (!Array.isArray(jsonData)) {
       throw new Error("JSON data must be an array of objects.");
     }
     return jsonData.map((item: any) => {
       const time = item.time ?? item.timestamp ?? item.date;
-      if (time === undefined) return null; 
+      if (time === undefined) return null; // Skip items without a time key
 
       const dataPoint: DataPoint = { time: String(time) };
       let hasNumericValue = false;
       Object.keys(item).forEach(key => {
         if (key !== 'time' && key !== 'timestamp' && key !== 'date') {
-          if (typeof item[key] === 'number' && !isNaN(item[key])) { 
+          if (typeof item[key] === 'number' && !isNaN(item[key])) { // Ensure it's a valid number
             dataPoint[key] = item[key];
             hasNumericValue = true;
-          } else if (typeof item[key] === 'string') { 
-            const parsedNum = parseFloat(item[key]);
+          } else if (typeof item[key] === 'string') { // Try to parse if it's a string
+            const parsedNum = parseFloat(item[key].replace(/,/g, '')); // Also handle commas in JSON string numbers
             if (!isNaN(parsedNum)) {
                 dataPoint[key] = parsedNum;
                 hasNumericValue = true;
@@ -168,7 +193,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           }
         }
       });
-      return hasNumericValue ? dataPoint : null; 
+      return hasNumericValue ? dataPoint : null; // Only include if there's at least one numeric data point
     }).filter(item => item !== null) as DataPoint[];
   };
   
@@ -188,7 +213,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           <UploadCloud className="h-6 w-6 text-primary" />
           Import Data
         </CardTitle>
-        <CardDescription>Upload a CSV or JSON file. For CSV, the first column should be 'time' (or similar like 'date', 'timestamp'), and subsequent columns are data series. JSON should be an array of objects with a 'time' key and numeric data keys.</CardDescription>
+        <CardDescription>Upload a CSV or JSON file. For CSV, the first column should be 'time' (or similar like 'date', 'timestamp'), and subsequent columns are data series (separated by comma, tab, or spaces). JSON should be an array of objects with a 'time' key and numeric data keys.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
@@ -203,7 +228,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           />
         </div>
         {fileName && <p className="text-sm text-muted-foreground">Selected: {fileName}</p>}
-        {isProcessing && <p className="text-sm text-primary animate-pulse">Processing file...</p>}
+        {isProcessing && <p className="text-sm text-primary animate-pulse">Parsing your data...</p>}
         <Button 
             onClick={handleClear} 
             variant="outline" 
@@ -216,3 +241,4 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     </Card>
   );
 }
+
