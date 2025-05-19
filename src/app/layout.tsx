@@ -1,23 +1,23 @@
 
 import type {Metadata} from 'next';
-import {Geist, Geist_Mono} from 'next/font/google';
+import { Inter, Roboto_Mono } from 'next/font/google'; // Changed from Geist to Inter and Roboto_Mono
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
+const inter = Inter({ // Changed from Geist
   subsets: ['latin'],
+  variable: '--font-sans', // Using --font-sans for the primary sans-serif font
 });
 
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
+const robotoMono = Roboto_Mono({ // Changed from Geist_Mono
   subsets: ['latin'],
+  variable: '--font-mono', // Using --font-mono for the monospace font
 });
 
 export const metadata: Metadata = {
   title: 'DataFlow',
   description: 'Visualize your time series data with ease.',
-  icons: [], // Explicitly set icons to an empty array
+  icons: null, // Explicitly set icons to null
 };
 
 export default function RootLayout({
@@ -27,7 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${inter.variable} ${robotoMono.variable} antialiased`}> {/* Updated to use new font variables */}
         {children}
         <Toaster />
       </body>

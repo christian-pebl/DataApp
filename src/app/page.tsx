@@ -26,10 +26,10 @@ export default function DataFlowPage() {
   useEffect(() => {
     // Detect system theme or load from local storage
     const storedTheme = localStorage.getItem("theme");
-    const system préfèreDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches; // Corrected typo: systemPréfèreDark -> systemPrefersDark
     if (storedTheme) {
       setTheme(storedTheme);
-    } else if (systemPréfèreDark) {
+    } else if (systemPrefersDark) { // Used corrected variable
       setTheme("dark");
     }
   }, []);
@@ -109,4 +109,3 @@ export default function DataFlowPage() {
     </div>
   );
 }
-
