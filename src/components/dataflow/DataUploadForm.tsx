@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle } from "lucide-react"; // Removed ChevronDown, ChevronUp as Accordion handles it
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -46,19 +46,16 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
   const [isProcessing, setIsProcessing] = useState(false);
   const [validationSteps, setValidationSteps] = useState<ValidationStep[]>([]);
   const [currentFileForValidation, setCurrentFileForValidation] = useState<string | null>(null);
-  const [accordionValue, setAccordionValue] = useState<string>(""); // For controlling accordion open state
+  const [accordionValue, setAccordionValue] = useState<string>(""); 
   const { toast } = useToast();
 
   useEffect(() => {
-    // If not processing and validation steps exist, decide if accordion should be open
     if (!isProcessing && validationSteps.length > 0) {
       const hasError = validationSteps.some(step => step.status === 'error');
       if (hasError) {
-        setAccordionValue("validation-details"); // Open accordion if there's an error
+        setAccordionValue("validation-details"); 
       } else {
-        // Optionally close it on success if it was previously open due to an error
-        // For now, let's keep it closed unless an error forces it open.
-        // setAccordionValue(""); 
+        // setAccordionValue(""); // Optionally close on success
       }
     }
   }, [isProcessing, validationSteps]);
@@ -79,22 +76,46 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     }
     updateStepStatus('headerParse', 'success', "Header row found.");
 
-    const delimiterRegex = /\s*[,;\t]\s*|\s+/;
-    const headers = lines[0].trim().split(delimiterRegex).map(h => h.trim()).filter(h => h);
+    const delimiterRegex = /\s*[,;\t]\s*|\s+/; // Handles comma, semicolon, tab, or space delimiters
+    const originalHeaders = lines[0].trim().split(delimiterRegex).map(h => h.trim()); // Keep empty strings if they exist for indexing
 
-    if (headers.length < 1) {
-      updateStepStatus('timeColumnCheck', 'error', "CSV header row is missing or has no column names.");
+    if (originalHeaders.length < 1 || !originalHeaders[0]?.trim()) {
+      updateStepStatus('timeColumnCheck', 'error', "CSV header row is missing, empty, or first column (time/date) header is missing.");
       return null;
     }
-    const timeColumnName = headers[0];
+    const timeColumnName = originalHeaders[0].trim();
     updateStepStatus('timeColumnCheck', 'success', `Time column identified: '${timeColumnName}'`);
 
-    const seriesNames = headers.slice(1).filter(name => name);
-    if (seriesNames.length === 0) {
+    const variableHeaders = originalHeaders.slice(1); // All headers after the first (time) column
+
+    if (variableHeaders.length === 0) {
       updateStepStatus('variableColumnCheck', 'error', "No data variable columns found after the first (time) column.");
       return null;
     }
-    updateStepStatus('variableColumnCheck', 'success', `Variable columns identified: ${seriesNames.join(', ')}`);
+
+    // Process variableHeaders to make them unique
+    const processedSeriesNames: string[] = [];
+    const usedNames = new Set<string>();
+    variableHeaders.forEach(originalHeader => {
+        let currentName = (originalHeader || "Unnamed Series").trim();
+        if (!currentName) currentName = "Unnamed Series"; // Ensure it's not empty after trim
+
+        if (!usedNames.has(currentName)) {
+            processedSeriesNames.push(currentName);
+            usedNames.add(currentName);
+        } else {
+            let count = 2;
+            let newName = `${currentName} (${count})`;
+            while (usedNames.has(newName)) {
+                count++;
+                newName = `${currentName} (${count})`;
+            }
+            processedSeriesNames.push(newName);
+            usedNames.add(newName);
+        }
+    });
+    updateStepStatus('variableColumnCheck', 'success', `Variable columns identified: ${processedSeriesNames.join(', ')} (duplicates renamed if any).`);
+
 
     const data: DataPoint[] = [];
     let someRowsHadNonNumericData = false;
@@ -108,37 +129,43 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       const values = trimmedLine.split(delimiterRegex).map(v => v.trim());
       
       const timeValue = values[0];
-      if (!timeValue && values.slice(1).some(v => v && v.trim() !== "")) { 
+      // Skip row if timeValue is missing and all other values are also missing/empty
+      if (!timeValue && values.slice(1).every(v => !v || v.trim() === "")) { 
         continue;
       }
-      if (!timeValue && values.length === 1 && values[0] === "") continue; 
+      // Skip completely blank rows (e.g. ",,,")
+      if (!timeValue && values.length > 1 && values.slice(1).every(v => v === "")) continue; 
+
 
       const dataPoint: DataPoint = { time: timeValue || "N/A" }; 
       let hasNumericValueInRow = false;
       let rowHasParsingIssue = false;
 
-      seriesNames.forEach((seriesName) => {
-        const headerIndex = headers.indexOf(seriesName);
-        const rawValue = values[headerIndex];
+      processedSeriesNames.forEach((uniqueSeriesName, idx) => {
+        // idx is the index in processedSeriesNames, which corresponds to variableHeaders.
+        // The actual column in the original CSV's `values` array is `idx + 1`.
+        const csvColumnIndex = idx + 1;
+        const rawValue = values[csvColumnIndex];
 
         if (rawValue === undefined || rawValue.trim() === "") {
-          dataPoint[seriesName] = NaN; 
+          dataPoint[uniqueSeriesName] = NaN; 
           return;
         }
         const cleanedValue = rawValue.replace(/,/g, ''); 
         const seriesValue = parseFloat(cleanedValue);
 
         if (!isNaN(seriesValue)) {
-          dataPoint[seriesName] = seriesValue;
+          dataPoint[uniqueSeriesName] = seriesValue;
           hasNumericValueInRow = true;
         } else {
-          dataPoint[seriesName] = NaN; 
+          dataPoint[uniqueSeriesName] = NaN; 
           someRowsHadNonNumericData = true;
           rowHasParsingIssue = true;
         }
       });
       
-      if (hasNumericValueInRow || (timeValue && values.slice(1).some(v => v && v.trim() !== ""))) {
+      // Add data point if it has at least one numeric value OR if time value exists and some other values are present
+      if (hasNumericValueInRow || (timeValue && values.length > 1 && values.slice(1).some(v => v && v.trim() !== ""))) {
          data.push(dataPoint);
          if (!rowHasParsingIssue && hasNumericValueInRow) {
             validDataRowsCount++;
@@ -147,7 +174,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     }
 
     if (data.length === 0) {
-      updateStepStatus('dataRowFormat', 'error', "No processable data rows found. Check for numeric values in variable columns or ensure time values are present.");
+      updateStepStatus('dataRowFormat', 'error', "No processable data rows found. Ensure variable columns contain numeric data and time values are present. Check for correct delimiter (comma, tab, or space).");
       return null;
     }
     
@@ -160,19 +187,19 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     }
     
     updateStepStatus('dataReady', 'success', "Data is ready for visualization.");
-    return { data, seriesNames, timeColumnName };
+    return { data, seriesNames: processedSeriesNames, timeColumnName };
   };
 
   const processFile = async (file: File): Promise<{ data: DataPoint[]; seriesNames: string[]; timeColumnName: string } | null> => {
     setValidationSteps(initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }))); 
     setCurrentFileForValidation(file.name);
-    setAccordionValue(""); // Close accordion initially
+    setAccordionValue(""); 
     updateStepStatus('fileSelection', 'success', `Selected: ${file.name}`);
 
     if (!file.name.endsWith(".csv")) {
       updateStepStatus('fileType', 'error', "Unsupported file type. Please select a .csv file and try again.");
       toast({ variant: "destructive", title: "Upload Failed", description: "Unsupported file type. Please select a .csv file and try again." });
-      setAccordionValue("validation-details"); // Open accordion on error
+      setAccordionValue("validation-details"); 
       return null;
     }
     updateStepStatus('fileType', 'success');
@@ -184,7 +211,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     } catch (e) {
       updateStepStatus('fileRead', 'error', "Could not read file content. Please ensure the file is accessible and try again.");
       toast({ variant: "destructive", title: "File Read Error", description: "Could not read the file. Please try again." });
-      setAccordionValue("validation-details"); // Open accordion on error
+      setAccordionValue("validation-details"); 
       return null;
     }
 
@@ -195,10 +222,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
          title: "CSV Data Validation Failed",
          description: "Please check the validation checklist above for details and ensure your CSV file meets the requirements. You can then try uploading again.",
        });
-       setAccordionValue("validation-details"); // Open accordion on error
-    } else {
-      // Optionally close on success if desired, or keep it closed if already closed.
-      // setAccordionValue(""); 
+       setAccordionValue("validation-details"); 
     }
     return result;
   };
@@ -224,8 +248,15 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           title: "File Uploaded Successfully",
           description: `${file.name} has been processed. Select a series to visualize!`,
         });
+    } else {
+      // If parsedResult is null, it means an error occurred and was handled by processFile
+      // Ensure displayed file name is cleared if upload truly failed at a critical step like file type
+      if (!file.name.endsWith(".csv")) {
+         setCurrentDisplayedFileName(null); // Only clear if it's a definite non-starter like wrong type
+      }
     }
     setIsProcessing(false);
+    // Clear the file input so the same file can be re-uploaded if needed after an error
     if (event.target) {
       event.target.value = ""; 
     }
@@ -250,15 +281,15 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       const firstPending = validationSteps.find(step => step.status === 'pending');
       if (firstPending) return { ...firstPending, label: `Processing: ${firstPending.label}` };
       const lastProcessing = validationSteps.filter(s => s.status !== 'pending').pop();
-      if(lastProcessing) return {...lastProcessing, status: 'pending', label: `Processing: ${lastProcessing.label}`}; // Show last completed as processing
+      if(lastProcessing) return {...lastProcessing, status: 'pending', label: `Processing: ${lastProcessing.label}`}; 
     } else {
       const firstError = validationSteps.find(step => step.status === 'error');
       if (firstError) return firstError;
       const lastSuccess = validationSteps.filter(step => step.status === 'success').pop();
-      if (lastSuccess && lastSuccess.id === 'dataReady') return lastSuccess; // Prioritize "Data ready"
-      if (lastSuccess) return lastSuccess; // Any other last success
+      if (lastSuccess && lastSuccess.id === 'dataReady') return lastSuccess; 
+      if (lastSuccess) return lastSuccess; 
     }
-    return validationSteps[validationSteps.length -1]; // Fallback to very last step
+    return validationSteps[validationSteps.length -1]; 
   };
 
   const summaryStep = getSummaryStep();
@@ -271,7 +302,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           Import Data
         </CardTitle>
         <CardDescription>
-          Upload a CSV file. The first column should be time/date. Subsequent columns are data series with headers in the first row and numeric data below.
+          Upload a CSV file. The first column should be time/date. Subsequent columns are data series with headers in the first row and numeric data below. Delimiters can be comma, semicolon, tab, or space(s).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -309,7 +340,6 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
                   <span className="truncate">{summaryStep.label}</span>
                   {summaryStep.message && summaryStep.status !== 'pending' && <span className="text-xs text-muted-foreground truncate hidden sm:inline"> - {summaryStep.message}</span>}
                 </div>
-                {/* Chevron managed by AccordionTrigger internally, but we can customize if needed */}
               </AccordionTrigger>
               <AccordionContent className="pt-2 pb-0">
                 <ul className="space-y-1 border rounded-md p-3 bg-muted/20">
@@ -360,4 +390,3 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     </Card>
   );
 }
-    
