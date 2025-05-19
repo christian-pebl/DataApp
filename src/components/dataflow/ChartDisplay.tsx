@@ -15,7 +15,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  Brush,
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle, Info, BarChartHorizontalBig } from "lucide-react";
@@ -85,25 +84,14 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
     );
   }
 
-  const sortedData = [...data].sort((a, b) => {
-    const timeA = new Date(a.time).getTime();
-    const timeB = new Date(b.time).getTime();
-    if (!isNaN(timeA) && !isNaN(timeB)) {
-      return timeA - timeB;
-    }
-    if (typeof a.time === 'string' && typeof b.time === 'string') {
-      return a.time.localeCompare(b.time);
-    }
-    if (typeof a.time === 'number' && typeof b.time === 'number') {
-      return a.time - b.time;
-    }
-    return 0;
-  });
+  // Using data directly without custom sorting for simplification
+  const chartData = data;
 
   const renderChart = () => {
     const chartProps = {
-      data: sortedData,
-      margin: { top: 5, right: 30, left: 20, bottom: 100 }, 
+      data: chartData,
+      // Simplified margins
+      margin: { top: 5, right: 30, left: 20, bottom: 30 }, 
     };
 
     const commonComponents = (
@@ -113,23 +101,15 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
           dataKey="time"
           tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
           stroke="hsl(var(--border))"
-          angle={-30}
-          textAnchor="end"
-          height={60} 
-          interval="preserveStartEnd"
-          label={{ 
-            value: timeAxisLabel || "Time",
-            position: 'insideBottom', 
-            offset: -35, 
-            fill: 'hsl(var(--muted-foreground))',
-            fontSize: 14,
-            dy:10 
-          }}
+          interval="preserveStartEnd" // Keep this to avoid too many ticks
+          // Simplified X-axis label, can be removed if still problematic
+          label={{ value: timeAxisLabel || "Time", position: 'insideBottom', offset: -15, fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
         />
         <YAxis
           tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
           stroke="hsl(var(--border))"
-          label={selectedSeries ? { value: selectedSeries, angle: -90, position: 'insideLeft', fill: 'hsl(var(--muted-foreground))', fontSize: 14, dx: -5 } : undefined}
+          // Simplified Y-axis label
+          label={selectedSeries ? { value: selectedSeries, angle: -90, position: 'insideLeft', fill: 'hsl(var(--muted-foreground))', fontSize: 12, dx: -10 } : undefined}
         />
         <Tooltip
           contentStyle={{
@@ -140,13 +120,7 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
           labelStyle={{ color: 'hsl(var(--foreground))' }}
         />
         <Legend wrapperStyle={{ color: 'hsl(var(--foreground))', paddingTop: '10px' }} />
-        <Brush
-            dataKey="time"
-            height={30}
-            stroke="hsl(var(--primary))"
-            fill="hsl(var(--background))"
-            travellerWidth={10}
-        />
+        {/* Brush component removed for simplification */}
       </>
     );
 
@@ -185,7 +159,7 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
         <CardTitle className="text-xl font-semibold">{chartTitle}</CardTitle>
         <CardDescription>Interactive time series visualization for '{selectedSeries}'</CardDescription>
       </CardHeader>
-      <CardContent className="flex-grow pt-4 pb-8">
+      <CardContent className="flex-grow pt-4 pb-8"> {/* Ensure CardContent allows growth */}
         <ResponsiveContainer width="100%" height="100%">
           {renderChart()}
         </ResponsiveContainer>
