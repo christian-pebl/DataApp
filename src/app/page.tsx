@@ -6,14 +6,14 @@ import { DataUploadForm } from "@/components/dataflow/DataUploadForm";
 import { ChartSelector } from "@/components/dataflow/ChartSelector";
 import ChartDisplay, { type ChartDisplayHandle } from "@/components/dataflow/ChartDisplay";
 import { ChartExport } from "@/components/dataflow/ChartExport";
-import { SeriesSelector } from "@/components/dataflow/SeriesSelector"; // Import new component
+import { SeriesSelector } from "@/components/dataflow/SeriesSelector"; 
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Moon, Sun, Github } from "lucide-react";
 
 interface DataPoint {
   time: string | number;
-  [key: string]: string | number; // Allows multiple data series
+  [key: string]: string | number; 
 }
 
 export default function DataFlowPage() {
@@ -24,6 +24,7 @@ export default function DataFlowPage() {
   const [chartType, setChartType] = useState<string>("line");
   const chartDisplayRef = useRef<ChartDisplayHandle>(null);
   const [theme, setTheme] = useState("light");
+  const [timeAxisLabel, setTimeAxisLabel] = useState<string>("Time");
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
@@ -48,10 +49,11 @@ export default function DataFlowPage() {
     setTheme(theme === "light" ? "dark" : "light");
   };
 
-  const handleDataUploaded = (data: DataPoint[], seriesNames: string[], fileName: string) => {
+  const handleDataUploaded = (data: DataPoint[], seriesNames: string[], fileName: string, timeColumnName: string) => {
     setParsedData(data);
     setDataSeries(seriesNames);
     setCurrentFileName(fileName);
+    setTimeAxisLabel(timeColumnName);
     if (seriesNames.length > 0) {
       setSelectedSeries(seriesNames[0]); 
     } else {
@@ -64,6 +66,7 @@ export default function DataFlowPage() {
     setDataSeries([]);
     setSelectedSeries(undefined);
     setCurrentFileName(undefined);
+    setTimeAxisLabel("Time");
   };
   
   const getSvgRef = () => {
@@ -109,19 +112,26 @@ export default function DataFlowPage() {
               selectedChartType={chartType}
               onChartTypeChange={setChartType}
             />
-            <Separator />
-            <ChartExport svgRef={getSvgRef()} fileName={currentFileName ? `${currentFileName.split('.')[0]}_${selectedSeries}` : selectedSeries} />
           </div>
 
-          {/* Chart Display Area */}
-          <div className="md:col-span-9 min-h-[400px] md:min-h-0">
-            <ChartDisplay 
-              ref={chartDisplayRef} 
-              data={parsedData} 
-              chartType={chartType} 
-              selectedSeries={selectedSeries} 
-              fileName={currentFileName} 
-            />
+          {/* Main Content Area (Chart + Export) */}
+          <div className="md:col-span-9 space-y-6">
+            <div className="min-h-[400px] md:min-h-0">
+              <ChartDisplay 
+                ref={chartDisplayRef} 
+                data={parsedData} 
+                chartType={chartType} 
+                selectedSeries={selectedSeries} 
+                fileName={currentFileName} 
+                timeAxisLabel={timeAxisLabel}
+              />
+            </div>
+            {parsedData.length > 0 && selectedSeries && (
+              <ChartExport 
+                svgRef={getSvgRef()} 
+                fileName={currentFileName ? `${currentFileName.split('.')[0]}_${selectedSeries}` : selectedSeries} 
+              />
+            )}
           </div>
         </div>
       </main>

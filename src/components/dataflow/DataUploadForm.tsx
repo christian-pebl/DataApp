@@ -17,7 +17,7 @@ interface DataPoint {
 }
 
 interface DataUploadFormProps {
-  onDataUploaded: (data: DataPoint[], seriesNames: string[], fileName: string) => void;
+  onDataUploaded: (data: DataPoint[], seriesNames: string[], fileName: string, timeColumnName: string) => void;
   onClearData: () => void;
   currentFileNameFromParent?: string;
 }
@@ -55,7 +55,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     );
   };
 
-  const parseAndValidateCsv = (csvText: string): { data: DataPoint[]; seriesNames: string[] } | null => {
+  const parseAndValidateCsv = (csvText: string): { data: DataPoint[]; seriesNames: string[]; timeColumnName: string } | null => {
     const lines = csvText.trim().split(/\r\n|\n/);
     if (lines.length < 2) {
       updateStepStatus('headerParse', 'error', "CSV must have a header row and at least one data row.");
@@ -63,14 +63,15 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     }
     updateStepStatus('headerParse', 'success', "Header row found.");
 
-    const delimiterRegex = /\s*[,;\t]\s*|\s+/; // Handles comma, semicolon, tab, or space delimiters
+    const delimiterRegex = /\s*[,;\t]\s*|\s+/; 
     const headers = lines[0].trim().split(delimiterRegex).map(h => h.trim()).filter(h => h);
 
     if (headers.length < 1) {
       updateStepStatus('timeColumnCheck', 'error', "CSV header row is missing or has no column names.");
       return null;
     }
-    updateStepStatus('timeColumnCheck', 'success', `Time column identified: '${headers[0]}'`);
+    const timeColumnName = headers[0];
+    updateStepStatus('timeColumnCheck', 'success', `Time column identified: '${timeColumnName}'`);
 
     const seriesNames = headers.slice(1).filter(name => name);
     if (seriesNames.length === 0) {
@@ -143,10 +144,10 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     }
     
     updateStepStatus('dataReady', 'success', "Data is ready for visualization.");
-    return { data, seriesNames };
+    return { data, seriesNames, timeColumnName };
   };
 
-  const processFile = async (file: File): Promise<{ data: DataPoint[]; seriesNames: string[] } | null> => {
+  const processFile = async (file: File): Promise<{ data: DataPoint[]; seriesNames: string[]; timeColumnName: string } | null> => {
     setValidationSteps(initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }))); 
     setCurrentFileForValidation(file.name);
     updateStepStatus('fileSelection', 'success', `Selected: ${file.name}`);
@@ -191,24 +192,17 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       return;
     }
 
-    setCurrentDisplayedFileName(file.name); // Display name immediately
+    setCurrentDisplayedFileName(file.name); 
 
     const parsedResult = await processFile(file);
 
     if (parsedResult) {
-        onDataUploaded(parsedResult.data, parsedResult.seriesNames, file.name);
+        onDataUploaded(parsedResult.data, parsedResult.seriesNames, file.name, parsedResult.timeColumnName);
         toast({
           title: "File Uploaded Successfully",
           description: `${file.name} has been processed. Select a series to visualize!`,
         });
-    } else {
-        // Error messages are handled by `processFile` or `parseAndValidateCsv`
-        // `currentDisplayedFileName` will show the name of the file that failed validation until a new file is selected or cleared.
-        // If we want to clear the name on error, we'd do it here:
-        // setCurrentDisplayedFileName(null); 
-        // However, keeping it can be useful to see which file failed validation in the checklist.
     }
-
     setIsProcessing(false);
     if (event.target) {
       event.target.value = ""; 
@@ -264,7 +258,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
                   <div className="flex-grow">
                     <span className={cn(
                       step.status === 'error' && 'text-destructive font-semibold',
-                      step.status === 'success' && 'text-green-600', // Keeping success green
+                      step.status === 'success' && 'text-green-600', 
                       'block'
                     )}>
                       {step.label}
@@ -285,9 +279,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           </div>
         )}
         
-        {/* This condition was changed: Show "Preparing for validation..." only if isProcessing AND no steps are shown yet. */}
         {isProcessing && validationSteps.length === 0 && <p className="text-sm text-primary animate-pulse">Preparing for validation...</p>}
-        {/* Removed: currentDisplayedFileName && !isProcessing && validationSteps.length === 0 condition as it might be confusing */}
 
         <Button 
             onClick={handleClear} 
@@ -301,6 +293,4 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     </Card>
   );
 }
-    
-
     

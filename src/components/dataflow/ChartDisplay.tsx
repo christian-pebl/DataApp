@@ -18,11 +18,11 @@ import {
   Brush,
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, Info, BarChartHorizontalBig } from "lucide-react"; // Added BarChartHorizontalBig for unselected series
+import { AlertTriangle, Info, BarChartHorizontalBig } from "lucide-react";
 
 interface DataPoint {
   time: string | number;
-  [key: string]: string | number; // Allows multiple data series
+  [key: string]: string | number; 
 }
 
 interface ChartDisplayProps {
@@ -30,13 +30,14 @@ interface ChartDisplayProps {
   chartType: "line" | "bar" | "scatter" | string;
   selectedSeries: string | undefined;
   fileName?: string;
+  timeAxisLabel?: string;
 }
 
 export interface ChartDisplayHandle {
   getSvgRef: () => React.RefObject<SVGSVGElement | null>;
 }
 
-const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, chartType, selectedSeries, fileName }, ref) => {
+const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, chartType, selectedSeries, fileName, timeAxisLabel }, ref) => {
   const internalSvgRef = useRef<SVGSVGElement | null>(null);
 
   useImperativeHandle(ref, () => ({
@@ -102,7 +103,7 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
   const renderChart = () => {
     const chartProps = {
       data: sortedData,
-      margin: { top: 5, right: 30, left: 20, bottom: 50 },
+      margin: { top: 5, right: 30, left: 20, bottom: 70 }, // Increased bottom margin for X-axis label + Brush
     };
 
     const commonComponents = (
@@ -114,14 +115,20 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
           stroke="hsl(var(--border))"
           angle={-30}
           textAnchor="end"
-          height={60}
+          height={60} // Height for ticks
           interval="preserveStartEnd"
+          label={{
+            value: timeAxisLabel || "Time",
+            position: 'insideBottom',
+            offset: -25, // Adjusted offset to place it below angled ticks
+            fill: 'hsl(var(--muted-foreground))',
+            fontSize: 12
+          }}
         />
         <YAxis 
           tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} 
           stroke="hsl(var(--border))"
-          // Consider adding a dynamic label for Y-axis based on selectedSeries if units are important
-          // label={{ value: selectedSeries, angle: -90, position: 'insideLeft', fill: 'hsl(var(--muted-foreground))' }}
+          label={selectedSeries ? { value: selectedSeries, angle: -90, position: 'insideLeft', fill: 'hsl(var(--muted-foreground))', fontSize: 12 } : undefined}
         />
         <Tooltip
           contentStyle={{
@@ -130,7 +137,6 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
             borderRadius: 'var(--radius)',
           }}
           labelStyle={{ color: 'hsl(var(--foreground))' }}
-          // itemStyle is tricky here since the color depends on chart type / series
         />
         <Legend wrapperStyle={{ color: 'hsl(var(--foreground))', paddingTop: '10px' }} />
         <Brush 
@@ -139,12 +145,12 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
             stroke="hsl(var(--primary))" 
             fill="hsl(var(--background))"
             travellerWidth={10}
-            y={undefined}
-            />
+            y={undefined} // Let Recharts position it (usually at the bottom)
+            style={{ marginTop: '10px' }} // Add some margin above the brush
+        />
       </>
     );
 
-    // Fallback for dataKey if selectedSeries is somehow still undefined (should be caught above)
     const dataKeyValue = selectedSeries || "value";
 
     switch (chartType) {

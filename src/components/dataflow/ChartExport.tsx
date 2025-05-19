@@ -21,7 +21,6 @@ export function ChartExport({ svgRef, fileName = "chart" }: ChartExportProps) {
       const serializer = new XMLSerializer();
       let svgString = serializer.serializeToString(svgElement);
 
-      // Add XML namespace if missing, crucial for direct SVG viewing/editing
       if(!svgString.match(/^<svg[^>]+"http:\/\/www\\.w3\\.org\/2000\/svg"/)){
         svgString = svgString.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
       }
@@ -51,13 +50,13 @@ export function ChartExport({ svgRef, fileName = "chart" }: ChartExportProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Download className="h-6 w-6 text-primary" />
+        <CardTitle className="flex items-center gap-2 text-base"> {/* Reduced title size */}
+          <Download className="h-5 w-5 text-primary" /> {/* Slightly smaller icon */}
           Export Chart
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <Button onClick={handleExport} className="w-full" variant="outline">
+      <CardContent className="flex justify-center"> {/* Center the button */}
+        <Button onClick={handleExport} size="sm" variant="outline">
           Download as SVG
         </Button>
       </CardContent>
