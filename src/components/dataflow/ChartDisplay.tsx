@@ -103,7 +103,7 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
   const renderChart = () => {
     const chartProps = {
       data: sortedData,
-      margin: { top: 5, right: 30, left: 20, bottom: 100 }, // Increased bottom margin
+      margin: { top: 5, right: 30, left: 20, bottom: 100 }, 
     };
 
     const commonComponents = (
@@ -115,15 +115,15 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
           stroke="hsl(var(--border))"
           angle={-30}
           textAnchor="end"
-          height={60} // Space for angled ticks
+          height={60} 
           interval="preserveStartEnd"
-          label={{ // X-axis Title (e.g., "Time")
+          label={{ 
             value: timeAxisLabel || "Time",
-            position: 'insideBottom', // Positioned inside, near the axis line
-            offset: -35, // Adjust offset to be clearly above angled ticks but below plot. Negative moves up.
+            position: 'insideBottom', 
+            offset: -35, 
             fill: 'hsl(var(--muted-foreground))',
             fontSize: 14,
-            dy:10 // additional downward shift for the label itself
+            dy:10 
           }}
         />
         <YAxis
@@ -146,13 +146,11 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
             stroke="hsl(var(--primary))"
             fill="hsl(var(--background))"
             travellerWidth={10}
-            // y prop is omitted to let Recharts auto-calculate position
-            // style prop is omitted for default styling/positioning by Recharts
         />
       </>
     );
 
-    const dataKeyValue = selectedSeries; // `selectedSeries` is guaranteed to be defined here due to earlier check
+    const dataKeyValue = selectedSeries; 
 
     switch (chartType) {
       case "line":
@@ -166,7 +164,7 @@ const ChartDisplay = forwardRef<ChartDisplayHandle, ChartDisplayProps>(({ data, 
         return (
           <BarChart {...chartProps} ref={internalSvgRef as any}>
             {commonComponents}
-            <Bar dataKey={dataKeyValue} name={selectedSeries} fill="hsl(var(--accent))" />
+            <Bar dataKey={dataKeyValue} name={selectedSeries} fill="hsl(var(--accent))" stroke="hsl(var(--foreground))" />
           </BarChart>
         );
       case "scatter":
