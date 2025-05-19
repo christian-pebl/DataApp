@@ -1,2 +1,5 @@
-// This file is intentionally left blank as the ChartSelector component is being removed.
-// The build system will handle its deletion or ignore it.
+
+// This file is currently not used as we are focusing on a single LineChart type.
+// It can be reinstated or modified if chart type selection is needed in the future.
+
+    

@@ -18,7 +18,7 @@ interface DataPoint {
 }
 
 interface DataUploadFormProps {
-  onDataUploaded: (data: DataPoint[], fileName: string) => void;
+  onDataUploaded: (data: DataPoint[], fileName: string, seriesNames: string[], timeHeader: string) => void;
   onClearData: () => void;
   currentFileNameFromParent?: string;
 }
@@ -42,20 +42,17 @@ const initialValidationSteps: ValidationStep[] = [
 ];
 
 export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFromParent }: DataUploadFormProps) {
-  const [currentDisplayedFileName, setCurrentDisplayedFileName] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [validationSteps, setValidationSteps] = useState<ValidationStep[]>([]);
   const [currentFileForValidation, setCurrentFileForValidation] = useState<string | null>(null);
-  const [accordionValue, setAccordionValue] = useState<string>(""); 
+  const [accordionValue, setAccordionValue] = useState<string>("");
   const { toast } = useToast();
 
   useEffect(() => {
     if (!isProcessing && validationSteps.length > 0) {
       const hasError = validationSteps.some(step => step.status === 'error');
       if (hasError) {
-        setAccordionValue("validation-details"); 
-      } else {
-        // setAccordionValue(""); // Optionally close on success
+        setAccordionValue("validation-details");
       }
     }
   }, [isProcessing, validationSteps]);
@@ -68,7 +65,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     );
   };
 
-  const parseAndValidateCsv = (csvText: string): { data: DataPoint[] } | null => {
+  const parseAndValidateCsv = (csvText: string): { data: DataPoint[], seriesNames: string[], timeHeader: string } | null => {
     const lines = csvText.trim().split(/\r\n|\n/);
     if (lines.length < 2) {
       updateStepStatus('headerParse', 'error', "CSV must have a header row and at least one data row.");
@@ -76,32 +73,31 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     }
     updateStepStatus('headerParse', 'success', "Header row found.");
 
-    const delimiterRegex = /\s*[,;\t]\s*|\s+/; 
-    const originalHeaders = lines[0].trim().split(delimiterRegex).map(h => h.trim()); 
+    const delimiterRegex = /\s*[,;\t]\s*|\s+/;
+    const originalHeaders = lines[0].trim().split(delimiterRegex).map(h => h.trim());
 
     if (originalHeaders.length < 1 || !originalHeaders[0]?.trim()) {
       updateStepStatus('timeColumnCheck', 'error', "CSV header row is missing, empty, or first column (time/date) header is missing.");
       return null;
     }
-    const timeColumnName = originalHeaders[0].trim();
-    updateStepStatus('timeColumnCheck', 'success', `Time column identified: '${timeColumnName}'`);
+    const timeHeader = originalHeaders[0].trim();
+    updateStepStatus('timeColumnCheck', 'success', `Time column identified: '${timeHeader}'`);
 
-    const variableHeaders = originalHeaders.slice(1); 
+    const variableHeaders = originalHeaders.slice(1);
 
     if (variableHeaders.length === 0) {
       updateStepStatus('variableColumnCheck', 'error', "No data variable columns found after the first (time) column.");
       return null;
     }
 
-    // Process variableHeaders to make them unique (for internal data structure, even if not passed up)
-    const processedSeriesNames: string[] = [];
+    const uniqueSeriesNames: string[] = [];
     const usedNames = new Set<string>();
     variableHeaders.forEach(originalHeader => {
         let currentName = (originalHeader || "Unnamed Series").trim();
-        if (!currentName) currentName = "Unnamed Series"; 
+        if (!currentName) currentName = "Unnamed Series";
 
         if (!usedNames.has(currentName)) {
-            processedSeriesNames.push(currentName);
+            uniqueSeriesNames.push(currentName);
             usedNames.add(currentName);
         } else {
             let count = 2;
@@ -110,11 +106,11 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
                 count++;
                 newName = `${currentName} (${count})`;
             }
-            processedSeriesNames.push(newName);
+            uniqueSeriesNames.push(newName);
             usedNames.add(newName);
         }
     });
-    updateStepStatus('variableColumnCheck', 'success', `Variable columns identified: ${processedSeriesNames.join(', ')} (duplicates renamed if any).`);
+    updateStepStatus('variableColumnCheck', 'success', `Variable columns identified: ${uniqueSeriesNames.join(', ')}.`);
 
 
     const data: DataPoint[] = [];
@@ -127,39 +123,37 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       if (!trimmedLine) continue;
 
       const values = trimmedLine.split(delimiterRegex).map(v => v.trim());
-      
+
       const timeValue = values[0];
-      if (!timeValue && values.slice(1).every(v => !v || v.trim() === "")) { 
+      if (!timeValue && values.slice(1).every(v => !v || v.trim() === "")) {
         continue;
       }
-      if (!timeValue && values.length > 1 && values.slice(1).every(v => v === "")) continue; 
 
-
-      const dataPoint: DataPoint = { time: timeValue || "N/A" }; 
+      const dataPoint: DataPoint = { time: timeValue || "N/A" };
       let hasNumericValueInRow = false;
       let rowHasParsingIssue = false;
 
-      processedSeriesNames.forEach((uniqueSeriesName, idx) => {
+      uniqueSeriesNames.forEach((seriesName, idx) => {
         const csvColumnIndex = idx + 1;
         const rawValue = values[csvColumnIndex];
 
         if (rawValue === undefined || rawValue.trim() === "") {
-          dataPoint[uniqueSeriesName] = NaN; 
+          dataPoint[seriesName] = NaN;
           return;
         }
-        const cleanedValue = rawValue.replace(/,/g, ''); 
+        const cleanedValue = rawValue.replace(/,/g, '');
         const seriesValue = parseFloat(cleanedValue);
 
         if (!isNaN(seriesValue)) {
-          dataPoint[uniqueSeriesName] = seriesValue;
+          dataPoint[seriesName] = seriesValue;
           hasNumericValueInRow = true;
         } else {
-          dataPoint[uniqueSeriesName] = NaN; 
+          dataPoint[seriesName] = NaN;
           someRowsHadNonNumericData = true;
           rowHasParsingIssue = true;
         }
       });
-      
+
       if (hasNumericValueInRow || (timeValue && values.length > 1 && values.slice(1).some(v => v && v.trim() !== ""))) {
          data.push(dataPoint);
          if (!rowHasParsingIssue && hasNumericValueInRow) {
@@ -172,29 +166,29 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       updateStepStatus('dataRowFormat', 'error', "No processable data rows found. Ensure variable columns contain numeric data and time values are present. Check for correct delimiter (comma, tab, or space).");
       return null;
     }
-    
+
     let dataRowMessage = `Processed ${data.length} data rows. ${validDataRowsCount} rows are fully numeric.`;
     if (someRowsHadNonNumericData) {
       dataRowMessage += " Some non-numeric values encountered and treated as missing (NaN).";
-      updateStepStatus('dataRowFormat', 'success', dataRowMessage); 
+      updateStepStatus('dataRowFormat', 'success', dataRowMessage);
     } else {
       updateStepStatus('dataRowFormat', 'success', dataRowMessage);
     }
-    
+
     updateStepStatus('dataReady', 'success', "Data is ready.");
-    return { data };
+    return { data, seriesNames: uniqueSeriesNames, timeHeader };
   };
 
-  const processFile = async (file: File): Promise<{ data: DataPoint[] } | null> => {
-    setValidationSteps(initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }))); 
+  const processFile = async (file: File): Promise<{ data: DataPoint[], seriesNames: string[], timeHeader: string } | null> => {
+    setValidationSteps(initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined })));
     setCurrentFileForValidation(file.name);
-    setAccordionValue(""); 
+    setAccordionValue("");
     updateStepStatus('fileSelection', 'success', `Selected: ${file.name}`);
 
     if (!file.name.endsWith(".csv")) {
       updateStepStatus('fileType', 'error', "Unsupported file type. Please select a .csv file and try again.");
       toast({ variant: "destructive", title: "Upload Failed", description: "Unsupported file type. Please select a .csv file and try again." });
-      setAccordionValue("validation-details"); 
+      setAccordionValue("validation-details");
       return null;
     }
     updateStepStatus('fileType', 'success');
@@ -206,7 +200,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     } catch (e) {
       updateStepStatus('fileRead', 'error', "Could not read file content. Please ensure the file is accessible and try again.");
       toast({ variant: "destructive", title: "File Read Error", description: "Could not read the file. Please try again." });
-      setAccordionValue("validation-details"); 
+      setAccordionValue("validation-details");
       return null;
     }
 
@@ -217,14 +211,14 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
          title: "CSV Data Validation Failed",
          description: "Please check the validation checklist above for details and ensure your CSV file meets the requirements. You can then try uploading again.",
        });
-       setAccordionValue("validation-details"); 
+       setAccordionValue("validation-details");
     }
     return result;
   };
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     setIsProcessing(true);
-    setValidationSteps([]); 
+    setValidationSteps([]);
     setCurrentFileForValidation(null);
 
     const file = event.target.files?.[0];
@@ -233,31 +227,24 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       return;
     }
 
-    setCurrentDisplayedFileName(file.name); 
-
     const parsedResult = await processFile(file);
 
     if (parsedResult) {
-        onDataUploaded(parsedResult.data, file.name);
+        onDataUploaded(parsedResult.data, file.name, parsedResult.seriesNames, parsedResult.timeHeader);
         toast({
           title: "File Uploaded Successfully",
           description: `${file.name} has been processed.`,
         });
-    } else {
-      if (!file.name.endsWith(".csv")) {
-         setCurrentDisplayedFileName(null); 
-      }
     }
     setIsProcessing(false);
     if (event.target) {
-      event.target.value = ""; 
+      event.target.value = "";
     }
   };
-  
+
   const handleClear = () => {
-    setCurrentDisplayedFileName(null);
     onClearData();
-    setValidationSteps([]); 
+    setValidationSteps([]);
     setCurrentFileForValidation(null);
     setAccordionValue("");
     toast({
@@ -273,15 +260,15 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       const firstPending = validationSteps.find(step => step.status === 'pending');
       if (firstPending) return { ...firstPending, label: `Processing: ${firstPending.label}` };
       const lastProcessing = validationSteps.filter(s => s.status !== 'pending').pop();
-      if(lastProcessing) return {...lastProcessing, status: 'pending', label: `Processing: ${lastProcessing.label}`}; 
+      if(lastProcessing) return {...lastProcessing, status: 'pending', label: `Processing: ${lastProcessing.label}`};
     } else {
       const firstError = validationSteps.find(step => step.status === 'error');
       if (firstError) return firstError;
       const lastSuccess = validationSteps.filter(step => step.status === 'success').pop();
-      if (lastSuccess && lastSuccess.id === 'dataReady') return lastSuccess; 
-      if (lastSuccess) return lastSuccess; 
+      if (lastSuccess && lastSuccess.id === 'dataReady') return lastSuccess;
+      if (lastSuccess) return lastSuccess;
     }
-    return validationSteps[validationSteps.length -1]; 
+    return validationSteps[validationSteps.length -1];
   };
 
   const summaryStep = getSummaryStep();
@@ -303,13 +290,13 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           <Input
             id="file-upload"
             type="file"
-            accept=".csv" 
+            accept=".csv"
             onChange={handleFileChange}
             disabled={isProcessing}
             className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
           />
         </div>
-        
+
         {currentFileForValidation && (
           <p className="text-sm font-medium">
             Status for: <span className="font-semibold">{currentFileForValidation}</span>
@@ -345,7 +332,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
                       <div className="flex-grow">
                         <span className={cn(
                           step.status === 'error' && 'text-destructive font-semibold',
-                          step.status === 'success' && 'text-green-600', 
+                          step.status === 'success' && 'text-green-600',
                           'block'
                         )}>
                           {step.label}
@@ -367,13 +354,13 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
             </AccordionItem>
           </Accordion>
         )}
-        
+
         {isProcessing && validationSteps.length === 0 && <p className="text-sm text-primary animate-pulse">Preparing for validation...</p>}
 
-        <Button 
-            onClick={handleClear} 
-            variant="outline" 
-            className="w-full" 
+        <Button
+            onClick={handleClear}
+            variant="outline"
+            className="w-full"
             disabled={isProcessing || !currentFileNameFromParent}
         >
           Clear Data
@@ -382,3 +369,5 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     </Card>
   );
 }
+
+    
