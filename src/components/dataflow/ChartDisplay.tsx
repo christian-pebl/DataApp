@@ -31,31 +31,28 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 350; // Default if prop not provided
+const INTERNAL_DEFAULT_CHART_HEIGHT = 280;
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
-    // Check if already in YY-MM-DD format
     if (typeof timeValue === 'string' && /^\d{2}-\d{2}-\d{2}$/.test(timeValue)) {
       return timeValue;
     }
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) {
-      // Attempt to parse YYYY-MM-DD... format
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
         const year = timeValue.substring(2, 4);
         const month = timeValue.substring(5, 7);
         const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue); // Fallback to original string if unparsable
+      return String(timeValue);
     }
     const year = date.getFullYear().toString().slice(-2);
     const month = ('0' + (date.getMonth() + 1)).slice(-2);
     const day = ('0' + date.getDate()).slice(-2);
     return `${year}-${month}-${day}`;
   } catch (e) {
-    // In case of any error during date parsing
     return String(timeValue);
   }
 };
@@ -69,28 +66,25 @@ export function ChartDisplay({
 }: ChartDisplayProps) {
   const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
 
-  // Main wrapper for the entire chart display area
   const wrapperStyle: React.CSSProperties = {
-    height: `${chartHeightToUse}px`, // Use dynamic or default height
+    height: `${chartHeightToUse}px`,
     width: '100%',
   };
 
-  // Memoize processed chart data
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
       return [];
     }
-    // Convert all plottable series values to numbers, or keep as string if not parsable
     return data.map(point => {
       const newPoint: DataPoint = { time: point.time };
       Object.keys(point).forEach(key => {
-        if (key !== 'time') { // Exclude the time key itself from numeric conversion attempt here
+        if (key !== 'time') {
           const value = point[key];
           if (typeof value === 'string') {
-            const num = parseFloat(value.replace(/,/g, '')); // Handle thousands separators
-            newPoint[key] = isNaN(num) ? value : num; // Store number or original string
+            const num = parseFloat(value.replace(/,/g, ''));
+            newPoint[key] = isNaN(num) ? value : num;
           } else {
-            newPoint[key] = value; // Already a number or undefined
+            newPoint[key] = value;
           }
         }
       });
@@ -98,14 +92,12 @@ export function ChartDisplay({
     });
   }, [data]);
 
-  // Check if there's any numeric data for the currently selected series
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
     if (!chartData || chartData.length === 0 || plottableSeries.length === 0) return false;
     return plottableSeries.some(seriesName =>
       chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
   }, [chartData, plottableSeries]);
-
 
   const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
     <div style={wrapperStyle} className="flex flex-col items-center justify-center p-2 h-full">
@@ -140,9 +132,9 @@ export function ChartDisplay({
           data={chartData}
           margin={{
             top: 5,
-            right: 20, 
-            left: 5,  
-            bottom: 60, // Adjusted bottom margin
+            right: 20,
+            left: 5,
+            bottom: 60, // Updated margin
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -151,7 +143,7 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={60} // Adjusted height for X-axis area
+            height={55} // Updated height
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
             tick={{ fontSize: '0.7rem' }}
@@ -159,10 +151,10 @@ export function ChartDisplay({
             {timeAxisLabel && (
               <Label
                 value={`${timeAxisLabel} (Adjust time window with slider)`}
-                offset={15} // Adjusted offset
+                offset={15} // Updated offset
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={15} // Adjusted dy
+                dy={15} // Updated dy
                 style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
             )}
@@ -174,7 +166,7 @@ export function ChartDisplay({
               position="insideLeft"
               style={{ textAnchor: 'middle', fontSize: '0.7rem' }}
               fill="hsl(var(--foreground))"
-              dx={-5} 
+              dx={-5}
             />
           </YAxis>
           <Tooltip
@@ -182,13 +174,13 @@ export function ChartDisplay({
               backgroundColor: "hsl(var(--background))",
               borderColor: "hsl(var(--border))",
               color: "hsl(var(--foreground))",
-              fontSize: '0.7rem', 
+              fontSize: '0.7rem',
             }}
             itemStyle={{ color: "hsl(var(--foreground))" }}
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: "10px", fontSize: '0.7rem' }} // Adjusted legend padding
+            wrapperStyle={{ paddingTop: "10px", fontSize: '0.7rem' }} // Updated paddingTop
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -197,19 +189,19 @@ export function ChartDisplay({
               dataKey={seriesName}
               stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
               strokeWidth={1.5}
-              dot={false} // No dots on the line
+              dot={false}
               name={seriesName}
-              connectNulls={true} // Connect lines even if there are null/NaN values
+              connectNulls={true}
             />
           ))}
           <Brush
             dataKey="time"
-            height={12} // Slimmer brush
+            height={10} // Updated height
             stroke="hsl(var(--primary))"
             fill="hsl(var(--muted))"
             fillOpacity={0.3}
             tickFormatter={formatXAxisTick}
-            travellerWidth={8} // Slimmer handles
+            travellerWidth={8} // Updated travellerWidth
           />
         </LineChart>
       </ResponsiveContainer>
