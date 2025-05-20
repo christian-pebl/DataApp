@@ -28,11 +28,10 @@ interface ChartDisplayProps {
   timeAxisLabel: string | undefined;
   currentFileName?: string;
   plotTitle?: string;
-  // chartRenderHeight prop removed
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const DEFAULT_CHART_HEIGHT = 350; // Default height if not overridden
+const DEFAULT_CHART_HEIGHT = 350; 
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
@@ -91,7 +90,7 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
 
-  const chartContainerHeight = DEFAULT_CHART_HEIGHT; // Use default height
+  const chartContainerHeight = DEFAULT_CHART_HEIGHT;
   const clippedHeight = chartContainerHeight * 0.75; 
 
   const wrapperStyle: React.CSSProperties = {
@@ -173,7 +172,7 @@ export function ChartDisplay({
                     offset={10} 
                     position="insideBottom"
                     fill="hsl(var(--muted-foreground))"
-                    dy={50} 
+                    dy={45} 
                     style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                   />
                 )}
