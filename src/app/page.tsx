@@ -3,11 +3,10 @@
 
 import React, { useState, useEffect } from "react";
 import { DataUploadForm } from "@/components/dataflow/DataUploadForm";
-import { SeriesSelector } from "@/components/dataflow/SeriesSelector";
+import { CheckboxSeriesSelector } from "@/components/dataflow/CheckboxSeriesSelector";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
 import { Button } from "@/components/ui/button";
 import { Moon, Sun, Github } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 interface DataPoint {
   time: string | number;
@@ -17,8 +16,8 @@ interface DataPoint {
 export default function DataFlowPage() {
   const [parsedData, setParsedData] = useState<DataPoint[]>([]);
   const [currentFileName, setCurrentFileName] = useState<string | undefined>(undefined);
-  const [dataSeries, setDataSeries] = useState<string[]>([]);
-  const [selectedSeries, setSelectedSeries] = useState<string | undefined>(undefined);
+  const [dataSeries, setDataSeries] = useState<string[]>([]); // All available series names
+  const [visibleSeries, setVisibleSeries] = useState<Record<string, boolean>>({}); // Tracks visibility of each series
   const [timeAxisLabel, setTimeAxisLabel] = useState<string | undefined>(undefined);
   const [theme, setTheme] = useState("light");
 
@@ -50,25 +49,36 @@ export default function DataFlowPage() {
     setCurrentFileName(fileName);
     setDataSeries(seriesNames);
     setTimeAxisLabel(timeHeader);
-    // Automatically select the first available series, if any
-    if (seriesNames.length > 0) {
-      setSelectedSeries(seriesNames[0]);
-    } else {
-      setSelectedSeries(undefined);
-    }
+    
+    // By default, make all uploaded series visible
+    const newVisibleSeries: Record<string, boolean> = {};
+    seriesNames.forEach(name => {
+      newVisibleSeries[name] = true;
+    });
+    setVisibleSeries(newVisibleSeries);
   };
 
   const handleClearData = () => {
     setParsedData([]);
     setCurrentFileName(undefined);
     setDataSeries([]);
-    setSelectedSeries(undefined);
+    setVisibleSeries({});
     setTimeAxisLabel(undefined);
   };
 
-  const handleSeriesSelected = (seriesName: string) => {
-    setSelectedSeries(seriesName);
+  const handleSeriesVisibilityChange = (seriesName: string, isVisible: boolean) => {
+    setVisibleSeries(prev => ({ ...prev, [seriesName]: isVisible }));
   };
+
+  const handleSelectAllToggle = (selectAll: boolean) => {
+    const newVisibleSeries: Record<string, boolean> = {};
+    dataSeries.forEach(name => {
+      newVisibleSeries[name] = selectAll;
+    });
+    setVisibleSeries(newVisibleSeries);
+  };
+
+  const plottableSeries = dataSeries.filter(seriesName => visibleSeries[seriesName]);
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -97,10 +107,11 @@ export default function DataFlowPage() {
               onClearData={handleClearData}
               currentFileNameFromParent={currentFileName}
             />
-            <SeriesSelector
+            <CheckboxSeriesSelector
               availableSeries={dataSeries}
-              selectedSeries={selectedSeries}
-              onSeriesSelected={handleSeriesSelected}
+              visibleSeries={visibleSeries}
+              onSeriesVisibilityChange={handleSeriesVisibilityChange}
+              onSelectAllToggle={handleSelectAllToggle}
               disabled={parsedData.length === 0}
             />
           </div>
@@ -109,7 +120,7 @@ export default function DataFlowPage() {
           <div className="md:col-span-9 space-y-6">
             <ChartDisplay
               data={parsedData}
-              selectedSeries={selectedSeries}
+              plottableSeries={plottableSeries}
               timeAxisLabel={timeAxisLabel}
               currentFileName={currentFileName}
             />
@@ -126,5 +137,3 @@ export default function DataFlowPage() {
     </div>
   );
 }
-
-    

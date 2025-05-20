@@ -18,63 +18,46 @@ import { Info, LineChart as LineChartIcon } from "lucide-react";
 
 interface DataPoint {
   time: string | number;
-  [key: string]: string | number | undefined; // Allow undefined for potentially missing series
+  [key: string]: string | number | undefined;
 }
 
 interface ChartDisplayProps {
   data: DataPoint[];
-  selectedSeries: string | undefined;
+  plottableSeries: string[]; // Array of series names to plot
   timeAxisLabel: string | undefined;
   currentFileName?: string;
 }
 
-export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileName }: ChartDisplayProps) {
-  
-  // console.log("[ChartDisplay] Props received:", { data: data.slice(0,3), selectedSeries, timeAxisLabel, currentFileName });
+const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
 
+export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFileName }: ChartDisplayProps) {
+  
   const chartData = React.useMemo(() => {
-    if (!selectedSeries || !data || data.length === 0) {
-      // console.log("[ChartDisplay] No selected series or no data, returning empty for chartData.");
+    if (!data || data.length === 0 || plottableSeries.length === 0) {
       return [];
     }
     
-    const mappedData = data.map(point => {
-      const rawValue = point[selectedSeries];
-      let numericValue = NaN;
-      if (rawValue !== undefined && rawValue !== null) {
-        if (typeof rawValue === 'string') {
-          // Attempt to clean common non-numeric characters like currency symbols, but be careful
-          const cleanedValue = rawValue.replace(/[^0-9.-]/g, ''); // Keep digits, dot, and minus
-          if (cleanedValue !== "") {
-            numericValue = parseFloat(cleanedValue);
+    return data.map(point => {
+      const newPoint: DataPoint = { time: point.time };
+      plottableSeries.forEach(seriesName => {
+        const rawValue = point[seriesName];
+        let numericValue = NaN;
+        if (rawValue !== undefined && rawValue !== null) {
+          if (typeof rawValue === 'string') {
+            const cleanedValue = rawValue.replace(/[^0-9.-]/g, '');
+            if (cleanedValue !== "") {
+              numericValue = parseFloat(cleanedValue);
+            }
+          } else if (typeof rawValue === 'number') {
+            numericValue = rawValue;
           }
-        } else if (typeof rawValue === 'number') {
-          numericValue = rawValue;
         }
-      }
-      return {
-        ...point, 
-        time: point.time, // Explicitly ensure 'time' is correctly carried over
-        [selectedSeries]: numericValue,
-      };
-    });
+        newPoint[seriesName] = numericValue;
+      });
+      return newPoint;
+    }).filter(point => plottableSeries.some(seriesName => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName]))));
+  }, [data, plottableSeries]);
 
-    const filteredData = mappedData.filter(point => {
-      const value = point[selectedSeries];
-      return typeof value === 'number' && !isNaN(value);
-    });
-    
-    // console.log(`[ChartDisplay] Processing series: "${selectedSeries}". Original points: ${data.length}. Mapped points: ${mappedData.length}. Filtered numeric points: ${filteredData.length}`);
-    // if (filteredData.length > 0) {
-    //   console.log("[ChartDisplay] First 3 filtered data points for chart:", filteredData.slice(0, 3).map(p => ({ time: p.time, [selectedSeries]: p[selectedSeries] })));
-    // } else if (mappedData.length > 0) {
-    //    console.log("[ChartDisplay] Selected series values were not numeric. First 3 mapped data points (before filtering for NaN):", mappedData.slice(0,3).map(p => ({ time: p.time, [selectedSeries]: p[selectedSeries] })));
-    // }
-
-
-    return filteredData;
-
-  }, [data, selectedSeries]);
 
   if (!data || data.length === 0) {
     return (
@@ -95,7 +78,7 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
     );
   }
 
-  if (!selectedSeries) {
+  if (plottableSeries.length === 0) {
     return (
       <Card className="h-[600px] flex flex-col">
         <CardHeader>
@@ -109,14 +92,14 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
         <CardContent className="flex-grow flex items-center justify-center">
           <div className="text-center text-muted-foreground">
             <Info className="h-16 w-16 mx-auto mb-4" />
-            <p>Please select a variable to plot from the controls on the left.</p>
+            <p>Please select at least one variable to plot using the checkboxes on the left.</p>
           </div>
         </CardContent>
       </Card>
     );
   }
   
-  if (chartData.length === 0 && selectedSeries) {
+  if (chartData.length === 0 && plottableSeries.length > 0) {
      return (
       <Card className="h-[600px] flex flex-col">
         <CardHeader>
@@ -124,15 +107,15 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
             <LineChartIcon className="h-6 w-6" /> Data Visualization
           </CardTitle>
           <CardDescription>
-            Displaying data for "{selectedSeries}" from "{currentFileName}".
+            Displaying data for selected series from "{currentFileName}".
           </CardDescription>
         </CardHeader>
         <CardContent className="flex-grow flex items-center justify-center">
           <div className="text-center text-muted-foreground">
             <Info className="h-16 w-16 mx-auto mb-4" />
-            <p>No valid numeric data found for the selected series: "{selectedSeries}".</p>
-            <p className="text-sm mt-1">This can happen if the column contains non-numeric text, is empty, or all values were converted to Not-a-Number (NaN) after attempting to clean them.</p>
-            <p className="text-sm mt-1">Please check the column in your CSV file or select a different variable.</p>
+            <p>No valid numeric data found for the selected series: "{plottableSeries.join(', ')}".</p>
+            <p className="text-sm mt-1">This can happen if the selected columns contain non-numeric text, are empty, or all values were converted to Not-a-Number (NaN) after attempting to clean them.</p>
+            <p className="text-sm mt-1">Please check the columns in your CSV file or select different variables.</p>
           </div>
         </CardContent>
       </Card>
@@ -144,10 +127,10 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <LineChartIcon className="h-6 w-6 text-primary" />
-          Time Series Plot: {selectedSeries}
+          Time Series Plot
         </CardTitle>
         <CardDescription>
-          Visualizing "{selectedSeries}" from file "{currentFileName}" ({chartData.length} valid data points).
+          {currentFileName ? `Visualizing data from "${currentFileName}"` : "Visualizing uploaded data"} ({chartData.length} valid data points shown).
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-grow pt-2">
@@ -162,13 +145,13 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-            <XAxis dataKey="time" stroke="hsl(var(--foreground))" angle={-30} textAnchor="end" height={60} interval="preserveStartEnd">
+            <XAxis dataKey="time" stroke="hsl(var(--foreground))" angle={0} textAnchor="middle" height={60} interval="preserveStartEnd">
               {timeAxisLabel && (
                 <Label value={timeAxisLabel} offset={10} position="insideBottom" fill="hsl(var(--foreground))" dy={10} />
               )}
             </XAxis>
             <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']}>
-              <Label value={selectedSeries} angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} fill="hsl(var(--foreground))" />
+              <Label value="Value" angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} fill="hsl(var(--foreground))" />
             </YAxis>
             <Tooltip
               contentStyle={{
@@ -180,20 +163,20 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
               cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
             />
             <Legend wrapperStyle={{ paddingTop: "20px" }} />
-            <Line
-              type="monotone"
-              dataKey={selectedSeries} 
-              stroke="hsl(var(--chart-1))" 
-              strokeWidth={2}
-              dot={false} 
-              name={selectedSeries}
-            />
+            {plottableSeries.map((seriesName, index) => (
+              <Line
+                key={seriesName}
+                type="monotone"
+                dataKey={seriesName} 
+                stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
+                strokeWidth={2}
+                dot={false} 
+                name={seriesName}
+              />
+            ))}
           </LineChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>
   );
 }
-
-
-    
