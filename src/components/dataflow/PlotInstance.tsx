@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, TrendingDown, Scissors } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, TrendingDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -66,8 +66,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   const [isMinimized, setIsMinimized] = useState(false);
   const [isMinimalistView, setIsMinimalistView] = useState(false);
   const [showTimelineSlider, setShowTimelineSlider] = useState(true);
-  const [clipPlotBottom, setClipPlotBottom] = useState(false);
-
 
   useEffect(() => {
     if (!isProcessing && validationSteps.length > 0) {
@@ -354,7 +352,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     setAccordionValue("");
     setPlotTitle(initialPlotTitle);
     setShowTimelineSlider(true); 
-    setClipPlotBottom(false);
     toast({
       title: "Data Cleared",
       description: "Plot data has been cleared.",
@@ -555,7 +552,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
-                  <ScrollArea className="w-full rounded-md border p-1 h-40"> 
+                  <ScrollArea className="w-full rounded-md border p-1 h-20"> 
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
                         <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -591,16 +588,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                        <TrendingDown className="mr-1.5 h-3.5 w-3.5" /> 
                       {showTimelineSlider ? "Hide" : "Show"} Time Slider
                     </Button>
-                    <Button
-                      onClick={() => setClipPlotBottom(!clipPlotBottom)}
-                      variant="outline"
-                      size="sm"
-                      className="w-full h-7 text-xs"
-                      disabled={parsedData.length === 0}
-                    >
-                       <Scissors className="mr-1.5 h-3.5 w-3.5" /> 
-                      {clipPlotBottom ? "Show Full Plot" : "Clip Bottom 25%"}
-                    </Button>
                   </div>
                 </div>
               )}
@@ -615,7 +602,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
               currentFileName={currentFileName}
               plotTitle={plotTitle || "Chart"}
               showSlider={showTimelineSlider}
-              clipPlotBottom={clipPlotBottom}
             />
           </div>
         </CardContent>

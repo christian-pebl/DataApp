@@ -29,7 +29,6 @@ interface ChartDisplayProps {
   currentFileName?: string;
   plotTitle?: string;
   showSlider?: boolean;
-  clipPlotBottom?: boolean; 
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
@@ -62,7 +61,6 @@ export function ChartDisplay({
   currentFileName, 
   plotTitle = "Time Series Plot",
   showSlider = true,
-  clipPlotBottom = false 
 }: ChartDisplayProps) {
 
   const chartData = React.useMemo(() => {
@@ -93,12 +91,12 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
   
-  const chartContainerHeight = 350; // Base height for ResponsiveContainer
+  const chartContainerHeight = 350; 
   const clippedHeight = chartContainerHeight * 0.75;
 
   const wrapperStyle = {
-    height: clipPlotBottom ? `${clippedHeight}px` : `${chartContainerHeight}px`,
-    overflow: clipPlotBottom ? 'hidden' : 'visible',
+    height: `${clippedHeight}px`,
+    overflow: 'hidden',
   };
 
   const chartBottomMargin = showSlider ? 95 : 75;
