@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, TrendingDown } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, TrendingDown, Scissors } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +66,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   const [isMinimized, setIsMinimized] = useState(false);
   const [isMinimalistView, setIsMinimalistView] = useState(false);
   const [showTimelineSlider, setShowTimelineSlider] = useState(true);
+  const [clipPlotBottom, setClipPlotBottom] = useState(false);
 
 
   useEffect(() => {
@@ -148,7 +149,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
         let uniqueKey = processedHeader;
         let suffix = 1;
 
-        // Ensure variable keys don't clash with 'time' or other existing variable keys (case-insensitive for 'time' check)
         while (uniqueKey.toLowerCase() === 'time' || usedKeyNamesForDataPoint.has(uniqueKey)) {
             uniqueKey = `${processedHeader}_(${suffix})`;
             suffix++;
@@ -326,7 +326,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
         setTimeAxisLabel(parsedResult.timeHeader);
         const newVisibleSeries: Record<string, boolean> = {};
         parsedResult.seriesNames.forEach((name, index) => {
-           newVisibleSeries[name] = index < 4; // Default to first 4 variables
+           newVisibleSeries[name] = index < 4; 
         });
         setVisibleSeries(newVisibleSeries);
         toast({
@@ -353,7 +353,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     setCurrentFileForValidation(null);
     setAccordionValue("");
     setPlotTitle(initialPlotTitle);
-    setShowTimelineSlider(true); // Reset slider visibility
+    setShowTimelineSlider(true); 
+    setClipPlotBottom(false);
     toast({
       title: "Data Cleared",
       description: "Plot data has been cleared.",
@@ -411,19 +412,19 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
   return (
     <Card className="shadow-lg">
-      <CardHeader className="flex flex-row items-center justify-between p-2"> {/* Reduced padding */}
-        <CardTitle className="flex items-center gap-1.5 text-sm"> {/* Reduced text size, gap */}
-          <Settings2 className="h-4 w-4"/> {/* Reduced icon size */}
+      <CardHeader className="flex flex-row items-center justify-between p-2">
+        <CardTitle className="flex items-center gap-1.5 text-md">
+          <Settings2 className="h-4 w-4"/>
           {plotTitle || "Data Plot"}
         </CardTitle>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={() => setIsMinimalistView(!isMinimalistView)} aria-label={isMinimalistView ? "Show controls" : "Hide controls"} className="h-7 w-7"> {/* Smaller button */}
+          <Button variant="ghost" size="icon" onClick={() => setIsMinimalistView(!isMinimalistView)} aria-label={isMinimalistView ? "Show controls" : "Hide controls"} className="h-7 w-7">
             {isMinimalistView ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => setIsMinimized(!isMinimized)} aria-label={isMinimized ? "Expand plot" : "Minimize plot"} className="h-7 w-7"> {/* Smaller button */}
+          <Button variant="ghost" size="icon" onClick={() => setIsMinimized(!isMinimized)} aria-label={isMinimized ? "Expand plot" : "Minimize plot"} className="h-7 w-7">
             {isMinimized ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => onRemovePlot(instanceId)} aria-label="Remove plot" className="h-7 w-7"> {/* Smaller button */}
+          <Button variant="ghost" size="icon" onClick={() => onRemovePlot(instanceId)} aria-label="Remove plot" className="h-7 w-7">
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -431,15 +432,15 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
       {!isMinimized && (
         <CardContent className={cn(
-            "p-2 pt-0", // Reduced padding
-            !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block" // Reduced gap
+            "p-2 pt-0", 
+            !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block" 
           )}>
           {!isMinimalistView && (
-             <div className="md:col-span-4 space-y-1.5"> {/* Reduced space-y */}
-              <div className="space-y-1 border p-1.5 rounded-md"> {/* Reduced space-y and padding */}
-                <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5"> {/* Reduced gap */}
-                   <UploadCloud className="h-3 w-3 text-[#2B7A78]" /> {/* Reduced icon size */}
-                   <h3 className="text-xs font-semibold text-[#2B7A78]">Import & Validate</h3> {/* Reduced text size */}
+             <div className="md:col-span-4 space-y-1.5"> 
+              <div className="space-y-1 border p-1.5 rounded-md"> 
+                <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5"> 
+                   <UploadCloud className="h-3 w-3 text-[#2B7A78]" /> 
+                   <h3 className="text-xs font-semibold text-[#2B7A78]">Import & Validate</h3> 
                 </div>
                 <div className="px-1">
                   <Label htmlFor={`file-upload-${instanceId}`} className="sr-only">Upload File</Label>
@@ -479,7 +480,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                         <div className="text-[0.55rem] text-muted-foreground px-1 pb-0.5">
                             File: {currentFileForValidation || "N/A"}
                         </div>
-                        <ScrollArea className="w-full rounded-md border p-1 bg-muted/20 max-h-28 overflow-y-auto"> {/* Reduced max-h */}
+                        <ScrollArea className="w-full rounded-md border p-1 bg-muted/20 max-h-28 overflow-y-auto"> 
                           {validationSteps.map(step => (
                             <li key={step.id} className="flex items-start list-none">
                               <div className="flex-shrink-0 w-2.5 h-2.5 mr-1 mt-0.5">
@@ -533,10 +534,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
               </div>
 
               {parsedData.length > 0 && (
-                <div className="space-y-1 p-1.5 border rounded-md"> {/* Reduced space-y and padding */}
-                   <div className="flex items-center gap-1"> {/* Reduced gap */}
-                      <ListFilter className="h-3 w-3 text-[#2B7A78]" /> {/* Reduced icon size */}
-                      <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3> {/* Reduced text size */}
+                <div className="space-y-1 p-1.5 border rounded-md"> 
+                   <div className="flex items-center gap-1"> 
+                      <ListFilter className="h-3 w-3 text-[#2B7A78]" /> 
+                      <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3> 
                    </div>
                   <div className="flex items-center space-x-1.5">
                     <Checkbox
@@ -554,7 +555,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
-                  <ScrollArea className="w-full rounded-md border p-1 h-32"> {/* Reduced height */}
+                  <ScrollArea className="w-full rounded-md border p-1 h-40"> 
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
                         <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -579,7 +580,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       </p>
                     )}
                   </ScrollArea>
-                   <div className="pt-1">
+                   <div className="pt-1 space-y-1">
                     <Button
                       onClick={() => setShowTimelineSlider(!showTimelineSlider)}
                       variant="outline"
@@ -589,6 +590,16 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     >
                        <TrendingDown className="mr-1.5 h-3.5 w-3.5" /> 
                       {showTimelineSlider ? "Hide" : "Show"} Time Slider
+                    </Button>
+                    <Button
+                      onClick={() => setClipPlotBottom(!clipPlotBottom)}
+                      variant="outline"
+                      size="sm"
+                      className="w-full h-7 text-xs"
+                      disabled={parsedData.length === 0}
+                    >
+                       <Scissors className="mr-1.5 h-3.5 w-3.5" /> 
+                      {clipPlotBottom ? "Show Full Plot" : "Clip Bottom 25%"}
                     </Button>
                   </div>
                 </div>
@@ -604,6 +615,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
               currentFileName={currentFileName}
               plotTitle={plotTitle || "Chart"}
               showSlider={showTimelineSlider}
+              clipPlotBottom={clipPlotBottom}
             />
           </div>
         </CardContent>

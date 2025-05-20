@@ -29,6 +29,7 @@ interface ChartDisplayProps {
   currentFileName?: string;
   plotTitle?: string;
   showSlider?: boolean;
+  clipPlotBottom?: boolean; 
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
@@ -60,7 +61,8 @@ export function ChartDisplay({
   timeAxisLabel, 
   currentFileName, 
   plotTitle = "Time Series Plot",
-  showSlider = true 
+  showSlider = true,
+  clipPlotBottom = false 
 }: ChartDisplayProps) {
 
   const chartData = React.useMemo(() => {
@@ -90,8 +92,16 @@ export function ChartDisplay({
       chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
   }, [chartData, plottableSeries]);
+  
+  const chartContainerHeight = 350; // Base height for ResponsiveContainer
+  const clippedHeight = chartContainerHeight * 0.75;
 
-  const chartBottomMargin = showSlider ? 95 : 75; // Further reduced for slider visible
+  const wrapperStyle = {
+    height: clipPlotBottom ? `${clippedHeight}px` : `${chartContainerHeight}px`,
+    overflow: clipPlotBottom ? 'hidden' : 'visible',
+  };
+
+  const chartBottomMargin = showSlider ? 95 : 75;
 
 
   if (!data || data.length === 0) {
@@ -158,85 +168,88 @@ export function ChartDisplay({
           {plotTitle}
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-1 flex-shrink-0"> 
-        <ResponsiveContainer width="100%" height={350}>
-          <LineChart
-            data={chartData}
-            margin={{
-              top: 5,
-              right: 15, 
-              left: 5,   
-              bottom: chartBottomMargin, 
-            }}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-            <XAxis
-              dataKey="time"
-              stroke="hsl(var(--foreground))"
-              angle={-45}
-              textAnchor="end"
-              height={60} 
-              interval="preserveStartEnd"
-              tickFormatter={formatXAxisTick}
-              tick={{ fontSize: '0.75em' }}
+      <CardContent className="p-1 flex-shrink-0">
+        <div style={wrapperStyle}>
+          <ResponsiveContainer width="100%" height={chartContainerHeight}>
+            <LineChart
+              data={chartData}
+              margin={{
+                top: 5,
+                right: 15, 
+                left: 5,   
+                bottom: chartBottomMargin, 
+              }}
             >
-              {timeAxisLabel && (
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis
+                dataKey="time"
+                stroke="hsl(var(--foreground))"
+                angle={-45}
+                textAnchor="end"
+                height={60} 
+                interval="preserveStartEnd"
+                tickFormatter={formatXAxisTick}
+                tick={{ fontSize: '0.75em' }}
+              >
+                {timeAxisLabel && (
+                  <Label
+                    value={timeAxisLabel ? `${timeAxisLabel}${showSlider ? " (Adjust time window with slider)" : ""}` : (showSlider ? "Time (Adjust time window with slider)" : "Time")}
+                    offset={10} 
+                    position="insideBottom"
+                    fill="hsl(var(--muted-foreground))"
+                    dy={showSlider ? 20 : 15} 
+                    style={{ fontSize: '0.75em', textAnchor: 'middle' }}
+                  />
+                )}
+              </XAxis>
+              <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']} tick={{ fontSize: '0.75em' }}>
                 <Label
-                  value={timeAxisLabel ? `${timeAxisLabel}${showSlider ? " (Adjust time window with slider)" : ""}` : (showSlider ? "Time (Adjust time window with slider)" : "Time")}
-                  offset={10} 
-                  position="insideBottom"
-                  fill="hsl(var(--muted-foreground))"
-                  dy={showSlider ? 20 : 15} 
-                  style={{ fontSize: '0.75em', textAnchor: 'middle' }}
+                  value="Value"
+                  angle={-90}
+                  position="insideLeft"
+                  style={{ textAnchor: 'middle', fontSize: '0.75em' }}
+                  fill="hsl(var(--foreground))"
+                  dx={-5} 
+                />
+              </YAxis>
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "hsl(var(--background))",
+                  borderColor: "hsl(var(--border))",
+                  color: "hsl(var(--foreground))",
+                  fontSize: '0.75em',
+                }}
+                itemStyle={{ color: "hsl(var(--foreground))" }}
+                cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
+              />
+              <Legend wrapperStyle={{ paddingTop: "15px", fontSize: '0.75em' }} />
+              {plottableSeries.map((seriesName, index) => (
+                <Line
+                  key={seriesName}
+                  type="monotone"
+                  dataKey={seriesName}
+                  stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
+                  strokeWidth={1.5}
+                  dot={false}
+                  name={seriesName}
+                  connectNulls={true}
+                />
+              ))}
+              {showSlider && (
+                <Brush
+                  dataKey="time"
+                  height={10} 
+                  stroke="hsl(var(--primary))"
+                  fill="hsl(var(--muted))"
+                  tickFormatter={formatXAxisTick}
+                  travellerWidth={10}
                 />
               )}
-            </XAxis>
-            <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']} tick={{ fontSize: '0.75em' }}>
-              <Label
-                value="Value"
-                angle={-90}
-                position="insideLeft"
-                style={{ textAnchor: 'middle', fontSize: '0.75em' }}
-                fill="hsl(var(--foreground))"
-                dx={-5} 
-              />
-            </YAxis>
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "hsl(var(--background))",
-                borderColor: "hsl(var(--border))",
-                color: "hsl(var(--foreground))",
-                fontSize: '0.75em',
-              }}
-              itemStyle={{ color: "hsl(var(--foreground))" }}
-              cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
-            />
-            <Legend wrapperStyle={{ paddingTop: "15px", fontSize: '0.75em' }} />
-            {plottableSeries.map((seriesName, index) => (
-              <Line
-                key={seriesName}
-                type="monotone"
-                dataKey={seriesName}
-                stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
-                strokeWidth={1.5}
-                dot={false}
-                name={seriesName}
-                connectNulls={true}
-              />
-            ))}
-            {showSlider && (
-              <Brush
-                dataKey="time"
-                height={10} 
-                stroke="hsl(var(--primary))"
-                fill="hsl(var(--muted))"
-                tickFormatter={formatXAxisTick}
-                travellerWidth={10}
-              />
-            )}
-          </LineChart>
-        </ResponsiveContainer>
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   );
 }
+
