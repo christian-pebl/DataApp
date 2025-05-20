@@ -31,7 +31,7 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 350; // Default height for the chart rendering area
+const INTERNAL_DEFAULT_CHART_HEIGHT = 280; // Default base height for the chart rendering area
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
@@ -61,14 +61,10 @@ export function ChartDisplay({
   data,
   plottableSeries,
   timeAxisLabel,
+  plotTitle,
   chartRenderHeight: propChartRenderHeight,
 }: ChartDisplayProps) {
   const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
-
-  const wrapperStyle: React.CSSProperties = {
-    height: `${chartHeightToUse}px`,
-    width: '100%',
-  };
 
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
@@ -99,7 +95,7 @@ export function ChartDisplay({
   }, [chartData, plottableSeries]);
 
   const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
-     <div style={wrapperStyle} className="flex flex-col items-center justify-center p-2 h-full">
+     <div style={{ height: `${chartHeightToUse}px`, width: '100%'}} className="flex flex-col items-center justify-center p-2 h-full">
       <div className="text-center text-muted-foreground">
         {icon}
         <p className="text-xs mt-1">{primaryText}</p>
@@ -109,101 +105,103 @@ export function ChartDisplay({
   );
 
   if (!data || data.length === 0) {
-    return renderNoDataMessage(<Info className="h-8 w-8 mx-auto" />, `No data loaded.`, "Upload a file to get started.");
+    return renderNoDataMessage(<Info className="h-8 w-8 mx-auto" />, `No data loaded for ${plotTitle || 'this plot'}.`, "Upload a file to get started.");
   }
 
   if (plottableSeries.length === 0) {
-    return renderNoDataMessage(<Info className="h-8 w-8 mx-auto" />, `Please select at least one variable to plot.`, "Check the boxes in the 'Select Variables' panel.");
+    return renderNoDataMessage(<Info className="h-8 w-8 mx-auto" />, `Please select at least one variable to plot for ${plotTitle || 'this plot'}.`, "Check the boxes in the 'Select Variables' panel.");
   }
 
   if (!hasAnyNumericDataForSelectedSeries) {
      return renderNoDataMessage(
         <Info className="h-8 w-8 mx-auto" />,
-        `No valid numeric data for selected series: "${plottableSeries.join(', ')}".`,
+        `No valid numeric data for selected series: "${plottableSeries.join(', ')}" in ${plotTitle || 'this plot'}.`,
         "Check CSV columns or select different variables."
       );
   }
 
   return (
-    <div style={wrapperStyle} className="flex-1 min-h-0">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart
-          data={chartData}
-          margin={{
-            top: 5,
-            right: 20, 
-            left: 5,
-            bottom: 65, // Reduced margin
-          }}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-          <XAxis
-            dataKey="time"
-            stroke="hsl(var(--foreground))"
-            angle={-45}
-            textAnchor="end"
-            height={40} // Reduced height
-            interval="preserveStartEnd"
-            tickFormatter={formatXAxisTick}
-            tick={{ fontSize: '0.6rem' }} // Reduced font size
-          >
-            {timeAxisLabel && (
-              <Label
-                value={`${timeAxisLabel} (Adjust time window with slider)`}
-                offset={15} 
-                position="insideBottom"
-                fill="hsl(var(--muted-foreground))"
-                dy={18} // Adjusted dy
-                style={{ fontSize: '0.6rem', textAnchor: 'middle' }} // Reduced font size
-              />
-            )}
-          </XAxis>
-          <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']} tick={{ fontSize: '0.6rem' }}>
-            <Label
-              value="Value"
-              angle={-90}
-              position="insideLeft"
-              style={{ textAnchor: 'middle', fontSize: '0.6rem' }}
-              fill="hsl(var(--foreground))"
-              dx={-5} 
-            />
-          </YAxis>
-          <Tooltip
-            contentStyle={{
-              backgroundColor: "hsl(var(--background))",
-              borderColor: "hsl(var(--border))",
-              color: "hsl(var(--foreground))",
-              fontSize: '0.6rem',
+    <div style={{ height: `${chartHeightToUse}px`, width: '100%' }} className="flex-1 min-h-0">
+      <div style={{ height: `${chartHeightToUse * 0.85}px`, overflow: 'hidden', width: '100%' }}>
+        <ResponsiveContainer width="100%" height={chartHeightToUse}>
+          <LineChart
+            data={chartData}
+            margin={{
+              top: 5,
+              right: 20,
+              left: 5,
+              bottom: 70, // Adjusted to accommodate X-axis labels, title, Brush, and Legend
             }}
-            itemStyle={{ color: "hsl(var(--foreground))" }}
-            cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
-          />
-          <Legend
-            wrapperStyle={{ paddingTop: '5px', fontSize: '0.6rem' }} // Reduced padding and font size
-          />
-          {plottableSeries.map((seriesName, index) => (
-            <Line
-              key={seriesName}
-              type="monotone"
-              dataKey={seriesName}
-              stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
-              strokeWidth={1.5}
-              dot={false}
-              name={seriesName}
-              connectNulls={true}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+            <XAxis
+              dataKey="time"
+              stroke="hsl(var(--foreground))"
+              angle={-45}
+              textAnchor="end"
+              height={60} 
+              interval="preserveStartEnd"
+              tickFormatter={formatXAxisTick}
+              tick={{ fontSize: '0.6rem' }}
+            >
+              {timeAxisLabel && (
+                <Label
+                  value={`${timeAxisLabel} (Adjust time window with slider)`}
+                  offset={15} 
+                  position="insideBottom"
+                  fill="hsl(var(--muted-foreground))"
+                  dy={23} // Increased to move title down, creating space below axis labels
+                  style={{ fontSize: '0.6rem', textAnchor: 'middle' }}
+                />
+              )}
+            </XAxis>
+            <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']} tick={{ fontSize: '0.6rem' }}>
+              <Label
+                value="Value"
+                angle={-90}
+                position="insideLeft"
+                style={{ textAnchor: 'middle', fontSize: '0.6rem' }}
+                fill="hsl(var(--foreground))"
+                dx={-5} 
+              />
+            </YAxis>
+            <Tooltip
+              contentStyle={{
+                backgroundColor: "hsl(var(--background))",
+                borderColor: "hsl(var(--border))",
+                color: "hsl(var(--foreground))",
+                fontSize: '0.6rem',
+              }}
+              itemStyle={{ color: "hsl(var(--foreground))" }}
+              cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
             />
-          ))}
-          <Brush
-            dataKey="time"
-            height={8} // Reduced height
-            stroke="hsl(var(--primary))"
-            fill="hsl(var(--muted))"
-            fillOpacity={0.3}
-            tickFormatter={formatXAxisTick} // Ensures brush ticks are also formatted
-            travellerWidth={8} 
-          />
-        </LineChart>
-      </ResponsiveContainer>
+            <Legend
+              wrapperStyle={{ paddingTop: '10px', fontSize: '0.6rem' }} 
+            />
+            {plottableSeries.map((seriesName, index) => (
+              <Line
+                key={seriesName}
+                type="monotone"
+                dataKey={seriesName}
+                stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
+                strokeWidth={1.5}
+                dot={false}
+                name={seriesName}
+                connectNulls={true}
+              />
+            ))}
+            <Brush
+              dataKey="time"
+              height={10} 
+              stroke="hsl(var(--primary))"
+              fill="hsl(var(--muted))"
+              fillOpacity={0.3}
+              tickFormatter={formatXAxisTick}
+              travellerWidth={8} 
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
