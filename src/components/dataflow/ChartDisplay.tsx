@@ -28,16 +28,17 @@ interface ChartDisplayProps {
   timeAxisLabel: string | undefined;
   currentFileName?: string;
   plotTitle?: string;
+  chartRenderHeight?: number;
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const DEFAULT_CHART_HEIGHT = 350; 
+const INTERNAL_DEFAULT_CHART_HEIGHT = 350; 
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) {
-      if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
+      if (typeof timeValue === 'string' && /^\\d{4}-\\d{2}-\\d{2}/.test(timeValue)) {
         const year = timeValue.substring(2, 4); 
         const month = timeValue.substring(5, 7); 
         const day = timeValue.substring(8, 10); 
@@ -60,7 +61,10 @@ export function ChartDisplay({
   timeAxisLabel,
   currentFileName,
   plotTitle = "Time Series Plot",
+  chartRenderHeight: propChartRenderHeight,
 }: ChartDisplayProps) {
+
+  const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
 
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
@@ -90,8 +94,7 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
 
-  const chartContainerHeight = DEFAULT_CHART_HEIGHT;
-  const clippedHeight = chartContainerHeight * 0.75; 
+  const clippedHeight = chartHeightToUse * 0.75; 
 
   const wrapperStyle: React.CSSProperties = {
     height: `${clippedHeight}px`,
@@ -145,7 +148,7 @@ export function ChartDisplay({
     <Card className="flex flex-col h-fit">
       <CardContent className="p-1 flex-shrink-0">
         <div style={wrapperStyle}>
-          <ResponsiveContainer width="100%" height={chartContainerHeight}>
+          <ResponsiveContainer width="100%" height={chartHeightToUse}>
             <LineChart
               data={chartData}
               margin={{
@@ -172,7 +175,7 @@ export function ChartDisplay({
                     offset={10} 
                     position="insideBottom"
                     fill="hsl(var(--muted-foreground))"
-                    dy={45} 
+                    dy={50} 
                     style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                   />
                 )}
@@ -226,5 +229,3 @@ export function ChartDisplay({
     </Card>
   );
 }
-
-    
