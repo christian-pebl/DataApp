@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, Scissors, ChevronsDown, ChevronsUp, TrendingDown } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, TrendingDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -42,8 +42,8 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'dataReady', label: 'Data processed successfully', status: 'pending' },
 ];
 
-const DEFAULT_PLOT_HEIGHT = 350;
-const EXPANDED_PLOT_HEIGHT = 700;
+const DEFAULT_PLOT_HEIGHT = 250; // Reduced default height
+const EXPANDED_PLOT_HEIGHT = 500; // Adjusted expanded height
 
 
 interface PlotInstanceProps {
@@ -143,7 +143,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
     const uniqueSeriesNamesForDropdown: string[] = [];
     const usedKeyNamesForDataPoint = new Set<string>();
-    usedKeyNamesForDataPoint.add('time'); // Reserved for the first column's data
+    usedKeyNamesForDataPoint.add('time'); 
 
     actualVariableHeadersToProcess.forEach(originalVarHeader => {
         let processedHeader = (originalVarHeader || "Unnamed_Variable").trim();
@@ -151,14 +151,12 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
         let uniqueKey = processedHeader;
         let suffix = 1;
-        // Ensure the key for plotting is not literally "time" (case-insensitive) to avoid conflict with the X-axis data key
-        // and also ensure it's unique among other variable keys.
         while (uniqueKey.toLowerCase() === 'time' || usedKeyNamesForDataPoint.has(uniqueKey)) {
             uniqueKey = `${processedHeader}_(${suffix})`; 
             suffix++;
         }
-        uniqueSeriesNamesForDropdown.push(uniqueKey); // This is the name shown in dropdown/checkboxes
-        usedKeyNamesForDataPoint.add(uniqueKey);      // This is the key used in the DataPoint object
+        uniqueSeriesNamesForDropdown.push(uniqueKey); 
+        usedKeyNamesForDataPoint.add(uniqueKey);      
     });
 
 

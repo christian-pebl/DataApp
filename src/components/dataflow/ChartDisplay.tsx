@@ -32,7 +32,7 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 350; 
+const INTERNAL_DEFAULT_CHART_HEIGHT = 250; // Default height if prop not provided
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
@@ -93,15 +93,12 @@ export function ChartDisplay({
       chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
   }, [chartData, plottableSeries]);
-
-  const clippedHeight = chartHeightToUse * 0.75; 
-
+  
   const wrapperStyle: React.CSSProperties = {
-    height: `${clippedHeight}px`,
-    overflow: 'hidden',
+    height: `${chartHeightToUse}px`, // Use dynamic height
   };
 
-  const chartBottomMargin = 120; 
+  const chartBottomMargin = 100; 
 
   if (!data || data.length === 0) {
     return (
@@ -147,7 +144,7 @@ export function ChartDisplay({
   return (
     <Card className="flex flex-col h-fit">
       <CardContent className="p-1 flex-shrink-0">
-        <div style={wrapperStyle}>
+        <div style={wrapperStyle}> {/* Wrapper uses dynamic height */}
           <ResponsiveContainer width="100%" height={chartHeightToUse}>
             <LineChart
               data={chartData}
@@ -164,7 +161,7 @@ export function ChartDisplay({
                 stroke="hsl(var(--foreground))"
                 angle={-45}
                 textAnchor="end"
-                height={70} 
+                height={60} 
                 interval="preserveStartEnd" 
                 tickFormatter={formatXAxisTick}
                 tick={{ fontSize: '0.75em' }} 
@@ -175,7 +172,7 @@ export function ChartDisplay({
                     offset={10} 
                     position="insideBottom"
                     fill="hsl(var(--muted-foreground))"
-                    dy={50} 
+                    dy={25} 
                     style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                   />
                 )}
@@ -200,7 +197,7 @@ export function ChartDisplay({
                 itemStyle={{ color: "hsl(var(--foreground))" }}
                 cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
               />
-              <Legend wrapperStyle={{ paddingTop: "30px", fontSize: '0.75em' }} /> 
+              <Legend wrapperStyle={{ paddingTop: "15px", fontSize: '0.75em' }} /> 
               {plottableSeries.map((seriesName, index) => (
                 <Line
                   key={seriesName}
