@@ -411,19 +411,19 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
   return (
     <Card className="shadow-lg">
-      <CardHeader className="flex flex-row items-center justify-between p-3">
-        <CardTitle className="flex items-center gap-2 text-md">
-          <Settings2 className="h-4 w-4"/>
+      <CardHeader className="flex flex-row items-center justify-between p-2"> {/* Reduced padding */}
+        <CardTitle className="flex items-center gap-1.5 text-sm"> {/* Reduced text size, gap */}
+          <Settings2 className="h-4 w-4"/> {/* Reduced icon size */}
           {plotTitle || "Data Plot"}
         </CardTitle>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={() => setIsMinimalistView(!isMinimalistView)} aria-label={isMinimalistView ? "Show controls" : "Hide controls"} className="h-7 w-7">
+          <Button variant="ghost" size="icon" onClick={() => setIsMinimalistView(!isMinimalistView)} aria-label={isMinimalistView ? "Show controls" : "Hide controls"} className="h-7 w-7"> {/* Smaller button */}
             {isMinimalistView ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => setIsMinimized(!isMinimized)} aria-label={isMinimized ? "Expand plot" : "Minimize plot"} className="h-7 w-7">
+          <Button variant="ghost" size="icon" onClick={() => setIsMinimized(!isMinimized)} aria-label={isMinimized ? "Expand plot" : "Minimize plot"} className="h-7 w-7"> {/* Smaller button */}
             {isMinimized ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => onRemovePlot(instanceId)} aria-label="Remove plot" className="h-7 w-7">
+          <Button variant="ghost" size="icon" onClick={() => onRemovePlot(instanceId)} aria-label="Remove plot" className="h-7 w-7"> {/* Smaller button */}
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -431,15 +431,15 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
       {!isMinimized && (
         <CardContent className={cn(
-            "p-3 pt-0",
-            !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block"
+            "p-2 pt-0", // Reduced padding
+            !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block" // Reduced gap
           )}>
           {!isMinimalistView && (
-             <div className="md:col-span-4 space-y-2">
-              <div className="space-y-1.5 border p-2 rounded-md">
-                <div className="flex items-center gap-1.5 px-1 pt-0.5 pb-0.5">
-                   <UploadCloud className="h-4 w-4 text-[#2B7A78]" />
-                   <h3 className="text-sm font-semibold text-[#2B7A78]">Import & Validate</h3>
+             <div className="md:col-span-4 space-y-1.5"> {/* Reduced space-y */}
+              <div className="space-y-1 border p-1.5 rounded-md"> {/* Reduced space-y and padding */}
+                <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5"> {/* Reduced gap */}
+                   <UploadCloud className="h-3 w-3 text-[#2B7A78]" /> {/* Reduced icon size */}
+                   <h3 className="text-xs font-semibold text-[#2B7A78]">Import & Validate</h3> {/* Reduced text size */}
                 </div>
                 <div className="px-1">
                   <Label htmlFor={`file-upload-${instanceId}`} className="sr-only">Upload File</Label>
@@ -479,7 +479,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                         <div className="text-[0.55rem] text-muted-foreground px-1 pb-0.5">
                             File: {currentFileForValidation || "N/A"}
                         </div>
-                        <ScrollArea className="w-full rounded-md border p-1 bg-muted/20 max-h-32 overflow-y-auto">
+                        <ScrollArea className="w-full rounded-md border p-1 bg-muted/20 max-h-28 overflow-y-auto"> {/* Reduced max-h */}
                           {validationSteps.map(step => (
                             <li key={step.id} className="flex items-start list-none">
                               <div className="flex-shrink-0 w-2.5 h-2.5 mr-1 mt-0.5">
@@ -533,10 +533,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
               </div>
 
               {parsedData.length > 0 && (
-                <div className="space-y-1 p-2 border rounded-md">
-                   <div className="flex items-center gap-1.5">
-                      <ListFilter className="h-4 w-4 text-[#2B7A78]" />
-                      <h3 className="text-sm font-semibold text-[#2B7A78]">Select Variables</h3>
+                <div className="space-y-1 p-1.5 border rounded-md"> {/* Reduced space-y and padding */}
+                   <div className="flex items-center gap-1"> {/* Reduced gap */}
+                      <ListFilter className="h-3 w-3 text-[#2B7A78]" /> {/* Reduced icon size */}
+                      <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3> {/* Reduced text size */}
                    </div>
                   <div className="flex items-center space-x-1.5">
                     <Checkbox
@@ -554,7 +554,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
-                  <ScrollArea className="w-full rounded-md border p-1 h-40">
+                  <ScrollArea className="w-full rounded-md border p-1 h-32"> {/* Reduced height */}
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
                         <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">

@@ -100,8 +100,8 @@ export function ChartDisplay({
   if (!data || data.length === 0) {
     return (
       <Card className="flex flex-col h-fit">
-        <CardHeader className="p-2">
-          <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm">
+        <CardHeader className="p-1.5"> {/* Reduced padding */}
+          <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground"> {/* Reduced text size */}
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
           </CardTitle>
         </CardHeader>
@@ -118,8 +118,8 @@ export function ChartDisplay({
   if (plottableSeries.length === 0) {
     return (
       <Card className="flex flex-col h-fit">
-        <CardHeader className="p-2">
-          <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm">
+        <CardHeader className="p-1.5"> {/* Reduced padding */}
+          <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground"> {/* Reduced text size */}
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
           </CardTitle>
         </CardHeader>
@@ -136,8 +136,8 @@ export function ChartDisplay({
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
       <Card className="flex flex-col h-fit">
-        <CardHeader className="p-2">
-          <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm">
+        <CardHeader className="p-1.5"> {/* Reduced padding */}
+          <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground"> {/* Reduced text size */}
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
           </CardTitle>
         </CardHeader>
@@ -155,7 +155,7 @@ export function ChartDisplay({
 
   return (
     <Card className="flex flex-col h-fit">
-      <CardHeader className="p-2">
+      <CardHeader className="p-1.5"> {/* Reduced padding */}
         <CardTitle className="flex items-center gap-1.5 text-sm">
           <LineChartIcon className="h-4 w-4 text-primary" />
           {plotTitle}
