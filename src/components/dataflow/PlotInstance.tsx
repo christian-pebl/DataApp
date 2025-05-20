@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, Scissors, UploadCloud } from "lucide-react";
+import { Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, Scissors, UploadCloud, TrendingDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -42,8 +42,8 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'dataReady', label: 'Import complete', status: 'pending' },
 ];
 
-const DEFAULT_PLOT_HEIGHT = 214;
-const EXPANDED_PLOT_HEIGHT = 427;
+const DEFAULT_PLOT_HEIGHT = 278; // Increased by 30% from 214
+const EXPANDED_PLOT_HEIGHT = 555; // Increased by 30% from 427
 
 
 interface PlotInstanceProps {
@@ -400,7 +400,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   const fileInputId = `${uniqueComponentId}-file-upload-${instanceId}`;
 
   return (
-    <Card className="shadow-lg"> 
+    <Card className="shadow-lg">
       <CardHeader className="flex flex-row items-center justify-between p-3"> 
         <CardTitle className="flex items-center gap-2 text-sm"> 
           <Settings2 className="h-4 w-4"/> 
@@ -420,20 +420,17 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       </CardHeader>
 
       {!isMinimized && (
-        <CardContent className={cn(
-            "p-2 pt-0",
-            !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block"
-        )}>
-          
-          {!isMinimalistView && ( 
+         <CardContent className={cn("p-2 pt-0 md:grid md:grid-cols-12 gap-2", isMinimalistView && "block")}>
+          {/* Column 1: Import & Validate */}
+          {!isMinimalistView && (
             <div className="md:col-span-2 flex flex-col space-y-1.5">
               <div className="space-y-1 border p-1.5 rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5">
                    <Settings2 className="h-3 w-3 text-[#2B7A78]" />
                    <h3 className="text-xs font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
                 </div>
-                 <div className="px-1 py-1.5">
-                   <Button asChild variant="outline" size="sm" className="w-full h-8 text-xs" disabled={isProcessing}>
+                 <div className="px-1 py-1.5"> {/* Increased vertical padding for button */}
+                   <Button asChild variant="outline" size="sm" className="w-full h-8 text-xs">
                      <Label htmlFor={fileInputId} className="cursor-pointer flex items-center justify-center">
                        Choose file
                      </Label>
@@ -529,7 +526,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             </div>
           )}
 
-           {!isMinimalistView && ( 
+          {/* Column 2: Select Variables */}
+          {!isMinimalistView && (
             <div className="md:col-span-2 flex flex-col space-y-1.5">
                <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1">
@@ -581,17 +579,17 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             </div>
           )}
           
-           <div className={cn(
-              isMinimalistView ? "col-span-full" : "md:col-span-8",
-               "flex-1 min-h-0" // Ensure it can take up space
-            )}>
-             <ChartDisplay
-                data={parsedData}
-                plottableSeries={plottableSeries}
-                timeAxisLabel={timeAxisLabel}
-                plotTitle={plotTitle || "Chart"}
-                chartRenderHeight={currentChartHeight}
-              />
+          {/* Column 3: Plot Area */}
+           <div className={cn(isMinimalistView ? "col-span-full" : "md:col-span-8", "flex flex-col min-h-0")}>
+             <div className={cn(isMinimalistView ? "flex-1 min-h-0" : "")}>
+                <ChartDisplay
+                    data={parsedData}
+                    plottableSeries={plottableSeries}
+                    timeAxisLabel={timeAxisLabel}
+                    plotTitle={plotTitle || "Chart"}
+                    chartRenderHeight={currentChartHeight}
+                />
+             </div>
           </div>
         </CardContent>
       )}
@@ -611,5 +609,3 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     </Card>
   );
 }
-
-    

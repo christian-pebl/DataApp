@@ -31,7 +31,7 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 214; 
+const INTERNAL_DEFAULT_CHART_HEIGHT = 278; // Default height for the ResponsiveContainer
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
@@ -61,7 +61,7 @@ export function ChartDisplay({
   data,
   plottableSeries,
   timeAxisLabel,
-  plotTitle,
+  plotTitle, // Kept for info messages, but header is removed
   chartRenderHeight,
 }: ChartDisplayProps) {
   const chartHeightToUse = chartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
@@ -94,8 +94,11 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
 
+  // Visible height of the chart area (after potential 10% crop)
+  const visibleChartAreaHeight = chartHeightToUse * 0.90;
+
   const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
-    <div style={{ height: `${chartHeightToUse}px`, width: '100%' }} className="flex flex-col items-center justify-center p-2 h-full">
+    <div style={{ height: `${visibleChartAreaHeight}px`, width: '100%' }} className="flex flex-col items-center justify-center p-2 h-full">
       <div className="text-center text-muted-foreground">
         {icon}
         <p className="text-sm mt-2">{primaryText}</p>
@@ -120,21 +123,23 @@ export function ChartDisplay({
     );
   }
   
-  const wrapperStyle: React.CSSProperties = {
-    height: `${chartHeightToUse}px`,
+  // This outer div performs the 10% bottom crop
+  const clippingWrapperStyle: React.CSSProperties = {
+    height: `${visibleChartAreaHeight}px`,
     width: '100%',
+    overflow: 'hidden',
   };
 
   return (
-    <div style={wrapperStyle} className="flex-1 min-h-0"> 
-      <ResponsiveContainer width="100%" height="100%"> 
+    <div style={clippingWrapperStyle}> 
+      <ResponsiveContainer width="100%" height={chartHeightToUse}> {/* ResponsiveContainer renders at full specified height */}
         <LineChart
           data={chartData}
           margin={{
             top: 5,
             right: 20,
             left: 5,
-            bottom: 72, 
+            bottom: 78, // Adjusted for taller Brush and X-axis elements
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -143,7 +148,7 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={55} 
+            height={50} // X-axis area height
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
             tick={{ fontSize: '0.6rem' }}
@@ -154,7 +159,7 @@ export function ChartDisplay({
                 offset={15} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={26} 
+                dy={26} // Adjusted for X-axis height and Brush
                 style={{ fontSize: '0.6rem', textAnchor: 'middle' }}
               />
             )}
@@ -180,7 +185,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: '10px', fontSize: '0.6rem' }} 
+            wrapperStyle={{ paddingTop: '10px', fontSize: '0.6rem' }} // Adjusted spacing above legend
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -196,7 +201,7 @@ export function ChartDisplay({
           ))}
           <Brush
             dataKey="time"
-            height={6} 
+            height={20} // Increased Brush height
             stroke="hsl(var(--primary))"
             fill="transparent"
             tickFormatter={formatXAxisTick}
@@ -207,5 +212,3 @@ export function ChartDisplay({
     </div>
   );
 }
-
-    
