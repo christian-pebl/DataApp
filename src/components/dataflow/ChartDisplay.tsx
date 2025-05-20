@@ -15,7 +15,7 @@ import {
   Brush,
 } from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
-import { Info } from "lucide-react";
+import { Info, LineChart as LineChartIcon } from "lucide-react"; // Renamed to avoid conflict with Recharts' LineChart
 
 interface DataPoint {
   time: string | number;
@@ -29,6 +29,7 @@ interface ChartDisplayProps {
   currentFileName?: string;
   plotTitle?: string;
   chartRenderHeight?: number;
+  // clipPlotBottom?: boolean; // Removed as per previous request
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
@@ -61,24 +62,23 @@ export function ChartDisplay({
   plottableSeries,
   timeAxisLabel,
   currentFileName,
-  plotTitle = "Time Series Plot", // Default title if not provided
-  chartRenderHeight = 350, // Default height if not provided
+  plotTitle = "Time Series Plot",
+  chartRenderHeight = 350,
+  // clipPlotBottom = false, // Removed
 }: ChartDisplayProps) {
 
-  // Memoize processed chart data to prevent re-computation on every render
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
       return [];
     }
-    // Ensure numeric values for plotting, convert strings if possible
     return data.map(point => {
       const newPoint: DataPoint = { time: point.time };
       Object.keys(point).forEach(key => {
         if (key !== 'time') {
           const value = point[key];
           if (typeof value === 'string') {
-            const num = parseFloat(value.replace(/,/g, '')); // Remove thousands separators
-            newPoint[key] = isNaN(num) ? value : num; // Keep as string if not a number
+            const num = parseFloat(value.replace(/,/g, ''));
+            newPoint[key] = isNaN(num) ? value : num;
           } else {
             newPoint[key] = value;
           }
@@ -88,7 +88,6 @@ export function ChartDisplay({
     });
   }, [data]);
 
-  // Check if there's any valid numeric data for the series selected to be plotted
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
     if (!chartData || chartData.length === 0 || plottableSeries.length === 0) return false;
     return plottableSeries.some(seriesName =>
@@ -105,15 +104,14 @@ export function ChartDisplay({
   };
 
   // Define bottom margin for the LineChart to accommodate X-axis labels, title, and Brush
-  const chartBottomMargin = 120; // Increased bottom margin
+  const chartBottomMargin = 120; 
 
-  // Display messages for various states (no data, no series selected, no numeric data)
   if (!data || data.length === 0) {
     return (
-      <Card className="flex flex-col h-fit"> {/* Card adapts to content height */}
-        <CardContent className="flex-grow flex items-center justify-center p-2"> {/* Minimal padding */}
+      <Card className="flex flex-col h-fit">
+        <CardContent className="flex-grow flex items-center justify-center p-2">
           <div className="text-center text-muted-foreground">
-            <Info className="h-10 w-10 mx-auto mb-1.5" /> {/* Icon size */}
+            <Info className="h-10 w-10 mx-auto mb-1.5" />
             <p className="text-xs">No data loaded for {plotTitle}. Upload a file to get started.</p>
           </div>
         </CardContent>
@@ -149,18 +147,17 @@ export function ChartDisplay({
     );
   }
 
-  // Render the chart
   return (
-    <Card className="flex flex-col h-fit"> {/* Card adapts to content height */}
-      <CardContent className="p-1 flex-shrink-0"> {/* Minimal padding, prevent growing */}
-        <div style={wrapperStyle}> {/* Apply clipping style */}
+    <Card className="flex flex-col h-fit">
+      <CardContent className="p-1 flex-shrink-0">
+        <div style={wrapperStyle}>
           <ResponsiveContainer width="100%" height={chartRenderHeight}>
             <LineChart
               data={chartData}
               margin={{
                 top: 5,
-                right: 15, // Adjusted for better tick label visibility on right
-                left: 5,  // Adjusted for better tick label visibility on left
+                right: 15, 
+                left: 5,  
                 bottom: chartBottomMargin,
               }}
             >
@@ -170,18 +167,18 @@ export function ChartDisplay({
                 stroke="hsl(var(--foreground))"
                 angle={-45}
                 textAnchor="end"
-                height={70} // Increased height for angled labels and title
-                interval="preserveStartEnd" // Show start and end ticks, auto-hide others if crowded
+                height={70} 
+                interval="preserveStartEnd" 
                 tickFormatter={formatXAxisTick}
-                tick={{ fontSize: '0.75em' }} // Reduced tick font size
+                tick={{ fontSize: '0.75em' }} 
               >
                 {timeAxisLabel && (
                   <Label
                     value={`${timeAxisLabel} (Adjust time window with slider)`}
-                    offset={10} // Offset from axis line
+                    offset={10} 
                     position="insideBottom"
                     fill="hsl(var(--muted-foreground))"
-                    dy={50} // Distance from axis line, increased for more padding
+                    dy={50} // Ensures label is well above Brush
                     style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                   />
                 )}
@@ -193,7 +190,7 @@ export function ChartDisplay({
                   position="insideLeft"
                   style={{ textAnchor: 'middle', fontSize: '0.75em' }}
                   fill="hsl(var(--foreground))"
-                  dx={-5} // Adjusted to prevent overlap with ticks
+                  dx={-5} 
                 />
               </YAxis>
               <Tooltip
@@ -201,12 +198,12 @@ export function ChartDisplay({
                   backgroundColor: "hsl(var(--background))",
                   borderColor: "hsl(var(--border))",
                   color: "hsl(var(--foreground))",
-                  fontSize: '0.75em', // Smaller tooltip text
+                  fontSize: '0.75em', 
                 }}
                 itemStyle={{ color: "hsl(var(--foreground))" }}
                 cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
               />
-              <Legend wrapperStyle={{ paddingTop: "15px", fontSize: '0.75em' }} />
+              <Legend wrapperStyle={{ paddingTop: "30px", fontSize: '0.75em' }} /> {/* Increased paddingTop */}
               {plottableSeries.map((seriesName, index) => (
                 <Line
                   key={seriesName}
@@ -214,19 +211,19 @@ export function ChartDisplay({
                   dataKey={seriesName}
                   stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
                   strokeWidth={1.5}
-                  dot={false} // No dots on the line
+                  dot={false} 
                   name={seriesName}
-                  connectNulls={true} // Connect line over null/NaN values
+                  connectNulls={true} 
                 />
               ))}
               <Brush
                 dataKey="time"
-                height={14} // Taller brush bar
+                height={14} 
                 stroke="hsl(var(--primary))"
                 fill="hsl(var(--muted))"
-                fillOpacity={0.3} // More transparent
+                fillOpacity={0.3} 
                 tickFormatter={formatXAxisTick}
-                travellerWidth={10} // Slimmer handles
+                travellerWidth={10} 
               />
             </LineChart>
           </ResponsiveContainer>
@@ -235,4 +232,3 @@ export function ChartDisplay({
     </Card>
   );
 }
-
