@@ -408,8 +408,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   return (
     <Card className="shadow-lg">
       <CardHeader className="flex flex-row items-center justify-between p-3">
-        <CardTitle className="flex items-center gap-2 text-primary text-md">
-          <Settings2 className="h-4 w-4"/>
+        <CardTitle className="flex items-center gap-2 text-md"> 
+          <Settings2 className="h-4 w-4"/> 
           {plotTitle || "Data Plot"}
         </CardTitle>
         <div className="flex items-center gap-1">
@@ -432,7 +432,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
           )}>
           {!isMinimalistView && (
              <div className="md:col-span-4 space-y-2">
-              {/* Data Upload Form Integrated */}
               <div className="space-y-1.5 border p-2 rounded-md">
                 <div className="flex items-center gap-1.5 px-1 pt-0.5 pb-0.5">
                    <UploadCloud className="h-4 w-4 text-primary" />
@@ -529,7 +528,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                 </div>
               </div>
 
-              {/* Checkbox Series Selector Integrated */}
               {parsedData.length > 0 && (
                 <div className="space-y-1 p-2 border rounded-md">
                    <div className="flex items-center gap-1.5">
@@ -552,10 +550,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
-                  <ScrollArea className="w-full rounded-md border p-1 max-h-40">
+                  <ScrollArea className="w-full rounded-md border p-1 max-h-40"> {/* Reduced max-h for more compactness */}
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
-                        <div key={seriesName} className="flex items-center space-x-1.5 py-1">
+                        <div key={seriesName} className="flex items-center space-x-1.5 py-1"> {/* Increased py-1 for spacing */}
                           <Checkbox
                             id={`series-${seriesName}-${instanceId}-${uniqueComponentId}`}
                             checked={!!visibleSeries[seriesName]}
@@ -582,7 +580,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             </div>
           )}
           
-          {/* Main Content Area (Chart) */}
           <div className={cn(!isMinimalistView ? "md:col-span-8" : "")}>
             <ChartDisplay
               data={parsedData}

@@ -14,7 +14,7 @@ import {
   Label,
   Brush,
 } from "recharts";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Info, LineChart as LineChartIcon } from "lucide-react";
 
 interface DataPoint {
@@ -58,22 +58,20 @@ const formatXAxisTick = (timeValue: string | number): string => {
 
 export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFileName, plotTitle = "Time Series Plot" }: ChartDisplayProps) {
 
-  // Prepare data for Recharts: ensure numeric values for plottable series
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
       return [];
     }
     return data.map(point => {
-      const newPoint: DataPoint = { time: point.time }; // Keep time as is
-      // Convert selected series values to numbers, or keep as string if not convertible
+      const newPoint: DataPoint = { time: point.time }; 
       Object.keys(point).forEach(key => {
-        if (key !== 'time') { // Don't process the time key itself for numeric conversion
+        if (key !== 'time') { 
           const value = point[key];
           if (typeof value === 'string') {
-            const num = parseFloat(value.replace(/,/g, '')); // Remove commas for thousands
-            newPoint[key] = isNaN(num) ? value : num; // Store as number if valid, else original string
+            const num = parseFloat(value.replace(/,/g, ''));
+            newPoint[key] = isNaN(num) ? value : num; 
           } else {
-            newPoint[key] = value; // Already a number or undefined
+            newPoint[key] = value; 
           }
         }
       });
@@ -81,7 +79,6 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
     });
   }, [data]);
 
-  // Check if there's any valid numeric data for any of the selected plottable series
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
     if (!chartData || chartData.length === 0 || plottableSeries.length === 0) return false;
     return plottableSeries.some(seriesName =>
@@ -92,12 +89,11 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (!data || data.length === 0) {
     return (
-      <Card className="flex flex-col"> {/* Min height for empty state cards */}
+      <Card className="flex flex-col h-fit"> 
         <CardHeader className="p-2">
           <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm">
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
           </CardTitle>
-          <CardDescription className="text-xs">Upload a CSV file to visualize your data.</CardDescription>
         </CardHeader>
         <CardContent className="flex-grow flex items-center justify-center p-2">
           <div className="text-center text-muted-foreground">
@@ -111,14 +107,11 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (plottableSeries.length === 0) {
     return (
-      <Card className="flex flex-col">
+      <Card className="flex flex-col h-fit">
         <CardHeader className="p-2">
           <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm">
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
           </CardTitle>
-          <CardDescription className="text-xs">
-            Data from "{currentFileName}" is loaded ({data.length} rows).
-          </CardDescription>
         </CardHeader>
         <CardContent className="flex-grow flex items-center justify-center p-2">
           <div className="text-center text-muted-foreground">
@@ -132,14 +125,11 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
-      <Card className="flex flex-col">
+      <Card className="flex flex-col h-fit">
         <CardHeader className="p-2">
           <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm">
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
           </CardTitle>
-          <CardDescription className="text-xs">
-            Displaying data for selected series from "{currentFileName}".
-          </CardDescription>
         </CardHeader>
         <CardContent className="flex-grow flex items-center justify-center p-2">
           <div className="text-center text-muted-foreground">
@@ -154,18 +144,15 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
   }
 
   return (
-    <Card className="flex flex-col">
+    <Card className="flex flex-col h-fit"> 
       <CardHeader className="p-2">
         <CardTitle className="flex items-center gap-1.5 text-sm">
           <LineChartIcon className="h-4 w-4 text-primary" />
           {plotTitle}
         </CardTitle>
-        <CardDescription className="text-xs">
-          {currentFileName ? `Visualizing data from "${currentFileName}"` : "Visualizing uploaded data"} ({chartData.length} data points prepared for chart).
-        </CardDescription>
       </CardHeader>
-      <CardContent className="flex-grow pt-1 p-2">
-        <ResponsiveContainer width="100%" height={350}> {/* Reduced height by 30% (500 * 0.7 = 350) */}
+      <CardContent className="pt-1 p-2 flex-shrink-0"> 
+        <ResponsiveContainer width="100%" height={350}> 
           <LineChart
             data={chartData}
             margin={{
@@ -242,4 +229,3 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
     </Card>
   );
 }
-
