@@ -143,7 +143,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
     const uniqueSeriesNamesForDropdown: string[] = [];
     const usedKeyNamesForDataPoint = new Set<string>();
-    usedKeyNamesForDataPoint.add('time'); 
+    usedKeyNamesForDataPoint.add('time'); // Reserved for the first column's data
 
     actualVariableHeadersToProcess.forEach(originalVarHeader => {
         let processedHeader = (originalVarHeader || "Unnamed_Variable").trim();
@@ -151,12 +151,14 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
         let uniqueKey = processedHeader;
         let suffix = 1;
+        // Ensure the key for plotting is not literally "time" (case-insensitive) to avoid conflict with the X-axis data key
+        // and also ensure it's unique among other variable keys.
         while (uniqueKey.toLowerCase() === 'time' || usedKeyNamesForDataPoint.has(uniqueKey)) {
             uniqueKey = `${processedHeader}_(${suffix})`; 
             suffix++;
         }
-        uniqueSeriesNamesForDropdown.push(uniqueKey);
-        usedKeyNamesForDataPoint.add(uniqueKey);
+        uniqueSeriesNamesForDropdown.push(uniqueKey); // This is the name shown in dropdown/checkboxes
+        usedKeyNamesForDataPoint.add(uniqueKey);      // This is the key used in the DataPoint object
     });
 
 
@@ -522,7 +524,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
               </div>
 
               {parsedData.length > 0 && (
-                <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0"> 
+                <div className="space-y-1 p-1.5 border rounded-md flex flex-col"> 
                    <div className="flex items-center gap-1">
                       <ListFilter className="h-3 w-3 text-[#2B7A78]" />
                       <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
@@ -543,7 +545,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
-                  <ScrollArea className="w-full rounded-md border p-1 flex-1"> 
+                  <ScrollArea className="w-full rounded-md border p-1 h-48"> 
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
                         <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
