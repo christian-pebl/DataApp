@@ -42,7 +42,7 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'dataReady', label: 'Import complete', status: 'pending' },
 ];
 
-const DEFAULT_PLOT_HEIGHT = 280;
+const DEFAULT_PLOT_HEIGHT = 280; 
 const EXPANDED_PLOT_HEIGHT = 560;
 
 
@@ -398,7 +398,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   const plottableSeries = dataSeries.filter(seriesName => visibleSeries[seriesName]);
 
   return (
-    <Card className="shadow-lg">
+    <Card className="shadow-lg"> 
       <CardHeader className="flex flex-row items-center justify-between p-3">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Settings2 className="h-4 w-4"/>
@@ -431,7 +431,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                    <UploadCloud className="h-3 w-3 text-[#2B7A78]" />
                    <h3 className="text-xs font-semibold text-[#2B7A78]">Import & Validate</h3>
                 </div>
-                <div className="px-1">
+                <div className="px-1 py-0.5">
                   <Label htmlFor={`file-upload-${instanceId}`} className="sr-only">Upload File</Label>
                   <Input
                     id={`file-upload-${instanceId}`}
