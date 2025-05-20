@@ -31,7 +31,7 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 238; 
+const INTERNAL_DEFAULT_CHART_HEIGHT = 214; 
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
@@ -120,16 +120,13 @@ export function ChartDisplay({
     );
   }
   
-  // Using chartHeightToUse directly as the chart rendering height.
-  // The wrapper div will directly use this height.
   const wrapperStyle: React.CSSProperties = {
-    height: `${chartHeightToUse}px`, // Full chart height for the wrapper
+    height: `${chartHeightToUse}px`,
+    width: '100%',
   };
 
   return (
-    // This div now has the explicit height from chartHeightToUse
     <div style={wrapperStyle} className="flex-1 min-h-0"> 
-      {/* ResponsiveContainer takes 100% of its parent (the div above) */}
       <ResponsiveContainer width="100%" height="100%"> 
         <LineChart
           data={chartData}
@@ -137,7 +134,7 @@ export function ChartDisplay({
             top: 5,
             right: 20,
             left: 5,
-            bottom: 63, 
+            bottom: 72, 
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -146,7 +143,7 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={48} 
+            height={55} 
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
             tick={{ fontSize: '0.6rem' }}
@@ -157,7 +154,7 @@ export function ChartDisplay({
                 offset={15} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={21} 
+                dy={26} 
                 style={{ fontSize: '0.6rem', textAnchor: 'middle' }}
               />
             )}
@@ -183,7 +180,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: '8px', fontSize: '0.6rem' }} 
+            wrapperStyle={{ paddingTop: '10px', fontSize: '0.6rem' }} 
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -199,7 +196,7 @@ export function ChartDisplay({
           ))}
           <Brush
             dataKey="time"
-            height={11} 
+            height={6} 
             stroke="hsl(var(--primary))"
             fill="transparent"
             tickFormatter={formatXAxisTick}
