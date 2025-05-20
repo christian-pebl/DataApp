@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, Scissors, ChevronsDown, ChevronsUp } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, Scissors, ChevronsDown, ChevronsUp, TrendingDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +44,9 @@ const initialValidationSteps: ValidationStep[] = [
 
 const DEFAULT_PLOT_HEIGHT = 350;
 const EXPANDED_PLOT_HEIGHT = 700;
+const MIN_CHART_HEIGHT = 200;
+const MAX_CHART_HEIGHT = 800;
+const CHART_HEIGHT_STEP = 50;
 
 
 interface PlotInstanceProps {
@@ -70,7 +73,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   const [isMinimized, setIsMinimized] = useState(false);
   const [isMinimalistView, setIsMinimalistView] = useState(false);
   const [isPlotExpanded, setIsPlotExpanded] = useState(false);
-
+  
 
   useEffect(() => {
     if (!isProcessing && validationSteps.length > 0) {
@@ -101,7 +104,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     }
     updateStepStatus('headerParse', 'success', "Header row found.");
 
-    const delimiterRegex = /\s*[,;\t]\s*/;
+    const delimiterRegex = /\s*[,;\t]\s*/; 
     const originalHeaders = lines[0].trim().split(delimiterRegex).map(h => h.trim());
 
     const timeHeader = originalHeaders[0]?.trim() || "X-Axis Time (Default)";
@@ -319,7 +322,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
         setTimeAxisLabel(parsedResult.timeHeader);
         const newVisibleSeries: Record<string, boolean> = {};
         parsedResult.seriesNames.forEach((name, index) => {
-           newVisibleSeries[name] = index < 4;
+           newVisibleSeries[name] = index < 4; 
         });
         setVisibleSeries(newVisibleSeries);
         toast({
@@ -522,7 +525,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
               </div>
 
               {parsedData.length > 0 && (
-                <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0"> 
+                <div className="space-y-1 p-1.5 border rounded-md flex flex-col"> 
                    <div className="flex items-center gap-1">
                       <ListFilter className="h-3 w-3 text-[#2B7A78]" />
                       <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
@@ -543,7 +546,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
-                  <ScrollArea className="w-full rounded-md border p-1 flex-1"> 
+                  <ScrollArea className="w-full rounded-md border p-1 h-20"> 
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
                         <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -602,5 +605,3 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     </Card>
   );
 }
-
-    
