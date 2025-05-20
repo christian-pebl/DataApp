@@ -78,22 +78,22 @@ export default function DataFlowPage() {
         </div>
       </header>
 
-      <main className="flex-grow container mx-auto p-3 md:p-4"> {/* Reduced padding */}
-        <div className="mb-4"> {/* Reduced margin */}
+      <main className="flex-grow container mx-auto p-2 md:p-3"> {/* Reduced padding */}
+        <div className="mb-3"> {/* Reduced margin */}
           <Button onClick={addPlot} variant="outline" size="sm"> {/* Made button smaller */}
             <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot
           </Button>
         </div>
 
         {plots.length === 0 && (
-          <div className="flex flex-col items-center justify-center text-center text-muted-foreground py-8"> {/* Reduced py */}
-            <PlusCircle className="h-12 w-12 mb-3" /> {/* Reduced size and margin */}
-            <p className="text-md">No plots yet.</p> {/* Reduced text size */}
-            <p className="text-sm">Click "Add New Plot" to get started.</p> {/* Reduced text size */}
+          <div className="flex flex-col items-center justify-center text-center text-muted-foreground py-6"> {/* Reduced py */}
+            <PlusCircle className="h-10 w-10 mb-2" /> {/* Reduced size and margin */}
+            <p className="text-sm">No plots yet.</p> {/* Reduced text size */}
+            <p className="text-xs">Click "Add New Plot" to get started.</p> {/* Reduced text size */}
           </div>
         )}
 
-        <div className="space-y-4"> {/* Reduced spacing between plots */}
+        <div className="space-y-3"> {/* Reduced spacing between plots */}
           {plots.map((plot, index) => (
             <PlotInstance
               key={plot.id}
@@ -104,8 +104,8 @@ export default function DataFlowPage() {
           ))}
         </div>
       </main>
-      <footer className="py-4 md:px-6 md:py-0 border-t"> {/* Reduced padding */}
-        <div className="container flex flex-col items-center justify-center gap-3 md:h-20 md:flex-row"> {/* Reduced gap and height */}
+      <footer className="py-3 md:px-4 md:py-0 border-t"> {/* Reduced padding */}
+        <div className="container flex flex-col items-center justify-center gap-2 md:h-16 md:flex-row"> {/* Reduced gap and height */}
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground"> {/* Reduced text size */}
             Built with Next.js and ShadCN/UI.
           </p>
@@ -114,3 +114,4 @@ export default function DataFlowPage() {
     </div>
   );
 }
+

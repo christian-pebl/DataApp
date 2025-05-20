@@ -36,19 +36,21 @@ const formatXAxisTick = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) {
+      // Handle non-standard date strings that might not parse directly
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
         const year = timeValue.substring(2, 4);
         const month = timeValue.substring(5, 7);
         const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue);
+      return String(timeValue); // Fallback for completely unparsable strings
     }
-    const year = date.getFullYear().toString().slice(-2);
-    const month = ('0' + (date.getMonth() + 1)).slice(-2);
-    const day = ('0' + date.getDate()).slice(-2);
+    const year = date.getFullYear().toString().slice(-2); // Get 'YY'
+    const month = ('0' + (date.getMonth() + 1)).slice(-2); // Get 'MM'
+    const day = ('0' + date.getDate()).slice(-2); // Get 'DD'
     return `${year}-${month}-${day}`;
   } catch (e) {
+    // Fallback if any error occurs during date parsing
     return String(timeValue);
   }
 };
@@ -65,8 +67,8 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
         if (key !== 'time') {
           const value = point[key];
           if (typeof value === 'string') {
-            const num = parseFloat(value.replace(/,/g, ''));
-            newPoint[key] = isNaN(num) ? value : num;
+            const num = parseFloat(value.replace(/,/g, '')); // Handle numbers with commas
+            newPoint[key] = isNaN(num) ? value : num; // Keep as string if not a number, else convert
           } else {
             newPoint[key] = value;
           }
@@ -87,16 +89,16 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
   if (!data || data.length === 0) {
     return (
       <Card className="flex flex-col min-h-[300px]"> {/* Reduced min-h */}
-        <CardHeader className="p-4"> {/* Reduced padding */}
-          <CardTitle className="flex items-center gap-2 text-muted-foreground text-md"> {/* Reduced text size */}
-            <LineChartIcon className="h-5 w-5" /> {plotTitle}
+        <CardHeader className="p-2"> {/* Reduced padding */}
+          <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm"> {/* Reduced text size & gap */}
+            <LineChartIcon className="h-4 w-4" /> {plotTitle} {/* Reduced icon size */}
           </CardTitle>
-          <CardDescription className="text-xs">Upload a CSV file to visualize your data.</CardDescription> {/* Reduced text size */}
+          <CardDescription className="text-xs">Upload a CSV file to visualize your data.</CardDescription>
         </CardHeader>
-        <CardContent className="flex-grow flex items-center justify-center p-4"> {/* Reduced padding */}
+        <CardContent className="flex-grow flex items-center justify-center p-2"> {/* Reduced padding */}
           <div className="text-center text-muted-foreground">
-            <Info className="h-12 w-12 mx-auto mb-2" /> {/* Reduced size and margin */}
-            <p className="text-sm">No data loaded. Upload a file to get started.</p> {/* Reduced text size */}
+            <Info className="h-10 w-10 mx-auto mb-1.5" /> {/* Reduced size and margin */}
+            <p className="text-xs">No data loaded. Upload a file to get started.</p> {/* Reduced text size */}
           </div>
         </CardContent>
       </Card>
@@ -106,18 +108,18 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
   if (plottableSeries.length === 0) {
     return (
       <Card className="flex flex-col min-h-[300px]"> {/* Reduced min-h */}
-        <CardHeader className="p-4"> {/* Reduced padding */}
-          <CardTitle className="flex items-center gap-2 text-muted-foreground text-md"> {/* Reduced text size */}
-            <LineChartIcon className="h-5 w-5" /> {plotTitle}
+        <CardHeader className="p-2"> {/* Reduced padding */}
+          <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm"> {/* Reduced text size & gap */}
+            <LineChartIcon className="h-4 w-4" /> {plotTitle} {/* Reduced icon size */}
           </CardTitle>
           <CardDescription className="text-xs">
             Data from "{currentFileName}" is loaded ({data.length} rows).
-          </CardDescription> {/* Reduced text size */}
+          </CardDescription>
         </CardHeader>
-        <CardContent className="flex-grow flex items-center justify-center p-4"> {/* Reduced padding */}
+        <CardContent className="flex-grow flex items-center justify-center p-2"> {/* Reduced padding */}
           <div className="text-center text-muted-foreground">
-            <Info className="h-12 w-12 mx-auto mb-2" /> {/* Reduced size and margin */}
-            <p className="text-sm">Please select at least one variable to plot using the checkboxes.</p> {/* Reduced text size */}
+            <Info className="h-10 w-10 mx-auto mb-1.5" /> {/* Reduced size and margin */}
+            <p className="text-xs">Please select at least one variable to plot using the checkboxes.</p> {/* Reduced text size */}
           </div>
         </CardContent>
       </Card>
@@ -127,20 +129,20 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
       <Card className="flex flex-col min-h-[300px]"> {/* Reduced min-h */}
-        <CardHeader className="p-4"> {/* Reduced padding */}
-          <CardTitle className="flex items-center gap-2 text-muted-foreground text-md"> {/* Reduced text size */}
-            <LineChartIcon className="h-5 w-5" /> {plotTitle}
+        <CardHeader className="p-2"> {/* Reduced padding */}
+          <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm"> {/* Reduced text size & gap */}
+            <LineChartIcon className="h-4 w-4" /> {plotTitle} {/* Reduced icon size */}
           </CardTitle>
-          <CardDescription className="text-xs"> {/* Reduced text size */}
+          <CardDescription className="text-xs">
             Displaying data for selected series from "{currentFileName}".
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex-grow flex items-center justify-center p-4"> {/* Reduced padding */}
+        <CardContent className="flex-grow flex items-center justify-center p-2"> {/* Reduced padding */}
           <div className="text-center text-muted-foreground">
-            <Info className="h-12 w-12 mx-auto mb-2" /> {/* Reduced size and margin */}
-            <p className="text-sm">No valid numeric data found for the currently selected series: "{plottableSeries.join(', ')}".</p> {/* Reduced text size */}
-            <p className="text-xs mt-1">This can happen if the selected columns contain non-numeric text, are empty, or all values were treated as missing data.</p> {/* Reduced text size */}
-            <p className="text-xs mt-1">Please check the columns in your CSV file or select different variables.</p> {/* Reduced text size */}
+            <Info className="h-10 w-10 mx-auto mb-1.5" /> {/* Reduced size and margin */}
+            <p className="text-xs">No valid numeric data found for the currently selected series: "{plottableSeries.join(', ')}".</p> {/* Reduced text size */}
+            <p className="text-2xs mt-1">This can happen if the selected columns contain non-numeric text, are empty, or all values were treated as missing data.</p> {/* Reduced text size */}
+            <p className="text-2xs mt-1">Please check the columns in your CSV file or select different variables.</p> {/* Reduced text size */}
           </div>
         </CardContent>
       </Card>
@@ -149,23 +151,23 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   return (
     <Card className="flex flex-col min-h-[400px]"> 
-      <CardHeader className="p-4"> {/* Reduced padding */}
-        <CardTitle className="flex items-center gap-2 text-md"> {/* Reduced text size */}
-          <LineChartIcon className="h-5 w-5 text-primary" />
+      <CardHeader className="p-2"> {/* Reduced padding */}
+        <CardTitle className="flex items-center gap-1.5 text-sm"> {/* Reduced text size & gap */}
+          <LineChartIcon className="h-4 w-4 text-primary" /> {/* Reduced icon size */}
           {plotTitle}
         </CardTitle>
-        <CardDescription className="text-xs"> {/* Reduced text size */}
+        <CardDescription className="text-xs">
           {currentFileName ? `Visualizing data from "${currentFileName}"` : "Visualizing uploaded data"} ({chartData.length} data points prepared for chart).
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex-grow pt-2 p-4 h-[420px]"> {/* Reduced padding and overall height */}
+      <CardContent className="flex-grow pt-1 p-2 h-[400px]"> {/* Reduced padding and overall height slightly */}
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={chartData}
             margin={{
               top: 5,
-              right: 20, // Reduced right margin
-              left: 10,  // Reduced left margin
+              right: 15, // Reduced right margin
+              left: 5,  // Reduced left margin
               bottom: 130, 
             }}
           >
@@ -175,7 +177,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               stroke="hsl(var(--foreground))"
               angle={-45}
               textAnchor="end"
-              height={60}
+              height={60} // Keep enough height for angled labels + title
               interval="preserveStartEnd"
               tickFormatter={formatXAxisTick}
               tick={{ fontSize: '0.75em' }}
@@ -183,10 +185,10 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               {timeAxisLabel && (
                 <Label
                   value={timeAxisLabel ? `${timeAxisLabel} (Adjust time window with slider)` : "Time (Adjust time window with slider)"}
-                  offset={10}
+                  offset={10} // Adjusted offset
                   position="insideBottom"
                   fill="hsl(var(--muted-foreground))"
-                  dy={45}
+                  dy={45} // Ensure it's above the brush
                   style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                 />
               )}
@@ -225,7 +227,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
             ))}
             <Brush
               dataKey="time"
-              height={20} 
+              height={20} // Slimmer brush
               stroke="hsl(var(--primary))"
               fill="hsl(var(--muted))"
               tickFormatter={formatXAxisTick}
@@ -236,3 +238,4 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
     </Card>
   );
 }
+
