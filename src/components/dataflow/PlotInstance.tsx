@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, Scissors, ChevronUp, ChevronDown } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, Scissors, ChevronsDown, ChevronsUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -344,7 +344,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     setValidationSteps([]);
     setCurrentFileForValidation(null);
     setAccordionValue("");
-    setIsPlotExpanded(false);
+    setIsPlotExpanded(false); 
     toast({
       title: "Data Cleared",
       description: "Plot data has been cleared for this instance.",
@@ -424,7 +424,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block"
           )}>
           {!isMinimalistView && (
-             <div className="md:col-span-4 space-y-1.5"> 
+             <div className="md:col-span-4 space-y-1.5 flex flex-col"> 
               <div className="space-y-1 border p-1.5 rounded-md"> 
                 <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5">
                    <UploadCloud className="h-3 w-3 text-[#2B7A78]" />
@@ -522,7 +522,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
               </div>
 
               {parsedData.length > 0 && (
-                <div className="space-y-1 p-1.5 border rounded-md"> 
+                <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0"> 
                    <div className="flex items-center gap-1">
                       <ListFilter className="h-3 w-3 text-[#2B7A78]" />
                       <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
@@ -543,7 +543,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
-                  <ScrollArea className="w-full rounded-md border p-1 h-20"> 
+                  <ScrollArea className="w-full rounded-md border p-1 flex-1"> 
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
                         <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -582,22 +582,25 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
               plotTitle={plotTitle || "Chart"}
               chartRenderHeight={currentChartHeight}
             />
-             {parsedData.length > 0 && !isMinimalistView && !isMinimized && (
-                <div className="flex justify-center pt-1">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setIsPlotExpanded(!isPlotExpanded)}
-                        aria-label={isPlotExpanded ? "Collapse plot height" : "Expand plot height"}
-                        className="h-6 w-6" 
-                    >
-                        {isPlotExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </Button>
-                </div>
-            )}
           </div>
         </CardContent>
+      )}
+
+      {parsedData.length > 0 && !isMinimalistView && !isMinimized && (
+        <div className="flex justify-center pt-1 pb-1 border-t">
+            <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsPlotExpanded(!isPlotExpanded)}
+                aria-label={isPlotExpanded ? "Collapse plot height" : "Expand plot height"}
+                className="h-6 w-6" 
+            >
+                {isPlotExpanded ? <ChevronsUp className="h-4 w-4" /> : <ChevronsDown className="h-4 w-4" />}
+            </Button>
+        </div>
       )}
     </Card>
   );
 }
+
+    
