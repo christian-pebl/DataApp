@@ -51,7 +51,7 @@ const formatXAxisTick = (timeValue: string | number): string => {
   } catch (e) {
     return String(timeValue);
   }
-}; // Missing closing brace was here
+};
 
 export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFileName, plotTitle = "Time Series Plot" }: ChartDisplayProps) {
 
@@ -86,17 +86,17 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (!data || data.length === 0) {
     return (
-      <Card className="flex flex-col min-h-[300px]">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-muted-foreground">
-            <LineChartIcon className="h-6 w-6" /> {plotTitle}
+      <Card className="flex flex-col min-h-[300px]"> {/* Reduced min-h */}
+        <CardHeader className="p-4"> {/* Reduced padding */}
+          <CardTitle className="flex items-center gap-2 text-muted-foreground text-md"> {/* Reduced text size */}
+            <LineChartIcon className="h-5 w-5" /> {plotTitle}
           </CardTitle>
-          <CardDescription>Upload a CSV file to visualize your data.</CardDescription>
+          <CardDescription className="text-xs">Upload a CSV file to visualize your data.</CardDescription> {/* Reduced text size */}
         </CardHeader>
-        <CardContent className="flex-grow flex items-center justify-center">
+        <CardContent className="flex-grow flex items-center justify-center p-4"> {/* Reduced padding */}
           <div className="text-center text-muted-foreground">
-            <Info className="h-16 w-16 mx-auto mb-4" />
-            <p>No data loaded. Upload a file to get started.</p>
+            <Info className="h-12 w-12 mx-auto mb-2" /> {/* Reduced size and margin */}
+            <p className="text-sm">No data loaded. Upload a file to get started.</p> {/* Reduced text size */}
           </div>
         </CardContent>
       </Card>
@@ -105,19 +105,19 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (plottableSeries.length === 0) {
     return (
-      <Card className="flex flex-col min-h-[300px]">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-muted-foreground">
-            <LineChartIcon className="h-6 w-6" /> {plotTitle}
+      <Card className="flex flex-col min-h-[300px]"> {/* Reduced min-h */}
+        <CardHeader className="p-4"> {/* Reduced padding */}
+          <CardTitle className="flex items-center gap-2 text-muted-foreground text-md"> {/* Reduced text size */}
+            <LineChartIcon className="h-5 w-5" /> {plotTitle}
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-xs">
             Data from "{currentFileName}" is loaded ({data.length} rows).
-          </CardDescription>
+          </CardDescription> {/* Reduced text size */}
         </CardHeader>
-        <CardContent className="flex-grow flex items-center justify-center">
+        <CardContent className="flex-grow flex items-center justify-center p-4"> {/* Reduced padding */}
           <div className="text-center text-muted-foreground">
-            <Info className="h-16 w-16 mx-auto mb-4" />
-            <p>Please select at least one variable to plot using the checkboxes.</p>
+            <Info className="h-12 w-12 mx-auto mb-2" /> {/* Reduced size and margin */}
+            <p className="text-sm">Please select at least one variable to plot using the checkboxes.</p> {/* Reduced text size */}
           </div>
         </CardContent>
       </Card>
@@ -126,21 +126,21 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
-      <Card className="flex flex-col min-h-[300px]">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-muted-foreground">
-            <LineChartIcon className="h-6 w-6" /> {plotTitle}
+      <Card className="flex flex-col min-h-[300px]"> {/* Reduced min-h */}
+        <CardHeader className="p-4"> {/* Reduced padding */}
+          <CardTitle className="flex items-center gap-2 text-muted-foreground text-md"> {/* Reduced text size */}
+            <LineChartIcon className="h-5 w-5" /> {plotTitle}
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-xs"> {/* Reduced text size */}
             Displaying data for selected series from "{currentFileName}".
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex-grow flex items-center justify-center">
+        <CardContent className="flex-grow flex items-center justify-center p-4"> {/* Reduced padding */}
           <div className="text-center text-muted-foreground">
-            <Info className="h-16 w-16 mx-auto mb-4" />
-            <p>No valid numeric data found for the currently selected series: "{plottableSeries.join(', ')}".</p>
-            <p className="text-sm mt-1">This can happen if the selected columns contain non-numeric text, are empty, or all values were treated as missing data.</p>
-            <p className="text-sm mt-1">Please check the columns in your CSV file or select different variables.</p>
+            <Info className="h-12 w-12 mx-auto mb-2" /> {/* Reduced size and margin */}
+            <p className="text-sm">No valid numeric data found for the currently selected series: "{plottableSeries.join(', ')}".</p> {/* Reduced text size */}
+            <p className="text-xs mt-1">This can happen if the selected columns contain non-numeric text, are empty, or all values were treated as missing data.</p> {/* Reduced text size */}
+            <p className="text-xs mt-1">Please check the columns in your CSV file or select different variables.</p> {/* Reduced text size */}
           </div>
         </CardContent>
       </Card>
@@ -148,25 +148,25 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
   }
 
   return (
-    <Card className="flex flex-col min-h-[400px]">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <LineChartIcon className="h-6 w-6 text-primary" />
+    <Card className="flex flex-col min-h-[400px]"> 
+      <CardHeader className="p-4"> {/* Reduced padding */}
+        <CardTitle className="flex items-center gap-2 text-md"> {/* Reduced text size */}
+          <LineChartIcon className="h-5 w-5 text-primary" />
           {plotTitle}
         </CardTitle>
-        <CardDescription>
+        <CardDescription className="text-xs"> {/* Reduced text size */}
           {currentFileName ? `Visualizing data from "${currentFileName}"` : "Visualizing uploaded data"} ({chartData.length} data points prepared for chart).
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex-grow pt-2 h-[500px]">
+      <CardContent className="flex-grow pt-2 p-4 h-[420px]"> {/* Reduced padding and overall height */}
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={chartData}
             margin={{
               top: 5,
-              right: 30,
-              left: 20,
-              bottom: 130,
+              right: 20, // Reduced right margin
+              left: 10,  // Reduced left margin
+              bottom: 130, 
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -205,18 +205,19 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                 backgroundColor: "hsl(var(--background))",
                 borderColor: "hsl(var(--border))",
                 color: "hsl(var(--foreground))",
+                fontSize: '0.75em', // Reduced tooltip font size
               }}
               itemStyle={{ color: "hsl(var(--foreground))" }}
               cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
             />
-            <Legend wrapperStyle={{ paddingTop: "20px" }} />
+            <Legend wrapperStyle={{ paddingTop: "15px", fontSize: '0.75em' }} /> {/* Reduced padding and font size */}
             {plottableSeries.map((seriesName, index) => (
               <Line
                 key={seriesName}
                 type="monotone"
                 dataKey={seriesName}
                 stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
-                strokeWidth={2}
+                strokeWidth={1.5} // Slightly thinner line
                 dot={false}
                 name={seriesName}
                 connectNulls={true}
@@ -224,7 +225,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
             ))}
             <Brush
               dataKey="time"
-              height={20} // Slimmer brush
+              height={20} 
               stroke="hsl(var(--primary))"
               fill="hsl(var(--muted))"
               tickFormatter={formatXAxisTick}
@@ -235,4 +236,3 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
     </Card>
   );
 }
-

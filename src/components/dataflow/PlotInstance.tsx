@@ -6,18 +6,18 @@ import React, { useState, useEffect, useId } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, ChevronDown, ChevronUp, X, Trash2, Minimize2, Maximize2 } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 interface DataPoint {
-  time: string | number; 
-  [key: string]: string | number | undefined; 
+  time: string | number;
+  [key: string]: string | number | undefined;
 }
 
 interface ValidationStep {
@@ -37,7 +37,7 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'headerParse', label: 'Checking for header row', status: 'pending' },
   { id: 'xAxisIdentified', label: 'X-axis (time) column identified', status: 'pending' },
   { id: 'variableColumnCheck', label: 'Verifying variable column headers (and excluding "Rec" if last)', status: 'pending' },
-  { id: 'yAxisFirstVarIdentified', label: 'First Variable Column (for Y-axis) identified', status: 'pending' }, 
+  { id: 'yAxisFirstVarIdentified', label: 'First Variable Column (for Y-axis) identified', status: 'pending' },
   { id: 'dataRowFormat', label: 'Checking data rows for numeric values', status: 'pending' },
   { id: 'dataReady', label: 'Data processed successfully', status: 'pending' },
 ];
@@ -94,7 +94,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     }
     updateStepStatus('headerParse', 'success', "Header row found.");
 
-    const delimiterRegex = /\s*[,;\t]\s*/; 
+    const delimiterRegex = /\s*[,;\t]\s*/;
     const originalHeaders = lines[0].trim().split(delimiterRegex).map(h => h.trim());
 
     const timeHeader = originalHeaders[0]?.trim() || "X-Axis Time (Default)";
@@ -103,12 +103,12 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     } else {
         updateStepStatus('xAxisIdentified', 'success', `Using CSV Column 1 header: '${timeHeader}' for X-axis data.`);
     }
-    
+
     let potentialVariableHeaders = originalHeaders.slice(1);
     let actualVariableHeadersToProcess: string[];
 
     if (potentialVariableHeaders.length > 0 && originalHeaders[originalHeaders.length - 1].trim().toLowerCase() === 'rec') {
-      actualVariableHeadersToProcess = potentialVariableHeaders.slice(0, -1); 
+      actualVariableHeadersToProcess = potentialVariableHeaders.slice(0, -1);
       updateStepStatus('variableColumnCheck', 'success', `Identified variable columns. Last column "Rec" (header: "${originalHeaders[originalHeaders.length - 1]}") was found and excluded from plotting.`);
     } else if (potentialVariableHeaders.length === 0 && originalHeaders.length > 1) {
        updateStepStatus('variableColumnCheck', 'error', `File "${fileName}": CSV structure error. No data variable columns found after the first (time) column (and after potentially excluding a final "Rec" column).`);
@@ -122,7 +122,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
         actualVariableHeadersToProcess = [...potentialVariableHeaders];
         updateStepStatus('variableColumnCheck', 'success', `Identified ${actualVariableHeadersToProcess.length} variable column(s): ${actualVariableHeadersToProcess.map(h => `"${h}"`).join(', ')}. No "Rec" column found at the end, or it was not the last column to be excluded.`);
     }
-    
+
     if (actualVariableHeadersToProcess.length === 0) {
         const yAxisErrorMsg = (originalHeaders.length === 2 && originalHeaders[1].trim().toLowerCase() === 'rec') ?
             `File "${fileName}": Only a time column and a "Rec" column found. No other variables to plot.` :
@@ -132,8 +132,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     }
 
     const uniqueSeriesNamesForDropdown: string[] = [];
-    const usedKeyNamesForDataPoint = new Set<string>(); 
-    usedKeyNamesForDataPoint.add('time'); 
+    const usedKeyNamesForDataPoint = new Set<string>();
+    usedKeyNamesForDataPoint.add('time');
 
     actualVariableHeadersToProcess.forEach(originalVarHeader => {
         let processedHeader = (originalVarHeader || "Unnamed_Variable").trim();
@@ -141,16 +141,16 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
         let uniqueKey = processedHeader;
         let suffix = 1;
-        
+
         while (uniqueKey.toLowerCase() === 'time' || usedKeyNamesForDataPoint.has(uniqueKey)) {
-            uniqueKey = `${processedHeader}_(${suffix})`; 
+            uniqueKey = `${processedHeader}_(${suffix})`;
             suffix++;
         }
-        
+
         uniqueSeriesNamesForDropdown.push(uniqueKey);
         usedKeyNamesForDataPoint.add(uniqueKey);
     });
-    
+
     if (uniqueSeriesNamesForDropdown.length > 0) {
        const firstVarOriginalHeader = actualVariableHeadersToProcess[0]?.trim() || "Unnamed";
        const firstVarPlotKey = uniqueSeriesNamesForDropdown[0];
@@ -170,7 +170,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       if (!trimmedLine) continue;
 
       const values = trimmedLine.split(delimiterRegex).map(v => v.trim());
-      const timeValue = values[0]; 
+      const timeValue = values[0];
 
       if (!timeValue && values.slice(1).every(v => !v || v.trim() === "")) {
         continue;
@@ -181,30 +181,30 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       let rowHasParsingIssue = false;
 
       uniqueSeriesNamesForDropdown.forEach((uniqueKey, seriesIdx) => {
-        const originalCsvColumnIndexForVar = seriesIdx + 1; 
+        const originalCsvColumnIndexForVar = seriesIdx + 1;
         const rawValue = values[originalCsvColumnIndexForVar];
 
-        let numericValue: string | number = NaN; 
+        let numericValue: string | number = NaN;
         if (rawValue !== undefined && rawValue !== null && rawValue.trim() !== "") {
-          const cleanedValue = rawValue.replace(/,/g, ''); 
+          const cleanedValue = rawValue.replace(/,/g, '');
           const parsedFloat = parseFloat(cleanedValue);
           if (!isNaN(parsedFloat)) {
             numericValue = parsedFloat;
             hasNumericValueInRow = true;
           } else {
-            numericValue = rawValue; 
+            numericValue = rawValue;
             someRowsHadNonNumericData = true;
             rowHasParsingIssue = true;
           }
-        } else { 
-            numericValue = NaN; 
-            someRowsHadNonNumericData = true; 
-            rowHasParsingIssue = true; 
+        } else {
+            numericValue = NaN;
+            someRowsHadNonNumericData = true;
+            rowHasParsingIssue = true;
         }
-        dataPoint[uniqueKey] = numericValue; 
+        dataPoint[uniqueKey] = numericValue;
       });
-      
-      if (timeValue || hasNumericValueInRow) { 
+
+      if (timeValue || hasNumericValueInRow) {
          data.push(dataPoint);
          if (!rowHasParsingIssue && hasNumericValueInRow) {
             validDataRowsCount++;
@@ -231,17 +231,17 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
   const processFile = async (file: File): Promise<{ data: DataPoint[], seriesNames: string[], timeHeader: string } | null> => {
     const newValidationSteps = initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }));
-    setValidationSteps(newValidationSteps); 
+    setValidationSteps(newValidationSteps);
     setCurrentFileForValidation(file.name);
-    setAccordionValue(""); 
-    
+    setAccordionValue("");
+
     const updateAndReturnNull = (stepId: string, errorMsg: string, isToastError: boolean = true, title?: string) => {
       updateStepStatus(stepId, 'error', errorMsg);
       const stepIndex = initialValidationSteps.findIndex(s => s.id === stepId);
       if (stepIndex !== -1) {
         for (let i = stepIndex + 1; i < initialValidationSteps.length; i++) {
             const currentStep = validationSteps.find(s => s.id === initialValidationSteps[i].id) || initialValidationSteps[i];
-            if(currentStep.status === 'pending') { 
+            if(currentStep.status === 'pending') {
                  updateStepStatus(initialValidationSteps[i].id, 'error', 'Prerequisite step failed.');
             }
         }
@@ -283,14 +283,14 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
          title: "CSV Data Validation Failed",
          description: `File "${file.name}": Please check the validation checklist above for details and ensure your CSV file meets the requirements. You can then try uploading again.`,
        });
-       setAccordionValue("validation-details-" + instanceId); 
+       setAccordionValue("validation-details-" + instanceId);
     }
     return result;
   };
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     setIsProcessing(true);
-    setValidationSteps([]); 
+    setValidationSteps([]);
     setCurrentFileForValidation(null);
 
     const file = event.target.files?.[0];
@@ -304,23 +304,23 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     if (parsedResult) {
         setParsedData(parsedResult.data);
         setCurrentFileName(file.name);
-        setPlotTitle(file.name); // Set plot title from filename
+        setPlotTitle(file.name);
         setDataSeries(parsedResult.seriesNames);
         setTimeAxisLabel(parsedResult.timeHeader);
         const newVisibleSeries: Record<string, boolean> = {};
         parsedResult.seriesNames.forEach(name => {
-          newVisibleSeries[name] = true; // All visible by default
+          newVisibleSeries[name] = true;
         });
         setVisibleSeries(newVisibleSeries);
         toast({
           title: "File Uploaded Successfully",
           description: `${file.name} has been processed for this plot.`,
         });
-    } 
-    
+    }
+
     setIsProcessing(false);
-    if (event.target) { 
-      event.target.value = ""; 
+    if (event.target) {
+      event.target.value = "";
     }
   };
 
@@ -333,13 +333,13 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     setValidationSteps([]);
     setCurrentFileForValidation(null);
     setAccordionValue("");
-    setPlotTitle(initialPlotTitle); // Reset title
+    setPlotTitle(initialPlotTitle); // Reset to initial or a default like "New Plot"
     toast({
       title: "Data Cleared",
       description: "Plot data has been cleared.",
     });
   };
-  
+
   const handleSeriesVisibilityChange = (seriesName: string, isVisible: boolean) => {
     setVisibleSeries(prev => ({ ...prev, [seriesName]: isVisible }));
   };
@@ -353,11 +353,11 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   };
 
   const getSummaryStep = (): ValidationStep | null => {
-    if (!validationSteps.length && !isProcessing && !currentFileForValidation) return null; 
-    if (isProcessing && validationSteps.every(s => s.status === 'pending')) { 
+    if (!validationSteps.length && !isProcessing && !currentFileForValidation) return null;
+    if (isProcessing && validationSteps.every(s => s.status === 'pending')) {
         return {id: 'processing', label: `Preparing to process ${currentFileForValidation || 'file'}...`, status: 'pending'};
     }
-    if (validationSteps.length === 0 && currentFileForValidation) { 
+    if (validationSteps.length === 0 && currentFileForValidation) {
         return {id: 'fileSelectedSummary', label: `Processing: ${currentFileForValidation}`, status: 'pending' };
     }
     if (validationSteps.length === 0) return null;
@@ -366,31 +366,31 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     if (isProcessing && currentProcessingStep) {
       return { ...currentProcessingStep, label: `Processing: ${currentProcessingStep.label}` };
     }
-    
+
     const firstError = validationSteps.find(step => step.status === 'error');
-    if (firstError) return firstError; 
-      
+    if (firstError) return firstError;
+
     const allSuccessful = validationSteps.every(step => step.status === 'success');
     if (allSuccessful) {
       const dataReadyStep = validationSteps.find(step => step.id === 'dataReady');
       if (dataReadyStep) return dataReadyStep;
     }
-    
+
     const lastNonPendingStep = [...validationSteps].reverse().find(step => step.status !== 'pending');
     if (lastNonPendingStep) return lastNonPendingStep;
 
-    return validationSteps[0] || null; 
+    return validationSteps[0] || null;
   };
 
   const summaryStep = getSummaryStep();
   const allSeriesSelected = dataSeries.length > 0 && dataSeries.every(series => visibleSeries[series]);
-
   const plottableSeries = dataSeries.filter(seriesName => visibleSeries[seriesName]);
 
   return (
-    <Card className="mb-6 shadow-lg">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="flex items-center gap-2 text-primary">
+    <Card className="shadow-lg">
+      <CardHeader className="flex flex-row items-center justify-between p-4">
+        <CardTitle className="flex items-center gap-2 text-primary text-lg">
+          <Settings2 className="h-5 w-5"/>
           {plotTitle || "Data Plot"}
         </CardTitle>
         <div className="flex items-center gap-1">
@@ -404,17 +404,16 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       </CardHeader>
       
       {!isMinimized && (
-        <CardContent className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <CardContent className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 pt-0">
           {/* Controls Panel */}
-          <div className="md:col-span-4 space-y-6">
+          <div className="md:col-span-4 space-y-3">
             {/* Data Upload Form Integrated */}
-            <div className="space-y-4 p-1 border rounded-md">
-              <div className="flex items-center gap-2 px-3 pt-3">
+            <div className="space-y-2 border p-2 rounded-md">
+              <div className="flex items-center gap-2 px-2 pt-2">
                  <UploadCloud className="h-5 w-5 text-primary" />
-                 <h3 className="text-lg font-semibold text-primary">Import & Validate</h3>
+                 <h3 className="text-md font-semibold text-primary">Import & Validate</h3>
               </div>
-              {/* Removed CardDescription from here */}
-              <div className="px-3">
+              <div className="px-2">
                 <Label htmlFor={`file-upload-${instanceId}`} className="sr-only">Upload File</Label>
                 <Input
                   id={`file-upload-${instanceId}`}
@@ -422,61 +421,61 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                   accept=".csv"
                   onChange={handleFileChange}
                   disabled={isProcessing}
-                  className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                  className="text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
                 />
               </div>
 
-              {currentFileForValidation && !summaryStep && isProcessing && ( 
-                   <p className="text-sm text-primary animate-pulse px-3">Processing: <span className="font-semibold">{currentFileForValidation}</span>...</p>
+              {currentFileForValidation && !summaryStep && isProcessing && (
+                   <p className="text-xs text-primary animate-pulse px-2">Processing: <span className="font-semibold">{currentFileForValidation}</span>...</p>
               )}
 
               {summaryStep && (
-                <div className="px-3">
+                <div className="px-2">
                 <Accordion type="single" collapsible value={accordionValue} onValueChange={setAccordionValue} className="w-full">
                   <AccordionItem value={"validation-details-" + instanceId} className="border-b-0">
-                    <AccordionTrigger 
+                    <AccordionTrigger
                       className={cn(
-                        "flex items-center justify-between text-sm p-3 rounded-md hover:no-underline hover:bg-muted/50 text-left",
+                        "flex items-center justify-between text-xs p-2 rounded-md hover:no-underline hover:bg-muted/50 text-left",
                         summaryStep.status === 'error' && 'bg-destructive/10 text-destructive hover:bg-destructive/20',
                         summaryStep.status === 'success' && validationSteps.every(s => s.status === 'success' || s.status === 'pending') && !isProcessing && 'bg-green-500/10 text-green-700 hover:bg-green-500/20',
                         (isProcessing || summaryStep.status === 'pending') && 'bg-blue-500/10 text-blue-700 hover:bg-blue-500/20'
                     )}>
-                      <div className="flex items-center gap-2 min-w-0"> 
-                        {isProcessing || summaryStep.status === 'pending' ? <Hourglass className="h-4 w-4 animate-spin flex-shrink-0" /> :
-                         summaryStep.status === 'success' ? <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" /> :
-                         <XCircle className="h-4 w-4 text-destructive flex-shrink-0" />}
-                        <span className="truncate font-medium">{summaryStep.label}</span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {isProcessing || summaryStep.status === 'pending' ? <Hourglass className="h-3.5 w-3.5 animate-spin flex-shrink-0" /> :
+                         summaryStep.status === 'success' ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600 flex-shrink-0" /> :
+                         <XCircle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />}
+                        <span className="truncate font-medium text-xs">{summaryStep.label}</span>
                       </div>
                     </AccordionTrigger>
-                    <AccordionContent className="pt-2 pb-0">
-                      <div className="text-xs text-muted-foreground px-3 pb-2">
+                    <AccordionContent className="pt-1 pb-0">
+                      <div className="text-xs text-muted-foreground px-2 pb-1">
                           File: {currentFileForValidation || "N/A"}
                       </div>
-                      <ul className="space-y-1 border rounded-md p-3 bg-muted/20 max-h-60 overflow-y-auto">
+                      <ul className="space-y-0.5 border rounded-md p-2 bg-muted/20 max-h-48 overflow-y-auto">
                         {validationSteps.map(step => (
-                          <li key={step.id} className="flex items-start text-sm">
-                            <div className="flex-shrink-0 w-5 h-5 mr-2 mt-0.5">
+                          <li key={step.id} className="flex items-start text-xs">
+                            <div className="flex-shrink-0 w-4 h-4 mr-1.5 mt-0.5">
                               {step.status === 'pending' && <Hourglass className="h-full w-full text-muted-foreground animate-spin" />}
                               {step.status === 'success' && <CheckCircle2 className="h-full w-full text-green-500" />}
                               {step.status === 'error' && <XCircle className="h-full w-full text-red-500" />}
                             </div>
-                            <div className="flex-grow min-w-0"> 
+                            <div className="flex-grow min-w-0">
                               <span className={cn(
                                 step.status === 'error' && 'text-destructive font-semibold',
                                 step.status === 'success' && 'text-green-600',
-                                'block'
+                                'block text-xs'
                               )}>
                                 {step.label}
                               </span>
                               {step.message && step.status !== 'pending' && (
                                   <span className={cn(
-                                      "text-xs block whitespace-pre-wrap", 
+                                      "text-2xs block whitespace-pre-wrap",
                                       step.status === 'error' ? 'text-red-700' : 'text-muted-foreground'
-                                  )} title={step.message}> 
+                                  )} title={step.message}>
                                      &ndash; {step.message}
                                   </span>
                               )}
-                               {step.status === 'pending' && <span className="text-xs text-muted-foreground block">&ndash; Pending...</span>}
+                               {step.status === 'pending' && <span className="text-2xs text-muted-foreground block">&ndash; Pending...</span>}
                             </div>
                           </li>
                         ))}
@@ -486,16 +485,17 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                 </Accordion>
                 </div>
               )}
-              {!summaryStep && !isProcessing && currentFileForValidation && ( 
-                  <p className="text-sm text-muted-foreground px-3">Awaiting processing for <span className="font-semibold">{currentFileForValidation}</span>.</p>
+              {!summaryStep && !isProcessing && currentFileForValidation && (
+                  <p className="text-xs text-muted-foreground px-2">Awaiting processing for <span className="font-semibold">{currentFileForValidation}</span>.</p>
               )}
               {!summaryStep && !isProcessing && !currentFileForValidation && (
-                   <p className="text-sm text-muted-foreground px-3 pb-3">Upload a CSV file to begin.</p>
+                   <p className="text-xs text-muted-foreground px-2 pb-2">Upload a CSV file to begin.</p>
               )}
-              <div className="px-3 pb-3">
+              <div className="px-2 pb-2">
                 <Button
                     onClick={handleClearDataInstance}
                     variant="outline"
+                    size="sm"
                     className="w-full"
                     disabled={isProcessing || !currentFileName}
                 >
@@ -503,13 +503,13 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                 </Button>
               </div>
             </div>
-            
+
             {/* Checkbox Series Selector Integrated */}
             {parsedData.length > 0 && (
-              <div className="space-y-2 p-3 border rounded-md">
+              <div className="space-y-1.5 p-2 border rounded-md">
                  <div className="flex items-center gap-2">
                     <ListFilter className="h-5 w-5 text-primary" />
-                    <h3 className="text-lg font-semibold text-primary">Select Variables</h3>
+                    <h3 className="text-md font-semibold text-primary">Select Variables</h3>
                  </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox
@@ -521,15 +521,15 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                   />
                   <Label
                     htmlFor={`select-all-${instanceId}-${uniqueComponentId}`}
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
                     {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                   </Label>
                 </div>
-                <ScrollArea className="w-full rounded-md border p-2 max-h-60">
+                <ScrollArea className="w-full rounded-md border p-1 max-h-48">
                   {dataSeries.length > 0 ? (
                     dataSeries.map((seriesName) => (
-                      <div key={seriesName} className="flex items-center space-x-2 py-1">
+                      <div key={seriesName} className="flex items-center space-x-2 py-0.5">
                         <Checkbox
                           id={`series-${seriesName}-${instanceId}-${uniqueComponentId}`}
                           checked={!!visibleSeries[seriesName]}
@@ -537,7 +537,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                         />
                         <Label
                           htmlFor={`series-${seriesName}-${instanceId}-${uniqueComponentId}`}
-                          className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 truncate"
+                          className="text-xs leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 truncate"
                           title={seriesName}
                         >
                           {seriesName}
@@ -545,7 +545,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       </div>
                     ))
                   ) : (
-                    <p className="text-sm text-center text-muted-foreground py-4">
+                    <p className="text-xs text-center text-muted-foreground py-3">
                       No variables found in the uploaded file.
                     </p>
                   )}
@@ -569,3 +569,5 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     </Card>
   );
 }
+
+    
