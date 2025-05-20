@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, TrendingDown, Scissors } from "lucide-react";
+import { Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, TrendingDown, Scissors } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -398,10 +398,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   const plottableSeries = dataSeries.filter(seriesName => visibleSeries[seriesName]);
 
   return (
-    <Card className="shadow-lg">
-      <CardHeader className="flex flex-row items-center justify-between p-3">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Settings2 className="h-4 w-4"/>
+    <Card className="shadow-lg"> 
+      <CardHeader className="flex flex-row items-center justify-between p-3"> 
+        <CardTitle className="flex items-center gap-2 text-sm"> 
+          <Settings2 className="h-4 w-4"/> 
           {plotTitle || "Data Plot"}
         </CardTitle>
         <div className="flex items-center gap-1">
@@ -427,7 +427,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             <div className="md:col-span-2 flex flex-col space-y-1.5"> 
               <div className="space-y-1 border p-1.5 rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5">
-                   <UploadCloud className="h-3 w-3 text-[#2B7A78]" />
+                   <Settings2 className="h-3 w-3 text-[#2B7A78]" />
                    <h3 className="text-xs font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
                 </div>
                 <div className="px-1 py-1.5">
@@ -443,7 +443,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       disabled={isProcessing}
                     >
                       <span>
-                        <UploadCloud className="mr-1.5 h-3.5 w-3.5 inline-block" />
                         Choose file
                       </span>
                     </Button>
@@ -562,7 +561,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                   </Label>
                 </div>
-                 <ScrollArea className="w-full rounded-md border p-1 h-28 flex-1">
+                 <ScrollArea className="w-full rounded-md border p-1 h-32 flex-1">
                   {dataSeries.length > 0 ? (
                     dataSeries.map((seriesName) => (
                       <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">

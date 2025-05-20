@@ -135,7 +135,7 @@ export function ChartDisplay({
             top: 5,
             right: 20,
             left: 5,
-            bottom: 66, // Adjusted margin
+            bottom: 67, 
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -144,7 +144,7 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={48} 
+            height={60} 
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
             tick={{ fontSize: '0.6rem' }}
@@ -155,7 +155,7 @@ export function ChartDisplay({
                 offset={15} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={23} // Adjusted dy
+                dy={23} 
                 style={{ fontSize: '0.6rem', textAnchor: 'middle' }}
               />
             )}
@@ -181,7 +181,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: '8px', fontSize: '0.6rem' }} 
+            wrapperStyle={{ paddingTop: '15px', fontSize: '0.6rem' }} 
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -197,7 +197,7 @@ export function ChartDisplay({
           ))}
           <Brush
             dataKey="time"
-            height={11} 
+            height={12} 
             stroke="hsl(var(--primary))"
             fill="transparent"
             tickFormatter={formatXAxisTick}
