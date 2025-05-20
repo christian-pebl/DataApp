@@ -100,7 +100,7 @@ export function ChartDisplay({
   }, [chartData, plottableSeries]);
 
   const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
-    <div style={wrapperStyle} className="flex flex-col items-center justify-center p-2">
+    <div style={wrapperStyle} className="flex flex-col items-center justify-center p-2 h-full">
       <div className="text-center text-muted-foreground">
         {icon}
         <p className="text-xs mt-1">{primaryText}</p>
@@ -126,7 +126,7 @@ export function ChartDisplay({
   }
 
   return (
-    <div style={wrapperStyle}>
+    <div style={wrapperStyle} className="flex-1 min-h-0">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
           data={chartData}
@@ -134,7 +134,7 @@ export function ChartDisplay({
             top: 5,
             right: 20, 
             left: 5,  
-            bottom: 110, // Increased bottom margin
+            bottom: 120, // Increased bottom margin
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -143,10 +143,10 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={35} 
+            height={60} 
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
-            tick={{ fontSize: '0.6rem' }}
+            tick={{ fontSize: '0.7rem' }}
           >
             {timeAxisLabel && (
               <Label
@@ -154,8 +154,8 @@ export function ChartDisplay({
                 offset={10} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={30} // Further adjusted dy for more space
-                style={{ fontSize: '0.6rem', textAnchor: 'middle' }}
+                dy={40} // Adjusted dy for more space
+                style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
             )}
           </XAxis>
@@ -180,7 +180,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: "25px", fontSize: '0.6rem' }} // Increased paddingTop
+            wrapperStyle={{ paddingTop: "25px", fontSize: '0.7rem' }} 
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -196,12 +196,12 @@ export function ChartDisplay({
           ))}
           <Brush
             dataKey="time"
-            height={8}
+            height={12}
             stroke="hsl(var(--primary))"
             fill="hsl(var(--muted))"
             fillOpacity={0.3}
             tickFormatter={formatXAxisTick}
-            travellerWidth={6}
+            travellerWidth={10}
           />
         </LineChart>
       </ResponsiveContainer>
