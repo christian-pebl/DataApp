@@ -16,8 +16,15 @@ interface DataPoint {
 export default function DataFlowPage() {
   const [parsedData, setParsedData] = useState<DataPoint[]>([]);
   const [currentFileName, setCurrentFileName] = useState<string | undefined>(undefined);
-  const [dataSeries, setDataSeries] = useState<string[]>([]); // All available series names
-  const [visibleSeries, setVisibleSeries] = useState<Record<string, boolean>>({}); // Tracks visibility of each series
+  
+  // State for Chart 1
+  const [dataSeries, setDataSeries] = useState<string[]>([]); // All available series names for chart 1
+  const [visibleSeries, setVisibleSeries] = useState<Record<string, boolean>>({}); // Tracks visibility for chart 1
+  
+  // State for Chart 2
+  const [dataSeries2, setDataSeries2] = useState<string[]>([]); // All available series names for chart 2
+  const [visibleSeries2, setVisibleSeries2] = useState<Record<string, boolean>>({}); // Tracks visibility for chart 2
+
   const [timeAxisLabel, setTimeAxisLabel] = useState<string | undefined>(undefined);
   const [theme, setTheme] = useState("light");
 
@@ -47,15 +54,23 @@ export default function DataFlowPage() {
   const handleDataUploaded = (data: DataPoint[], fileName: string, seriesNames: string[], timeHeader: string) => {
     setParsedData(data);
     setCurrentFileName(fileName);
-    setDataSeries(seriesNames);
     setTimeAxisLabel(timeHeader);
     
-    // By default, make all uploaded series visible
+    // For Chart 1
+    setDataSeries(seriesNames);
     const newVisibleSeries: Record<string, boolean> = {};
     seriesNames.forEach(name => {
-      newVisibleSeries[name] = true;
+      newVisibleSeries[name] = true; // All visible by default for chart 1
     });
     setVisibleSeries(newVisibleSeries);
+
+    // For Chart 2
+    setDataSeries2(seriesNames); // Same series available for the second chart
+    const newVisibleSeries2: Record<string, boolean> = {};
+    seriesNames.forEach(name => {
+      newVisibleSeries2[name] = true; // All visible by default for chart 2 initially
+    });
+    setVisibleSeries2(newVisibleSeries2);
   };
 
   const handleClearData = () => {
@@ -63,9 +78,12 @@ export default function DataFlowPage() {
     setCurrentFileName(undefined);
     setDataSeries([]);
     setVisibleSeries({});
+    setDataSeries2([]);
+    setVisibleSeries2({});
     setTimeAxisLabel(undefined);
   };
 
+  // Handlers for Chart 1
   const handleSeriesVisibilityChange = (seriesName: string, isVisible: boolean) => {
     setVisibleSeries(prev => ({ ...prev, [seriesName]: isVisible }));
   };
@@ -78,7 +96,21 @@ export default function DataFlowPage() {
     setVisibleSeries(newVisibleSeries);
   };
 
+  // Handlers for Chart 2
+  const handleSeriesVisibilityChange2 = (seriesName: string, isVisible: boolean) => {
+    setVisibleSeries2(prev => ({ ...prev, [seriesName]: isVisible }));
+  };
+
+  const handleSelectAllToggle2 = (selectAll: boolean) => {
+    const newVisibleSeries2: Record<string, boolean> = {};
+    dataSeries2.forEach(name => {
+      newVisibleSeries2[name] = selectAll;
+    });
+    setVisibleSeries2(newVisibleSeries2);
+  };
+
   const plottableSeries = dataSeries.filter(seriesName => visibleSeries[seriesName]);
+  const plottableSeries2 = dataSeries2.filter(seriesName => visibleSeries2[seriesName]);
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -107,23 +139,48 @@ export default function DataFlowPage() {
               onClearData={handleClearData}
               currentFileNameFromParent={currentFileName}
             />
-            <CheckboxSeriesSelector
-              availableSeries={dataSeries}
-              visibleSeries={visibleSeries}
-              onSeriesVisibilityChange={handleSeriesVisibilityChange}
-              onSelectAllToggle={handleSelectAllToggle}
-              disabled={parsedData.length === 0}
-            />
+            <div>
+              <h3 className="text-lg font-semibold mb-2 text-primary">Plot 1 Variables</h3>
+              <CheckboxSeriesSelector
+                availableSeries={dataSeries}
+                visibleSeries={visibleSeries}
+                onSeriesVisibilityChange={handleSeriesVisibilityChange}
+                onSelectAllToggle={handleSelectAllToggle}
+                disabled={parsedData.length === 0}
+              />
+            </div>
+            {parsedData.length > 0 && ( // Only show second selector if data is loaded
+              <div>
+                <h3 className="text-lg font-semibold mb-2 mt-4 text-primary">Plot 2 Variables</h3>
+                <CheckboxSeriesSelector
+                  availableSeries={dataSeries2}
+                  visibleSeries={visibleSeries2}
+                  onSeriesVisibilityChange={handleSeriesVisibilityChange2}
+                  onSelectAllToggle={handleSelectAllToggle2}
+                  disabled={parsedData.length === 0}
+                />
+              </div>
+            )}
           </div>
 
-          {/* Main Content Area (Chart) */}
+          {/* Main Content Area (Charts) */}
           <div className="md:col-span-9 space-y-6">
             <ChartDisplay
               data={parsedData}
               plottableSeries={plottableSeries}
               timeAxisLabel={timeAxisLabel}
               currentFileName={currentFileName}
+              plotTitle="Time Series Plot 1"
             />
+            {parsedData.length > 0 && ( // Only show second chart if data is loaded
+              <ChartDisplay
+                data={parsedData}
+                plottableSeries={plottableSeries2}
+                timeAxisLabel={timeAxisLabel}
+                currentFileName={currentFileName}
+                plotTitle="Time Series Plot 2"
+              />
+            )}
           </div>
         </div>
       </main>

@@ -27,6 +27,7 @@ interface ChartDisplayProps {
   plottableSeries: string[]; 
   timeAxisLabel: string | undefined;
   currentFileName?: string;
+  plotTitle?: string; // Optional title for the plot
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
@@ -53,7 +54,7 @@ const formatXAxisTick = (timeValue: string | number): string => {
 };
 
 
-export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFileName }: ChartDisplayProps) {
+export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFileName, plotTitle = "Time Series Plot" }: ChartDisplayProps) {
   
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
@@ -76,14 +77,6 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
     });
   }, [data]);
 
-  // For debugging Brush visibility
-  console.log("ChartDisplay: chartData length:", chartData.length);
-  if (chartData.length > 0) {
-    console.log("ChartDisplay: first chartData point:", chartData[0]);
-  }
-  console.log("ChartDisplay: plottableSeries:", plottableSeries);
-
-
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
     if (!chartData || chartData.length === 0 || plottableSeries.length === 0) return false;
     return plottableSeries.some(seriesName => 
@@ -94,10 +87,10 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (!data || data.length === 0) {
     return (
-      <Card className="h-[650px] flex flex-col"> {/* Increased height */}
+      <Card className="h-[650px] flex flex-col">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground">
-            <LineChartIcon className="h-6 w-6" /> Data Visualization
+            <LineChartIcon className="h-6 w-6" /> {plotTitle}
           </CardTitle>
           <CardDescription>Upload a CSV file to visualize your data.</CardDescription>
         </CardHeader>
@@ -113,10 +106,10 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (plottableSeries.length === 0) {
     return (
-      <Card className="h-[650px] flex flex-col"> {/* Increased height */}
+      <Card className="h-[650px] flex flex-col">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground">
-            <LineChartIcon className="h-6 w-6" /> Data Visualization
+            <LineChartIcon className="h-6 w-6" /> {plotTitle}
           </CardTitle>
           <CardDescription>
             Data from "{currentFileName}" is loaded ({data.length} rows).
@@ -125,7 +118,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
         <CardContent className="flex-grow flex items-center justify-center">
           <div className="text-center text-muted-foreground">
             <Info className="h-16 w-16 mx-auto mb-4" />
-            <p>Please select at least one variable to plot using the checkboxes on the left.</p>
+            <p>Please select at least one variable to plot using the checkboxes.</p>
           </div>
         </CardContent>
       </Card>
@@ -134,10 +127,10 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
   
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
-      <Card className="h-[650px] flex flex-col"> {/* Increased height */}
+      <Card className="h-[650px] flex flex-col">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground">
-            <LineChartIcon className="h-6 w-6" /> Data Visualization
+            <LineChartIcon className="h-6 w-6" /> {plotTitle}
           </CardTitle>
           <CardDescription>
             Displaying data for selected series from "{currentFileName}".
@@ -156,11 +149,11 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
   }
 
   return (
-    <Card className="h-[650px] flex flex-col"> {/* Increased height */}
+    <Card className="h-[650px] flex flex-col">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <LineChartIcon className="h-6 w-6 text-primary" />
-          Time Series Plot
+          {plotTitle}
         </CardTitle>
         <CardDescription>
           {currentFileName ? `Visualizing data from "${currentFileName}"` : "Visualizing uploaded data"} ({chartData.length} data points prepared for chart).
@@ -174,7 +167,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               top: 5,
               right: 30,
               left: 20,
-              bottom: 120, // Increased margin for angled X-axis labels, axis title, and Brush
+              bottom: 130, // Increased margin for angled X-axis labels, axis title, and Brush
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -193,7 +186,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                   offset={10} 
                   position="insideBottom" 
                   fill="hsl(var(--foreground))" 
-                  dy={45} // Adjusted dy
+                  dy={45} 
                 />
               )}
             </XAxis>
@@ -224,9 +217,9 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
             ))}
             <Brush 
               dataKey="time" 
-              height={30} 
+              height={20} // Slimmer brush
               stroke="hsl(var(--primary))"
-              fill="hsl(var(--muted))" // Added fill for visibility
+              fill="hsl(var(--muted))"
               tickFormatter={formatXAxisTick} 
             />
           </LineChart>
