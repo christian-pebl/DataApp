@@ -14,8 +14,8 @@ import {
   Label,
   Brush,
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Info, LineChart as LineChartIcon } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card"; // Removed CardHeader, CardTitle
+import { Info } from "lucide-react"; // Removed LineChartIcon as it was in the header
 
 interface DataPoint {
   time: string | number;
@@ -27,7 +27,7 @@ interface ChartDisplayProps {
   plottableSeries: string[];
   timeAxisLabel: string | undefined;
   currentFileName?: string;
-  plotTitle?: string;
+  plotTitle?: string; // Still used for messages
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
@@ -35,24 +35,20 @@ const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--char
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
-    // Check if the date is invalid
     if (isNaN(date.getTime())) {
-      // If it's a string that looks like a date start (YYYY-MM-DD), try to format part of it
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
-        const year = timeValue.substring(2, 4); // YY
-        const month = timeValue.substring(5, 7); // MM
-        const day = timeValue.substring(8, 10); // DD
+        const year = timeValue.substring(2, 4);
+        const month = timeValue.substring(5, 7);
+        const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue); // Fallback to string if not a valid date or parsable format
+      return String(timeValue);
     }
-    // If it's a valid date, format it
-    const year = date.getFullYear().toString().slice(-2); // YY
-    const month = ('0' + (date.getMonth() + 1)).slice(-2); // MM
-    const day = ('0' + date.getDate()).slice(-2); // DD
+    const year = date.getFullYear().toString().slice(-2);
+    const month = ('0' + (date.getMonth() + 1)).slice(-2);
+    const day = ('0' + date.getDate()).slice(-2);
     return `${year}-${month}-${day}`;
   } catch (e) {
-    // Fallback for any other error during date parsing/formatting
     return String(timeValue);
   }
 };
@@ -69,17 +65,16 @@ export function ChartDisplay({
     if (!data || data.length === 0) {
       return [];
     }
-    // Attempt to convert plottable series values to numbers
     return data.map(point => {
       const newPoint: DataPoint = { time: point.time };
       Object.keys(point).forEach(key => {
-        if (key !== 'time') { // Process only variable columns
+        if (key !== 'time') {
           const value = point[key];
           if (typeof value === 'string') {
-            const num = parseFloat(value.replace(/,/g, '')); // Remove commas for thousands
-            newPoint[key] = isNaN(num) ? value : num; // Store as number if parsable, else keep original (Recharts might handle some strings)
+            const num = parseFloat(value.replace(/,/g, ''));
+            newPoint[key] = isNaN(num) ? value : num;
           } else {
-            newPoint[key] = value; // Already a number or undefined
+            newPoint[key] = value;
           }
         }
       });
@@ -94,67 +89,52 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
   
-  const chartContainerHeight = 350; // Base height for the chart rendering area
-  const clippedHeight = chartContainerHeight * 0.75; // Permanent 25% clip from bottom
+  const chartContainerHeight = 350; 
+  const clippedHeight = chartContainerHeight * 0.75; 
 
   const wrapperStyle = {
-    height: `${clippedHeight}px`, // Apply the 75% height
-    overflow: 'hidden', // This will clip the bottom 25%
+    height: `${clippedHeight}px`, 
+    overflow: 'hidden', 
   };
 
-  const chartBottomMargin = 100; // Fixed bottom margin for X-axis, its label, and Brush
+  const chartBottomMargin = 100; 
 
-  // Message for no data
   if (!data || data.length === 0) {
     return (
       <Card className="flex flex-col h-fit">
-        <CardHeader className="p-2"> 
-          <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground"> 
-            <LineChartIcon className="h-4 w-4" /> {plotTitle}
-          </CardTitle>
-        </CardHeader>
+        {/* CardHeader removed */}
         <CardContent className="flex-grow flex items-center justify-center p-2">
           <div className="text-center text-muted-foreground">
             <Info className="h-10 w-10 mx-auto mb-1.5" />
-            <p className="text-xs">No data loaded. Upload a file to get started.</p>
+            <p className="text-xs">No data loaded for {plotTitle}. Upload a file to get started.</p>
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  // Message if no series are selected to be plotted
   if (plottableSeries.length === 0) {
     return (
       <Card className="flex flex-col h-fit">
-        <CardHeader className="p-2"> 
-          <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground"> 
-            <LineChartIcon className="h-4 w-4" /> {plotTitle}
-          </CardTitle>
-        </CardHeader>
+        {/* CardHeader removed */}
         <CardContent className="flex-grow flex items-center justify-center p-2">
           <div className="text-center text-muted-foreground">
             <Info className="h-10 w-10 mx-auto mb-1.5" />
-            <p className="text-xs">Please select at least one variable to plot using the checkboxes.</p>
+            <p className="text-xs">Please select at least one variable to plot for {plotTitle}.</p>
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  // Message if selected series have no numeric data
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
       <Card className="flex flex-col h-fit">
-        <CardHeader className="p-2"> 
-          <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground"> 
-            <LineChartIcon className="h-4 w-4" /> {plotTitle}
-          </CardTitle>
-        </CardHeader>
+        {/* CardHeader removed */}
         <CardContent className="flex-grow flex items-center justify-center p-2">
           <div className="text-center text-muted-foreground">
             <Info className="h-10 w-10 mx-auto mb-1.5" />
-            <p className="text-xs">No valid numeric data found for the currently selected series: "{plottableSeries.join(', ')}".</p>
+            <p className="text-xs">No valid numeric data found for the currently selected series in {plotTitle}: "{plottableSeries.join(', ')}".</p>
             <p className="text-2xs mt-1">This can happen if the selected columns contain non-numeric text, are empty, or all values were treated as missing data.</p>
             <p className="text-2xs mt-1">Please check the columns in your CSV file or select different variables.</p>
           </div>
@@ -163,25 +143,19 @@ export function ChartDisplay({
     );
   }
 
-  // Main chart rendering
   return (
-    <Card className="flex flex-col h-fit"> {/* Ensure card shrinks to content */}
-      <CardHeader className="p-2"> {/* Reduced padding */}
-        <CardTitle className="flex items-center gap-1.5 text-sm">
-          <LineChartIcon className="h-4 w-4 text-primary" /> {/* Reduced icon and text size */}
-          {plotTitle}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-1 flex-shrink-0"> {/* Reduced padding, ensure it doesn't grow unnecessarily */}
-        <div style={wrapperStyle}> {/* This div applies the clipping */}
-          <ResponsiveContainer width="100%" height={chartContainerHeight}> {/* Chart renders at full size, then gets clipped */}
+    <Card className="flex flex-col h-fit"> 
+      {/* CardHeader removed */}
+      <CardContent className="p-1 flex-shrink-0"> 
+        <div style={wrapperStyle}> 
+          <ResponsiveContainer width="100%" height={chartContainerHeight}> 
             <LineChart
               data={chartData}
               margin={{
                 top: 5,
-                right: 15, // Reduced right margin
-                left: 5,   // Reduced left margin
-                bottom: chartBottomMargin, // Use fixed bottom margin
+                right: 15, 
+                left: 5,   
+                bottom: chartBottomMargin, 
               }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -190,19 +164,19 @@ export function ChartDisplay({
                 stroke="hsl(var(--foreground))"
                 angle={-45}
                 textAnchor="end"
-                height={60} // Height for angled labels
+                height={60} 
                 interval="preserveStartEnd"
                 tickFormatter={formatXAxisTick}
-                tick={{ fontSize: '0.75em' }} // Reduced tick font size
+                tick={{ fontSize: '0.75em' }} 
               >
                 {timeAxisLabel && (
                   <Label
                     value={`${timeAxisLabel} (Adjust time window with slider)`}
-                    offset={10} // Adjusted offset
+                    offset={10} 
                     position="insideBottom"
                     fill="hsl(var(--muted-foreground))"
-                    dy={30} // Position label above Brush
-                    style={{ fontSize: '0.75em', textAnchor: 'middle' }} // Reduced label font size
+                    dy={35} // Increased from 30 to push label further down
+                    style={{ fontSize: '0.75em', textAnchor: 'middle' }} 
                   />
                 )}
               </XAxis>
@@ -211,9 +185,9 @@ export function ChartDisplay({
                   value="Value"
                   angle={-90}
                   position="insideLeft"
-                  style={{ textAnchor: 'middle', fontSize: '0.75em' }} // Reduced label font size
+                  style={{ textAnchor: 'middle', fontSize: '0.75em' }} 
                   fill="hsl(var(--foreground))"
-                  dx={-5} // Adjusted position
+                  dx={-5} 
                 />
               </YAxis>
               <Tooltip
@@ -221,12 +195,12 @@ export function ChartDisplay({
                   backgroundColor: "hsl(var(--background))",
                   borderColor: "hsl(var(--border))",
                   color: "hsl(var(--foreground))",
-                  fontSize: '0.75em', // Reduced tooltip font size
+                  fontSize: '0.75em', 
                 }}
                 itemStyle={{ color: "hsl(var(--foreground))" }}
                 cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
               />
-              <Legend wrapperStyle={{ paddingTop: "15px", fontSize: '0.75em' }} /> {/* Reduced legend font size */}
+              <Legend wrapperStyle={{ paddingTop: "15px", fontSize: '0.75em' }} /> 
               {plottableSeries.map((seriesName, index) => (
                 <Line
                   key={seriesName}
@@ -234,20 +208,19 @@ export function ChartDisplay({
                   dataKey={seriesName}
                   stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
                   strokeWidth={1.5}
-                  dot={false} // No dots on lines
+                  dot={false} 
                   name={seriesName}
                   connectNulls={true}
                 />
               ))}
               <Brush
                 dataKey="time"
-                height={14} // Slightly taller Brush bar
+                height={14} 
                 stroke="hsl(var(--primary))"
                 fill="hsl(var(--muted))"
-                fillOpacity={0.3} // More transparent fill
+                fillOpacity={0.3} 
                 tickFormatter={formatXAxisTick}
-                travellerWidth={10} // Slimmer handles
-                // Removed explicit y prop
+                travellerWidth={10} 
               />
             </LineChart>
           </ResponsiveContainer>
@@ -256,4 +229,3 @@ export function ChartDisplay({
     </Card>
   );
 }
-
