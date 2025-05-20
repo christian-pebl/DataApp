@@ -42,7 +42,7 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'dataReady', label: 'Import complete', status: 'pending' },
 ];
 
-const DEFAULT_PLOT_HEIGHT = 280; 
+const DEFAULT_PLOT_HEIGHT = 280;
 const EXPANDED_PLOT_HEIGHT = 560;
 
 
@@ -102,7 +102,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     }
     updateStepStatus('headerParse', 'success', "Header row found.");
 
-    const delimiterRegex = /\s*[,;\t]\s*/; 
+    const delimiterRegex = /\s*[,;\t]\s*/;
     const originalHeaders = lines[0].trim().split(delimiterRegex).map(h => h.trim());
 
     const timeHeader = originalHeaders[0]?.trim() || "X-Axis Time (Default)";
@@ -400,8 +400,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   return (
     <Card className="shadow-lg">
       <CardHeader className="flex flex-row items-center justify-between p-3">
-        <CardTitle className="flex items-center gap-2 text-sm"> 
-          <Settings2 className="h-4 w-4"/> 
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Settings2 className="h-4 w-4"/>
           {plotTitle || "Data Plot"}
         </CardTitle>
         <div className="flex items-center gap-1">
@@ -418,14 +418,14 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       </CardHeader>
 
       {!isMinimized && (
-         <CardContent className={cn(
+        <CardContent className={cn(
             "p-2 pt-0",
             !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block" 
           )}>
           
           {/* Column 1: "Import & Validate" */}
           {!isMinimalistView && (
-             <div className="md:col-span-2 flex flex-col space-y-1.5"> 
+            <div className="md:col-span-2 flex flex-col space-y-1.5"> 
               <div className="space-y-1 border p-1.5 rounded-md">
                 <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5">
                    <UploadCloud className="h-3 w-3 text-[#2B7A78]" />
@@ -439,7 +439,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     accept=".csv"
                     onChange={handleFileChange}
                     disabled={isProcessing}
-                    className="text-xs text-transparent file:text-primary-foreground file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary hover:file:bg-primary/90"
+                    className="text-xs text-transparent file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-[0.7rem] file:font-normal file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
                   />
                 </div>
 
@@ -462,7 +462,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                           {isProcessing || summaryStep.status === 'pending' ? <Hourglass className="h-3 w-3 animate-spin flex-shrink-0" /> :
                            summaryStep.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-600 flex-shrink-0" /> :
                            <XCircle className="h-3 w-3 text-destructive flex-shrink-0" />}
-                          <span className="font-medium text-[0.6rem]">{summaryStep.label}</span> {/* Removed truncate */}
+                          <span className="font-medium text-[0.6rem]">{summaryStep.label}</span>
                         </div>
                       </AccordionTrigger>
                       <AccordionContent className="pt-0.5 pb-0">
@@ -509,8 +509,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                 {!summaryStep && !isProcessing && !currentFileForValidation && (
                      <p className="text-[0.6rem] text-muted-foreground px-1 pb-0.5">Upload a CSV file to begin.</p>
                 )}
-
-
                 <div className="px-1 pb-0.5">
                   <Button
                       onClick={handleClearDataInstance}
@@ -527,9 +525,9 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
           )}
 
           {/* Column 2: "Select Variables" */}
-          {!isMinimalistView && (
+           {!isMinimalistView && (
             <div className="md:col-span-2 flex flex-col space-y-1.5">
-              <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0"> {/* This div will grow */}
+              <div className="space-y-1 p-1.5 border rounded-md flex flex-col h-full"> 
                 <div className="flex items-center gap-1">
                   <ListFilter className="h-3 w-3 text-[#2B7A78]" />
                   <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
@@ -550,7 +548,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                   </Label>
                 </div>
-                <ScrollArea className="w-full rounded-md border p-1 h-28"> {/* Reverted to fixed height as per new request */}
+                 <ScrollArea className="w-full rounded-md border p-1 h-32">
                   {dataSeries.length > 0 ? (
                     dataSeries.map((seriesName) => (
                       <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -582,16 +580,16 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
           {/* Column 3: "Plot Area" */}
            <div className={cn(
             !isMinimalistView ? "md:col-span-8 md:self-start" : "col-span-full",
-            "flex flex-col"
+            "flex flex-col" 
           )}>
-            <div className="flex-1 min-h-0">
-              <ChartDisplay
-                data={parsedData}
-                plottableSeries={plottableSeries}
-                timeAxisLabel={timeAxisLabel}
-                plotTitle={plotTitle || "Chart"}
-                chartRenderHeight={currentChartHeight}
-              />
+             <div className="flex-1 min-h-0">
+                <ChartDisplay
+                    data={parsedData}
+                    plottableSeries={plottableSeries}
+                    timeAxisLabel={timeAxisLabel}
+                    plotTitle={plotTitle || "Chart"}
+                    chartRenderHeight={currentChartHeight}
+                />
             </div>
           </div>
         </CardContent>
