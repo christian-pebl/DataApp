@@ -15,7 +15,7 @@ import {
   Brush,
 } from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
-import { Info, LineChart as LineChartIcon } from "lucide-react"; // Renamed to avoid conflict with Recharts' LineChart
+import { Info } from "lucide-react"; 
 
 interface DataPoint {
   time: string | number;
@@ -28,32 +28,30 @@ interface ChartDisplayProps {
   timeAxisLabel: string | undefined;
   currentFileName?: string;
   plotTitle?: string;
-  chartRenderHeight?: number;
-  // clipPlotBottom?: boolean; // Removed as per previous request
+  // chartRenderHeight prop removed
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
+const DEFAULT_CHART_HEIGHT = 350; // Default height if not overridden
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) {
-      // Attempt to parse YYYY-MM-DD (potentially followed by time)
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
-        const year = timeValue.substring(2, 4); // YY
-        const month = timeValue.substring(5, 7); // MM
-        const day = timeValue.substring(8, 10); // DD
+        const year = timeValue.substring(2, 4); 
+        const month = timeValue.substring(5, 7); 
+        const day = timeValue.substring(8, 10); 
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue); // Fallback for non-standard or non-date strings
+      return String(timeValue); 
     }
-    // If it's a valid date object
-    const year = date.getFullYear().toString().slice(-2); // YY
-    const month = ('0' + (date.getMonth() + 1)).slice(-2); // MM
-    const day = ('0' + date.getDate()).slice(-2); // DD
+    const year = date.getFullYear().toString().slice(-2); 
+    const month = ('0' + (date.getMonth() + 1)).slice(-2); 
+    const day = ('0' + date.getDate()).slice(-2); 
     return `${year}-${month}-${day}`;
   } catch (e) {
-    return String(timeValue); // Fallback if any error occurs during formatting
+    return String(timeValue); 
   }
 };
 
@@ -63,8 +61,6 @@ export function ChartDisplay({
   timeAxisLabel,
   currentFileName,
   plotTitle = "Time Series Plot",
-  chartRenderHeight = 350,
-  // clipPlotBottom = false, // Removed
 }: ChartDisplayProps) {
 
   const chartData = React.useMemo(() => {
@@ -95,15 +91,14 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
 
-  // Apply clipping to the chart container (wrapper for ResponsiveContainer)
-  const clippedHeight = chartRenderHeight * 0.75; // Clip to 75% of the render height
+  const chartContainerHeight = DEFAULT_CHART_HEIGHT; // Use default height
+  const clippedHeight = chartContainerHeight * 0.75; 
 
   const wrapperStyle: React.CSSProperties = {
     height: `${clippedHeight}px`,
     overflow: 'hidden',
   };
 
-  // Define bottom margin for the LineChart to accommodate X-axis labels, title, and Brush
   const chartBottomMargin = 120; 
 
   if (!data || data.length === 0) {
@@ -151,7 +146,7 @@ export function ChartDisplay({
     <Card className="flex flex-col h-fit">
       <CardContent className="p-1 flex-shrink-0">
         <div style={wrapperStyle}>
-          <ResponsiveContainer width="100%" height={chartRenderHeight}>
+          <ResponsiveContainer width="100%" height={chartContainerHeight}>
             <LineChart
               data={chartData}
               margin={{
@@ -178,7 +173,7 @@ export function ChartDisplay({
                     offset={10} 
                     position="insideBottom"
                     fill="hsl(var(--muted-foreground))"
-                    dy={50} // Ensures label is well above Brush
+                    dy={50} 
                     style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                   />
                 )}
@@ -203,7 +198,7 @@ export function ChartDisplay({
                 itemStyle={{ color: "hsl(var(--foreground))" }}
                 cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
               />
-              <Legend wrapperStyle={{ paddingTop: "30px", fontSize: '0.75em' }} /> {/* Increased paddingTop */}
+              <Legend wrapperStyle={{ paddingTop: "30px", fontSize: '0.75em' }} /> 
               {plottableSeries.map((seriesName, index) => (
                 <Line
                   key={seriesName}
@@ -232,3 +227,5 @@ export function ChartDisplay({
     </Card>
   );
 }
+
+    

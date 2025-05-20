@@ -29,11 +29,6 @@ interface ValidationStep {
 
 const MAX_FILE_SIZE_MB = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-const DEFAULT_CHART_HEIGHT = 350;
-const MIN_CHART_HEIGHT = 200;
-const MAX_CHART_HEIGHT = 800;
-const CHART_HEIGHT_STEP = 50;
-
 
 const initialValidationSteps: ValidationStep[] = [
   { id: 'fileSelection', label: 'File selected', status: 'pending' },
@@ -70,7 +65,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
   const [isMinimized, setIsMinimized] = useState(false);
   const [isMinimalistView, setIsMinimalistView] = useState(false);
-  const [chartRenderHeight, setChartRenderHeight] = useState(DEFAULT_CHART_HEIGHT);
+  // Removed chartRenderHeight state and related constants/functions
 
   useEffect(() => {
     if (!isProcessing && validationSteps.length > 0) {
@@ -143,16 +138,18 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
     const uniqueSeriesNamesForDropdown: string[] = [];
     const usedKeyNamesForDataPoint = new Set<string>();
-    usedKeyNamesForDataPoint.add('time');
+    usedKeyNamesForDataPoint.add('time'); // Reserve 'time' for the first CSV column's data
 
     actualVariableHeadersToProcess.forEach(originalVarHeader => {
         let processedHeader = (originalVarHeader || "Unnamed_Variable").trim();
         if (!processedHeader) processedHeader = "Unnamed_Variable";
 
+        // Disambiguate if header is 'time' (case-insensitive) or already used
         let uniqueKey = processedHeader;
         let suffix = 1;
+        // Check against 'time' (case-insensitive) and other used keys
         while (uniqueKey.toLowerCase() === 'time' || usedKeyNamesForDataPoint.has(uniqueKey)) {
-            uniqueKey = `${processedHeader}_(${suffix})`;
+            uniqueKey = `${processedHeader}_(${suffix})`; // Example: "time (1)", "Value (2)"
             suffix++;
         }
         uniqueSeriesNamesForDropdown.push(uniqueKey);
@@ -165,6 +162,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
        const firstVarPlotKey = uniqueSeriesNamesForDropdown[0];
        updateStepStatus('yAxisFirstVarIdentified', 'success', `CSV Column 2 (original header: "${firstVarOriginalHeader}") provides data for the first variable. It will be plotted using data key: "${firstVarPlotKey}". Total plottable variables: ${uniqueSeriesNamesForDropdown.length}.`);
     } else {
+      // This case should ideally be caught earlier if actualVariableHeadersToProcess is empty.
       updateStepStatus('yAxisFirstVarIdentified', 'error', `File "${fileName}": No plottable variable columns were ultimately identified. Check CSV structure and delimiters (comma, semicolon, or tab).`);
       return null;
     }
@@ -177,46 +175,51 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i];
       const trimmedLine = line.trim();
-      if (!trimmedLine) continue;
+      if (!trimmedLine) continue; // Skip empty lines
 
       const values = trimmedLine.split(delimiterRegex).map(v => v.trim());
       const timeValue = values[0];
 
-      if (!timeValue && values.slice(1).every(v => !v || v.trim() === "")) {
+      // Skip row if time value is missing AND all subsequent (potential variable) values are also missing/empty
+      if (!timeValue && values.slice(1, 1 + uniqueSeriesNamesForDropdown.length).every(v => !v || v.trim() === "")) {
         continue;
       }
 
-      const dataPoint: DataPoint = { time: timeValue || "N/A" };
+      const dataPoint: DataPoint = { time: timeValue || "N/A" }; // Store first column's data under 'time'
       let hasNumericValueInRow = false;
       let rowHasParsingIssue = false;
 
+      // Iterate based on uniqueSeriesNamesForDropdown, which corresponds to CSV columns starting from the second one
       uniqueSeriesNamesForDropdown.forEach((uniqueKey, seriesIdx) => {
-        const originalCsvColumnIndexForVar = seriesIdx + 1;
+        // seriesIdx corresponds to the Nth variable column (0 = first variable column = CSV column 2)
+        const originalCsvColumnIndexForVar = seriesIdx + 1; // +1 because values[0] is time
         const rawValue = values[originalCsvColumnIndexForVar];
 
-        let numericValue: string | number = NaN;
+        let numericValue: string | number = NaN; // Default to NaN for missing/non-numeric
         if (rawValue !== undefined && rawValue !== null && rawValue.trim() !== "") {
-          const cleanedValue = rawValue.replace(/,/g, '');
+          const cleanedValue = rawValue.replace(/,/g, ''); // Remove commas for thousands separators
           const parsedFloat = parseFloat(cleanedValue);
           if (!isNaN(parsedFloat)) {
             numericValue = parsedFloat;
-            hasNumericValueInRow = true;
+            hasNumericValueInRow = true; // Mark that this row has at least one valid number
           } else {
-            numericValue = rawValue; // Keep as string if not parsable as float
+            numericValue = rawValue; // Keep as string if not parsable as float (Recharts might show as gap)
             someRowsHadNonNumericData = true;
             rowHasParsingIssue = true;
           }
         } else {
-            numericValue = NaN; // Treat empty as NaN
+            // Empty or undefined cell for a variable, treat as NaN
+            numericValue = NaN;
             someRowsHadNonNumericData = true;
             rowHasParsingIssue = true;
         }
-        dataPoint[uniqueKey] = numericValue;
+        dataPoint[uniqueKey] = numericValue; // Use the unique (potentially suffixed) key
       });
 
+      // Add dataPoint if it has a time value or at least one numeric value for a variable
       if (timeValue || hasNumericValueInRow) {
          data.push(dataPoint);
-         if (!rowHasParsingIssue && hasNumericValueInRow) {
+         if (!rowHasParsingIssue && hasNumericValueInRow) { // Count rows that were perfectly numeric
             validDataRowsCount++;
          }
       }
@@ -230,7 +233,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     let dataRowMessage = `Processed ${data.length} data rows. ${validDataRowsCount} rows appear fully numeric for at least one variable.`;
     if (someRowsHadNonNumericData) {
       dataRowMessage += " Some non-numeric or empty values in variable columns were encountered; these will be treated as missing (NaN) by the chart.";
-      updateStepStatus('dataRowFormat', 'success', dataRowMessage);
+      updateStepStatus('dataRowFormat', 'success', dataRowMessage); // Still a success, but with a note
     } else {
       updateStepStatus('dataRowFormat', 'success', dataRowMessage);
     }
@@ -353,7 +356,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     setValidationSteps([]);
     setCurrentFileForValidation(null);
     setAccordionValue("");
-    setChartRenderHeight(DEFAULT_CHART_HEIGHT); // Reset chart height
+    // Reset chart height to default if it was part of state
+    // setChartRenderHeight(DEFAULT_CHART_HEIGHT); 
     toast({
       title: "Data Cleared",
       description: "Plot data has been cleared for this instance.",
@@ -373,47 +377,33 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   };
 
   const getSummaryStep = (): ValidationStep | null => {
-    if (!validationSteps.length && !isProcessing && !currentFileForValidation) return null; // No file selected yet or processing done
+    if (!validationSteps.length && !isProcessing && !currentFileForValidation) return null; 
     if (isProcessing && validationSteps.every(s => s.status === 'pending')) {
-        // If processing and all steps are pending, it means we're just starting with the current file
         return {id: 'processing', label: `Preparing to process ${currentFileForValidation || 'file'}...`, status: 'pending'};
     }
-
-    // If we have validation steps
-    if (validationSteps.length === 0 && currentFileForValidation) { // If a file is selected but steps not initialized (should not happen if processFile is called)
+    if (validationSteps.length === 0 && currentFileForValidation) { 
         return {id: 'fileSelectedSummary', label: `Processing: ${currentFileForValidation}`, status: 'pending' };
     }
     if (validationSteps.length === 0) return null;
-
 
     const currentProcessingStep = validationSteps.find(step => step.status === 'pending');
     if (isProcessing && currentProcessingStep) {
       return { ...currentProcessingStep, label: `Processing: ${currentProcessingStep.label}` };
     }
 
-    // If not processing, or all steps are done
     const firstError = validationSteps.find(step => step.status === 'error');
     if (firstError) return firstError;
 
     const allSuccessful = validationSteps.every(step => step.status === 'success');
     if (allSuccessful) {
       const dataReadyStep = validationSteps.find(step => step.id === 'dataReady');
-      if (dataReadyStep) return dataReadyStep; // Should always find this if all successful
+      if (dataReadyStep) return dataReadyStep; 
     }
     
-    // Fallback if something unexpected happened, show the last non-pending step
     const lastNonPendingStep = [...validationSteps].reverse().find(step => step.status !== 'pending');
     if (lastNonPendingStep) return lastNonPendingStep;
 
-    return validationSteps[0] || null; // Or the first step if all are somehow still pending but not processing
-  };
-
-  const increaseChartHeight = () => {
-    setChartRenderHeight(prev => Math.min(prev + CHART_HEIGHT_STEP, MAX_CHART_HEIGHT));
-  };
-
-  const decreaseChartHeight = () => {
-    setChartRenderHeight(prev => Math.max(prev - CHART_HEIGHT_STEP, MIN_CHART_HEIGHT));
+    return validationSteps[0] || null; 
   };
 
   const summaryStep = getSummaryStep();
@@ -446,8 +436,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block"
           )}>
           {!isMinimalistView && (
-             <div className="md:col-span-4 space-y-1.5"> {/* Reduced space-y */}
-              <div className="space-y-1 border p-1.5 rounded-md"> {/* Reduced space-y and padding */}
+             <div className="md:col-span-4 space-y-1.5"> 
+              <div className="space-y-1 border p-1.5 rounded-md"> 
                 <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5">
                    <UploadCloud className="h-3 w-3 text-[#2B7A78]" />
                    <h3 className="text-xs font-semibold text-[#2B7A78]">Import & Validate</h3>
@@ -464,7 +454,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                   />
                 </div>
 
-                {currentFileForValidation && !summaryStep && isProcessing && ( // Show processing if file is selected but summary not ready
+                {currentFileForValidation && !summaryStep && isProcessing && ( 
                      <p className="text-[0.6rem] text-primary animate-pulse px-1">Processing: <span className="font-semibold">{currentFileForValidation}</span>...</p>
                 )}
 
@@ -474,41 +464,41 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     <AccordionItem value={"validation-details-" + instanceId} className="border-b-0">
                       <AccordionTrigger
                         className={cn(
-                          "flex items-center justify-between text-[0.6rem] p-1 rounded-md hover:no-underline hover:bg-muted/50 text-left", // Ensure text aligns left
+                          "flex items-center justify-between text-[0.6rem] p-1 rounded-md hover:no-underline hover:bg-muted/50 text-left", 
                           summaryStep.status === 'error' && 'bg-destructive/10 text-destructive hover:bg-destructive/20',
                           summaryStep.status === 'success' && validationSteps.every(s => s.status === 'success' || s.status === 'pending') && !isProcessing && 'bg-green-500/10 text-green-700 hover:bg-green-500/20',
                           (isProcessing || summaryStep.status === 'pending') && 'bg-blue-500/10 text-blue-700 hover:bg-blue-500/20'
                       )}>
-                        <div className="flex items-center gap-1 min-w-0"> {/* min-w-0 for truncate to work */}
+                        <div className="flex items-center gap-1 min-w-0"> 
                           {isProcessing || summaryStep.status === 'pending' ? <Hourglass className="h-3 w-3 animate-spin flex-shrink-0" /> :
                            summaryStep.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-600 flex-shrink-0" /> :
                            <XCircle className="h-3 w-3 text-destructive flex-shrink-0" />}
                           <span className="truncate font-medium text-[0.6rem]">{summaryStep.label}</span>
                         </div>
                       </AccordionTrigger>
-                      <AccordionContent className="pt-0.5 pb-0"> {/* Reduced padding */}
-                        <div className="text-[0.55rem] text-muted-foreground px-1 pb-0.5"> {/* Adjusted text size and padding */}
+                      <AccordionContent className="pt-0.5 pb-0"> 
+                        <div className="text-[0.55rem] text-muted-foreground px-1 pb-0.5"> 
                             File: {currentFileForValidation || "N/A"}
                         </div>
-                        <ScrollArea className="w-full rounded-md border p-1 bg-muted/20 max-h-28 overflow-y-auto"> {/* Reduced max-h */}
+                        <ScrollArea className="w-full rounded-md border p-1 bg-muted/20 max-h-28 overflow-y-auto"> 
                           {validationSteps.map(step => (
-                            <li key={step.id} className="flex items-start list-none"> {/* Ensure list-none if it's not an actual ul */}
-                              <div className="flex-shrink-0 w-2.5 h-2.5 mr-1 mt-0.5"> {/* Adjusted icon wrapper */}
+                            <li key={step.id} className="flex items-start list-none"> 
+                              <div className="flex-shrink-0 w-2.5 h-2.5 mr-1 mt-0.5"> 
                                 {step.status === 'pending' && <Hourglass className="h-full w-full text-muted-foreground animate-spin" />}
                                 {step.status === 'success' && <CheckCircle2 className="h-full w-full text-green-500" />}
                                 {step.status === 'error' && <XCircle className="h-full w-full text-red-500" />}
                               </div>
-                              <div className="flex-grow min-w-0"> {/* min-w-0 for truncate */}
+                              <div className="flex-grow min-w-0"> 
                                 <span className={cn(
-                                  'block text-[0.55rem]', // Adjusted text size
+                                  'block text-[0.55rem]', 
                                   step.status === 'error' && 'text-destructive font-semibold',
                                   step.status === 'success' && 'text-green-600'
                                 )}>
                                   {step.label}
                                 </span>
-                                {step.message && step.status !== 'pending' && ( // Show message if not pending
+                                {step.message && step.status !== 'pending' && ( 
                                     <span className={cn(
-                                        "text-[0.45rem] block whitespace-pre-wrap", // Adjusted text size, allow wrapping
+                                        "text-[0.45rem] block whitespace-pre-wrap", 
                                         step.status === 'error' ? 'text-red-700' : 'text-muted-foreground'
                                     )} title={step.message}> 
                                        &ndash; {step.message}
@@ -524,10 +514,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                   </Accordion>
                   </div>
                 )}
-                {!summaryStep && !isProcessing && currentFileForValidation && ( // When a file is selected but processing hasn't started full summary
+                {!summaryStep && !isProcessing && currentFileForValidation && ( 
                     <p className="text-[0.6rem] text-muted-foreground px-1">Awaiting processing for <span className="font-semibold">{currentFileForValidation}</span>.</p>
                 )}
-                {!summaryStep && !isProcessing && !currentFileForValidation && ( // Default state
+                {!summaryStep && !isProcessing && !currentFileForValidation && ( 
                      <p className="text-[0.6rem] text-muted-foreground px-1 pb-0.5">Upload a CSV file to begin.</p>
                 )}
                 <div className="px-1 pb-0.5">
@@ -544,7 +534,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
               </div>
 
               {parsedData.length > 0 && (
-                <div className="space-y-1 p-1.5 border rounded-md"> {/* Reduced space-y and padding */}
+                <div className="space-y-1 p-1.5 border rounded-md"> 
                    <div className="flex items-center gap-1">
                       <ListFilter className="h-3 w-3 text-[#2B7A78]" />
                       <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
@@ -565,7 +555,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
-                  <ScrollArea className="w-full rounded-md border p-1 h-20"> {/* Fixed height for ~4 variables */}
+                  <ScrollArea className="w-full rounded-md border p-1 h-20"> 
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
                         <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -602,21 +592,14 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
               timeAxisLabel={timeAxisLabel}
               currentFileName={currentFileName}
               plotTitle={plotTitle || "Chart"}
-              chartRenderHeight={chartRenderHeight}
+              // chartRenderHeight prop is removed, ChartDisplay uses its own default
             />
-            {!isMinimalistView && !isMinimized && parsedData.length > 0 && (
-              <div className="flex justify-center items-center pt-2 gap-2">
-                <Button variant="outline" size="icon" onClick={decreaseChartHeight} aria-label="Decrease plot height" className="h-7 w-7" disabled={chartRenderHeight <= MIN_CHART_HEIGHT}>
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="icon" onClick={increaseChartHeight} aria-label="Increase plot height" className="h-7 w-7" disabled={chartRenderHeight >= MAX_CHART_HEIGHT}>
-                  <ChevronUp className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
+            {/* Height adjustment buttons removed */}
           </div>
         </CardContent>
       )}
     </Card>
   );
 }
+
+    
