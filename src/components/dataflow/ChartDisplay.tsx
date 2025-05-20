@@ -61,7 +61,7 @@ export function ChartDisplay({
   data,
   plottableSeries,
   timeAxisLabel,
-  plotTitle = "Chart", // Used in "No data loaded for {plotTitle}"
+  plotTitle = "Chart", 
   chartRenderHeight: propChartRenderHeight,
 }: ChartDisplayProps) {
   const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
@@ -133,9 +133,9 @@ export function ChartDisplay({
           data={chartData}
           margin={{
             top: 5,
-            right: 20, // Provide some space for Y-axis labels if they are long
-            left: 5,  // Provide some space for Y-axis title
-            bottom: 60, 
+            right: 20,
+            left: 5,
+            bottom: 65, 
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -155,7 +155,7 @@ export function ChartDisplay({
                 offset={15} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={20} 
+                dy={25} 
                 style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
             )}
@@ -167,7 +167,7 @@ export function ChartDisplay({
               position="insideLeft"
               style={{ textAnchor: 'middle', fontSize: '0.7rem' }}
               fill="hsl(var(--foreground))"
-              dx={-5} // Adjusted to prevent overlap with axis ticks
+              dx={-5} 
             />
           </YAxis>
           <Tooltip
@@ -181,7 +181,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: '10px', fontSize: '0.7rem' }} 
+            wrapperStyle={{ paddingTop: '15px', fontSize: '0.7rem' }} 
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
