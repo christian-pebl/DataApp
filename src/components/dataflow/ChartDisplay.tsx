@@ -31,7 +31,7 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 350; 
+const INTERNAL_DEFAULT_CHART_HEIGHT = 350;
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
@@ -43,7 +43,7 @@ const formatXAxisTick = (timeValue: string | number): string => {
         const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue); 
+      return String(timeValue);
     }
     const year = date.getFullYear().toString().slice(-2);
     const month = ('0' + (date.getMonth() + 1)).slice(-2);
@@ -63,11 +63,9 @@ export function ChartDisplay({
 }: ChartDisplayProps) {
   const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
 
-  // This div now directly uses the chartHeightToUse for its height.
-  // ResponsiveContainer inside will use height="100%" to fill this div.
   const wrapperStyle: React.CSSProperties = {
     height: `${chartHeightToUse}px`,
-    width: '100%', // Ensure it takes full width
+    width: '100%',
   };
 
   const chartData = React.useMemo(() => {
@@ -98,7 +96,6 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
 
-
   const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
     <div style={wrapperStyle} className="flex flex-col items-center justify-center p-2">
       <div className="text-center text-muted-foreground">
@@ -124,17 +121,17 @@ export function ChartDisplay({
         "Check CSV columns or select different variables."
       );
   }
-  
+
   return (
-    <div style={wrapperStyle}> {/* This div now sets the height for ResponsiveContainer */}
+    <div style={wrapperStyle}>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
           data={chartData}
           margin={{
             top: 5,
-            right: 15, 
-            left: 5,  
-            bottom: 100, // Adjusted bottom margin for X-axis elements
+            right: 20, // Added a bit more right margin for Y-axis labels if values are large
+            left: 5,
+            bottom: 55, // Reduced bottom margin significantly
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -143,19 +140,19 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={60} // Height for angled labels + title
+            height={35} // Reduced height for X-axis area
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
-            tick={{ fontSize: '0.7rem' }}
+            tick={{ fontSize: '0.6rem' }} // Reduced tick font size
           >
             {timeAxisLabel && (
               <Label
                 value={`${timeAxisLabel} (Adjust time window with slider)`}
-                offset={10} 
+                offset={5} // Reduced offset
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={25} // Position label below ticks but above Brush
-                style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
+                dy={8} // Adjusted dy for new X-axis height
+                style={{ fontSize: '0.6rem', textAnchor: 'middle' }} // Reduced label font size
               />
             )}
           </XAxis>
@@ -166,7 +163,7 @@ export function ChartDisplay({
               position="insideLeft"
               style={{ textAnchor: 'middle', fontSize: '0.7rem' }}
               fill="hsl(var(--foreground))"
-              dx={-5} 
+              dx={-5}
             />
           </YAxis>
           <Tooltip
@@ -174,13 +171,13 @@ export function ChartDisplay({
               backgroundColor: "hsl(var(--background))",
               borderColor: "hsl(var(--border))",
               color: "hsl(var(--foreground))",
-              fontSize: '0.7rem', 
+              fontSize: '0.7rem',
             }}
             itemStyle={{ color: "hsl(var(--foreground))" }}
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: "15px", fontSize: '0.7rem' }} // Reduced padding above legend
+            wrapperStyle={{ paddingTop: "2px", fontSize: '0.6rem' }} // Reduced padding above legend and font size
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -188,25 +185,23 @@ export function ChartDisplay({
               type="monotone"
               dataKey={seriesName}
               stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
-              strokeWidth={1.5} 
-              dot={false} 
+              strokeWidth={1.5}
+              dot={false}
               name={seriesName}
               connectNulls={true}
             />
           ))}
           <Brush
             dataKey="time"
-            height={12} // Slimmer brush
+            height={8} // Slimmer brush
             stroke="hsl(var(--primary))"
             fill="hsl(var(--muted))"
-            fillOpacity={0.3} 
+            fillOpacity={0.3}
             tickFormatter={formatXAxisTick}
-            travellerWidth={10} 
+            travellerWidth={6} // Slimmer traveller handles
           />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
-
-    
