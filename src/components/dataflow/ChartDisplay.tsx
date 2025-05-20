@@ -31,29 +31,25 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 250; // Default height for the chart rendering area
+const INTERNAL_DEFAULT_CHART_HEIGHT = 175; 
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) {
-      // If it's not a valid date, try to parse specific string formats or return as is
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
-        // Format "YYYY-MM-DD..." to "YY-MM-DD"
         const year = timeValue.substring(2, 4);
         const month = timeValue.substring(5, 7);
         const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue); // Fallback for other non-date strings
+      return String(timeValue); 
     }
-    // If it's a valid date object
     const year = date.getFullYear().toString().slice(-2);
     const month = ('0' + (date.getMonth() + 1)).slice(-2);
     const day = ('0' + date.getDate()).slice(-2);
     return `${year}-${month}-${day}`;
   } catch (e) {
-    // Fallback in case of any error during formatting
     return String(timeValue);
   }
 };
@@ -66,7 +62,7 @@ export function ChartDisplay({
   chartRenderHeight: propChartRenderHeight,
 }: ChartDisplayProps) {
   const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
-  const clippedHeight = chartHeightToUse * 0.80; // Apply 20% clip from the bottom
+  const clippedHeight = chartHeightToUse * 0.80; 
 
   const wrapperStyle: CSSProperties = {
     height: `${clippedHeight}px`,
@@ -84,7 +80,7 @@ export function ChartDisplay({
           const value = point[key];
           if (typeof value === 'string') {
             const num = parseFloat(value.replace(/,/g, ''));
-            newPoint[key] = isNaN(num) ? value : num; // Keep as string if not parsable, Recharts handles this for non-numeric series
+            newPoint[key] = isNaN(num) ? value : num;
           } else {
             newPoint[key] = value;
           }
@@ -96,7 +92,6 @@ export function ChartDisplay({
 
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
     if (!chartData || chartData.length === 0 || plottableSeries.length === 0) return false;
-    // Check if at least one selected series has at least one numeric data point
     return plottableSeries.some(seriesName =>
       chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
@@ -144,9 +139,9 @@ export function ChartDisplay({
           data={chartData}
           margin={{
             top: 5,
-            right: 15, // Reduced right margin
-            left: 5,  // Reduced left margin
-            bottom: 85, // Adjusted bottom margin for X-axis, Brush, and Legend
+            right: 15, 
+            left: 5,  
+            bottom: 95, 
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -155,7 +150,7 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={50} // Reduced height for X-axis area
+            height={50} 
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
             tick={{ fontSize: '0.7rem' }}
@@ -166,7 +161,7 @@ export function ChartDisplay({
                 offset={10} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={10} // Adjusted dy to position label appropriately
+                dy={25} 
                 style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
             )}
@@ -178,7 +173,7 @@ export function ChartDisplay({
               position="insideLeft"
               style={{ textAnchor: 'middle', fontSize: '0.7rem' }}
               fill="hsl(var(--foreground))"
-              dx={-5} // Nudge Y-axis label slightly left
+              dx={-5} 
             />
           </YAxis>
           <Tooltip
@@ -186,13 +181,13 @@ export function ChartDisplay({
               backgroundColor: "hsl(var(--background))",
               borderColor: "hsl(var(--border))",
               color: "hsl(var(--foreground))",
-              fontSize: '0.7rem', // Smaller tooltip text
+              fontSize: '0.7rem', 
             }}
             itemStyle={{ color: "hsl(var(--foreground))" }}
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: "20px", fontSize: '0.7rem' }} // Increased paddingTop for more space above legend
+            wrapperStyle={{ paddingTop: "20px", fontSize: '0.7rem' }} 
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -200,20 +195,20 @@ export function ChartDisplay({
               type="monotone"
               dataKey={seriesName}
               stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
-              strokeWidth={1.5} // Thinner lines
-              dot={false} // No dots on lines
+              strokeWidth={1.5} 
+              dot={false} 
               name={seriesName}
               connectNulls={true}
             />
           ))}
           <Brush
             dataKey="time"
-            height={12} // Slimmer brush
+            height={12} 
             stroke="hsl(var(--primary))"
             fill="hsl(var(--muted))"
-            fillOpacity={0.3} // More transparent brush fill
+            fillOpacity={0.3} 
             tickFormatter={formatXAxisTick}
-            travellerWidth={10} // Slimmer brush handles
+            travellerWidth={10} 
           />
         </LineChart>
       </ResponsiveContainer>
