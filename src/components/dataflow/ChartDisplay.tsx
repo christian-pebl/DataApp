@@ -37,22 +37,19 @@ const formatXAxisTick = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) {
-      // If not a valid date, try to parse as YYYY-MM-DD string and extract YY-MM-DD
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
         const year = timeValue.substring(2, 4);
         const month = timeValue.substring(5, 7);
         const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue); // Fallback to original string if not a date and not YYYY-MM-DD
+      return String(timeValue); 
     }
-    // Format valid date as YY-MM-DD
     const year = date.getFullYear().toString().slice(-2);
     const month = ('0' + (date.getMonth() + 1)).slice(-2);
     const day = ('0' + date.getDate()).slice(-2);
     return `${year}-${month}-${day}`;
   } catch (e) {
-    // Fallback for any other error during date parsing/formatting
     return String(timeValue);
   }
 };
@@ -94,14 +91,14 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
 
-  const chartBottomMargin = showSlider ? 105 : 75; // Reduced margins
+  const chartBottomMargin = showSlider ? 95 : 75; // Further reduced for slider visible
 
 
   if (!data || data.length === 0) {
     return (
       <Card className="flex flex-col h-fit">
-        <CardHeader className="p-1.5"> {/* Reduced padding */}
-          <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground"> {/* Reduced text size */}
+        <CardHeader className="p-1.5"> 
+          <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground"> 
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
           </CardTitle>
         </CardHeader>
@@ -118,8 +115,8 @@ export function ChartDisplay({
   if (plottableSeries.length === 0) {
     return (
       <Card className="flex flex-col h-fit">
-        <CardHeader className="p-1.5"> {/* Reduced padding */}
-          <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground"> {/* Reduced text size */}
+        <CardHeader className="p-1.5"> 
+          <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground"> 
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
           </CardTitle>
         </CardHeader>
@@ -136,8 +133,8 @@ export function ChartDisplay({
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
       <Card className="flex flex-col h-fit">
-        <CardHeader className="p-1.5"> {/* Reduced padding */}
-          <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground"> {/* Reduced text size */}
+        <CardHeader className="p-1.5"> 
+          <CardTitle className="flex items-center gap-1.5 text-sm text-muted-foreground"> 
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
           </CardTitle>
         </CardHeader>
@@ -155,20 +152,20 @@ export function ChartDisplay({
 
   return (
     <Card className="flex flex-col h-fit">
-      <CardHeader className="p-1.5"> {/* Reduced padding */}
+      <CardHeader className="p-1.5"> 
         <CardTitle className="flex items-center gap-1.5 text-sm">
           <LineChartIcon className="h-4 w-4 text-primary" />
           {plotTitle}
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-1 flex-shrink-0"> {/* Reduced padding */}
+      <CardContent className="p-1 flex-shrink-0"> 
         <ResponsiveContainer width="100%" height={350}>
           <LineChart
             data={chartData}
             margin={{
               top: 5,
-              right: 15, // Keep some right margin for Y-axis labels if they get long
-              left: 5,   // Keep some left margin for Y-axis labels
+              right: 15, 
+              left: 5,   
               bottom: chartBottomMargin, 
             }}
           >
@@ -178,7 +175,7 @@ export function ChartDisplay({
               stroke="hsl(var(--foreground))"
               angle={-45}
               textAnchor="end"
-              height={60} // Height for angled labels
+              height={60} 
               interval="preserveStartEnd"
               tickFormatter={formatXAxisTick}
               tick={{ fontSize: '0.75em' }}
@@ -189,7 +186,7 @@ export function ChartDisplay({
                   offset={10} 
                   position="insideBottom"
                   fill="hsl(var(--muted-foreground))"
-                  dy={showSlider ? 35 : 25} // Adjusted dy
+                  dy={showSlider ? 20 : 15} 
                   style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                 />
               )}
@@ -201,7 +198,7 @@ export function ChartDisplay({
                 position="insideLeft"
                 style={{ textAnchor: 'middle', fontSize: '0.75em' }}
                 fill="hsl(var(--foreground))"
-                dx={-5} // Added small dx to pull Y-axis label slightly left
+                dx={-5} 
               />
             </YAxis>
             <Tooltip
@@ -230,12 +227,11 @@ export function ChartDisplay({
             {showSlider && (
               <Brush
                 dataKey="time"
-                height={15} 
+                height={10} 
                 stroke="hsl(var(--primary))"
                 fill="hsl(var(--muted))"
                 tickFormatter={formatXAxisTick}
-                y={275} // Explicitly position Brush lower if needed, adjust based on XAxis height and labels
-                travellerWidth={10} // Make traveller handles slimmer
+                travellerWidth={10}
               />
             )}
           </LineChart>
@@ -244,4 +240,3 @@ export function ChartDisplay({
     </Card>
   );
 }
-
