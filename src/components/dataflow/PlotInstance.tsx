@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, Scissors, TrendingDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -39,10 +39,10 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'variableColumnCheck', label: 'Verifying variable column headers (and excluding "Rec" if last)', status: 'pending' },
   { id: 'yAxisFirstVarIdentified', label: 'First Variable Column (for Y-axis) identified', status: 'pending' },
   { id: 'dataRowFormat', label: 'Checking data rows for numeric values', status: 'pending' },
-  { id: 'dataReady', label: 'Import complete', status: 'pending' }, // Changed label
+  { id: 'dataReady', label: 'Import complete', status: 'pending' },
 ];
 
-const DEFAULT_PLOT_HEIGHT = 280; 
+const DEFAULT_PLOT_HEIGHT = 280;
 const EXPANDED_PLOT_HEIGHT = 560;
 
 
@@ -232,7 +232,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       updateStepStatus('dataRowFormat', 'success', dataRowMessage);
     }
 
-    updateStepStatus('dataReady', 'success', "Import complete"); // Changed message
+    updateStepStatus('dataReady', 'success', "Import complete");
     return { data, seriesNames: uniqueSeriesNamesForDropdown, timeHeader };
   };
 
@@ -548,7 +548,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                   </Label>
                 </div>
-                <ScrollArea className="w-full rounded-md border p-1 h-48"> 
+                <ScrollArea className="w-full rounded-md border p-1 h-32"> 
                   {dataSeries.length > 0 ? (
                     dataSeries.map((seriesName) => (
                       <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -609,3 +609,5 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     </Card>
   );
 }
+
+    

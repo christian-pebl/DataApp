@@ -15,9 +15,7 @@ import {
   Label,
   Brush,
 } from "recharts";
-import { Info, LineChart as LineChartIcon } from "lucide-react"; // Renamed to avoid conflict
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-
+import { Info } from "lucide-react"; 
 
 interface DataPoint {
   time: string | number;
@@ -69,7 +67,7 @@ export function ChartDisplay({
   const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
 
   const wrapperStyle: React.CSSProperties = {
-    height: `${chartHeightToUse}px`,
+    height: `${chartHeightToUse}px`, // Use the full height for the chart rendering area
     width: '100%',
   };
 
@@ -136,7 +134,7 @@ export function ChartDisplay({
             top: 5,
             right: 20,
             left: 5,
-            bottom: 75, // Adjusted to accommodate new dy for X-axis label
+            bottom: 71, 
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -156,7 +154,7 @@ export function ChartDisplay({
                 offset={15} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={35} // Increased by 10 from 25
+                dy={32} 
                 style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
             )}
@@ -182,7 +180,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: '15px', fontSize: '0.7rem' }} 
+            wrapperStyle={{ paddingTop: '10px', fontSize: '0.7rem' }} 
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -210,3 +208,5 @@ export function ChartDisplay({
     </div>
   );
 }
+
+    
