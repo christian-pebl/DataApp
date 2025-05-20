@@ -199,8 +199,7 @@ export function ChartDisplay({
             dataKey="time"
             height={11} 
             stroke="hsl(var(--primary))"
-            fill="hsl(var(--muted))"
-            fillOpacity={0.3}
+            fill="transparent"
             tickFormatter={formatXAxisTick}
             travellerWidth={8} 
           />
