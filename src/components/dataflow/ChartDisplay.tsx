@@ -15,7 +15,7 @@ import {
   Brush,
 } from "recharts";
 import { Card, CardContent } from "@/components/ui/card"; // Removed CardHeader, CardTitle
-import { Info } from "lucide-react"; // Removed LineChartIcon as it was in the header
+import { Info } from "lucide-react";
 
 interface DataPoint {
   time: string | number;
@@ -27,7 +27,7 @@ interface ChartDisplayProps {
   plottableSeries: string[];
   timeAxisLabel: string | undefined;
   currentFileName?: string;
-  plotTitle?: string; // Still used for messages
+  plotTitle?: string; 
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
@@ -102,7 +102,6 @@ export function ChartDisplay({
   if (!data || data.length === 0) {
     return (
       <Card className="flex flex-col h-fit">
-        {/* CardHeader removed */}
         <CardContent className="flex-grow flex items-center justify-center p-2">
           <div className="text-center text-muted-foreground">
             <Info className="h-10 w-10 mx-auto mb-1.5" />
@@ -116,7 +115,6 @@ export function ChartDisplay({
   if (plottableSeries.length === 0) {
     return (
       <Card className="flex flex-col h-fit">
-        {/* CardHeader removed */}
         <CardContent className="flex-grow flex items-center justify-center p-2">
           <div className="text-center text-muted-foreground">
             <Info className="h-10 w-10 mx-auto mb-1.5" />
@@ -130,7 +128,6 @@ export function ChartDisplay({
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
       <Card className="flex flex-col h-fit">
-        {/* CardHeader removed */}
         <CardContent className="flex-grow flex items-center justify-center p-2">
           <div className="text-center text-muted-foreground">
             <Info className="h-10 w-10 mx-auto mb-1.5" />
@@ -145,7 +142,6 @@ export function ChartDisplay({
 
   return (
     <Card className="flex flex-col h-fit"> 
-      {/* CardHeader removed */}
       <CardContent className="p-1 flex-shrink-0"> 
         <div style={wrapperStyle}> 
           <ResponsiveContainer width="100%" height={chartContainerHeight}> 
@@ -175,7 +171,7 @@ export function ChartDisplay({
                     offset={10} 
                     position="insideBottom"
                     fill="hsl(var(--muted-foreground))"
-                    dy={35} // Increased from 30 to push label further down
+                    dy={45} 
                     style={{ fontSize: '0.75em', textAnchor: 'middle' }} 
                   />
                 )}

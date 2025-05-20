@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen } from "lucide-react"; // Removed Scissors
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, TrendingDown, Scissors } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -65,7 +65,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
   const [isMinimized, setIsMinimized] = useState(false);
   const [isMinimalistView, setIsMinimalistView] = useState(false);
-
 
   useEffect(() => {
     if (!isProcessing && validationSteps.length > 0) {
@@ -265,7 +264,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       return updateAndReturnNull('fileType', `File name "${file.name}" does not end with .csv. Please select a valid CSV file and try again.`, true, "Unsupported File Type");
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      return updateAndReturnNull('fileType', `File "${file.name}" is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB). Maximum size is ${MAX_FILE_SIZE_MB}MB. Please upload a smaller file and try again.`, true, "File Too Large");
+      return updateAndReturnNull('fileType', `File "${file.name}" is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB). Maximum size is ${MAX_FILE_SIZE_MB}. Please upload a smaller file and try again.`, true, "File Too Large");
     }
     updateStepStatus('fileType', 'success', 'File is a .csv and within size limits.');
 
@@ -395,7 +394,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   return (
     <Card className="shadow-lg"> 
       <CardHeader className="flex flex-row items-center justify-between p-3"> 
-        <CardTitle className="flex items-center gap-2 text-md"> 
+        <CardTitle className="flex items-center gap-2 text-sm"> 
           <Settings2 className="h-4 w-4"/> 
           {plotTitle || "Data Plot"}
         </CardTitle>
