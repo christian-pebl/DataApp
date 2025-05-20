@@ -26,31 +26,34 @@ interface ChartDisplayProps {
   data: DataPoint[];
   plottableSeries: string[];
   timeAxisLabel: string | undefined;
-  currentFileName?: string;
   plotTitle?: string;
   chartRenderHeight?: number;
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 250;
+const INTERNAL_DEFAULT_CHART_HEIGHT = 250; // Default height for the chart rendering area
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) {
+      // If it's not a valid date, try to parse specific string formats or return as is
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
+        // Format "YYYY-MM-DD..." to "YY-MM-DD"
         const year = timeValue.substring(2, 4);
         const month = timeValue.substring(5, 7);
         const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue);
+      return String(timeValue); // Fallback for other non-date strings
     }
+    // If it's a valid date object
     const year = date.getFullYear().toString().slice(-2);
     const month = ('0' + (date.getMonth() + 1)).slice(-2);
     const day = ('0' + date.getDate()).slice(-2);
     return `${year}-${month}-${day}`;
   } catch (e) {
+    // Fallback in case of any error during formatting
     return String(timeValue);
   }
 };
@@ -63,7 +66,7 @@ export function ChartDisplay({
   chartRenderHeight: propChartRenderHeight,
 }: ChartDisplayProps) {
   const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
-  const clippedHeight = chartHeightToUse * 0.80;
+  const clippedHeight = chartHeightToUse * 0.80; // Apply 20% clip from the bottom
 
   const wrapperStyle: CSSProperties = {
     height: `${clippedHeight}px`,
@@ -81,7 +84,7 @@ export function ChartDisplay({
           const value = point[key];
           if (typeof value === 'string') {
             const num = parseFloat(value.replace(/,/g, ''));
-            newPoint[key] = isNaN(num) ? value : num;
+            newPoint[key] = isNaN(num) ? value : num; // Keep as string if not parsable, Recharts handles this for non-numeric series
           } else {
             newPoint[key] = value;
           }
@@ -93,10 +96,12 @@ export function ChartDisplay({
 
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
     if (!chartData || chartData.length === 0 || plottableSeries.length === 0) return false;
+    // Check if at least one selected series has at least one numeric data point
     return plottableSeries.some(seriesName =>
       chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
   }, [chartData, plottableSeries]);
+
 
   if (!data || data.length === 0) {
     return (
@@ -139,9 +144,9 @@ export function ChartDisplay({
           data={chartData}
           margin={{
             top: 5,
-            right: 15,
-            left: 5,
-            bottom: 70, // Reduced from 90
+            right: 15, // Reduced right margin
+            left: 5,  // Reduced left margin
+            bottom: 85, // Adjusted bottom margin for X-axis, Brush, and Legend
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -150,7 +155,7 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={50}
+            height={50} // Reduced height for X-axis area
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
             tick={{ fontSize: '0.7rem' }}
@@ -158,10 +163,10 @@ export function ChartDisplay({
             {timeAxisLabel && (
               <Label
                 value={`${timeAxisLabel} (Adjust time window with slider)`}
-                offset={10} // Adjusted from 15
+                offset={10} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={10} // Adjusted from 15
+                dy={10} // Adjusted dy to position label appropriately
                 style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
             )}
@@ -173,7 +178,7 @@ export function ChartDisplay({
               position="insideLeft"
               style={{ textAnchor: 'middle', fontSize: '0.7rem' }}
               fill="hsl(var(--foreground))"
-              dx={-5}
+              dx={-5} // Nudge Y-axis label slightly left
             />
           </YAxis>
           <Tooltip
@@ -181,13 +186,13 @@ export function ChartDisplay({
               backgroundColor: "hsl(var(--background))",
               borderColor: "hsl(var(--border))",
               color: "hsl(var(--foreground))",
-              fontSize: '0.7rem',
+              fontSize: '0.7rem', // Smaller tooltip text
             }}
             itemStyle={{ color: "hsl(var(--foreground))" }}
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: "5px", fontSize: '0.7rem' }} // Reduced from 15px
+            wrapperStyle={{ paddingTop: "20px", fontSize: '0.7rem' }} // Increased paddingTop for more space above legend
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -195,20 +200,20 @@ export function ChartDisplay({
               type="monotone"
               dataKey={seriesName}
               stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
-              strokeWidth={1.5}
-              dot={false}
+              strokeWidth={1.5} // Thinner lines
+              dot={false} // No dots on lines
               name={seriesName}
               connectNulls={true}
             />
           ))}
           <Brush
             dataKey="time"
-            height={12}
+            height={12} // Slimmer brush
             stroke="hsl(var(--primary))"
             fill="hsl(var(--muted))"
-            fillOpacity={0.3}
+            fillOpacity={0.3} // More transparent brush fill
             tickFormatter={formatXAxisTick}
-            travellerWidth={10}
+            travellerWidth={10} // Slimmer brush handles
           />
         </LineChart>
       </ResponsiveContainer>
