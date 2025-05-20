@@ -15,7 +15,7 @@ import {
   Label,
   Brush,
 } from "recharts";
-import { Info } from "lucide-react"; 
+import { Info } from "lucide-react";
 
 interface DataPoint {
   time: string | number;
@@ -59,11 +59,11 @@ export function ChartDisplay({
   data,
   plottableSeries,
   timeAxisLabel,
-  plotTitle = "Time Series Plot", 
+  plotTitle = "Time Series Plot",
   chartRenderHeight: propChartRenderHeight,
 }: ChartDisplayProps) {
   const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
-  const clippedHeight = chartHeightToUse * 0.80; 
+  const clippedHeight = chartHeightToUse * 0.80;
 
   const wrapperStyle: CSSProperties = {
     height: `${clippedHeight}px`,
@@ -102,7 +102,7 @@ export function ChartDisplay({
     return (
       <div className="flex flex-col h-full items-center justify-center p-2">
         <div className="text-center text-muted-foreground">
-          <Info className="h-8 w-8 mx-auto mb-1" /> 
+          <Info className="h-8 w-8 mx-auto mb-1" />
           <p className="text-xs">No data loaded for {plotTitle}. Upload a file.</p>
         </div>
       </div>
@@ -133,15 +133,15 @@ export function ChartDisplay({
   }
 
   return (
-    <div style={wrapperStyle} className="flex-1 min-h-0"> 
+    <div style={wrapperStyle} className="flex-1 min-h-0">
       <ResponsiveContainer width="100%" height={chartHeightToUse}>
         <LineChart
           data={chartData}
           margin={{
             top: 5,
-            right: 15, 
-            left: 5,  
-            bottom: 90, 
+            right: 15,
+            left: 5,
+            bottom: 70, // Reduced from 90
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -150,18 +150,18 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={50} 
-            interval="preserveStartEnd" 
+            height={50}
+            interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
-            tick={{ fontSize: '0.7rem' }} 
+            tick={{ fontSize: '0.7rem' }}
           >
             {timeAxisLabel && (
               <Label
                 value={`${timeAxisLabel} (Adjust time window with slider)`}
-                offset={10} 
+                offset={10} // Adjusted from 15
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={15} 
+                dy={10} // Adjusted from 15
                 style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
             )}
@@ -173,7 +173,7 @@ export function ChartDisplay({
               position="insideLeft"
               style={{ textAnchor: 'middle', fontSize: '0.7rem' }}
               fill="hsl(var(--foreground))"
-              dx={-5} 
+              dx={-5}
             />
           </YAxis>
           <Tooltip
@@ -181,14 +181,14 @@ export function ChartDisplay({
               backgroundColor: "hsl(var(--background))",
               borderColor: "hsl(var(--border))",
               color: "hsl(var(--foreground))",
-              fontSize: '0.7rem', 
+              fontSize: '0.7rem',
             }}
             itemStyle={{ color: "hsl(var(--foreground))" }}
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
-          <Legend 
-            wrapperStyle={{ paddingTop: "15px", fontSize: '0.7rem' }} 
-          /> 
+          <Legend
+            wrapperStyle={{ paddingTop: "5px", fontSize: '0.7rem' }} // Reduced from 15px
+          />
           {plottableSeries.map((seriesName, index) => (
             <Line
               key={seriesName}
@@ -196,24 +196,22 @@ export function ChartDisplay({
               dataKey={seriesName}
               stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
               strokeWidth={1.5}
-              dot={false} 
+              dot={false}
               name={seriesName}
-              connectNulls={true} 
+              connectNulls={true}
             />
           ))}
           <Brush
             dataKey="time"
-            height={12} 
+            height={12}
             stroke="hsl(var(--primary))"
             fill="hsl(var(--muted))"
-            fillOpacity={0.3} 
+            fillOpacity={0.3}
             tickFormatter={formatXAxisTick}
-            travellerWidth={10} 
+            travellerWidth={10}
           />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
-
-    
