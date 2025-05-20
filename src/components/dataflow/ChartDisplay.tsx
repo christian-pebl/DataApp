@@ -31,7 +31,7 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 175; 
+const INTERNAL_DEFAULT_CHART_HEIGHT = 350; 
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
@@ -62,11 +62,12 @@ export function ChartDisplay({
   chartRenderHeight: propChartRenderHeight,
 }: ChartDisplayProps) {
   const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
-  const clippedHeight = chartHeightToUse * 0.80; 
 
-  const wrapperStyle: CSSProperties = {
-    height: `${clippedHeight}px`,
-    overflow: 'hidden',
+  // This div now directly uses the chartHeightToUse for its height.
+  // ResponsiveContainer inside will use height="100%" to fill this div.
+  const wrapperStyle: React.CSSProperties = {
+    height: `${chartHeightToUse}px`,
+    width: '100%', // Ensure it takes full width
   };
 
   const chartData = React.useMemo(() => {
@@ -98,50 +99,42 @@ export function ChartDisplay({
   }, [chartData, plottableSeries]);
 
 
-  if (!data || data.length === 0) {
-    return (
-      <div className="flex flex-col h-full items-center justify-center p-2">
-        <div className="text-center text-muted-foreground">
-          <Info className="h-8 w-8 mx-auto mb-1" />
-          <p className="text-xs">No data loaded for {plotTitle}. Upload a file.</p>
-        </div>
+  const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
+    <div style={wrapperStyle} className="flex flex-col items-center justify-center p-2">
+      <div className="text-center text-muted-foreground">
+        {icon}
+        <p className="text-xs mt-1">{primaryText}</p>
+        {secondaryText && <p className="text-2xs mt-1">{secondaryText}</p>}
       </div>
-    );
+    </div>
+  );
+
+  if (!data || data.length === 0) {
+    return renderNoDataMessage(<Info className="h-8 w-8 mx-auto" />, `No data loaded for ${plotTitle}.`, "Upload a file to get started.");
   }
 
   if (plottableSeries.length === 0) {
-    return (
-      <div className="flex flex-col h-full items-center justify-center p-2">
-        <div className="text-center text-muted-foreground">
-          <Info className="h-8 w-8 mx-auto mb-1" />
-          <p className="text-xs">Please select at least one variable to plot for {plotTitle}.</p>
-        </div>
-      </div>
-    );
+    return renderNoDataMessage(<Info className="h-8 w-8 mx-auto" />, `Please select at least one variable to plot for ${plotTitle}.`, "Check the boxes in the 'Select Variables' panel.");
   }
 
-  if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
-     return (
-      <div className="flex flex-col h-full items-center justify-center p-2">
-        <div className="text-center text-muted-foreground">
-          <Info className="h-8 w-8 mx-auto mb-1" />
-          <p className="text-xs">No valid numeric data for selected series in {plotTitle}: "{plottableSeries.join(', ')}".</p>
-          <p className="text-2xs mt-1">Check CSV columns or select different variables.</p>
-        </div>
-      </div>
-    );
+  if (!hasAnyNumericDataForSelectedSeries) {
+     return renderNoDataMessage(
+        <Info className="h-8 w-8 mx-auto" />,
+        `No valid numeric data for selected series in ${plotTitle}: "${plottableSeries.join(', ')}".`,
+        "Check CSV columns or select different variables."
+      );
   }
-
+  
   return (
-    <div style={wrapperStyle} className="flex-1 min-h-0">
-      <ResponsiveContainer width="100%" height={chartHeightToUse}>
+    <div style={wrapperStyle}> {/* This div now sets the height for ResponsiveContainer */}
+      <ResponsiveContainer width="100%" height="100%">
         <LineChart
           data={chartData}
           margin={{
             top: 5,
             right: 15, 
             left: 5,  
-            bottom: 95, 
+            bottom: 100, // Adjusted bottom margin for X-axis elements
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -150,7 +143,7 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={50} 
+            height={60} // Height for angled labels + title
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
             tick={{ fontSize: '0.7rem' }}
@@ -161,7 +154,7 @@ export function ChartDisplay({
                 offset={10} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={25} 
+                dy={25} // Position label below ticks but above Brush
                 style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
             )}
@@ -187,7 +180,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: "20px", fontSize: '0.7rem' }} 
+            wrapperStyle={{ paddingTop: "15px", fontSize: '0.7rem' }} // Reduced padding above legend
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -203,7 +196,7 @@ export function ChartDisplay({
           ))}
           <Brush
             dataKey="time"
-            height={12} 
+            height={12} // Slimmer brush
             stroke="hsl(var(--primary))"
             fill="hsl(var(--muted))"
             fillOpacity={0.3} 
@@ -215,3 +208,5 @@ export function ChartDisplay({
     </div>
   );
 }
+
+    

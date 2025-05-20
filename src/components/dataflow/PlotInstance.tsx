@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, Scissors, TrendingDown } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, TrendingDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -42,8 +42,8 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'dataReady', label: 'Data processed successfully', status: 'pending' },
 ];
 
-const DEFAULT_PLOT_HEIGHT = 175; 
-const EXPANDED_PLOT_HEIGHT = 350;
+const DEFAULT_PLOT_HEIGHT = 350;
+const EXPANDED_PLOT_HEIGHT = 600;
 
 
 interface PlotInstanceProps {
@@ -199,21 +199,21 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             numericValue = parsedFloat;
             hasNumericValueInRow = true;
           } else {
-            numericValue = rawValue; // Keep as string if not parsable
+            numericValue = rawValue; 
             someRowsHadNonNumericData = true;
-            rowHasParsingIssue = true; // Consider it a parsing issue for numeric context
+            rowHasParsingIssue = true; 
           }
         } else {
-            numericValue = NaN; // Treat empty or whitespace-only as NaN
+            numericValue = NaN; 
             someRowsHadNonNumericData = true;
-            rowHasParsingIssue = true; // Consider it a parsing issue for numeric context
+            rowHasParsingIssue = true; 
         }
         dataPoint[uniqueKey] = numericValue;
       });
 
-      if (timeValue || hasNumericValueInRow) { // Keep row if time or any numeric value exists
+      if (timeValue || hasNumericValueInRow) { 
          data.push(dataPoint);
-         if (!rowHasParsingIssue && hasNumericValueInRow) { // Count as "valid" if no parsing issues AND numeric data
+         if (!rowHasParsingIssue && hasNumericValueInRow) { 
             validDataRowsCount++;
          }
       }
@@ -241,7 +241,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     const newValidationSteps = initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }));
     setValidationSteps(newValidationSteps);
     setCurrentFileForValidation(file.name);
-    setAccordionValue(""); // Collapse accordion on new file processing
+    setAccordionValue(""); 
 
     const updateAndReturnNull = (stepId: string, errorMsg: string, isToastError: boolean = true, title?: string) => {
       updateStepStatus(stepId, 'error', errorMsg);
@@ -267,7 +267,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       return updateAndReturnNull('fileType', `File name "${file.name}" does not end with .csv. Please select a valid CSV file and try again.`, true, "Unsupported File Type");
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      return updateAndReturnNull('fileType', `File "${file.name}" is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB). Maximum size is ${MAX_FILE_SIZE_MB}. Please upload a smaller file and try again.`, true, "File Too Large");
+      return updateAndReturnNull('fileType', `File "${file.name}" is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB). Maximum size is ${MAX_FILE_SIZE_MB}MB. Please upload a smaller file and try again.`, true, "File Too Large");
     }
     updateStepStatus('fileType', 'success', 'File is a .csv and within size limits.');
 
@@ -311,12 +311,12 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     if (parsedResult) {
         setParsedData(parsedResult.data);
         setCurrentFileName(file.name);
-        setPlotTitle(file.name); // Or keep initialPlotTitle if preferred
+        setPlotTitle(file.name); 
         setDataSeries(parsedResult.seriesNames);
         setTimeAxisLabel(parsedResult.timeHeader);
         const newVisibleSeries: Record<string, boolean> = {};
         parsedResult.seriesNames.forEach((name, index) => {
-           newVisibleSeries[name] = index < 4; // Select first 4 by default
+           newVisibleSeries[name] = index < 4; 
         });
         setVisibleSeries(newVisibleSeries);
         toast({
@@ -417,7 +417,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       {!isMinimized && (
         <CardContent className={cn(
             "p-2 pt-0",
-            !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block"
+            !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block" 
           )}>
           
           {/* Column 1: Import & Validate */}
@@ -523,7 +523,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
           {/* Column 2: Select Variables */}
           {!isMinimalistView && (
-            <div className="md:col-span-2 flex flex-col space-y-1.5"> 
+            <div className="md:col-span-2 flex flex-col space-y-1.5">
               <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1">
                   <ListFilter className="h-3 w-3 text-[#2B7A78]" />
@@ -588,23 +588,25 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                 chartRenderHeight={currentChartHeight}
               />
             </div>
-             {/* Plot Height Toggle - only shown if not minimalist, not minimized, and data exists */}
-             {!isMinimalistView && !isMinimized && parsedData.length > 0 && (
-                <div className="flex justify-center pt-1 pb-1 border-t">
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setIsPlotExpanded(!isPlotExpanded)}
-                    aria-label={isPlotExpanded ? "Collapse plot height" : "Expand plot height"}
-                    className="h-6 w-6" 
-                >
-                    {isPlotExpanded ? <ChevronsUp className="h-4 w-4" /> : <ChevronsDown className="h-4 w-4" />}
-                </Button>
-                </div>
-            )}
           </div>
         </CardContent>
+      )}
+       {/* Plot Height Toggle - only shown if not minimalist, not minimized, and data exists */}
+      {!isMinimalistView && !isMinimized && parsedData.length > 0 && (
+        <div className="flex justify-center pt-1 pb-1 border-t">
+          <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsPlotExpanded(!isPlotExpanded)}
+              aria-label={isPlotExpanded ? "Collapse plot height" : "Expand plot height"}
+              className="h-6 w-6" 
+          >
+              {isPlotExpanded ? <ChevronsUp className="h-4 w-4" /> : <ChevronsDown className="h-4 w-4" />}
+          </Button>
+        </div>
       )}
     </Card>
   );
 }
+
+    
