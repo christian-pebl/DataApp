@@ -15,7 +15,9 @@ import {
   Label,
   Brush,
 } from "recharts";
-import { Info } from "lucide-react";
+import { Info, LineChart as LineChartIcon } from "lucide-react"; // Renamed to avoid conflict
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
 
 interface DataPoint {
   time: string | number;
@@ -31,7 +33,7 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 280; // Default if prop not provided, matches PlotInstance
+const INTERNAL_DEFAULT_CHART_HEIGHT = 280; 
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
@@ -97,7 +99,6 @@ export function ChartDisplay({
     return plottableSeries.some(seriesName =>
       chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartData, plottableSeries]);
 
   const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
@@ -135,7 +136,7 @@ export function ChartDisplay({
             top: 5,
             right: 20,
             left: 5,
-            bottom: 65, 
+            bottom: 75, // Adjusted to accommodate new dy for X-axis label
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -155,7 +156,7 @@ export function ChartDisplay({
                 offset={15} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={25} 
+                dy={35} // Increased by 10 from 25
                 style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
             )}
