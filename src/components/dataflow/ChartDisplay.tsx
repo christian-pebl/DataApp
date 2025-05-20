@@ -31,29 +31,32 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 280;
+const INTERNAL_DEFAULT_CHART_HEIGHT = 280; // Default if prop not provided
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
+    // Check for "YY-MM-DD" format first to avoid re-processing if already formatted
     if (typeof timeValue === 'string' && /^\d{2}-\d{2}-\d{2}$/.test(timeValue)) {
       return timeValue;
     }
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) {
+      // If Date parsing fails, check for "YYYY-MM-DDTHH:MM:SSZ" or similar full ISO strings
+      // and try to extract YYYY-MM-DD part
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
         const year = timeValue.substring(2, 4);
         const month = timeValue.substring(5, 7);
         const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue);
+      return String(timeValue); // Fallback for other non-date strings or numbers
     }
     const year = date.getFullYear().toString().slice(-2);
     const month = ('0' + (date.getMonth() + 1)).slice(-2);
     const day = ('0' + date.getDate()).slice(-2);
     return `${year}-${month}-${day}`;
   } catch (e) {
-    return String(timeValue);
+    return String(timeValue); // Fallback in case of any error
   }
 };
 
@@ -71,6 +74,7 @@ export function ChartDisplay({
     width: '100%',
   };
 
+  // Memoize processed chart data to avoid re-computation on every render
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
       return [];
@@ -81,8 +85,8 @@ export function ChartDisplay({
         if (key !== 'time') {
           const value = point[key];
           if (typeof value === 'string') {
-            const num = parseFloat(value.replace(/,/g, ''));
-            newPoint[key] = isNaN(num) ? value : num;
+            const num = parseFloat(value.replace(/,/g, '')); // Handle numbers with commas
+            newPoint[key] = isNaN(num) ? value : num; // Store as number if parsable, else keep original
           } else {
             newPoint[key] = value;
           }
@@ -98,6 +102,7 @@ export function ChartDisplay({
       chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
   }, [chartData, plottableSeries]);
+
 
   const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
     <div style={wrapperStyle} className="flex flex-col items-center justify-center p-2 h-full">
@@ -132,9 +137,9 @@ export function ChartDisplay({
           data={chartData}
           margin={{
             top: 5,
-            right: 20,
-            left: 5,
-            bottom: 60, // Updated margin
+            right: 20, // Increased right margin for Y-axis labels
+            left: 5,  // Reduced left margin
+            bottom: 60, // Adjusted bottom margin
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -143,10 +148,10 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={55} // Updated height
+            height={60} // Updated height
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
-            tick={{ fontSize: '0.7rem' }}
+            tick={{ fontSize: '0.7rem' }} // Reduced tick font size
           >
             {timeAxisLabel && (
               <Label
@@ -155,7 +160,7 @@ export function ChartDisplay({
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
                 dy={15} // Updated dy
-                style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
+                style={{ fontSize: '0.7rem', textAnchor: 'middle' }} // Reduced label font size
               />
             )}
           </XAxis>
@@ -164,9 +169,9 @@ export function ChartDisplay({
               value="Value"
               angle={-90}
               position="insideLeft"
-              style={{ textAnchor: 'middle', fontSize: '0.7rem' }}
+              style={{ textAnchor: 'middle', fontSize: '0.7rem' }} // Reduced label font size
               fill="hsl(var(--foreground))"
-              dx={-5}
+              dx={-5} // Adjusted dx for Y-axis label position
             />
           </YAxis>
           <Tooltip
@@ -174,13 +179,13 @@ export function ChartDisplay({
               backgroundColor: "hsl(var(--background))",
               borderColor: "hsl(var(--border))",
               color: "hsl(var(--foreground))",
-              fontSize: '0.7rem',
+              fontSize: '0.7rem', // Reduced tooltip font size
             }}
             itemStyle={{ color: "hsl(var(--foreground))" }}
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: "10px", fontSize: '0.7rem' }} // Updated paddingTop
+            wrapperStyle={{ paddingTop: "10px", fontSize: '0.7rem' }} // Updated paddingTop and font size
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -191,12 +196,12 @@ export function ChartDisplay({
               strokeWidth={1.5}
               dot={false}
               name={seriesName}
-              connectNulls={true}
+              connectNulls={true} // Connects lines over null/NaN values
             />
           ))}
           <Brush
             dataKey="time"
-            height={10} // Updated height
+            height={6} // Updated height
             stroke="hsl(var(--primary))"
             fill="hsl(var(--muted))"
             fillOpacity={0.3}
