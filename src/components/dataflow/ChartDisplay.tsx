@@ -63,15 +63,15 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
       return [];
     }
     return data.map(point => {
-      const newPoint: DataPoint = { time: point.time }; 
+      const newPoint: DataPoint = { time: point.time };
       Object.keys(point).forEach(key => {
-        if (key !== 'time') { 
+        if (key !== 'time') {
           const value = point[key];
           if (typeof value === 'string') {
             const num = parseFloat(value.replace(/,/g, ''));
-            newPoint[key] = isNaN(num) ? value : num; 
+            newPoint[key] = isNaN(num) ? value : num;
           } else {
-            newPoint[key] = value; 
+            newPoint[key] = value;
           }
         }
       });
@@ -89,7 +89,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (!data || data.length === 0) {
     return (
-      <Card className="flex flex-col h-fit"> 
+      <Card className="flex flex-col h-fit">
         <CardHeader className="p-2">
           <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm">
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
@@ -144,22 +144,22 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
   }
 
   return (
-    <Card className="flex flex-col h-fit"> 
+    <Card className="flex flex-col h-fit">
       <CardHeader className="p-2">
         <CardTitle className="flex items-center gap-1.5 text-sm">
           <LineChartIcon className="h-4 w-4 text-primary" />
           {plotTitle}
         </CardTitle>
       </CardHeader>
-      <CardContent className="pt-1 p-2 flex-shrink-0"> 
-        <ResponsiveContainer width="100%" height={350}> 
+      <CardContent className="pt-1 p-2 flex-shrink-0">
+        <ResponsiveContainer width="100%" height={350}>
           <LineChart
             data={chartData}
             margin={{
               top: 5,
-              right: 15, 
-              left: 5,  
-              bottom: 130, 
+              right: 15,
+              left: 5,
+              bottom: 125, // Reduced margin
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -168,19 +168,19 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               stroke="hsl(var(--foreground))"
               angle={-45}
               textAnchor="end"
-              height={60} 
-              interval="preserveStartEnd" 
+              height={60}
+              interval="preserveStartEnd"
               tickFormatter={formatXAxisTick}
-              tick={{ fontSize: '0.75em' }} 
+              tick={{ fontSize: '0.75em' }}
             >
               {timeAxisLabel && (
                 <Label
                   value={timeAxisLabel ? `${timeAxisLabel} (Adjust time window with slider)` : "Time (Adjust time window with slider)"}
-                  offset={10} 
+                  offset={10}
                   position="insideBottom"
                   fill="hsl(var(--muted-foreground))"
-                  dy={45} 
-                  style={{ fontSize: '0.75em', textAnchor: 'middle' }} 
+                  dy={40} // Adjusted dy
+                  style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                 />
               )}
             </XAxis>
@@ -198,7 +198,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                 backgroundColor: "hsl(var(--background))",
                 borderColor: "hsl(var(--border))",
                 color: "hsl(var(--foreground))",
-                fontSize: '0.75em', 
+                fontSize: '0.75em',
               }}
               itemStyle={{ color: "hsl(var(--foreground))" }}
               cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
@@ -211,16 +211,16 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                 dataKey={seriesName}
                 stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
                 strokeWidth={1.5}
-                dot={false} 
+                dot={false}
                 name={seriesName}
-                connectNulls={true} 
+                connectNulls={true}
               />
             ))}
             <Brush
               dataKey="time"
-              height={20} 
+              height={15} // Reduced Brush height
               stroke="hsl(var(--primary))"
-              fill="hsl(var(--muted))" 
+              fill="hsl(var(--muted))"
               tickFormatter={formatXAxisTick}
             />
           </LineChart>
