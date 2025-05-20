@@ -64,7 +64,7 @@ export default function DataFlowPage() {
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-14 items-center justify-between px-3 md:px-4"> {/* Reduced height and padding */}
-          <h1 className="text-xl font-bold text-primary">DataFlow</h1> {/* Reduced text size */}
+          <h1 className="text-2xl font-bold text-primary">PEBL</h1> {/* Changed to PEBL and slightly increased size for logo feel */}
           <div className="flex items-center gap-1"> {/* Reduced gap */}
             <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
               {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
@@ -87,6 +87,7 @@ export default function DataFlowPage() {
 
         {plots.length === 0 && (
           <div className="flex flex-col items-center justify-center text-center text-muted-foreground py-6"> {/* Reduced py */}
+            {/* Placeholder icon or simple message if no plots exist, kept minimal */}
             <PlusCircle className="h-10 w-10 mb-2" /> {/* Reduced size and margin */}
             <p className="text-sm">No plots yet.</p> {/* Reduced text size */}
             <p className="text-xs">Click "Add New Plot" to get started.</p> {/* Reduced text size */}
@@ -114,4 +115,3 @@ export default function DataFlowPage() {
     </div>
   );
 }
-
