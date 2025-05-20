@@ -14,7 +14,7 @@ import {
   Label,
   Brush,
 } from "recharts";
-import { Info } from "lucide-react"; 
+import { Info } from "lucide-react";
 
 interface DataPoint {
   time: string | number;
@@ -27,30 +27,35 @@ interface ChartDisplayProps {
   timeAxisLabel: string | undefined;
   currentFileName?: string;
   plotTitle?: string;
-  chartRenderHeight?: number;
+  chartRenderHeight?: number; // Received from PlotInstance
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 250; 
+const INTERNAL_DEFAULT_CHART_HEIGHT = 250; // Fallback if prop not provided
 
+// Function to format X-axis ticks to YY-MM-DD
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
+    // Check if the date is valid
     if (isNaN(date.getTime())) {
+      // If not a valid date, try to parse common string formats if they look like dates
       if (typeof timeValue === 'string' && /^\\d{4}-\\d{2}-\\d{2}/.test(timeValue)) {
-        const year = timeValue.substring(2, 4); 
-        const month = timeValue.substring(5, 7); 
-        const day = timeValue.substring(8, 10); 
+        const year = timeValue.substring(2, 4); // YY
+        const month = timeValue.substring(5, 7); // MM
+        const day = timeValue.substring(8, 10); // DD
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue); 
+      return String(timeValue); // Fallback to string if not parsable
     }
-    const year = date.getFullYear().toString().slice(-2); 
-    const month = ('0' + (date.getMonth() + 1)).slice(-2); 
-    const day = ('0' + date.getDate()).slice(-2); 
+    // Format valid date
+    const year = date.getFullYear().toString().slice(-2); // YY
+    const month = ('0' + (date.getMonth() + 1)).slice(-2); // MM
+    const day = ('0' + date.getDate()).slice(-2); // DD
     return `${year}-${month}-${day}`;
   } catch (e) {
-    return String(timeValue); 
+    // Fallback for any unexpected error during formatting
+    return String(timeValue);
   }
 };
 
@@ -62,8 +67,13 @@ export function ChartDisplay({
   plotTitle = "Time Series Plot",
   chartRenderHeight: propChartRenderHeight,
 }: ChartDisplayProps) {
-
   const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
+  const clippedHeight = chartHeightToUse * 0.75; // Apply 25% clip
+
+  const wrapperStyle: React.CSSProperties = {
+    height: `${clippedHeight}px`,
+    overflow: 'hidden',
+  };
 
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
@@ -75,8 +85,9 @@ export function ChartDisplay({
         if (key !== 'time') {
           const value = point[key];
           if (typeof value === 'string') {
+            // Attempt to parse string value to number, removing commas for thousands
             const num = parseFloat(value.replace(/,/g, ''));
-            newPoint[key] = isNaN(num) ? value : num;
+            newPoint[key] = isNaN(num) ? value : num; // Keep as string if not a number
           } else {
             newPoint[key] = value;
           }
@@ -93,15 +104,10 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
   
-  const wrapperStyle: React.CSSProperties = {
-    height: `${chartHeightToUse}px`, // Use the dynamic chart height
-  };
-
-  const chartBottomMargin = 100; // Fixed margin for X-axis, title, Brush, Legend
 
   if (!data || data.length === 0) {
     return (
-      <div className="flex flex-col h-full items-center justify-center p-2"> {/* Adjusted for no-card */}
+      <div className="flex flex-col h-full items-center justify-center p-2">
         <div className="text-center text-muted-foreground">
           <Info className="h-10 w-10 mx-auto mb-1.5" />
           <p className="text-xs">No data loaded for {plotTitle}. Upload a file to get started.</p>
@@ -112,7 +118,7 @@ export function ChartDisplay({
 
   if (plottableSeries.length === 0) {
     return (
-      <div className="flex flex-col h-full items-center justify-center p-2"> {/* Adjusted for no-card */}
+      <div className="flex flex-col h-full items-center justify-center p-2">
         <div className="text-center text-muted-foreground">
           <Info className="h-10 w-10 mx-auto mb-1.5" />
           <p className="text-xs">Please select at least one variable to plot for {plotTitle}.</p>
@@ -123,7 +129,7 @@ export function ChartDisplay({
 
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
-      <div className="flex flex-col h-full items-center justify-center p-2"> {/* Adjusted for no-card */}
+      <div className="flex flex-col h-full items-center justify-center p-2">
         <div className="text-center text-muted-foreground">
           <Info className="h-10 w-10 mx-auto mb-1.5" />
           <p className="text-xs">No valid numeric data found for the currently selected series in {plotTitle}: "{plottableSeries.join(', ')}".</p>
@@ -134,17 +140,16 @@ export function ChartDisplay({
     );
   }
 
-  // Directly return the chart container div
   return (
     <div style={wrapperStyle} className="flex-1 min-h-0"> 
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={chartHeightToUse}> {/* Renders at full height, clipped by parent */}
         <LineChart
           data={chartData}
           margin={{
             top: 5,
             right: 15, 
             left: 5,  
-            bottom: chartBottomMargin,
+            bottom: 75, // Reduced bottom margin
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -153,7 +158,7 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={70} 
+            height={50} // Reduced height
             interval="preserveStartEnd" 
             tickFormatter={formatXAxisTick}
             tick={{ fontSize: '0.7rem' }} 
@@ -164,7 +169,7 @@ export function ChartDisplay({
                 offset={10} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={50} 
+                dy={15} // Adjusted dy to bring closer to axis
                 style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
             )}
@@ -190,7 +195,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend 
-            wrapperStyle={{ paddingTop: "30px", fontSize: '0.7rem' }} 
+            wrapperStyle={{ paddingTop: "5px", fontSize: '0.7rem' }} // Reduced paddingTop
           /> 
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -206,7 +211,7 @@ export function ChartDisplay({
           ))}
           <Brush
             dataKey="time"
-            height={14} 
+            height={12} // Reduced height
             stroke="hsl(var(--primary))"
             fill="hsl(var(--muted))"
             fillOpacity={0.3} 
