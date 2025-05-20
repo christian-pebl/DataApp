@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, TrendingDown } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, TrendingDown, Scissors } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -42,8 +42,8 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'dataReady', label: 'Data processed successfully', status: 'pending' },
 ];
 
-const DEFAULT_PLOT_HEIGHT = 250; // Reduced default height
-const EXPANDED_PLOT_HEIGHT = 500; // Adjusted expanded height
+const DEFAULT_PLOT_HEIGHT = 250;
+const EXPANDED_PLOT_HEIGHT = 500;
 
 
 interface PlotInstanceProps {
@@ -521,8 +521,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                 </div>
               </div>
 
-              {parsedData.length > 0 && (
-                <div className="space-y-1 p-1.5 border rounded-md flex flex-col"> 
+              <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0"> 
                    <div className="flex items-center gap-1">
                       <ListFilter className="h-3 w-3 text-[#2B7A78]" />
                       <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
@@ -543,7 +542,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
-                  <ScrollArea className="w-full rounded-md border p-1 h-48"> 
+                  <ScrollArea className="w-full rounded-md border p-1 flex-1"> 
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
                         <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -573,7 +572,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             </div>
           )}
 
-          <div className={cn(!isMinimalistView ? "md:col-span-8 md:self-end" : "")}>
+          <div className={cn(!isMinimalistView ? "md:col-span-8 md:self-start" : "")}>
             <ChartDisplay
               data={parsedData}
               plottableSeries={plottableSeries}

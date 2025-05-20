@@ -32,7 +32,7 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 250; // Default height if prop not provided
+const INTERNAL_DEFAULT_CHART_HEIGHT = 250; 
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
@@ -95,10 +95,10 @@ export function ChartDisplay({
   }, [chartData, plottableSeries]);
   
   const wrapperStyle: React.CSSProperties = {
-    height: `${chartHeightToUse}px`, // Use dynamic height
+    height: `${chartHeightToUse}px`,
   };
 
-  const chartBottomMargin = 100; 
+  const chartBottomMargin = 80; 
 
   if (!data || data.length === 0) {
     return (
@@ -144,7 +144,7 @@ export function ChartDisplay({
   return (
     <Card className="flex flex-col h-fit">
       <CardContent className="p-1 flex-shrink-0">
-        <div style={wrapperStyle}> {/* Wrapper uses dynamic height */}
+        <div style={wrapperStyle}> 
           <ResponsiveContainer width="100%" height={chartHeightToUse}>
             <LineChart
               data={chartData}
@@ -161,10 +161,10 @@ export function ChartDisplay({
                 stroke="hsl(var(--foreground))"
                 angle={-45}
                 textAnchor="end"
-                height={60} 
+                height={50} 
                 interval="preserveStartEnd" 
                 tickFormatter={formatXAxisTick}
-                tick={{ fontSize: '0.75em' }} 
+                tick={{ fontSize: '0.7rem' }} 
               >
                 {timeAxisLabel && (
                   <Label
@@ -172,17 +172,17 @@ export function ChartDisplay({
                     offset={10} 
                     position="insideBottom"
                     fill="hsl(var(--muted-foreground))"
-                    dy={25} 
-                    style={{ fontSize: '0.75em', textAnchor: 'middle' }}
+                    dy={15} 
+                    style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
                   />
                 )}
               </XAxis>
-              <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']} tick={{ fontSize: '0.75em' }}>
+              <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']} tick={{ fontSize: '0.7rem' }}>
                 <Label
                   value="Value"
                   angle={-90}
                   position="insideLeft"
-                  style={{ textAnchor: 'middle', fontSize: '0.75em' }}
+                  style={{ textAnchor: 'middle', fontSize: '0.7rem' }}
                   fill="hsl(var(--foreground))"
                   dx={-5} 
                 />
@@ -192,12 +192,14 @@ export function ChartDisplay({
                   backgroundColor: "hsl(var(--background))",
                   borderColor: "hsl(var(--border))",
                   color: "hsl(var(--foreground))",
-                  fontSize: '0.75em', 
+                  fontSize: '0.7rem', 
                 }}
                 itemStyle={{ color: "hsl(var(--foreground))" }}
                 cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
               />
-              <Legend wrapperStyle={{ paddingTop: "15px", fontSize: '0.75em' }} /> 
+              <Legend 
+                wrapperStyle={{ paddingTop: "5px", fontSize: '0.7rem' }} 
+              /> 
               {plottableSeries.map((seriesName, index) => (
                 <Line
                   key={seriesName}
@@ -212,7 +214,7 @@ export function ChartDisplay({
               ))}
               <Brush
                 dataKey="time"
-                height={14} 
+                height={12} 
                 stroke="hsl(var(--primary))"
                 fill="hsl(var(--muted))"
                 fillOpacity={0.3} 
@@ -226,3 +228,4 @@ export function ChartDisplay({
     </Card>
   );
 }
+
