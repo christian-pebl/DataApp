@@ -30,10 +30,13 @@ interface ValidationStep {
   message?: string;
 }
 
+const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
 const initialValidationSteps: ValidationStep[] = [
   { id: 'fileSelection', label: 'File selected', status: 'pending' },
-  { id: 'fileType', label: 'Checking file type (must be .csv)', status: 'pending' },
-  { id: 'fileRead', label: 'Reading file content', status: 'pending' },
+  { id: 'fileType', label: `Checking file name, type, and size (must be .csv, < ${MAX_FILE_SIZE_MB}MB)`, status: 'pending' },
+  { id: 'fileRead', label: 'Reading file content (checking if empty or unreadable)', status: 'pending' },
   { id: 'headerParse', label: 'Checking for header row', status: 'pending' },
   { id: 'timeColumnCheck', label: 'Verifying first column as time/date', status: 'pending' },
   { id: 'variableColumnCheck', label: 'Verifying variable column headers', status: 'pending' },
@@ -65,19 +68,19 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     );
   };
 
-  const parseAndValidateCsv = (csvText: string): { data: DataPoint[], seriesNames: string[], timeHeader: string } | null => {
+  const parseAndValidateCsv = (csvText: string, fileName: string): { data: DataPoint[], seriesNames: string[], timeHeader: string } | null => {
     const lines = csvText.trim().split(/\r\n|\n/);
     if (lines.length < 2) {
-      updateStepStatus('headerParse', 'error', "CSV must have a header row and at least one data row.");
+      updateStepStatus('headerParse', 'error', `File "${fileName}": CSV content error. Must have a header row and at least one data row.`);
       return null;
     }
     updateStepStatus('headerParse', 'success', "Header row found.");
 
-    const delimiterRegex = /\s*[,;\t]\s*|\s+/;
+    const delimiterRegex = /\s*[,;\t]\s*|\s+/; // Handles comma, semicolon, tab, or space(s)
     const originalHeaders = lines[0].trim().split(delimiterRegex).map(h => h.trim());
 
     if (originalHeaders.length < 1 || !originalHeaders[0]?.trim()) {
-      updateStepStatus('timeColumnCheck', 'error', "CSV header row is missing, empty, or first column (time/date) header is missing.");
+      updateStepStatus('timeColumnCheck', 'error', `File "${fileName}": CSV header error. First column (time/date) header is missing or empty.`);
       return null;
     }
     const timeHeader = originalHeaders[0].trim();
@@ -86,7 +89,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     const variableHeaders = originalHeaders.slice(1);
 
     if (variableHeaders.length === 0) {
-      updateStepStatus('variableColumnCheck', 'error', "No data variable columns found after the first (time) column.");
+      updateStepStatus('variableColumnCheck', 'error', `File "${fileName}": CSV structure error. No data variable columns found after the first (time) column.`);
       return null;
     }
 
@@ -125,6 +128,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       const values = trimmedLine.split(delimiterRegex).map(v => v.trim());
 
       const timeValue = values[0];
+      // Skip rows that are completely empty or only have a time value with no variable data
       if (!timeValue && values.slice(1).every(v => !v || v.trim() === "")) {
         continue;
       }
@@ -134,13 +138,14 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       let rowHasParsingIssue = false;
 
       uniqueSeriesNames.forEach((seriesName, idx) => {
-        const csvColumnIndex = idx + 1;
+        const csvColumnIndex = idx + 1; // originalHeaders[0] is time, so variable data starts from originalHeaders[1]
         const rawValue = values[csvColumnIndex];
 
         if (rawValue === undefined || rawValue.trim() === "") {
-          dataPoint[seriesName] = NaN;
+          dataPoint[seriesName] = NaN; // Represent missing data as NaN
           return;
         }
+        // Remove thousands separators (commas) before parsing
         const cleanedValue = rawValue.replace(/,/g, '');
         const seriesValue = parseFloat(cleanedValue);
 
@@ -148,29 +153,30 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           dataPoint[seriesName] = seriesValue;
           hasNumericValueInRow = true;
         } else {
-          dataPoint[seriesName] = NaN;
+          dataPoint[seriesName] = NaN; // Non-numeric value treated as missing
           someRowsHadNonNumericData = true;
           rowHasParsingIssue = true;
         }
       });
-
+      
+      // Add data point if it has at least one numeric value or if it has a time value and some variable values (even if they parsed to NaN)
       if (hasNumericValueInRow || (timeValue && values.length > 1 && values.slice(1).some(v => v && v.trim() !== ""))) {
          data.push(dataPoint);
-         if (!rowHasParsingIssue && hasNumericValueInRow) {
+         if (!rowHasParsingIssue && hasNumericValueInRow) { // Count rows that are perfectly numeric
             validDataRowsCount++;
          }
       }
     }
 
     if (data.length === 0) {
-      updateStepStatus('dataRowFormat', 'error', "No processable data rows found. Ensure variable columns contain numeric data and time values are present. Check for correct delimiter (comma, tab, or space).");
+      updateStepStatus('dataRowFormat', 'error', `File "${fileName}": CSV data error. No processable data rows found. Ensure variable columns contain numeric data and time values are present. Also check for correct delimiter (comma, tab, or space).`);
       return null;
     }
 
     let dataRowMessage = `Processed ${data.length} data rows. ${validDataRowsCount} rows are fully numeric.`;
     if (someRowsHadNonNumericData) {
       dataRowMessage += " Some non-numeric values encountered and treated as missing (NaN).";
-      updateStepStatus('dataRowFormat', 'success', dataRowMessage);
+      updateStepStatus('dataRowFormat', 'success', dataRowMessage); // Still success, but with a warning
     } else {
       updateStepStatus('dataRowFormat', 'success', dataRowMessage);
     }
@@ -182,43 +188,63 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
   const processFile = async (file: File): Promise<{ data: DataPoint[], seriesNames: string[], timeHeader: string } | null> => {
     setValidationSteps(initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined })));
     setCurrentFileForValidation(file.name);
-    setAccordionValue("");
+    setAccordionValue(""); // Close accordion initially
     updateStepStatus('fileSelection', 'success', `Selected: ${file.name}`);
 
-    if (!file.name.endsWith(".csv")) {
-      updateStepStatus('fileType', 'error', "Unsupported file type. Please select a .csv file and try again.");
-      toast({ variant: "destructive", title: "Upload Failed", description: "Unsupported file type. Please select a .csv file and try again." });
+    // Check 1: File Extension
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      const errorMsg = `File name "${file.name}" does not end with .csv. Please select a valid CSV file and try again.`;
+      updateStepStatus('fileType', 'error', errorMsg);
+      toast({ variant: "destructive", title: "Unsupported File Type", description: errorMsg });
       setAccordionValue("validation-details");
       return null;
     }
-    updateStepStatus('fileType', 'success');
 
+    // Check 2: File Size
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      const errorMsg = `File "${file.name}" is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB). Maximum size is ${MAX_FILE_SIZE_MB}MB. Please upload a smaller file.`;
+      updateStepStatus('fileType', 'error', errorMsg); // Use 'fileType' step for this check as well
+      toast({ variant: "destructive", title: "File Too Large", description: errorMsg });
+      setAccordionValue("validation-details");
+      return null;
+    }
+    updateStepStatus('fileType', 'success', 'File is a .csv and within size limits.');
+
+    // Check 3: File Readability & Emptiness
     let fileContent;
     try {
       fileContent = await file.text();
-      updateStepStatus('fileRead', 'success');
+      if (!fileContent.trim()) {
+        const errorMsg = `File "${file.name}" is empty or contains only whitespace. Please upload a file with content.`;
+        updateStepStatus('fileRead', 'error', errorMsg);
+        toast({ variant: "destructive", title: "Empty File", description: errorMsg });
+        setAccordionValue("validation-details");
+        return null;
+      }
+      updateStepStatus('fileRead', 'success', 'File content read successfully.');
     } catch (e) {
-      updateStepStatus('fileRead', 'error', "Could not read file content. Please ensure the file is accessible and try again.");
-      toast({ variant: "destructive", title: "File Read Error", description: "Could not read the file. Please try again." });
+      const errorMsg = `Could not read content from file "${file.name}". It may be corrupted, not a plain text file, or permissions might be an issue. Please check the file and try again.`;
+      updateStepStatus('fileRead', 'error', errorMsg);
+      toast({ variant: "destructive", title: "File Read Error", description: errorMsg });
       setAccordionValue("validation-details");
       return null;
     }
 
-    const result = parseAndValidateCsv(fileContent);
+    const result = parseAndValidateCsv(fileContent, file.name);
     if (!result) {
        toast({
          variant: "destructive",
          title: "CSV Data Validation Failed",
-         description: "Please check the validation checklist above for details and ensure your CSV file meets the requirements. You can then try uploading again.",
+         description: `File "${file.name}": Please check the validation checklist above for details and ensure your CSV file meets the requirements. You can then try uploading again.`,
        });
-       setAccordionValue("validation-details");
+       setAccordionValue("validation-details"); // Ensure accordion opens on parse error
     }
     return result;
   };
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     setIsProcessing(true);
-    setValidationSteps([]);
+    setValidationSteps([]); // Clear previous validation steps
     setCurrentFileForValidation(null);
 
     const file = event.target.files?.[0];
@@ -237,6 +263,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
         });
     }
     setIsProcessing(false);
+    // Clear the file input value so the same file can be re-uploaded if needed after an error
     if (event.target) {
       event.target.value = "";
     }
@@ -260,15 +287,22 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       const firstPending = validationSteps.find(step => step.status === 'pending');
       if (firstPending) return { ...firstPending, label: `Processing: ${firstPending.label}` };
       const lastProcessing = validationSteps.filter(s => s.status !== 'pending').pop();
-      if(lastProcessing) return {...lastProcessing, status: 'pending', label: `Processing: ${lastProcessing.label}`};
-    } else {
+      if(lastProcessing) return {...lastProcessing, status: 'pending', label: `Processing: ${lastProcessing.label}`}; // Should ideally not happen if steps are sequential
+    } else { // Not processing
       const firstError = validationSteps.find(step => step.status === 'error');
-      if (firstError) return firstError;
-      const lastSuccess = validationSteps.filter(step => step.status === 'success').pop();
-      if (lastSuccess && lastSuccess.id === 'dataReady') return lastSuccess;
-      if (lastSuccess) return lastSuccess;
+      if (firstError) return firstError; // Show the first error encountered
+      
+      const allSuccessful = validationSteps.every(step => step.status === 'success');
+      if (allSuccessful) {
+        const dataReadyStep = validationSteps.find(step => step.id === 'dataReady');
+        if (dataReadyStep) return dataReadyStep;
+      }
+      // If some are success, some pending (should not happen if not processing), or other intermediate state
+      const lastCompleted = [...validationSteps].reverse().find(step => step.status === 'success' || step.status === 'error');
+      if (lastCompleted) return lastCompleted;
     }
-    return validationSteps[validationSteps.length -1];
+    // Default fallback (e.g., if only 'fileSelection' is done and then processing stops)
+    return validationSteps[0] || null;
   };
 
   const summaryStep = getSummaryStep();
@@ -281,7 +315,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           Import Data
         </CardTitle>
         <CardDescription>
-          Upload a CSV file. The first column should be time/date. Subsequent columns are data series with headers in the first row and numeric data below. Delimiters can be comma, semicolon, tab, or space(s).
+          Upload a CSV file. The first column should be time/date. Subsequent columns are data series with headers in the first row and numeric data below. Delimiters can be comma, semicolon, tab, or space(s). Max file size: {MAX_FILE_SIZE_MB}MB.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
