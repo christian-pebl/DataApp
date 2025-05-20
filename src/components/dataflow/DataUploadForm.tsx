@@ -13,8 +13,8 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 interface DataPoint {
-  time: string | number; // Data from the first CSV column
-  [key: string]: string | number | undefined; // Data from subsequent CSV columns, using unique series names
+  time: string | number; 
+  [key: string]: string | number | undefined; 
 }
 
 interface DataUploadFormProps {
@@ -39,8 +39,8 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'fileRead', label: 'Reading file content (checking if empty or unreadable)', status: 'pending' },
   { id: 'headerParse', label: 'Checking for header row', status: 'pending' },
   { id: 'xAxisIdentified', label: 'X-axis (time) column identified', status: 'pending' },
-  { id: 'variableColumnCheck', label: 'Verifying variable column headers', status: 'pending' },
-  { id: 'yAxisIdentified', label: 'Default Y-axis (first variable) column identified', status: 'pending' }, // This step label might be less relevant with checkbox selector
+  { id: 'variableColumnCheck', label: 'Verifying variable column headers (and excluding "Rec" if last)', status: 'pending' },
+  { id: 'yAxisFirstVarIdentified', label: 'First Variable Column (for Y-axis) identified', status: 'pending' }, 
   { id: 'dataRowFormat', label: 'Checking data rows for numeric values', status: 'pending' },
   { id: 'dataReady', label: 'Data processed successfully', status: 'pending' },
 ];
@@ -75,58 +75,61 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       updateStepStatus('headerParse', 'error', `File "${fileName}": CSV content error. Must have a header row and at least one data row.`);
       updateStepStatus('xAxisIdentified', 'error', 'Cannot identify X-axis: Header row missing.');
       updateStepStatus('variableColumnCheck', 'error', 'Cannot identify variable columns: Header row missing.');
-      updateStepStatus('yAxisIdentified', 'error', 'Cannot identify Y-axis: Header row missing.');
+      updateStepStatus('yAxisFirstVarIdentified', 'error', 'Cannot identify first Y-axis variable: Header row missing.');
       updateStepStatus('dataRowFormat', 'error', 'Cannot check data rows: Header row missing.');
       return null;
     }
     updateStepStatus('headerParse', 'success', "Header row found.");
 
-    const delimiterRegex = /\s*[,;\t]\s*|\s+/; // Supports comma, semicolon, tab, or space(s)
+    const delimiterRegex = /\s*[,;\t]\s*|\s+/; 
     const originalHeaders = lines[0].trim().split(delimiterRegex).map(h => h.trim());
 
-    if (originalHeaders.length < 1 || !originalHeaders[0]?.trim()) {
-      updateStepStatus('xAxisIdentified', 'error', `File "${fileName}": CSV header error. First column (expected for X-axis time/date) header is missing or empty.`);
-      updateStepStatus('variableColumnCheck', 'error', 'Cannot identify variable columns: X-axis header missing.');
-      updateStepStatus('yAxisIdentified', 'error', 'Cannot identify Y-axis: X-axis header missing.');
-      return null;
-    }
-    const timeHeader = originalHeaders[0].trim();
-    updateStepStatus('xAxisIdentified', 'success', `Using header: '${timeHeader}' from column 1 for X-axis.`);
-
-    let potentialVariableHeaders = originalHeaders.slice(1);
-    let actualVariableHeadersToProcess = [...potentialVariableHeaders];
-
-    // Check if the last column's header is "Rec" (case-insensitive) and exclude it
-    if (potentialVariableHeaders.length > 0 && originalHeaders[originalHeaders.length - 1].trim().toLowerCase() === 'rec') {
-      actualVariableHeadersToProcess = potentialVariableHeaders.slice(0, -1); // Exclude the last item
-      updateStepStatus('variableColumnCheck', 'success', `Identified variable columns. Last column "Rec" will be excluded from plotting.`);
-    } else if (potentialVariableHeaders.length === 0) {
-       updateStepStatus('variableColumnCheck', 'error', `File "${fileName}": CSV structure error. No data variable columns found after the first (time) column.`);
-       updateStepStatus('yAxisIdentified', 'error', `File "${fileName}": No variable columns for Y-axis. CSV must have at least two columns (time + one variable). "Rec" column (if last) is ignored.`);
-       return null;
+    const timeHeader = originalHeaders[0]?.trim() || "X-Axis Time (Default)";
+    if (!originalHeaders[0]?.trim()){
+        updateStepStatus('xAxisIdentified', 'success', `CSV Column 1 header was empty. Using default name: '${timeHeader}' for X-axis.`);
     } else {
-        updateStepStatus('variableColumnCheck', 'success', `Identified ${actualVariableHeadersToProcess.length} variable column(s): ${actualVariableHeadersToProcess.join(', ') || 'None available after "Rec" exclusion'}.`);
+        updateStepStatus('xAxisIdentified', 'success', `Using CSV Column 1 header: '${timeHeader}' for X-axis data.`);
     }
     
-    if (actualVariableHeadersToProcess.length === 0 && originalHeaders[originalHeaders.length - 1].trim().toLowerCase() === 'rec' && originalHeaders.length === 2) {
-        // Special case: CSV only had "Time" and "Rec"
-        updateStepStatus('yAxisIdentified', 'error', `File "${fileName}": Only a time column and a "Rec" column found. No other variables to plot.`);
+
+    let potentialVariableHeaders = originalHeaders.slice(1);
+    let actualVariableHeadersToProcess: string[];
+
+    if (potentialVariableHeaders.length > 0 && originalHeaders[originalHeaders.length - 1].trim().toLowerCase() === 'rec') {
+      actualVariableHeadersToProcess = potentialVariableHeaders.slice(0, -1); 
+      updateStepStatus('variableColumnCheck', 'success', `Identified variable columns. Last column "Rec" (header: "${originalHeaders[originalHeaders.length - 1]}") was found and excluded from plotting.`);
+    } else if (potentialVariableHeaders.length === 0) {
+       updateStepStatus('variableColumnCheck', 'error', `File "${fileName}": CSV structure error. No data variable columns found after the first (time) column.`);
+       updateStepStatus('yAxisFirstVarIdentified', 'error', `File "${fileName}": No variable columns for Y-axis. CSV must have at least two columns (time + one variable).`);
+       return null;
+    } else {
+        actualVariableHeadersToProcess = [...potentialVariableHeaders];
+        updateStepStatus('variableColumnCheck', 'success', `Identified ${actualVariableHeadersToProcess.length} variable column(s): ${actualVariableHeadersToProcess.map(h => `"${h}"`).join(', ')}. No "Rec" column found at the end, or it was not the last column.`);
+    }
+    
+    if (actualVariableHeadersToProcess.length === 0) {
+        // This case can be reached if the only column after 'time' was 'Rec' and got excluded.
+        const yAxisErrorMsg = originalHeaders.length === 2 && originalHeaders[1].trim().toLowerCase() === 'rec' ?
+            `File "${fileName}": Only a time column and a "Rec" column found. No other variables to plot.` :
+            `File "${fileName}": No plottable variable columns found after processing headers (e.g., after excluding "Rec" column if it was the only variable).`;
+        updateStepStatus('yAxisFirstVarIdentified', 'error', yAxisErrorMsg);
         return null;
     }
 
 
     const uniqueSeriesNamesForDropdown: string[] = [];
-    const usedKeyNamesForDataPoint = new Set<string>();
+    const usedKeyNamesForDataPoint = new Set<string>(); // To track keys used in DataPoint objects, including the fixed "time" key
 
     actualVariableHeadersToProcess.forEach(originalVarHeader => {
-        let processedHeader = (originalVarHeader || "Unnamed Series").trim();
-        if (!processedHeader) processedHeader = "Unnamed Series";
+        let processedHeader = (originalVarHeader || "Unnamed_Variable").trim();
+        if (!processedHeader) processedHeader = "Unnamed_Variable";
 
         let uniqueKey = processedHeader;
         let suffix = 1;
         
+        // Ensure variable keys don't clash with the fixed 'time' key or other variable keys
         while (uniqueKey.toLowerCase() === 'time' || usedKeyNamesForDataPoint.has(uniqueKey)) {
-            uniqueKey = `${processedHeader}_${suffix}`; // Use underscore for better readability than space+(num)
+            uniqueKey = `${processedHeader}_(${suffix})`; 
             suffix++;
         }
         
@@ -135,9 +138,12 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     });
     
     if (uniqueSeriesNamesForDropdown.length > 0) {
-       updateStepStatus('yAxisIdentified', 'success', `First plottable variable (default for Y-axis if needed, now using checkboxes): '${uniqueSeriesNamesForDropdown[0]}' (from CSV column 2 header: "${actualVariableHeadersToProcess[0]}"). Total plottable variables: ${uniqueSeriesNamesForDropdown.length}.`);
+       const firstVarOriginalHeader = actualVariableHeadersToProcess[0]?.trim() || "Unnamed";
+       const firstVarPlotKey = uniqueSeriesNamesForDropdown[0];
+       updateStepStatus('yAxisFirstVarIdentified', 'success', `CSV Column 2 (original header: "${firstVarOriginalHeader}") provides data for the first variable. It will be plotted using data key: "${firstVarPlotKey}". Total plottable variables: ${uniqueSeriesNamesForDropdown.length}.`);
     } else {
-      updateStepStatus('yAxisIdentified', 'error', `File "${fileName}": No plottable variable columns found after processing headers (and potentially excluding "Rec" column).`);
+      // This state should ideally be caught by earlier checks.
+      updateStepStatus('yAxisFirstVarIdentified', 'error', `File "${fileName}": No plottable variable columns were ultimately identified.`);
       return null;
     }
 
@@ -161,10 +167,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
       let hasNumericValueInRow = false;
       let rowHasParsingIssue = false;
 
-      // Iterate based on uniqueSeriesNamesForDropdown, which respects the "Rec" exclusion
       uniqueSeriesNamesForDropdown.forEach((uniqueKey, seriesIdx) => {
-        // seriesIdx corresponds to the index in actualVariableHeadersToProcess
-        // The actual CSV column index for this variable is seriesIdx + 1 (because column 0 is time)
         const originalCsvColumnIndexForVar = seriesIdx + 1; 
         const rawValue = values[originalCsvColumnIndexForVar];
 
@@ -181,14 +184,14 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
             rowHasParsingIssue = true;
           }
         } else { 
-            numericValue = NaN; // Explicitly set to NaN if empty or undefined
+            numericValue = NaN; 
             someRowsHadNonNumericData = true; 
             rowHasParsingIssue = true; 
         }
         dataPoint[uniqueKey] = numericValue; 
       });
       
-      if (timeValue || hasNumericValueInRow) { // Keep row if time value exists or any variable has numeric data
+      if (timeValue || hasNumericValueInRow) { 
          data.push(dataPoint);
          if (!rowHasParsingIssue && hasNumericValueInRow) {
             validDataRowsCount++;
@@ -221,6 +224,15 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     
     const updateAndReturnNull = (stepId: string, errorMsg: string, isToastError: boolean = true, title?: string) => {
       updateStepStatus(stepId, 'error', errorMsg);
+      // Mark subsequent steps as error too if a critical early step fails
+      const stepIndex = initialValidationSteps.findIndex(s => s.id === stepId);
+      if (stepIndex !== -1) {
+        for (let i = stepIndex + 1; i < initialValidationSteps.length; i++) {
+            if(validationSteps[i]?.status === 'pending') { // Check if already set
+                 updateStepStatus(initialValidationSteps[i].id, 'error', 'Prerequisite step failed.');
+            }
+        }
+      }
       if (isToastError) {
         toast({ variant: "destructive", title: title || "File Validation Error", description: errorMsg });
       }
@@ -307,7 +319,6 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
         return {id: 'processing', label: `Preparing to process ${currentFileForValidation || 'file'}...`, status: 'pending'};
     }
 
-
     if (validationSteps.length === 0 && currentFileForValidation) { 
         return {id: 'fileSelectedSummary', label: `Processing: ${currentFileForValidation}`, status: 'pending' };
     }
@@ -344,7 +355,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
           Import Data
         </CardTitle>
         <CardDescription>
-          Upload a CSV file. The first column is time/date. Subsequent columns are data series. The last column, if named "Rec", will be ignored. Delimiters can be comma, semicolon, tab, or space(s). Max file size: {MAX_FILE_SIZE_MB}MB.
+          Upload a CSV file. First column is time/date (X-axis). Subsequent columns are data series (Y-axes). Last column, if named "Rec" (case-insensitive), will be ignored. Delimiters: comma, semicolon, tab, or space(s). Max file size: {MAX_FILE_SIZE_MB}MB.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -403,7 +414,7 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
                         </span>
                         {step.message && step.status !== 'pending' && (
                             <span className={cn(
-                                "text-xs block truncate", 
+                                "text-xs block whitespace-pre-wrap", // Allow message to wrap
                                 step.status === 'error' ? 'text-red-700' : 'text-muted-foreground'
                             )} title={step.message}> 
                                &ndash; {step.message}
@@ -439,6 +450,5 @@ export function DataUploadForm({ onDataUploaded, onClearData, currentFileNameFro
     </Card>
   );
 }
-    
 
     
