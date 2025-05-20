@@ -14,7 +14,7 @@ import {
   Label,
   Brush,
 } from "recharts";
-import { Card, CardContent } from "@/components/ui/card"; // Removed CardHeader, CardTitle
+import { Card, CardContent } from "@/components/ui/card";
 import { Info } from "lucide-react";
 
 interface DataPoint {
@@ -27,7 +27,8 @@ interface ChartDisplayProps {
   plottableSeries: string[];
   timeAxisLabel: string | undefined;
   currentFileName?: string;
-  plotTitle?: string; 
+  plotTitle?: string;
+  chartRenderHeight?: number;
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
@@ -53,12 +54,13 @@ const formatXAxisTick = (timeValue: string | number): string => {
   }
 };
 
-export function ChartDisplay({ 
-  data, 
-  plottableSeries, 
-  timeAxisLabel, 
-  currentFileName, 
+export function ChartDisplay({
+  data,
+  plottableSeries,
+  timeAxisLabel,
+  currentFileName,
   plotTitle = "Time Series Plot",
+  chartRenderHeight = 350, // Default height
 }: ChartDisplayProps) {
 
   const chartData = React.useMemo(() => {
@@ -88,16 +90,15 @@ export function ChartDisplay({
       chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
   }, [chartData, plottableSeries]);
-  
-  const chartContainerHeight = 350; 
-  const clippedHeight = chartContainerHeight * 0.75; 
 
-  const wrapperStyle = {
-    height: `${clippedHeight}px`, 
-    overflow: 'hidden', 
+  const clippedHeight = chartRenderHeight * 0.75;
+
+  const wrapperStyle: React.CSSProperties = {
+    height: `${clippedHeight}px`,
+    overflow: 'hidden',
   };
 
-  const chartBottomMargin = 100; 
+  const chartBottomMargin = 100;
 
   if (!data || data.length === 0) {
     return (
@@ -141,17 +142,17 @@ export function ChartDisplay({
   }
 
   return (
-    <Card className="flex flex-col h-fit"> 
-      <CardContent className="p-1 flex-shrink-0"> 
-        <div style={wrapperStyle}> 
-          <ResponsiveContainer width="100%" height={chartContainerHeight}> 
+    <Card className="flex flex-col h-fit">
+      <CardContent className="p-1 flex-shrink-0">
+        <div style={wrapperStyle}>
+          <ResponsiveContainer width="100%" height={chartRenderHeight}>
             <LineChart
               data={chartData}
               margin={{
                 top: 5,
-                right: 15, 
-                left: 5,   
-                bottom: chartBottomMargin, 
+                right: 15,
+                left: 5,
+                bottom: chartBottomMargin,
               }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -160,19 +161,19 @@ export function ChartDisplay({
                 stroke="hsl(var(--foreground))"
                 angle={-45}
                 textAnchor="end"
-                height={60} 
+                height={60}
                 interval="preserveStartEnd"
                 tickFormatter={formatXAxisTick}
-                tick={{ fontSize: '0.75em' }} 
+                tick={{ fontSize: '0.75em' }}
               >
                 {timeAxisLabel && (
                   <Label
                     value={`${timeAxisLabel} (Adjust time window with slider)`}
-                    offset={10} 
+                    offset={10}
                     position="insideBottom"
                     fill="hsl(var(--muted-foreground))"
-                    dy={45} 
-                    style={{ fontSize: '0.75em', textAnchor: 'middle' }} 
+                    dy={30}
+                    style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                   />
                 )}
               </XAxis>
@@ -181,9 +182,9 @@ export function ChartDisplay({
                   value="Value"
                   angle={-90}
                   position="insideLeft"
-                  style={{ textAnchor: 'middle', fontSize: '0.75em' }} 
+                  style={{ textAnchor: 'middle', fontSize: '0.75em' }}
                   fill="hsl(var(--foreground))"
-                  dx={-5} 
+                  dx={-5}
                 />
               </YAxis>
               <Tooltip
@@ -191,12 +192,12 @@ export function ChartDisplay({
                   backgroundColor: "hsl(var(--background))",
                   borderColor: "hsl(var(--border))",
                   color: "hsl(var(--foreground))",
-                  fontSize: '0.75em', 
+                  fontSize: '0.75em',
                 }}
                 itemStyle={{ color: "hsl(var(--foreground))" }}
                 cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
               />
-              <Legend wrapperStyle={{ paddingTop: "15px", fontSize: '0.75em' }} /> 
+              <Legend wrapperStyle={{ paddingTop: "15px", fontSize: '0.75em' }} />
               {plottableSeries.map((seriesName, index) => (
                 <Line
                   key={seriesName}
@@ -204,19 +205,19 @@ export function ChartDisplay({
                   dataKey={seriesName}
                   stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
                   strokeWidth={1.5}
-                  dot={false} 
+                  dot={false}
                   name={seriesName}
                   connectNulls={true}
                 />
               ))}
               <Brush
                 dataKey="time"
-                height={14} 
+                height={14}
                 stroke="hsl(var(--primary))"
                 fill="hsl(var(--muted))"
-                fillOpacity={0.3} 
+                fillOpacity={0.3}
                 tickFormatter={formatXAxisTick}
-                travellerWidth={10} 
+                travellerWidth={10}
               />
             </LineChart>
           </ResponsiveContainer>
