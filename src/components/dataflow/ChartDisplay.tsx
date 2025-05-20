@@ -31,33 +31,63 @@ interface ChartDisplayProps {
 // Define a list of distinct colors for the lines from the theme
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
 
+const formatXAxisTick = (timeValue: string | number): string => {
+  try {
+    // Assuming timeValue is a string like "2024-06-06 00:00:00+00:00"
+    // or any other format that new Date() can parse.
+    const date = new Date(timeValue);
+    if (isNaN(date.getTime())) { // Check if date is invalid
+      // If it's a string that might be just 'YYYY-MM-DD', try to extract YY-MM-DD
+      if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
+        const year = timeValue.substring(2, 4); // YY
+        const month = timeValue.substring(5, 7); // MM
+        const day = timeValue.substring(8, 10); // DD
+        return `${year}-${month}-${day}`;
+      }
+      return String(timeValue); // Fallback for unparsable items
+    }
+    const year = date.getFullYear().toString().slice(-2); // YY
+    const month = ('0' + (date.getMonth() + 1)).slice(-2); // MM (0-indexed)
+    const day = ('0' + date.getDate()).slice(-2); // DD
+    return `${year}-${month}-${day}`;
+  } catch (e) {
+    // Fallback for any unexpected error during formatting
+    return String(timeValue); 
+  }
+};
+
+
 export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFileName }: ChartDisplayProps) {
   
-  // Data is assumed to have numeric values for plottableSeries where possible,
-  // as DataUploadForm attempts conversion. Recharts will handle non-numeric values by not plotting them for that point.
   const chartData = React.useMemo(() => {
-    if (!data || data.length === 0 || plottableSeries.length === 0) {
+    if (!data || data.length === 0) { // No need to check plottableSeries here for raw data prep
       return [];
     }
-    // Map data to ensure only plottable series are included in each point for the chart
-    // and that 'time' is present.
     return data.map(point => {
       const newPoint: DataPoint = { time: point.time };
-      plottableSeries.forEach(seriesName => {
-        // Pass through the value as is; numeric conversion was attempted upstream.
-        newPoint[seriesName] = point[seriesName]; 
+      // Process all potential series from the original data for the tooltip to access them
+      // even if not currently plotted.
+      Object.keys(point).forEach(key => {
+        if (key !== 'time') {
+          const value = point[key];
+          if (typeof value === 'string') {
+            const num = parseFloat(value.replace(/,/g, ''));
+            newPoint[key] = isNaN(num) ? value : num;
+          } else {
+            newPoint[key] = value;
+          }
+        }
       });
       return newPoint;
     });
-  }, [data, plottableSeries]);
+  }, [data]);
 
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
-    if (!data || data.length === 0 || plottableSeries.length === 0) return false;
-    // Check if at least one of the plottable series has at least one numeric data point.
+    if (!chartData || chartData.length === 0 || plottableSeries.length === 0) return false;
     return plottableSeries.some(seriesName => 
-      data.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
+      chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
-  }, [data, plottableSeries]);
+  }, [chartData, plottableSeries]);
 
 
   if (!data || data.length === 0) {
@@ -142,13 +172,27 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               top: 5,
               right: 30,
               left: 20,
-              bottom: 50, 
+              bottom: 80, // Increased margin for angled X-axis labels and axis title
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-            <XAxis dataKey="time" stroke="hsl(var(--foreground))" angle={0} textAnchor="middle" height={60} interval="preserveStartEnd">
+            <XAxis 
+              dataKey="time" 
+              stroke="hsl(var(--foreground))" 
+              angle={-45} // Angle the labels
+              textAnchor="end" // Anchor for angled labels
+              height={60} // Allocate space for angled labels
+              interval="preserveStartEnd" // Smart tick display
+              tickFormatter={formatXAxisTick} // Custom tick formatting
+            >
               {timeAxisLabel && (
-                <Label value={timeAxisLabel} offset={10} position="insideBottom" fill="hsl(var(--foreground))" dy={10} />
+                <Label 
+                  value={timeAxisLabel} 
+                  offset={10} // Standard offset from axis line
+                  position="insideBottom" 
+                  fill="hsl(var(--foreground))" 
+                  dy={35} // Adjusted dy to position label below angled ticks
+                />
               )}
             </XAxis>
             <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']}>
@@ -173,7 +217,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                 strokeWidth={2}
                 dot={false} 
                 name={seriesName}
-                connectNulls={true} // Connect lines even if there are null/NaN values in between
+                connectNulls={true} 
               />
             ))}
           </LineChart>
@@ -182,5 +226,3 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
     </Card>
   );
 }
-
-    
