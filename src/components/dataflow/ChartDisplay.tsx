@@ -36,39 +36,44 @@ const formatXAxisTick = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) {
+      // If not a valid date, try to parse as YYYY-MM-DD string and extract YY-MM-DD
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
         const year = timeValue.substring(2, 4);
         const month = timeValue.substring(5, 7);
         const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue);
+      return String(timeValue); // Fallback to original string if not a date and not YYYY-MM-DD
     }
+    // Format valid date as YY-MM-DD
     const year = date.getFullYear().toString().slice(-2);
     const month = ('0' + (date.getMonth() + 1)).slice(-2);
     const day = ('0' + date.getDate()).slice(-2);
     return `${year}-${month}-${day}`;
   } catch (e) {
+    // Fallback for any other error during date parsing/formatting
     return String(timeValue);
   }
 };
 
 export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFileName, plotTitle = "Time Series Plot" }: ChartDisplayProps) {
 
+  // Prepare data for Recharts: ensure numeric values for plottable series
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
       return [];
     }
     return data.map(point => {
-      const newPoint: DataPoint = { time: point.time };
+      const newPoint: DataPoint = { time: point.time }; // Keep time as is
+      // Convert selected series values to numbers, or keep as string if not convertible
       Object.keys(point).forEach(key => {
-        if (key !== 'time') {
+        if (key !== 'time') { // Don't process the time key itself for numeric conversion
           const value = point[key];
           if (typeof value === 'string') {
-            const num = parseFloat(value.replace(/,/g, ''));
-            newPoint[key] = isNaN(num) ? value : num;
+            const num = parseFloat(value.replace(/,/g, '')); // Remove commas for thousands
+            newPoint[key] = isNaN(num) ? value : num; // Store as number if valid, else original string
           } else {
-            newPoint[key] = value;
+            newPoint[key] = value; // Already a number or undefined
           }
         }
       });
@@ -76,6 +81,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
     });
   }, [data]);
 
+  // Check if there's any valid numeric data for any of the selected plottable series
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
     if (!chartData || chartData.length === 0 || plottableSeries.length === 0) return false;
     return plottableSeries.some(seriesName =>
@@ -86,7 +92,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (!data || data.length === 0) {
     return (
-      <Card className="flex flex-col min-h-[300px]">
+      <Card className="flex flex-col min-h-[300px]"> {/* Min height for empty state cards */}
         <CardHeader className="p-2">
           <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm">
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
@@ -159,14 +165,14 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-grow pt-1 p-2"> {/* Removed h-[400px] */}
-        <ResponsiveContainer width="100%" height={300}> {/* Set explicit height for ResponsiveContainer */}
+        <ResponsiveContainer width="100%" height={500}> {/* Increased height from 300 to 500 */}
           <LineChart
             data={chartData}
             margin={{
               top: 5,
-              right: 15,
-              left: 5,
-              bottom: 130,
+              right: 15, // Increased right margin for Y-axis label
+              left: 5,  // Reduced left margin
+              bottom: 130, // Keep bottom margin for X-axis label, angled ticks, and brush
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -175,19 +181,19 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               stroke="hsl(var(--foreground))"
               angle={-45}
               textAnchor="end"
-              height={60}
-              interval="preserveStartEnd"
+              height={60} // Height for angled labels
+              interval="preserveStartEnd" // Show start and end ticks, Recharts decides others
               tickFormatter={formatXAxisTick}
-              tick={{ fontSize: '0.75em' }}
+              tick={{ fontSize: '0.75em' }} // Reduced tick font size
             >
               {timeAxisLabel && (
                 <Label
                   value={timeAxisLabel ? `${timeAxisLabel} (Adjust time window with slider)` : "Time (Adjust time window with slider)"}
-                  offset={10}
+                  offset={10} // Adjust offset as needed
                   position="insideBottom"
                   fill="hsl(var(--muted-foreground))"
-                  dy={45}
-                  style={{ fontSize: '0.75em', textAnchor: 'middle' }}
+                  dy={45} // Distance from X-axis line
+                  style={{ fontSize: '0.75em', textAnchor: 'middle' }} // Reduced label font size
                 />
               )}
             </XAxis>
@@ -205,7 +211,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                 backgroundColor: "hsl(var(--background))",
                 borderColor: "hsl(var(--border))",
                 color: "hsl(var(--foreground))",
-                fontSize: '0.75em',
+                fontSize: '0.75em', // Smaller tooltip font
               }}
               itemStyle={{ color: "hsl(var(--foreground))" }}
               cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
@@ -218,16 +224,16 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                 dataKey={seriesName}
                 stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
                 strokeWidth={1.5}
-                dot={false}
+                dot={false} // No dots on the line
                 name={seriesName}
-                connectNulls={true}
+                connectNulls={true} // Connect line over null/NaN values
               />
             ))}
             <Brush
               dataKey="time"
-              height={20}
+              height={20} // Slimmer brush
               stroke="hsl(var(--primary))"
-              fill="hsl(var(--muted))"
+              fill="hsl(var(--muted))" // Add a fill to make brush more visible
               tickFormatter={formatXAxisTick}
             />
           </LineChart>
@@ -236,3 +242,4 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
     </Card>
   );
 }
+
