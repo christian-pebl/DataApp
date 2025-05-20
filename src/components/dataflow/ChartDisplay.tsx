@@ -12,7 +12,7 @@ import {
   Legend,
   ResponsiveContainer,
   Label,
-  Brush, // Added Brush
+  Brush,
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Info, LineChart as LineChartIcon } from "lucide-react";
@@ -29,30 +29,25 @@ interface ChartDisplayProps {
   currentFileName?: string;
 }
 
-// Define a list of distinct colors for the lines from the theme
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
-    // Assuming timeValue is a string like "2024-06-06 00:00:00+00:00"
-    // or any other format that new Date() can parse.
     const date = new Date(timeValue);
-    if (isNaN(date.getTime())) { // Check if date is invalid
-      // If it's a string that might be just 'YYYY-MM-DD', try to extract YY-MM-DD
+    if (isNaN(date.getTime())) {
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
-        const year = timeValue.substring(2, 4); // YY
-        const month = timeValue.substring(5, 7); // MM
-        const day = timeValue.substring(8, 10); // DD
+        const year = timeValue.substring(2, 4);
+        const month = timeValue.substring(5, 7);
+        const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue); // Fallback for unparsable items
+      return String(timeValue); 
     }
-    const year = date.getFullYear().toString().slice(-2); // YY
-    const month = ('0' + (date.getMonth() + 1)).slice(-2); // MM (0-indexed)
-    const day = ('0' + date.getDate()).slice(-2); // DD
+    const year = date.getFullYear().toString().slice(-2);
+    const month = ('0' + (date.getMonth() + 1)).slice(-2);
+    const day = ('0' + date.getDate()).slice(-2);
     return `${year}-${month}-${day}`;
   } catch (e) {
-    // Fallback for any unexpected error during formatting
     return String(timeValue); 
   }
 };
@@ -81,6 +76,14 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
     });
   }, [data]);
 
+  // For debugging Brush visibility
+  console.log("ChartDisplay: chartData length:", chartData.length);
+  if (chartData.length > 0) {
+    console.log("ChartDisplay: first chartData point:", chartData[0]);
+  }
+  console.log("ChartDisplay: plottableSeries:", plottableSeries);
+
+
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
     if (!chartData || chartData.length === 0 || plottableSeries.length === 0) return false;
     return plottableSeries.some(seriesName => 
@@ -91,7 +94,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (!data || data.length === 0) {
     return (
-      <Card className="h-[600px] flex flex-col">
+      <Card className="h-[650px] flex flex-col"> {/* Increased height */}
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground">
             <LineChartIcon className="h-6 w-6" /> Data Visualization
@@ -110,7 +113,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (plottableSeries.length === 0) {
     return (
-      <Card className="h-[600px] flex flex-col">
+      <Card className="h-[650px] flex flex-col"> {/* Increased height */}
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground">
             <LineChartIcon className="h-6 w-6" /> Data Visualization
@@ -131,7 +134,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
   
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
-      <Card className="h-[600px] flex flex-col">
+      <Card className="h-[650px] flex flex-col"> {/* Increased height */}
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground">
             <LineChartIcon className="h-6 w-6" /> Data Visualization
@@ -153,7 +156,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
   }
 
   return (
-    <Card className="h-[600px] flex flex-col">
+    <Card className="h-[650px] flex flex-col"> {/* Increased height */}
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <LineChartIcon className="h-6 w-6 text-primary" />
@@ -171,18 +174,18 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               top: 5,
               right: 30,
               left: 20,
-              bottom: 110, // Increased margin for angled X-axis labels, axis title, and Brush
+              bottom: 120, // Increased margin for angled X-axis labels, axis title, and Brush
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis 
               dataKey="time" 
               stroke="hsl(var(--foreground))" 
-              angle={-45} // Angle the labels
-              textAnchor="end" // Anchor for angled labels
-              height={60} // Allocate space for angled labels
-              interval="preserveStartEnd" // Smart tick display
-              tickFormatter={formatXAxisTick} // Custom tick formatting
+              angle={-45} 
+              textAnchor="end" 
+              height={60} 
+              interval="preserveStartEnd" 
+              tickFormatter={formatXAxisTick} 
             >
               {timeAxisLabel && (
                 <Label 
@@ -190,7 +193,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                   offset={10} 
                   position="insideBottom" 
                   fill="hsl(var(--foreground))" 
-                  dy={55} // Adjusted dy to position label below angled ticks and above brush
+                  dy={45} // Adjusted dy
                 />
               )}
             </XAxis>
@@ -223,10 +226,8 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               dataKey="time" 
               height={30} 
               stroke="hsl(var(--primary))"
-              tickFormatter={formatXAxisTick} // Use the same formatter for Brush ticks
-              y={510} // Position brush: 600 (card height) - CardHeader - CardContent padding - Brush height - margin.
-                       // This needs fine-tuning, or better, let Recharts manage its position relative to XAxis.
-                       // Removing explicit y, let margin handle it.
+              fill="hsl(var(--muted))" // Added fill for visibility
+              tickFormatter={formatXAxisTick} 
             />
           </LineChart>
         </ResponsiveContainer>

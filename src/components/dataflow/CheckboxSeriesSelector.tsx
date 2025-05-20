@@ -76,7 +76,7 @@ export function CheckboxSeriesSelector({
             {allSelected ? "Deselect All" : "Select All"} ({availableSeries.filter(s => visibleSeries[s]).length}/{availableSeries.length})
           </Label>
         </div>
-        <ScrollArea className="h-60 w-full rounded-md border p-2">
+        <ScrollArea className="w-full rounded-md border p-2 max-h-60"> {/* Changed h-60 to max-h-60 */}
           {availableSeries.length > 0 ? (
             availableSeries.map((seriesName) => (
               <div key={seriesName} className="flex items-center space-x-2 py-1">
