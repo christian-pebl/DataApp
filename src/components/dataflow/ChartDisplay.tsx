@@ -31,12 +31,12 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 280; 
+const INTERNAL_DEFAULT_CHART_HEIGHT = 280;
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
     if (typeof timeValue === 'string' && /^\d{2}-\d{2}-\d{2}$/.test(timeValue)) {
-      return timeValue; 
+      return timeValue;
     }
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) {
@@ -95,7 +95,7 @@ export function ChartDisplay({
   }, [chartData, plottableSeries]);
 
   const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
-     <div style={{ height: `${chartHeightToUse}px`, width: '100%'}} className="flex flex-col items-center justify-center p-2 h-full">
+    <div style={{ height: `${chartHeightToUse}px`, width: '100%' }} className="flex flex-col items-center justify-center p-2 h-full">
       <div className="text-center text-muted-foreground">
         {icon}
         <p className="text-xs mt-1">{primaryText}</p>
@@ -113,30 +113,29 @@ export function ChartDisplay({
   }
 
   if (!hasAnyNumericDataForSelectedSeries) {
-     return renderNoDataMessage(
-        <Info className="h-8 w-8 mx-auto" />,
-        `No valid numeric data for selected series: "${plottableSeries.join(', ')}" in ${plotTitle || 'this plot'}.`,
-        "Check CSV columns or select different variables."
-      );
+    return renderNoDataMessage(
+      <Info className="h-8 w-8 mx-auto" />,
+      `No valid numeric data for selected series: "${plottableSeries.join(', ')}" in ${plotTitle || 'this plot'}.`,
+      "Check CSV columns or select different variables."
+    );
   }
-  
-  const clippedHeight = chartHeightToUse * 0.80; // Apply 20% clip from bottom
-  const wrapperStyle: React.CSSProperties = {
-     height: `${clippedHeight}px`, // Clipped height for the visible plot area
-     overflow: 'hidden',
-   };
 
+  const clippedHeight = chartHeightToUse * 0.80; 
+  const wrapperStyle: React.CSSProperties = {
+    height: `${clippedHeight}px`,
+    overflow: 'hidden',
+  };
 
   return (
     <div style={wrapperStyle} className="flex-1 min-h-0">
-      <ResponsiveContainer width="100%" height={chartHeightToUse}> {/* ResponsiveContainer renders at full intended height before clipping */}
+      <ResponsiveContainer width="100%" height={chartHeightToUse}>
         <LineChart
           data={chartData}
           margin={{
             top: 5,
             right: 20,
             left: 5,
-            bottom: 56, 
+            bottom: 63, 
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -145,7 +144,7 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={40} 
+            height={48} 
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
             tick={{ fontSize: '0.6rem' }}
@@ -156,7 +155,7 @@ export function ChartDisplay({
                 offset={15} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={10} 
+                dy={21} 
                 style={{ fontSize: '0.6rem', textAnchor: 'middle' }}
               />
             )}
@@ -168,7 +167,7 @@ export function ChartDisplay({
               position="insideLeft"
               style={{ textAnchor: 'middle', fontSize: '0.6rem' }}
               fill="hsl(var(--foreground))"
-              dx={-5} 
+              dx={-5}
             />
           </YAxis>
           <Tooltip
@@ -182,7 +181,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: '2px', fontSize: '0.6rem' }} 
+            wrapperStyle={{ paddingTop: '8px', fontSize: '0.6rem' }} 
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -198,7 +197,7 @@ export function ChartDisplay({
           ))}
           <Brush
             dataKey="time"
-            height={8} 
+            height={11} 
             stroke="hsl(var(--primary))"
             fill="hsl(var(--muted))"
             fillOpacity={0.3}
