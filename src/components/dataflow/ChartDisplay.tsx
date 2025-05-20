@@ -12,6 +12,7 @@ import {
   Legend,
   ResponsiveContainer,
   Label,
+  Brush, // Added Brush
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Info, LineChart as LineChartIcon } from "lucide-react";
@@ -60,13 +61,11 @@ const formatXAxisTick = (timeValue: string | number): string => {
 export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFileName }: ChartDisplayProps) {
   
   const chartData = React.useMemo(() => {
-    if (!data || data.length === 0) { // No need to check plottableSeries here for raw data prep
+    if (!data || data.length === 0) {
       return [];
     }
     return data.map(point => {
       const newPoint: DataPoint = { time: point.time };
-      // Process all potential series from the original data for the tooltip to access them
-      // even if not currently plotted.
       Object.keys(point).forEach(key => {
         if (key !== 'time') {
           const value = point[key];
@@ -172,7 +171,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               top: 5,
               right: 30,
               left: 20,
-              bottom: 80, // Increased margin for angled X-axis labels and axis title
+              bottom: 110, // Increased margin for angled X-axis labels, axis title, and Brush
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -188,10 +187,10 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               {timeAxisLabel && (
                 <Label 
                   value={timeAxisLabel} 
-                  offset={10} // Standard offset from axis line
+                  offset={10} 
                   position="insideBottom" 
                   fill="hsl(var(--foreground))" 
-                  dy={35} // Adjusted dy to position label below angled ticks
+                  dy={55} // Adjusted dy to position label below angled ticks and above brush
                 />
               )}
             </XAxis>
@@ -213,13 +212,22 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                 key={seriesName}
                 type="monotone"
                 dataKey={seriesName} 
-                stroke={`hsl(var(${chartColors[index % chartColors.length]}))` /* Cycle through colors */}
+                stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
                 strokeWidth={2}
                 dot={false} 
                 name={seriesName}
                 connectNulls={true} 
               />
             ))}
+            <Brush 
+              dataKey="time" 
+              height={30} 
+              stroke="hsl(var(--primary))"
+              tickFormatter={formatXAxisTick} // Use the same formatter for Brush ticks
+              y={510} // Position brush: 600 (card height) - CardHeader - CardContent padding - Brush height - margin.
+                       // This needs fine-tuning, or better, let Recharts manage its position relative to XAxis.
+                       // Removing explicit y, let margin handle it.
+            />
           </LineChart>
         </ResponsiveContainer>
       </CardContent>
