@@ -323,7 +323,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
         setTimeAxisLabel(parsedResult.timeHeader);
         const newVisibleSeries: Record<string, boolean> = {};
         parsedResult.seriesNames.forEach((name, index) => {
-          newVisibleSeries[name] = index < 4;
+           newVisibleSeries[name] = index < 4; // Default to selecting the first 4 variables
         });
         setVisibleSeries(newVisibleSeries);
         toast({
@@ -550,10 +550,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
-                  <ScrollArea className="w-full rounded-md border p-1 max-h-40"> {/* Reduced max-h for more compactness */}
+                  <ScrollArea className="w-full rounded-md border p-1 max-h-40">
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
-                        <div key={seriesName} className="flex items-center space-x-1.5 py-1"> {/* Increased py-1 for spacing */}
+                        <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
                           <Checkbox
                             id={`series-${seriesName}-${instanceId}-${uniqueComponentId}`}
                             checked={!!visibleSeries[seriesName]}
@@ -562,7 +562,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                           />
                           <Label
                             htmlFor={`series-${seriesName}-${instanceId}-${uniqueComponentId}`}
-                            className="text-xs leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 truncate"
+                            className="text-xs leading-snug peer-disabled:cursor-not-allowed peer-disabled:opacity-70 truncate"
                             title={seriesName}
                           >
                             {seriesName}
@@ -594,3 +594,4 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     </Card>
   );
 }
+
