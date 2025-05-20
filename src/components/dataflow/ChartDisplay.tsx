@@ -23,39 +23,40 @@ interface DataPoint {
 
 interface ChartDisplayProps {
   data: DataPoint[];
-  plottableSeries: string[]; // Array of series names to plot
+  plottableSeries: string[]; 
   timeAxisLabel: string | undefined;
   currentFileName?: string;
 }
 
+// Define a list of distinct colors for the lines from the theme
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
 
 export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFileName }: ChartDisplayProps) {
   
+  // Data is assumed to have numeric values for plottableSeries where possible,
+  // as DataUploadForm attempts conversion. Recharts will handle non-numeric values by not plotting them for that point.
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0 || plottableSeries.length === 0) {
       return [];
     }
-    
+    // Map data to ensure only plottable series are included in each point for the chart
+    // and that 'time' is present.
     return data.map(point => {
       const newPoint: DataPoint = { time: point.time };
       plottableSeries.forEach(seriesName => {
-        const rawValue = point[seriesName];
-        let numericValue = NaN;
-        if (rawValue !== undefined && rawValue !== null) {
-          if (typeof rawValue === 'string') {
-            const cleanedValue = rawValue.replace(/[^0-9.-]/g, '');
-            if (cleanedValue !== "") {
-              numericValue = parseFloat(cleanedValue);
-            }
-          } else if (typeof rawValue === 'number') {
-            numericValue = rawValue;
-          }
-        }
-        newPoint[seriesName] = numericValue;
+        // Pass through the value as is; numeric conversion was attempted upstream.
+        newPoint[seriesName] = point[seriesName]; 
       });
       return newPoint;
-    }).filter(point => plottableSeries.some(seriesName => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName]))));
+    });
+  }, [data, plottableSeries]);
+
+  const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
+    if (!data || data.length === 0 || plottableSeries.length === 0) return false;
+    // Check if at least one of the plottable series has at least one numeric data point.
+    return plottableSeries.some(seriesName => 
+      data.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
+    );
   }, [data, plottableSeries]);
 
 
@@ -99,7 +100,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
     );
   }
   
-  if (chartData.length === 0 && plottableSeries.length > 0) {
+  if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
       <Card className="h-[600px] flex flex-col">
         <CardHeader>
@@ -113,8 +114,8 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
         <CardContent className="flex-grow flex items-center justify-center">
           <div className="text-center text-muted-foreground">
             <Info className="h-16 w-16 mx-auto mb-4" />
-            <p>No valid numeric data found for the selected series: "{plottableSeries.join(', ')}".</p>
-            <p className="text-sm mt-1">This can happen if the selected columns contain non-numeric text, are empty, or all values were converted to Not-a-Number (NaN) after attempting to clean them.</p>
+            <p>No valid numeric data found for the currently selected series: "{plottableSeries.join(', ')}".</p>
+            <p className="text-sm mt-1">This can happen if the selected columns contain non-numeric text, are empty, or all values were treated as missing data.</p>
             <p className="text-sm mt-1">Please check the columns in your CSV file or select different variables.</p>
           </div>
         </CardContent>
@@ -130,7 +131,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
           Time Series Plot
         </CardTitle>
         <CardDescription>
-          {currentFileName ? `Visualizing data from "${currentFileName}"` : "Visualizing uploaded data"} ({chartData.length} valid data points shown).
+          {currentFileName ? `Visualizing data from "${currentFileName}"` : "Visualizing uploaded data"} ({chartData.length} data points prepared for chart).
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-grow pt-2">
@@ -168,10 +169,11 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                 key={seriesName}
                 type="monotone"
                 dataKey={seriesName} 
-                stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
+                stroke={`hsl(var(${chartColors[index % chartColors.length]}))` /* Cycle through colors */}
                 strokeWidth={2}
                 dot={false} 
                 name={seriesName}
+                connectNulls={true} // Connect lines even if there are null/NaN values in between
               />
             ))}
           </LineChart>
@@ -180,3 +182,5 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
     </Card>
   );
 }
+
+    
