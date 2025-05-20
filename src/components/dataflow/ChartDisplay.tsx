@@ -140,7 +140,7 @@ export function ChartDisplay({
             top: 5,
             right: 20, // Increased right margin for Y-axis labels
             left: 5,  // Reduced left margin
-            bottom: 67, // Adjusted for compact X-axis, Brush, and Legend
+            bottom: 71, // Adjusted for compact X-axis, Brush, and Legend
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -160,7 +160,7 @@ export function ChartDisplay({
                 offset={15} // Adjusted offset for angled ticks
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={15} // Position title below angled ticks
+                dy={28} // Position title below angled ticks
                 style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
             )}
@@ -186,7 +186,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: '10px', fontSize: '0.7rem' }} // Reduced padding above legend
+            wrapperStyle={{ paddingTop: '15px', fontSize: '0.7rem' }} // Reduced padding above legend
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -208,10 +208,10 @@ export function ChartDisplay({
             fillOpacity={0.3}
             tickFormatter={formatXAxisTick}
             travellerWidth={8} // Slimmer handles
-            // y={chartHeightToUse - 45} // Approximate position, ensure it's above the bottom margin space
           />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
+

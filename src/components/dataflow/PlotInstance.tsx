@@ -418,7 +418,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       </CardHeader>
 
       {!isMinimized && (
-        <CardContent className={cn(
+         <CardContent className={cn(
             "p-2 pt-0",
             !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block" 
           )}>
@@ -529,7 +529,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
           {/* Column 2: "Select Variables" (Middle) */}
           {!isMinimalistView && (
             <div className="md:col-span-2 flex flex-col space-y-1.5">
-              <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0">
+              <div className="space-y-1 p-1.5 border rounded-md flex flex-col">
                 {/* Header for Select Variables */}
                 <div className="flex items-center gap-1">
                   <ListFilter className="h-3 w-3 text-[#2B7A78]" />
@@ -553,7 +553,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                   </Label>
                 </div>
                 {/* Scrollable list of variables */}
-                <ScrollArea className="w-full rounded-md border p-1 flex-1"> 
+                <ScrollArea className="w-full rounded-md border p-1 h-28"> 
                   {dataSeries.length > 0 ? (
                     dataSeries.map((seriesName) => (
                       <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
