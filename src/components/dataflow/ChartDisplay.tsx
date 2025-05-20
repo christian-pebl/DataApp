@@ -94,7 +94,7 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
 
-  const chartBottomMargin = showSlider ? 125 : 90;
+  const chartBottomMargin = showSlider ? 105 : 75; // Reduced margins
 
 
   if (!data || data.length === 0) {
@@ -161,14 +161,14 @@ export function ChartDisplay({
           {plotTitle}
         </CardTitle>
       </CardHeader>
-      <CardContent className="pt-1 p-2 flex-shrink-0">
+      <CardContent className="p-1 flex-shrink-0"> {/* Reduced padding */}
         <ResponsiveContainer width="100%" height={350}>
           <LineChart
             data={chartData}
             margin={{
               top: 5,
-              right: 15,
-              left: 5,
+              right: 15, // Keep some right margin for Y-axis labels if they get long
+              left: 5,   // Keep some left margin for Y-axis labels
               bottom: chartBottomMargin, 
             }}
           >
@@ -178,7 +178,7 @@ export function ChartDisplay({
               stroke="hsl(var(--foreground))"
               angle={-45}
               textAnchor="end"
-              height={60}
+              height={60} // Height for angled labels
               interval="preserveStartEnd"
               tickFormatter={formatXAxisTick}
               tick={{ fontSize: '0.75em' }}
@@ -186,10 +186,10 @@ export function ChartDisplay({
               {timeAxisLabel && (
                 <Label
                   value={timeAxisLabel ? `${timeAxisLabel}${showSlider ? " (Adjust time window with slider)" : ""}` : (showSlider ? "Time (Adjust time window with slider)" : "Time")}
-                  offset={10}
+                  offset={10} 
                   position="insideBottom"
                   fill="hsl(var(--muted-foreground))"
-                  dy={40} 
+                  dy={showSlider ? 35 : 25} // Adjusted dy
                   style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                 />
               )}
@@ -201,6 +201,7 @@ export function ChartDisplay({
                 position="insideLeft"
                 style={{ textAnchor: 'middle', fontSize: '0.75em' }}
                 fill="hsl(var(--foreground))"
+                dx={-5} // Added small dx to pull Y-axis label slightly left
               />
             </YAxis>
             <Tooltip
@@ -233,6 +234,8 @@ export function ChartDisplay({
                 stroke="hsl(var(--primary))"
                 fill="hsl(var(--muted))"
                 tickFormatter={formatXAxisTick}
+                y={275} // Explicitly position Brush lower if needed, adjust based on XAxis height and labels
+                travellerWidth={10} // Make traveller handles slimmer
               />
             )}
           </LineChart>
