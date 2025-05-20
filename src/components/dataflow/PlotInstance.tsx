@@ -323,7 +323,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
         setTimeAxisLabel(parsedResult.timeHeader);
         const newVisibleSeries: Record<string, boolean> = {};
         parsedResult.seriesNames.forEach((name, index) => {
-           newVisibleSeries[name] = index < 4; // Default to selecting the first 4 variables
+           newVisibleSeries[name] = index < 4; 
         });
         setVisibleSeries(newVisibleSeries);
         toast({
@@ -434,8 +434,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
              <div className="md:col-span-4 space-y-2">
               <div className="space-y-1.5 border p-2 rounded-md">
                 <div className="flex items-center gap-1.5 px-1 pt-0.5 pb-0.5">
-                   <UploadCloud className="h-4 w-4 text-primary" />
-                   <h3 className="text-sm font-semibold text-primary">Import & Validate</h3>
+                   <UploadCloud className="h-4 w-4 text-[#2B7A78]" />
+                   <h3 className="text-sm font-semibold text-[#2B7A78]">Import & Validate</h3>
                 </div>
                 <div className="px-1">
                   <Label htmlFor={`file-upload-${instanceId}`} className="sr-only">Upload File</Label>
@@ -531,8 +531,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
               {parsedData.length > 0 && (
                 <div className="space-y-1 p-2 border rounded-md">
                    <div className="flex items-center gap-1.5">
-                      <ListFilter className="h-4 w-4 text-primary" />
-                      <h3 className="text-sm font-semibold text-primary">Select Variables</h3>
+                      <ListFilter className="h-4 w-4 text-[#2B7A78]" />
+                      <h3 className="text-sm font-semibold text-[#2B7A78]">Select Variables</h3>
                    </div>
                   <div className="flex items-center space-x-1.5">
                     <Checkbox
