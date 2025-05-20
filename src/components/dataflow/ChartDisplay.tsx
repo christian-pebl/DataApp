@@ -31,7 +31,7 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 280; // Default height if prop not provided
+const INTERNAL_DEFAULT_CHART_HEIGHT = 258; // Reduced from 280
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
@@ -69,7 +69,7 @@ export function ChartDisplay({
   data,
   plottableSeries,
   timeAxisLabel,
-  plotTitle, // Kept for potential future use in messages, though header is removed
+  plotTitle,
   chartRenderHeight,
 }: ChartDisplayProps) {
   const chartHeightToUse = chartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
@@ -130,19 +130,20 @@ export function ChartDisplay({
   }
   
   const wrapperStyle: React.CSSProperties = {
-    height: `${chartHeightToUse}px`, // Use the full height for the main chart area
+    height: `${chartHeightToUse * 0.80}px`, // Apply 20% clipping from bottom
+    overflow: 'hidden',
   };
 
   return (
     <div style={wrapperStyle} className="flex-1 min-h-0">
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={chartHeightToUse}> {/* ResponsiveContainer uses full intended height */}
         <LineChart
           data={chartData}
           margin={{
             top: 5,
             right: 20,
             left: 5,
-            bottom: 69, // Adjusted for Brush and X-axis label
+            bottom: 63, // Adjusted for Brush and X-axis label (margin.bottom: 63)
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -151,7 +152,7 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={60} // Adjusted to fit angled labels and title
+            height={60} // XAxis height: 60
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
             tick={{ fontSize: '0.6rem' }}
@@ -159,10 +160,10 @@ export function ChartDisplay({
             {timeAxisLabel && (
               <Label
                 value={`${timeAxisLabel} (Adjust time window with slider)`}
-                offset={15} // Adjusted offset
+                offset={15} // X-axis Label offset: 15
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={23} // Adjusted vertical position
+                dy={23} // X-axis Label dy: 23
                 style={{ fontSize: '0.6rem', textAnchor: 'middle' }}
               />
             )}
@@ -182,13 +183,13 @@ export function ChartDisplay({
               backgroundColor: "hsl(var(--background))",
               borderColor: "hsl(var(--border))",
               color: "hsl(var(--foreground))",
-              fontSize: '0.6rem', // Smaller font for tooltip
+              fontSize: '0.6rem', 
             }}
             itemStyle={{ color: "hsl(var(--foreground))" }}
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: '15px', fontSize: '0.6rem' }} // Adjusted paddingTop
+            wrapperStyle={{ paddingTop: '10px', fontSize: '0.6rem' }} // Legend paddingTop: '10px'
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -204,14 +205,15 @@ export function ChartDisplay({
           ))}
           <Brush
             dataKey="time"
-            height={14} // Slightly increased height
+            height={14} // Brush height: 14
             stroke="hsl(var(--primary))"
-            fill="transparent" // Transparent fill
+            fill="transparent"
             tickFormatter={formatXAxisTick}
-            travellerWidth={8} // Keep traveller slim
+            travellerWidth={8} // Brush travellerWidth: 8
           />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
+

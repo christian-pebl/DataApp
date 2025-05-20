@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, TrendingDown, Scissors } from "lucide-react";
+import { Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, TrendingDown, Scissors, UploadCloud } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -42,8 +42,8 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'dataReady', label: 'Import complete', status: 'pending' },
 ];
 
-const DEFAULT_PLOT_HEIGHT = 280;
-const EXPANDED_PLOT_HEIGHT = 560;
+const DEFAULT_PLOT_HEIGHT = 258; // Reduced from 280
+const EXPANDED_PLOT_HEIGHT = 515; // Reduced from 560
 
 
 interface PlotInstanceProps {
@@ -424,37 +424,27 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
         )}>
           
           {!isMinimalistView && (
-            <div className="md:col-span-2 flex flex-col space-y-1.5"> 
+            <div className="md:col-span-2 flex flex-col space-y-1.5"> {/* Import & Validate Column */}
               <div className="space-y-1 border p-1.5 rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5">
                    <Settings2 className="h-3 w-3 text-[#2B7A78]" />
                    <h3 className="text-xs font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
                 </div>
                 <div className="px-1 py-1.5">
-                  <Label
-                    htmlFor={`file-upload-${instanceId}`}
-                    className="w-full"
-                  >
-                    <Button
-                      asChild 
-                      variant="outline" 
-                      size="sm" 
-                      className="w-full h-8 text-xs" 
-                      disabled={isProcessing}
-                    >
-                      <span>
+                   <Label htmlFor={`file-upload-${instanceId}`} className="sr-only">Choose file</Label>
+                    <Button asChild variant="outline" size="sm" className="w-full h-8 text-xs" disabled={isProcessing}>
+                      <Label htmlFor={`file-upload-${instanceId}-${uniqueComponentId}`} className="cursor-pointer">
                         Choose file
-                      </span>
+                      </Label>
                     </Button>
-                  </Label>
-                  <Input
-                    id={`file-upload-${instanceId}`}
-                    type="file"
-                    accept=".csv"
-                    onChange={handleFileChange}
-                    disabled={isProcessing}
-                    className="sr-only"
-                  />
+                    <Input
+                      id={`file-upload-${instanceId}-${uniqueComponentId}`}
+                      type="file"
+                      accept=".csv"
+                      onChange={handleFileChange}
+                      disabled={isProcessing}
+                      className="sr-only"
+                    />
                 </div>
 
                 {currentFileForValidation && !summaryStep && isProcessing && (
@@ -476,7 +466,9 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                           {isProcessing || summaryStep.status === 'pending' ? <Hourglass className="h-3 w-3 animate-spin flex-shrink-0" /> :
                            summaryStep.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-600 flex-shrink-0" /> :
                            <XCircle className="h-3 w-3 text-destructive flex-shrink-0" />}
-                          <span className="font-medium text-[0.6rem]">{summaryStep.label}</span>
+                          <span className="font-medium text-[0.6rem]">
+                            {summaryStep.label.length > 30 ? summaryStep.label.substring(0, 27) + "..." : summaryStep.label}
+                            </span>
                         </div>
                       </AccordionTrigger>
                       <AccordionContent className="pt-0.5 pb-0">
@@ -539,7 +531,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
           )}
 
            {!isMinimalistView && (
-            <div className="md:col-span-2 flex flex-col space-y-1.5">
+            <div className="md:col-span-2 flex flex-col space-y-1.5"> {/* Select Variables Column */}
               <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0"> 
                 <div className="flex items-center gap-1">
                   <ListFilter className="h-3 w-3 text-[#2B7A78]" />
@@ -561,7 +553,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                   </Label>
                 </div>
-                 <ScrollArea className="w-full rounded-md border p-1 h-32 flex-1">
+                 <ScrollArea className="w-full rounded-md border p-1 h-48">
                   {dataSeries.length > 0 ? (
                     dataSeries.map((seriesName) => (
                       <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -591,9 +583,9 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
           )}
           
            <div className={cn(
-            !isMinimalistView ? "md:col-span-8 md:self-start" : "col-span-full",
+            !isMinimalistView ? "md:col-span-8" : "col-span-full",
             "flex flex-col" 
-          )}>
+          )}> {/* Plot Area Column */}
              <div className="flex-1 min-h-0">
                 <ChartDisplay
                     data={parsedData}
