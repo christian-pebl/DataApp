@@ -1,6 +1,7 @@
 
 "use client";
 
+import type { CSSProperties } from "react";
 import React from "react";
 import {
   LineChart,
@@ -14,7 +15,8 @@ import {
   Label,
   Brush,
 } from "recharts";
-import { Info } from "lucide-react";
+import { Info, LineChart as LineChartIcon } from "lucide-react"; // Ensure LineChartIcon is imported if used
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"; // Keep Card imports if used by PlotInstance
 
 interface DataPoint {
   time: string | number;
@@ -27,34 +29,30 @@ interface ChartDisplayProps {
   timeAxisLabel: string | undefined;
   currentFileName?: string;
   plotTitle?: string;
-  chartRenderHeight?: number; // Received from PlotInstance
+  chartRenderHeight?: number;
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 250; // Fallback if prop not provided
+const INTERNAL_DEFAULT_CHART_HEIGHT = 250;
 
 // Function to format X-axis ticks to YY-MM-DD
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
-    // Check if the date is valid
     if (isNaN(date.getTime())) {
-      // If not a valid date, try to parse common string formats if they look like dates
-      if (typeof timeValue === 'string' && /^\\d{4}-\\d{2}-\\d{2}/.test(timeValue)) {
-        const year = timeValue.substring(2, 4); // YY
-        const month = timeValue.substring(5, 7); // MM
-        const day = timeValue.substring(8, 10); // DD
+      if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
+        const year = timeValue.substring(2, 4);
+        const month = timeValue.substring(5, 7);
+        const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue); // Fallback to string if not parsable
+      return String(timeValue);
     }
-    // Format valid date
-    const year = date.getFullYear().toString().slice(-2); // YY
-    const month = ('0' + (date.getMonth() + 1)).slice(-2); // MM
-    const day = ('0' + date.getDate()).slice(-2); // DD
+    const year = date.getFullYear().toString().slice(-2);
+    const month = ('0' + (date.getMonth() + 1)).slice(-2);
+    const day = ('0' + date.getDate()).slice(-2);
     return `${year}-${month}-${day}`;
   } catch (e) {
-    // Fallback for any unexpected error during formatting
     return String(timeValue);
   }
 };
@@ -63,14 +61,13 @@ export function ChartDisplay({
   data,
   plottableSeries,
   timeAxisLabel,
-  currentFileName,
-  plotTitle = "Time Series Plot",
+  plotTitle = "Time Series Plot", // Retained for informational messages
   chartRenderHeight: propChartRenderHeight,
 }: ChartDisplayProps) {
   const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
-  const clippedHeight = chartHeightToUse * 0.75; // Apply 25% clip
+  const clippedHeight = chartHeightToUse * 0.80; // Apply 20% clip from bottom
 
-  const wrapperStyle: React.CSSProperties = {
+  const wrapperStyle: CSSProperties = {
     height: `${clippedHeight}px`,
     overflow: 'hidden',
   };
@@ -85,9 +82,8 @@ export function ChartDisplay({
         if (key !== 'time') {
           const value = point[key];
           if (typeof value === 'string') {
-            // Attempt to parse string value to number, removing commas for thousands
             const num = parseFloat(value.replace(/,/g, ''));
-            newPoint[key] = isNaN(num) ? value : num; // Keep as string if not a number
+            newPoint[key] = isNaN(num) ? value : num;
           } else {
             newPoint[key] = value;
           }
@@ -103,14 +99,13 @@ export function ChartDisplay({
       chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
   }, [chartData, plottableSeries]);
-  
 
   if (!data || data.length === 0) {
     return (
       <div className="flex flex-col h-full items-center justify-center p-2">
         <div className="text-center text-muted-foreground">
-          <Info className="h-10 w-10 mx-auto mb-1.5" />
-          <p className="text-xs">No data loaded for {plotTitle}. Upload a file to get started.</p>
+          <Info className="h-8 w-8 mx-auto mb-1" /> {/* Reduced icon size */}
+          <p className="text-xs">No data loaded for {plotTitle}. Upload a file.</p>
         </div>
       </div>
     );
@@ -120,7 +115,7 @@ export function ChartDisplay({
     return (
       <div className="flex flex-col h-full items-center justify-center p-2">
         <div className="text-center text-muted-foreground">
-          <Info className="h-10 w-10 mx-auto mb-1.5" />
+          <Info className="h-8 w-8 mx-auto mb-1" />
           <p className="text-xs">Please select at least one variable to plot for {plotTitle}.</p>
         </div>
       </div>
@@ -131,10 +126,9 @@ export function ChartDisplay({
      return (
       <div className="flex flex-col h-full items-center justify-center p-2">
         <div className="text-center text-muted-foreground">
-          <Info className="h-10 w-10 mx-auto mb-1.5" />
-          <p className="text-xs">No valid numeric data found for the currently selected series in {plotTitle}: "{plottableSeries.join(', ')}".</p>
-          <p className="text-2xs mt-1">This can happen if the selected columns contain non-numeric text, are empty, or all values were treated as missing data.</p>
-          <p className="text-2xs mt-1">Please check the columns in your CSV file or select different variables.</p>
+          <Info className="h-8 w-8 mx-auto mb-1" />
+          <p className="text-xs">No valid numeric data for selected series in {plotTitle}: "{plottableSeries.join(', ')}".</p>
+          <p className="text-2xs mt-1">Check CSV columns or select different variables.</p>
         </div>
       </div>
     );
@@ -142,7 +136,7 @@ export function ChartDisplay({
 
   return (
     <div style={wrapperStyle} className="flex-1 min-h-0"> 
-      <ResponsiveContainer width="100%" height={chartHeightToUse}> {/* Renders at full height, clipped by parent */}
+      <ResponsiveContainer width="100%" height={chartHeightToUse}>
         <LineChart
           data={chartData}
           margin={{
@@ -169,7 +163,7 @@ export function ChartDisplay({
                 offset={10} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={15} // Adjusted dy to bring closer to axis
+                dy={15} 
                 style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
             )}
@@ -195,7 +189,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend 
-            wrapperStyle={{ paddingTop: "5px", fontSize: '0.7rem' }} // Reduced paddingTop
+            wrapperStyle={{ paddingTop: "5px", fontSize: '0.7rem' }} 
           /> 
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -211,7 +205,7 @@ export function ChartDisplay({
           ))}
           <Brush
             dataKey="time"
-            height={12} // Reduced height
+            height={12} 
             stroke="hsl(var(--primary))"
             fill="hsl(var(--muted))"
             fillOpacity={0.3} 
