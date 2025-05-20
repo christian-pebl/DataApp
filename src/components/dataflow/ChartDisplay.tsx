@@ -30,7 +30,7 @@ interface ChartDisplayProps {
 
 export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileName }: ChartDisplayProps) {
   
-  // console.log("[ChartDisplay] Props received:", { data, selectedSeries, timeAxisLabel, currentFileName });
+  // console.log("[ChartDisplay] Props received:", { data: data.slice(0,3), selectedSeries, timeAxisLabel, currentFileName });
 
   const chartData = React.useMemo(() => {
     if (!selectedSeries || !data || data.length === 0) {
@@ -43,15 +43,19 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
       let numericValue = NaN;
       if (rawValue !== undefined && rawValue !== null) {
         if (typeof rawValue === 'string') {
-          const cleanedValue = rawValue.replace(/,/g, ''); // Remove thousands separators
-          numericValue = parseFloat(cleanedValue);
+          // Attempt to clean common non-numeric characters like currency symbols, but be careful
+          const cleanedValue = rawValue.replace(/[^0-9.-]/g, ''); // Keep digits, dot, and minus
+          if (cleanedValue !== "") {
+            numericValue = parseFloat(cleanedValue);
+          }
         } else if (typeof rawValue === 'number') {
           numericValue = rawValue;
         }
       }
       return {
-        ...point, // This ensures the 'time' field and other series data are preserved
-        [selectedSeries]: numericValue, // The selected series is now explicitly numeric or NaN
+        ...point, 
+        time: point.time, // Explicitly ensure 'time' is correctly carried over
+        [selectedSeries]: numericValue,
       };
     });
 
@@ -64,7 +68,7 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
     // if (filteredData.length > 0) {
     //   console.log("[ChartDisplay] First 3 filtered data points for chart:", filteredData.slice(0, 3).map(p => ({ time: p.time, [selectedSeries]: p[selectedSeries] })));
     // } else if (mappedData.length > 0) {
-    //   console.log("[ChartDisplay] First 3 mapped data points (before filtering for NaN):", mappedData.slice(0,3).map(p => ({ time: p.time, [selectedSeries]: p[selectedSeries] })));
+    //    console.log("[ChartDisplay] Selected series values were not numeric. First 3 mapped data points (before filtering for NaN):", mappedData.slice(0,3).map(p => ({ time: p.time, [selectedSeries]: p[selectedSeries] })));
     // }
 
 
@@ -127,7 +131,7 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
           <div className="text-center text-muted-foreground">
             <Info className="h-16 w-16 mx-auto mb-4" />
             <p>No valid numeric data found for the selected series: "{selectedSeries}".</p>
-            <p className="text-sm mt-1">This can happen if the column contains non-numeric text, is empty, or all values were converted to Not-a-Number (NaN).</p>
+            <p className="text-sm mt-1">This can happen if the column contains non-numeric text, is empty, or all values were converted to Not-a-Number (NaN) after attempting to clean them.</p>
             <p className="text-sm mt-1">Please check the column in your CSV file or select a different variable.</p>
           </div>
         </CardContent>
@@ -143,7 +147,6 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
           Time Series Plot: {selectedSeries}
         </CardTitle>
         <CardDescription>
-          {/* The X-axis uses the '${timeAxisLabel}' column. The Y-axis displays '${selectedSeries}'. */}
           Visualizing "{selectedSeries}" from file "{currentFileName}" ({chartData.length} valid data points).
         </CardDescription>
       </CardHeader>
@@ -159,13 +162,11 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-            {/* X-axis explicitly uses the 'time' dataKey, which is populated from the first CSV column */}
-            <XAxis dataKey="time" stroke="hsl(var(--foreground))" angle={-30} textAnchor="end" height={60}>
+            <XAxis dataKey="time" stroke="hsl(var(--foreground))" angle={-30} textAnchor="end" height={60} interval="preserveStartEnd">
               {timeAxisLabel && (
                 <Label value={timeAxisLabel} offset={10} position="insideBottom" fill="hsl(var(--foreground))" dy={10} />
               )}
             </XAxis>
-            {/* Y-axis domain is auto-calculated. Label uses the selectedSeries name. */}
             <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']}>
               <Label value={selectedSeries} angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} fill="hsl(var(--foreground))" />
             </YAxis>
@@ -179,7 +180,6 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
               cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
             />
             <Legend wrapperStyle={{ paddingTop: "20px" }} />
-            {/* Line component uses selectedSeries as its dataKey, plotting data from the chosen CSV column */}
             <Line
               type="monotone"
               dataKey={selectedSeries} 
@@ -194,3 +194,6 @@ export function ChartDisplay({ data, selectedSeries, timeAxisLabel, currentFileN
     </Card>
   );
 }
+
+
+    
