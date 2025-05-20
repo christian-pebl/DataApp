@@ -95,7 +95,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     }
     updateStepStatus('headerParse', 'success', "Header row found.");
 
-    const delimiterRegex = /\s*[,;\t]\s*/; 
+    const delimiterRegex = /\s*[,;\t]\s*/;
     const originalHeaders = lines[0].trim().split(delimiterRegex).map(h => h.trim());
 
     const timeHeader = originalHeaders[0]?.trim() || "X-Axis Time (Default)";
@@ -110,7 +110,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     let actualVariableHeadersToProcess: string[];
 
     if (potentialVariableHeaders.length > 0 && originalHeaders[originalHeaders.length - 1].trim().toLowerCase() === 'rec') {
-      actualVariableHeadersToProcess = potentialVariableHeaders.slice(0, -1); 
+      actualVariableHeadersToProcess = potentialVariableHeaders.slice(0, -1);
       updateStepStatus('variableColumnCheck', 'success', `Identified variable columns. Last column "Rec" (header: "${originalHeaders[originalHeaders.length - 1]}") was found and excluded from plotting.`);
     } else if (potentialVariableHeaders.length === 0 && originalHeaders.length > 1) {
        updateStepStatus('variableColumnCheck', 'error', `File "${fileName}": CSV structure error. No data variable columns found after the first (time) column (and after potentially excluding a final "Rec" column). Ensure your CSV uses comma, semicolon, or tab delimiters.`);
@@ -125,7 +125,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       actualVariableHeadersToProcess = [...potentialVariableHeaders];
       updateStepStatus('variableColumnCheck', 'success', `Identified ${actualVariableHeadersToProcess.length} variable column(s): ${actualVariableHeadersToProcess.map(h => `"${h}"`).join(', ')}. No "Rec" column found at the end, or it was not the last column to be excluded.`);
     }
-    
+
     if (actualVariableHeadersToProcess.length === 0) {
         const yAxisErrorMsg = (originalHeaders.length === 2 && originalHeaders[1].trim().toLowerCase() === 'rec') ?
             `File "${fileName}": Only a time column and a "Rec" column found. No other variables to plot.` :
@@ -136,8 +136,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
 
     const uniqueSeriesNamesForDropdown: string[] = [];
-    const usedKeyNamesForDataPoint = new Set<string>(); 
-    usedKeyNamesForDataPoint.add('time'); 
+    const usedKeyNamesForDataPoint = new Set<string>();
+    usedKeyNamesForDataPoint.add('time');
 
     actualVariableHeadersToProcess.forEach(originalVarHeader => {
         let processedHeader = (originalVarHeader || "Unnamed_Variable").trim();
@@ -145,22 +145,23 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
         let uniqueKey = processedHeader;
         let suffix = 1;
-        
+
+        // Ensure variable keys don't clash with 'time' or other existing variable keys (case-insensitive for 'time' check)
         while (uniqueKey.toLowerCase() === 'time' || usedKeyNamesForDataPoint.has(uniqueKey)) {
-            uniqueKey = `${processedHeader}_(${suffix})`; 
+            uniqueKey = `${processedHeader}_(${suffix})`;
             suffix++;
         }
-        uniqueSeriesNamesForDropdown.push(uniqueKey); 
-        usedKeyNamesForDataPoint.add(uniqueKey);      
+        uniqueSeriesNamesForDropdown.push(uniqueKey);
+        usedKeyNamesForDataPoint.add(uniqueKey);
     });
 
-    
+
     if (uniqueSeriesNamesForDropdown.length > 0) {
        const firstVarOriginalHeader = actualVariableHeadersToProcess[0]?.trim() || "Unnamed";
        const firstVarPlotKey = uniqueSeriesNamesForDropdown[0];
        updateStepStatus('yAxisFirstVarIdentified', 'success', `CSV Column 2 (original header: "${firstVarOriginalHeader}") provides data for the first variable. It will be plotted using data key: "${firstVarPlotKey}". Total plottable variables: ${uniqueSeriesNamesForDropdown.length}.`);
     } else {
-      
+
       updateStepStatus('yAxisFirstVarIdentified', 'error', `File "${fileName}": No plottable variable columns were ultimately identified. Check CSV structure and delimiters (comma, semicolon, or tab).`);
       return null;
     }
@@ -173,50 +174,50 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i];
       const trimmedLine = line.trim();
-      if (!trimmedLine) continue; 
+      if (!trimmedLine) continue;
 
       const values = trimmedLine.split(delimiterRegex).map(v => v.trim());
       const timeValue = values[0];
 
-      
+
       if (!timeValue && values.slice(1).every(v => !v || v.trim() === "")) {
         continue;
       }
 
-      const dataPoint: DataPoint = { time: timeValue || "N/A" }; 
+      const dataPoint: DataPoint = { time: timeValue || "N/A" };
       let hasNumericValueInRow = false;
       let rowHasParsingIssue = false;
 
       uniqueSeriesNamesForDropdown.forEach((uniqueKey, seriesIdx) => {
-        
+
         const originalCsvColumnIndexForVar = seriesIdx + 1;
         const rawValue = values[originalCsvColumnIndexForVar];
 
-        let numericValue: string | number = NaN; 
+        let numericValue: string | number = NaN;
         if (rawValue !== undefined && rawValue !== null && rawValue.trim() !== "") {
-          const cleanedValue = rawValue.replace(/,/g, ''); 
+          const cleanedValue = rawValue.replace(/,/g, '');
           const parsedFloat = parseFloat(cleanedValue);
           if (!isNaN(parsedFloat)) {
             numericValue = parsedFloat;
             hasNumericValueInRow = true;
           } else {
-            numericValue = rawValue; 
+            numericValue = rawValue;
             someRowsHadNonNumericData = true;
             rowHasParsingIssue = true;
           }
         } else {
-            
-            numericValue = NaN; 
-            someRowsHadNonNumericData = true; 
+
+            numericValue = NaN;
+            someRowsHadNonNumericData = true;
             rowHasParsingIssue = true;
         }
         dataPoint[uniqueKey] = numericValue;
       });
 
-      
+
       if (timeValue || hasNumericValueInRow) {
          data.push(dataPoint);
-         if (!rowHasParsingIssue && hasNumericValueInRow) { 
+         if (!rowHasParsingIssue && hasNumericValueInRow) {
             validDataRowsCount++;
          }
       }
@@ -230,7 +231,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     let dataRowMessage = `Processed ${data.length} data rows. ${validDataRowsCount} rows appear fully numeric for at least one variable.`;
     if (someRowsHadNonNumericData) {
       dataRowMessage += " Some non-numeric or empty values in variable columns were encountered; these will be treated as missing (NaN) by the chart.";
-      updateStepStatus('dataRowFormat', 'success', dataRowMessage); 
+      updateStepStatus('dataRowFormat', 'success', dataRowMessage);
     } else {
       updateStepStatus('dataRowFormat', 'success', dataRowMessage);
     }
@@ -244,15 +245,15 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     const newValidationSteps = initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }));
     setValidationSteps(newValidationSteps);
     setCurrentFileForValidation(file.name);
-    setAccordionValue(""); 
+    setAccordionValue("");
 
     const updateAndReturnNull = (stepId: string, errorMsg: string, isToastError: boolean = true, title?: string) => {
       updateStepStatus(stepId, 'error', errorMsg);
-      
+
       const stepIndex = initialValidationSteps.findIndex(s => s.id === stepId);
       if (stepIndex !== -1) {
         for (let i = stepIndex + 1; i < initialValidationSteps.length; i++) {
-            
+
             const currentStep = validationSteps.find(s => s.id === initialValidationSteps[i].id) || initialValidationSteps[i];
             if(currentStep.status === 'pending') {
                  updateStepStatus(initialValidationSteps[i].id, 'error', 'Prerequisite step failed.');
@@ -262,7 +263,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       if (isToastError) {
         toast({ variant: "destructive", title: title || "File Validation Error", description: errorMsg });
       }
-      setAccordionValue("validation-details-" + instanceId); 
+      setAccordionValue("validation-details-" + instanceId);
       return null;
     };
 
@@ -291,20 +292,20 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
     const result = parseAndValidateCsv(fileContent, file.name);
     if (!result) {
-       
+
        toast({
          variant: "destructive",
          title: "CSV Data Validation Failed",
          description: `File "${file.name}": Please check the validation checklist above for details and ensure your CSV file meets the requirements. You can then try uploading again.`,
        });
-       setAccordionValue("validation-details-" + instanceId); 
+       setAccordionValue("validation-details-" + instanceId);
     }
     return result;
   };
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     setIsProcessing(true);
-    setValidationSteps([]); 
+    setValidationSteps([]);
     setCurrentFileForValidation(null);
 
     const file = event.target.files?.[0];
@@ -318,12 +319,12 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     if (parsedResult) {
         setParsedData(parsedResult.data);
         setCurrentFileName(file.name);
-        setPlotTitle(file.name); 
+        setPlotTitle(file.name);
         setDataSeries(parsedResult.seriesNames);
         setTimeAxisLabel(parsedResult.timeHeader);
         const newVisibleSeries: Record<string, boolean> = {};
         parsedResult.seriesNames.forEach((name, index) => {
-           newVisibleSeries[name] = index < 4; 
+           newVisibleSeries[name] = index < 4;
         });
         setVisibleSeries(newVisibleSeries);
         toast({
@@ -331,10 +332,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
           description: `${file.name} has been processed for this plot.`,
         });
     }
-    
+
 
     setIsProcessing(false);
-    
+
     if (event.target) {
       event.target.value = "";
     }
@@ -349,7 +350,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     setValidationSteps([]);
     setCurrentFileForValidation(null);
     setAccordionValue("");
-    setPlotTitle(initialPlotTitle); 
+    setPlotTitle(initialPlotTitle);
     toast({
       title: "Data Cleared",
       description: "Plot data has been cleared.",
@@ -369,15 +370,15 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   };
 
   const getSummaryStep = (): ValidationStep | null => {
-    if (!validationSteps.length && !isProcessing && !currentFileForValidation) return null; 
+    if (!validationSteps.length && !isProcessing && !currentFileForValidation) return null;
     if (isProcessing && validationSteps.every(s => s.status === 'pending')) {
         return {id: 'processing', label: `Preparing to process ${currentFileForValidation || 'file'}...`, status: 'pending'};
     }
-    
+
     if (validationSteps.length === 0 && currentFileForValidation) {
         return {id: 'fileSelectedSummary', label: `Processing: ${currentFileForValidation}`, status: 'pending' };
     }
-    if (validationSteps.length === 0) return null; 
+    if (validationSteps.length === 0) return null;
 
     const currentProcessingStep = validationSteps.find(step => step.status === 'pending');
     if (isProcessing && currentProcessingStep) {
@@ -387,18 +388,18 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     const firstError = validationSteps.find(step => step.status === 'error');
     if (firstError) return firstError;
 
-    
+
     const allSuccessful = validationSteps.every(step => step.status === 'success');
     if (allSuccessful) {
-      const dataReadyStep = validationSteps.find(step => step.id === 'dataReady'); 
+      const dataReadyStep = validationSteps.find(step => step.id === 'dataReady');
       if (dataReadyStep) return dataReadyStep;
     }
-    
-    
+
+
     const lastNonPendingStep = [...validationSteps].reverse().find(step => step.status !== 'pending');
     if (lastNonPendingStep) return lastNonPendingStep;
 
-    return validationSteps[0] || null; 
+    return validationSteps[0] || null;
   };
 
   const summaryStep = getSummaryStep();
@@ -408,8 +409,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   return (
     <Card className="shadow-lg">
       <CardHeader className="flex flex-row items-center justify-between p-3">
-        <CardTitle className="flex items-center gap-2 text-md"> 
-          <Settings2 className="h-4 w-4"/> 
+        <CardTitle className="flex items-center gap-2 text-md">
+          <Settings2 className="h-4 w-4"/>
           {plotTitle || "Data Plot"}
         </CardTitle>
         <div className="flex items-center gap-1">
@@ -424,11 +425,11 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
           </Button>
         </div>
       </CardHeader>
-      
+
       {!isMinimized && (
         <CardContent className={cn(
-            "p-3 pt-0", 
-            !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block" 
+            "p-3 pt-0",
+            !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block"
           )}>
           {!isMinimalistView && (
              <div className="md:col-span-4 space-y-2">
@@ -445,7 +446,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     accept=".csv"
                     onChange={handleFileChange}
                     disabled={isProcessing}
-                    className="text-xs file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                    className="text-xs file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
                   />
                 </div>
 
@@ -459,7 +460,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     <AccordionItem value={"validation-details-" + instanceId} className="border-b-0">
                       <AccordionTrigger
                         className={cn(
-                          "flex items-center justify-between text-[0.6rem] p-1 rounded-md hover:no-underline hover:bg-muted/50 text-left", 
+                          "flex items-center justify-between text-[0.6rem] p-1 rounded-md hover:no-underline hover:bg-muted/50 text-left",
                           summaryStep.status === 'error' && 'bg-destructive/10 text-destructive hover:bg-destructive/20',
                           summaryStep.status === 'success' && validationSteps.every(s => s.status === 'success' || s.status === 'pending') && !isProcessing && 'bg-green-500/10 text-green-700 hover:bg-green-500/20',
                           (isProcessing || summaryStep.status === 'pending') && 'bg-blue-500/10 text-blue-700 hover:bg-blue-500/20'
@@ -485,7 +486,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                               </div>
                               <div className="flex-grow min-w-0">
                                 <span className={cn(
-                                  'block text-[0.55rem]', 
+                                  'block text-[0.55rem]',
                                   step.status === 'error' && 'text-destructive font-semibold',
                                   step.status === 'success' && 'text-green-600'
                                 )}>
@@ -493,7 +494,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                                 </span>
                                 {step.message && step.status !== 'pending' && (
                                     <span className={cn(
-                                        "text-[0.45rem] block whitespace-pre-wrap", 
+                                        "text-[0.45rem] block whitespace-pre-wrap",
                                         step.status === 'error' ? 'text-red-700' : 'text-muted-foreground'
                                     )} title={step.message}>
                                        &ndash; {step.message}
@@ -520,7 +521,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       onClick={handleClearDataInstance}
                       variant="outline"
                       size="sm"
-                      className="w-full h-7 text-xs" 
+                      className="w-full h-7 text-xs"
                       disabled={isProcessing || !currentFileName}
                   >
                     Clear Data & Plot
@@ -550,7 +551,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
-                  <ScrollArea className="w-full rounded-md border p-1 h-40"> {/* Changed max-h-40 to h-40 */}
+                  <ScrollArea className="w-full rounded-md border p-1 h-40">
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
                         <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -579,8 +580,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
               )}
             </div>
           )}
-          
-          <div className={cn(!isMinimalistView ? "md:col-span-8" : "")}>
+
+          <div className={cn(!isMinimalistView ? "md:col-span-8 md:self-end" : "")}>
             <ChartDisplay
               data={parsedData}
               plottableSeries={plottableSeries}
@@ -594,5 +595,3 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     </Card>
   );
 }
-
-
