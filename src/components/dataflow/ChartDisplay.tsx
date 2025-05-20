@@ -135,7 +135,7 @@ export function ChartDisplay({
             top: 5,
             right: 20,
             left: 5,
-            bottom: 63, 
+            bottom: 66, // Adjusted margin
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -155,7 +155,7 @@ export function ChartDisplay({
                 offset={15} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={22} 
+                dy={23} // Adjusted dy
                 style={{ fontSize: '0.6rem', textAnchor: 'middle' }}
               />
             )}

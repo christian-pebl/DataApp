@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, Scissors, TrendingDown } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, TrendingDown, Scissors } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -430,15 +430,31 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                    <UploadCloud className="h-3 w-3 text-[#2B7A78]" />
                    <h3 className="text-xs font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
                 </div>
-                <div className="px-1 py-0.5 flex justify-center">
-                  <Label htmlFor={`file-upload-${instanceId}`} className="sr-only">Upload File</Label>
+                <div className="px-1 py-1.5">
+                  <Label
+                    htmlFor={`file-upload-${instanceId}`}
+                    className="w-full"
+                  >
+                    <Button
+                      asChild 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full h-8 text-xs" 
+                      disabled={isProcessing}
+                    >
+                      <span>
+                        <UploadCloud className="mr-1.5 h-3.5 w-3.5 inline-block" />
+                        Choose file
+                      </span>
+                    </Button>
+                  </Label>
                   <Input
                     id={`file-upload-${instanceId}`}
                     type="file"
                     accept=".csv"
                     onChange={handleFileChange}
                     disabled={isProcessing}
-                    className="text-xs text-transparent w-fit file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[0.7rem] file:font-normal file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+                    className="sr-only"
                   />
                 </div>
 
@@ -546,7 +562,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                   </Label>
                 </div>
-                 <ScrollArea className="w-full rounded-md border p-1 h-32">
+                 <ScrollArea className="w-full rounded-md border p-1 h-28 flex-1">
                   {dataSeries.length > 0 ? (
                     dataSeries.map((seriesName) => (
                       <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
