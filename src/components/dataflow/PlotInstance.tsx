@@ -423,8 +423,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             "p-2 pt-0",
             !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block"
           )}>
+          {/* LEFT COLUMN: Import & Validate */}
           {!isMinimalistView && (
              <div className="md:col-span-4 space-y-1.5 flex flex-col"> 
+              {/* "Import & Validate" section */}
               <div className="space-y-1 border p-1.5 rounded-md"> 
                 <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5">
                    <UploadCloud className="h-3 w-3 text-[#2B7A78]" />
@@ -520,65 +522,17 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                   </Button>
                 </div>
               </div>
-
-              {/* This inner div has flex-1 to allow scroll area to grow with plot expansion */}
-              <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0"> 
-                   <div className="flex items-center gap-1">
-                      <ListFilter className="h-3 w-3 text-[#2B7A78]" />
-                      <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
-                   </div>
-                  <div className="flex items-center space-x-1.5">
-                    <Checkbox
-                      id={`select-all-${instanceId}-${uniqueComponentId}`}
-                      checked={allSeriesSelected}
-                      onCheckedChange={() => handleSelectAllToggle(!allSeriesSelected)}
-                      disabled={dataSeries.length === 0}
-                      aria-label={allSeriesSelected ? "Deselect all series" : "Select all series"}
-                      className="h-3.5 w-3.5"
-                    />
-                    <Label
-                      htmlFor={`select-all-${instanceId}-${uniqueComponentId}`}
-                      className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                    >
-                      {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
-                    </Label>
-                  </div>
-                  {/* ScrollArea for variables now has flex-1 to grow */}
-                  <ScrollArea className="w-full rounded-md border p-1 flex-1"> 
-                    {dataSeries.length > 0 ? (
-                      dataSeries.map((seriesName) => (
-                        <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
-                          <Checkbox
-                            id={`series-${seriesName}-${instanceId}-${uniqueComponentId}`}
-                            checked={!!visibleSeries[seriesName]}
-                            onCheckedChange={(checked) => handleSeriesVisibilityChange(seriesName, !!checked)}
-                             className="h-3.5 w-3.5"
-                          />
-                          <Label
-                            htmlFor={`series-${seriesName}-${instanceId}-${uniqueComponentId}`}
-                            className="text-xs leading-snug peer-disabled:cursor-not-allowed peer-disabled:opacity-70 truncate"
-                            title={seriesName}
-                          >
-                            {seriesName}
-                          </Label>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-center text-muted-foreground py-2">
-                        No variables found in the uploaded file.
-                      </p>
-                    )}
-                  </ScrollArea>
-                </div>
-              )}
+              {/* The "Select Variables" section from previous versions should NOT be here. */}
+              {/* It is now correctly placed inside the right-hand card. */}
             </div>
           )}
 
-          {/* This is the right-hand side card that contains variables and plot */}
+          {/* RIGHT COLUMN: Card containing Variables Selector & Plot */}
           <Card className={cn(!isMinimalistView ? "md:col-span-8 flex flex-col" : "col-span-full flex flex-col")}>
             <CardContent className="p-2 flex-1 flex flex-col min-h-0">
+              {/* "Select Variables" section - THIS IS THE CORRECT AND ONLY LOCATION */}
               {!isMinimalistView && (
-                <div className="space-y-1 p-1.5 border rounded-md flex flex-col h-48 mb-2"> {/* Select Variables section, fixed height */}
+                <div className="space-y-1 p-1.5 border rounded-md flex flex-col h-48 mb-2"> 
                   <div className="flex items-center gap-1">
                     <ListFilter className="h-3 w-3 text-[#2B7A78]" />
                     <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
@@ -599,7 +553,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
-                  <ScrollArea className="w-full rounded-md border p-1 flex-1"> {/* ScrollArea will use remaining space in h-48 div */}
+                  <ScrollArea className="w-full rounded-md border p-1 flex-1"> 
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
                         <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -626,7 +580,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                   </ScrollArea>
                 </div>
               )}
-              <div className="flex-1 min-h-0"> {/* This div will allow ChartDisplay to take available space */}
+              {/* Chart Display */}
+              <div className="flex-1 min-h-0"> 
                 <ChartDisplay
                   data={parsedData}
                   plottableSeries={plottableSeries}
@@ -637,6 +592,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                 />
               </div>
             </CardContent>
+            {/* Plot Expansion Toggle */}
             {parsedData.length > 0 && !isMinimalistView && !isMinimized && (
               <div className="flex justify-center pt-1 pb-1 border-t">
                 <Button
@@ -656,3 +612,5 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     </Card>
   );
 }
+
+    
