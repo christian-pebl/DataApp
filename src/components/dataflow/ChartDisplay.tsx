@@ -28,6 +28,7 @@ interface ChartDisplayProps {
   timeAxisLabel: string | undefined;
   currentFileName?: string;
   plotTitle?: string;
+  showSlider?: boolean;
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
@@ -56,7 +57,14 @@ const formatXAxisTick = (timeValue: string | number): string => {
   }
 };
 
-export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFileName, plotTitle = "Time Series Plot" }: ChartDisplayProps) {
+export function ChartDisplay({ 
+  data, 
+  plottableSeries, 
+  timeAxisLabel, 
+  currentFileName, 
+  plotTitle = "Time Series Plot",
+  showSlider = true 
+}: ChartDisplayProps) {
 
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
@@ -85,6 +93,8 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
       chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
   }, [chartData, plottableSeries]);
+
+  const chartBottomMargin = showSlider ? 125 : 90;
 
 
   if (!data || data.length === 0) {
@@ -159,7 +169,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               top: 5,
               right: 15,
               left: 5,
-              bottom: 125, // Reduced margin
+              bottom: chartBottomMargin, 
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -175,11 +185,11 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
             >
               {timeAxisLabel && (
                 <Label
-                  value={timeAxisLabel ? `${timeAxisLabel} (Adjust time window with slider)` : "Time (Adjust time window with slider)"}
+                  value={timeAxisLabel ? `${timeAxisLabel}${showSlider ? " (Adjust time window with slider)" : ""}` : (showSlider ? "Time (Adjust time window with slider)" : "Time")}
                   offset={10}
                   position="insideBottom"
                   fill="hsl(var(--muted-foreground))"
-                  dy={40} // Adjusted dy
+                  dy={40} 
                   style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                 />
               )}
@@ -216,16 +226,19 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                 connectNulls={true}
               />
             ))}
-            <Brush
-              dataKey="time"
-              height={15} // Reduced Brush height
-              stroke="hsl(var(--primary))"
-              fill="hsl(var(--muted))"
-              tickFormatter={formatXAxisTick}
-            />
+            {showSlider && (
+              <Brush
+                dataKey="time"
+                height={15} 
+                stroke="hsl(var(--primary))"
+                fill="hsl(var(--muted))"
+                tickFormatter={formatXAxisTick}
+              />
+            )}
           </LineChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>
   );
 }
+
