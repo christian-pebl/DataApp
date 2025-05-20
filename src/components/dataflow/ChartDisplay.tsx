@@ -24,10 +24,10 @@ interface DataPoint {
 
 interface ChartDisplayProps {
   data: DataPoint[];
-  plottableSeries: string[]; 
+  plottableSeries: string[];
   timeAxisLabel: string | undefined;
   currentFileName?: string;
-  plotTitle?: string; // Optional title for the plot
+  plotTitle?: string;
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
@@ -42,20 +42,19 @@ const formatXAxisTick = (timeValue: string | number): string => {
         const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue); 
+      return String(timeValue);
     }
     const year = date.getFullYear().toString().slice(-2);
     const month = ('0' + (date.getMonth() + 1)).slice(-2);
     const day = ('0' + date.getDate()).slice(-2);
     return `${year}-${month}-${day}`;
   } catch (e) {
-    return String(timeValue); 
+    return String(timeValue);
   }
-};
-
+}; // Missing closing brace was here
 
 export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFileName, plotTitle = "Time Series Plot" }: ChartDisplayProps) {
-  
+
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
       return [];
@@ -79,7 +78,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
     if (!chartData || chartData.length === 0 || plottableSeries.length === 0) return false;
-    return plottableSeries.some(seriesName => 
+    return plottableSeries.some(seriesName =>
       chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
   }, [chartData, plottableSeries]);
@@ -87,7 +86,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (!data || data.length === 0) {
     return (
-      <Card className="h-[650px] flex flex-col">
+      <Card className="flex flex-col min-h-[300px]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground">
             <LineChartIcon className="h-6 w-6" /> {plotTitle}
@@ -106,7 +105,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (plottableSeries.length === 0) {
     return (
-      <Card className="h-[650px] flex flex-col">
+      <Card className="flex flex-col min-h-[300px]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground">
             <LineChartIcon className="h-6 w-6" /> {plotTitle}
@@ -124,10 +123,10 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
       </Card>
     );
   }
-  
+
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
-      <Card className="h-[650px] flex flex-col">
+      <Card className="flex flex-col min-h-[300px]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground">
             <LineChartIcon className="h-6 w-6" /> {plotTitle}
@@ -149,7 +148,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
   }
 
   return (
-    <Card className="h-[650px] flex flex-col">
+    <Card className="flex flex-col min-h-[400px]">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <LineChartIcon className="h-6 w-6 text-primary" />
@@ -159,7 +158,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
           {currentFileName ? `Visualizing data from "${currentFileName}"` : "Visualizing uploaded data"} ({chartData.length} data points prepared for chart).
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex-grow pt-2">
+      <CardContent className="flex-grow pt-2 h-[500px]">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={chartData}
@@ -167,31 +166,39 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               top: 5,
               right: 30,
               left: 20,
-              bottom: 130, // Increased margin for angled X-axis labels, axis title, and Brush
+              bottom: 130,
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-            <XAxis 
-              dataKey="time" 
-              stroke="hsl(var(--foreground))" 
-              angle={-45} 
-              textAnchor="end" 
-              height={60} 
-              interval="preserveStartEnd" 
-              tickFormatter={formatXAxisTick} 
+            <XAxis
+              dataKey="time"
+              stroke="hsl(var(--foreground))"
+              angle={-45}
+              textAnchor="end"
+              height={60}
+              interval="preserveStartEnd"
+              tickFormatter={formatXAxisTick}
+              tick={{ fontSize: '0.75em' }}
             >
               {timeAxisLabel && (
-                <Label 
-                  value={timeAxisLabel} 
-                  offset={10} 
-                  position="insideBottom" 
-                  fill="hsl(var(--foreground))" 
-                  dy={45} 
+                <Label
+                  value={timeAxisLabel ? `${timeAxisLabel} (Adjust time window with slider)` : "Time (Adjust time window with slider)"}
+                  offset={10}
+                  position="insideBottom"
+                  fill="hsl(var(--muted-foreground))"
+                  dy={45}
+                  style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                 />
               )}
             </XAxis>
-            <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']}>
-              <Label value="Value" angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} fill="hsl(var(--foreground))" />
+            <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']} tick={{ fontSize: '0.75em' }}>
+              <Label 
+                value="Value" 
+                angle={-90} 
+                position="insideLeft" 
+                style={{ textAnchor: 'middle', fontSize: '0.75em' }} 
+                fill="hsl(var(--foreground))" 
+              />
             </YAxis>
             <Tooltip
               contentStyle={{
@@ -207,20 +214,20 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               <Line
                 key={seriesName}
                 type="monotone"
-                dataKey={seriesName} 
+                dataKey={seriesName}
                 stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
                 strokeWidth={2}
-                dot={false} 
+                dot={false}
                 name={seriesName}
-                connectNulls={true} 
+                connectNulls={true}
               />
             ))}
-            <Brush 
-              dataKey="time" 
+            <Brush
+              dataKey="time"
               height={20} // Slimmer brush
               stroke="hsl(var(--primary))"
               fill="hsl(var(--muted))"
-              tickFormatter={formatXAxisTick} 
+              tickFormatter={formatXAxisTick}
             />
           </LineChart>
         </ResponsiveContainer>
@@ -228,3 +235,4 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
     </Card>
   );
 }
+

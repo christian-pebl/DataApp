@@ -2,39 +2,38 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { DataUploadForm } from "@/components/dataflow/DataUploadForm";
-import { CheckboxSeriesSelector } from "@/components/dataflow/CheckboxSeriesSelector";
-import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun, Github } from "lucide-react";
+import { Moon, Sun, Github, PlusCircle } from "lucide-react";
+import { PlotInstance } from "@/components/dataflow/PlotInstance";
 
-interface DataPoint {
-  time: string | number;
-  [key: string]: string | number;
+interface PlotConfig {
+  id: string;
+  title: string;
 }
 
 export default function DataFlowPage() {
-  const [parsedData, setParsedData] = useState<DataPoint[]>([]);
-  const [currentFileName, setCurrentFileName] = useState<string | undefined>(undefined);
-  
-  // State for Chart 1
-  const [dataSeries, setDataSeries] = useState<string[]>([]); // All available series names for chart 1
-  const [visibleSeries, setVisibleSeries] = useState<Record<string, boolean>>({}); // Tracks visibility for chart 1
-  
-  // State for Chart 2
-  const [dataSeries2, setDataSeries2] = useState<string[]>([]); // All available series names for chart 2
-  const [visibleSeries2, setVisibleSeries2] = useState<Record<string, boolean>>({}); // Tracks visibility for chart 2
-
-  const [timeAxisLabel, setTimeAxisLabel] = useState<string | undefined>(undefined);
+  const [plots, setPlots] = useState<PlotConfig[]>([]);
   const [theme, setTheme] = useState("light");
+
+  // Initialize with one plot by default
+  useEffect(() => {
+    if (plots.length === 0) {
+      addPlot();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
-    const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     if (storedTheme) {
       setTheme(storedTheme);
-    } else if (systemPrefersDark) {
-      setTheme("dark");
+    } else {
+        // Check system preference only if no theme is stored
+        const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        if (systemPrefersDark) {
+            setTheme("dark");
+        }
     }
   }, []);
 
@@ -51,66 +50,15 @@ export default function DataFlowPage() {
     setTheme(theme === "light" ? "dark" : "light");
   };
 
-  const handleDataUploaded = (data: DataPoint[], fileName: string, seriesNames: string[], timeHeader: string) => {
-    setParsedData(data);
-    setCurrentFileName(fileName);
-    setTimeAxisLabel(timeHeader);
-    
-    // For Chart 1
-    setDataSeries(seriesNames);
-    const newVisibleSeries: Record<string, boolean> = {};
-    seriesNames.forEach(name => {
-      newVisibleSeries[name] = true; // All visible by default for chart 1
-    });
-    setVisibleSeries(newVisibleSeries);
-
-    // For Chart 2
-    setDataSeries2(seriesNames); // Same series available for the second chart
-    const newVisibleSeries2: Record<string, boolean> = {};
-    seriesNames.forEach(name => {
-      newVisibleSeries2[name] = true; // All visible by default for chart 2 initially
-    });
-    setVisibleSeries2(newVisibleSeries2);
+  const addPlot = () => {
+    const newPlotId = `plot-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newPlotTitle = `Plot ${plots.length + 1}`;
+    setPlots(prevPlots => [...prevPlots, { id: newPlotId, title: newPlotTitle }]);
   };
 
-  const handleClearData = () => {
-    setParsedData([]);
-    setCurrentFileName(undefined);
-    setDataSeries([]);
-    setVisibleSeries({});
-    setDataSeries2([]);
-    setVisibleSeries2({});
-    setTimeAxisLabel(undefined);
+  const removePlot = (idToRemove: string) => {
+    setPlots(prevPlots => prevPlots.filter(plot => plot.id !== idToRemove));
   };
-
-  // Handlers for Chart 1
-  const handleSeriesVisibilityChange = (seriesName: string, isVisible: boolean) => {
-    setVisibleSeries(prev => ({ ...prev, [seriesName]: isVisible }));
-  };
-
-  const handleSelectAllToggle = (selectAll: boolean) => {
-    const newVisibleSeries: Record<string, boolean> = {};
-    dataSeries.forEach(name => {
-      newVisibleSeries[name] = selectAll;
-    });
-    setVisibleSeries(newVisibleSeries);
-  };
-
-  // Handlers for Chart 2
-  const handleSeriesVisibilityChange2 = (seriesName: string, isVisible: boolean) => {
-    setVisibleSeries2(prev => ({ ...prev, [seriesName]: isVisible }));
-  };
-
-  const handleSelectAllToggle2 = (selectAll: boolean) => {
-    const newVisibleSeries2: Record<string, boolean> = {};
-    dataSeries2.forEach(name => {
-      newVisibleSeries2[name] = selectAll;
-    });
-    setVisibleSeries2(newVisibleSeries2);
-  };
-
-  const plottableSeries = dataSeries.filter(seriesName => visibleSeries[seriesName]);
-  const plottableSeries2 = dataSeries2.filter(seriesName => visibleSeries2[seriesName]);
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -131,57 +79,29 @@ export default function DataFlowPage() {
       </header>
 
       <main className="flex-grow container mx-auto p-4 md:p-6">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 h-full">
-          {/* Controls Panel */}
-          <div className="md:col-span-3 space-y-6">
-            <DataUploadForm
-              onDataUploaded={handleDataUploaded}
-              onClearData={handleClearData}
-              currentFileNameFromParent={currentFileName}
-            />
-            <div>
-              <h3 className="text-lg font-semibold mb-2 text-primary">Plot 1 Variables</h3>
-              <CheckboxSeriesSelector
-                availableSeries={dataSeries}
-                visibleSeries={visibleSeries}
-                onSeriesVisibilityChange={handleSeriesVisibilityChange}
-                onSelectAllToggle={handleSelectAllToggle}
-                disabled={parsedData.length === 0}
-              />
-            </div>
-            {parsedData.length > 0 && ( // Only show second selector if data is loaded
-              <div>
-                <h3 className="text-lg font-semibold mb-2 mt-4 text-primary">Plot 2 Variables</h3>
-                <CheckboxSeriesSelector
-                  availableSeries={dataSeries2}
-                  visibleSeries={visibleSeries2}
-                  onSeriesVisibilityChange={handleSeriesVisibilityChange2}
-                  onSelectAllToggle={handleSelectAllToggle2}
-                  disabled={parsedData.length === 0}
-                />
-              </div>
-            )}
-          </div>
+        <div className="mb-6">
+          <Button onClick={addPlot} variant="outline">
+            <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot
+          </Button>
+        </div>
 
-          {/* Main Content Area (Charts) */}
-          <div className="md:col-span-9 space-y-6">
-            <ChartDisplay
-              data={parsedData}
-              plottableSeries={plottableSeries}
-              timeAxisLabel={timeAxisLabel}
-              currentFileName={currentFileName}
-              plotTitle="Time Series Plot 1"
-            />
-            {parsedData.length > 0 && ( // Only show second chart if data is loaded
-              <ChartDisplay
-                data={parsedData}
-                plottableSeries={plottableSeries2}
-                timeAxisLabel={timeAxisLabel}
-                currentFileName={currentFileName}
-                plotTitle="Time Series Plot 2"
-              />
-            )}
+        {plots.length === 0 && (
+          <div className="flex flex-col items-center justify-center text-center text-muted-foreground py-10">
+            <PlusCircle className="h-16 w-16 mb-4" />
+            <p className="text-lg">No plots yet.</p>
+            <p>Click "Add New Plot" to get started.</p>
           </div>
+        )}
+
+        <div className="space-y-8">
+          {plots.map((plot, index) => (
+            <PlotInstance
+              key={plot.id}
+              instanceId={plot.id}
+              onRemovePlot={removePlot}
+              initialPlotTitle={plot.title || `Plot ${index + 1}`}
+            />
+          ))}
         </div>
       </main>
       <footer className="py-6 md:px-8 md:py-0 border-t">
