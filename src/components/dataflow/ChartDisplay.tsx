@@ -37,20 +37,22 @@ const formatXAxisTick = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) {
+      // Attempt to parse YYYY-MM-DD (potentially followed by time)
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
-        const year = timeValue.substring(2, 4);
-        const month = timeValue.substring(5, 7);
-        const day = timeValue.substring(8, 10);
+        const year = timeValue.substring(2, 4); // YY
+        const month = timeValue.substring(5, 7); // MM
+        const day = timeValue.substring(8, 10); // DD
         return `${year}-${month}-${day}`;
       }
-      return String(timeValue);
+      return String(timeValue); // Fallback for non-standard or non-date strings
     }
-    const year = date.getFullYear().toString().slice(-2);
-    const month = ('0' + (date.getMonth() + 1)).slice(-2);
-    const day = ('0' + date.getDate()).slice(-2);
+    // If it's a valid date object
+    const year = date.getFullYear().toString().slice(-2); // YY
+    const month = ('0' + (date.getMonth() + 1)).slice(-2); // MM
+    const day = ('0' + date.getDate()).slice(-2); // DD
     return `${year}-${month}-${day}`;
   } catch (e) {
-    return String(timeValue);
+    return String(timeValue); // Fallback if any error occurs during formatting
   }
 };
 
@@ -59,22 +61,24 @@ export function ChartDisplay({
   plottableSeries,
   timeAxisLabel,
   currentFileName,
-  plotTitle = "Time Series Plot",
-  chartRenderHeight = 350, // Default height
+  plotTitle = "Time Series Plot", // Default title if not provided
+  chartRenderHeight = 350, // Default height if not provided
 }: ChartDisplayProps) {
 
+  // Memoize processed chart data to prevent re-computation on every render
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
       return [];
     }
+    // Ensure numeric values for plotting, convert strings if possible
     return data.map(point => {
       const newPoint: DataPoint = { time: point.time };
       Object.keys(point).forEach(key => {
         if (key !== 'time') {
           const value = point[key];
           if (typeof value === 'string') {
-            const num = parseFloat(value.replace(/,/g, ''));
-            newPoint[key] = isNaN(num) ? value : num;
+            const num = parseFloat(value.replace(/,/g, '')); // Remove thousands separators
+            newPoint[key] = isNaN(num) ? value : num; // Keep as string if not a number
           } else {
             newPoint[key] = value;
           }
@@ -84,6 +88,7 @@ export function ChartDisplay({
     });
   }, [data]);
 
+  // Check if there's any valid numeric data for the series selected to be plotted
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
     if (!chartData || chartData.length === 0 || plottableSeries.length === 0) return false;
     return plottableSeries.some(seriesName =>
@@ -91,21 +96,24 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
 
-  const clippedHeight = chartRenderHeight * 0.75;
+  // Apply clipping to the chart container (wrapper for ResponsiveContainer)
+  const clippedHeight = chartRenderHeight * 0.75; // Clip to 75% of the render height
 
   const wrapperStyle: React.CSSProperties = {
     height: `${clippedHeight}px`,
     overflow: 'hidden',
   };
 
-  const chartBottomMargin = 100;
+  // Define bottom margin for the LineChart to accommodate X-axis labels, title, and Brush
+  const chartBottomMargin = 120; // Increased bottom margin
 
+  // Display messages for various states (no data, no series selected, no numeric data)
   if (!data || data.length === 0) {
     return (
-      <Card className="flex flex-col h-fit">
-        <CardContent className="flex-grow flex items-center justify-center p-2">
+      <Card className="flex flex-col h-fit"> {/* Card adapts to content height */}
+        <CardContent className="flex-grow flex items-center justify-center p-2"> {/* Minimal padding */}
           <div className="text-center text-muted-foreground">
-            <Info className="h-10 w-10 mx-auto mb-1.5" />
+            <Info className="h-10 w-10 mx-auto mb-1.5" /> {/* Icon size */}
             <p className="text-xs">No data loaded for {plotTitle}. Upload a file to get started.</p>
           </div>
         </CardContent>
@@ -141,17 +149,18 @@ export function ChartDisplay({
     );
   }
 
+  // Render the chart
   return (
-    <Card className="flex flex-col h-fit">
-      <CardContent className="p-1 flex-shrink-0">
-        <div style={wrapperStyle}>
+    <Card className="flex flex-col h-fit"> {/* Card adapts to content height */}
+      <CardContent className="p-1 flex-shrink-0"> {/* Minimal padding, prevent growing */}
+        <div style={wrapperStyle}> {/* Apply clipping style */}
           <ResponsiveContainer width="100%" height={chartRenderHeight}>
             <LineChart
               data={chartData}
               margin={{
                 top: 5,
-                right: 15,
-                left: 5,
+                right: 15, // Adjusted for better tick label visibility on right
+                left: 5,  // Adjusted for better tick label visibility on left
                 bottom: chartBottomMargin,
               }}
             >
@@ -161,18 +170,18 @@ export function ChartDisplay({
                 stroke="hsl(var(--foreground))"
                 angle={-45}
                 textAnchor="end"
-                height={60}
-                interval="preserveStartEnd"
+                height={70} // Increased height for angled labels and title
+                interval="preserveStartEnd" // Show start and end ticks, auto-hide others if crowded
                 tickFormatter={formatXAxisTick}
-                tick={{ fontSize: '0.75em' }}
+                tick={{ fontSize: '0.75em' }} // Reduced tick font size
               >
                 {timeAxisLabel && (
                   <Label
                     value={`${timeAxisLabel} (Adjust time window with slider)`}
-                    offset={10}
+                    offset={10} // Offset from axis line
                     position="insideBottom"
                     fill="hsl(var(--muted-foreground))"
-                    dy={30}
+                    dy={50} // Distance from axis line, increased for more padding
                     style={{ fontSize: '0.75em', textAnchor: 'middle' }}
                   />
                 )}
@@ -184,7 +193,7 @@ export function ChartDisplay({
                   position="insideLeft"
                   style={{ textAnchor: 'middle', fontSize: '0.75em' }}
                   fill="hsl(var(--foreground))"
-                  dx={-5}
+                  dx={-5} // Adjusted to prevent overlap with ticks
                 />
               </YAxis>
               <Tooltip
@@ -192,7 +201,7 @@ export function ChartDisplay({
                   backgroundColor: "hsl(var(--background))",
                   borderColor: "hsl(var(--border))",
                   color: "hsl(var(--foreground))",
-                  fontSize: '0.75em',
+                  fontSize: '0.75em', // Smaller tooltip text
                 }}
                 itemStyle={{ color: "hsl(var(--foreground))" }}
                 cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
@@ -205,19 +214,19 @@ export function ChartDisplay({
                   dataKey={seriesName}
                   stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
                   strokeWidth={1.5}
-                  dot={false}
+                  dot={false} // No dots on the line
                   name={seriesName}
-                  connectNulls={true}
+                  connectNulls={true} // Connect line over null/NaN values
                 />
               ))}
               <Brush
                 dataKey="time"
-                height={14}
+                height={14} // Taller brush bar
                 stroke="hsl(var(--primary))"
                 fill="hsl(var(--muted))"
-                fillOpacity={0.3}
+                fillOpacity={0.3} // More transparent
                 tickFormatter={formatXAxisTick}
-                travellerWidth={10}
+                travellerWidth={10} // Slimmer handles
               />
             </LineChart>
           </ResponsiveContainer>
@@ -226,3 +235,4 @@ export function ChartDisplay({
     </Card>
   );
 }
+
