@@ -15,8 +15,7 @@ import {
   Label,
   Brush,
 } from "recharts";
-import { Info, LineChart as LineChartIcon } from "lucide-react"; // Ensure LineChartIcon is imported if used
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"; // Keep Card imports if used by PlotInstance
+import { Info } from "lucide-react"; 
 
 interface DataPoint {
   time: string | number;
@@ -35,7 +34,6 @@ interface ChartDisplayProps {
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
 const INTERNAL_DEFAULT_CHART_HEIGHT = 250;
 
-// Function to format X-axis ticks to YY-MM-DD
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
@@ -61,11 +59,11 @@ export function ChartDisplay({
   data,
   plottableSeries,
   timeAxisLabel,
-  plotTitle = "Time Series Plot", // Retained for informational messages
+  plotTitle = "Time Series Plot", 
   chartRenderHeight: propChartRenderHeight,
 }: ChartDisplayProps) {
   const chartHeightToUse = propChartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
-  const clippedHeight = chartHeightToUse * 0.80; // Apply 20% clip from bottom
+  const clippedHeight = chartHeightToUse * 0.80; 
 
   const wrapperStyle: CSSProperties = {
     height: `${clippedHeight}px`,
@@ -104,7 +102,7 @@ export function ChartDisplay({
     return (
       <div className="flex flex-col h-full items-center justify-center p-2">
         <div className="text-center text-muted-foreground">
-          <Info className="h-8 w-8 mx-auto mb-1" /> {/* Reduced icon size */}
+          <Info className="h-8 w-8 mx-auto mb-1" /> 
           <p className="text-xs">No data loaded for {plotTitle}. Upload a file.</p>
         </div>
       </div>
@@ -143,7 +141,7 @@ export function ChartDisplay({
             top: 5,
             right: 15, 
             left: 5,  
-            bottom: 75, // Reduced bottom margin
+            bottom: 90, 
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -152,7 +150,7 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={50} // Reduced height
+            height={50} 
             interval="preserveStartEnd" 
             tickFormatter={formatXAxisTick}
             tick={{ fontSize: '0.7rem' }} 
@@ -189,7 +187,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend 
-            wrapperStyle={{ paddingTop: "5px", fontSize: '0.7rem' }} 
+            wrapperStyle={{ paddingTop: "15px", fontSize: '0.7rem' }} 
           /> 
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -217,3 +215,5 @@ export function ChartDisplay({
     </div>
   );
 }
+
+    

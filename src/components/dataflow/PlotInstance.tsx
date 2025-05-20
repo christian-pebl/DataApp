@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, TrendingDown, Scissors } from "lucide-react";
+import { UploadCloud, Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, Scissors } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -395,10 +395,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   const plottableSeries = dataSeries.filter(seriesName => visibleSeries[seriesName]);
 
   return (
-    <Card className="shadow-lg">
-      <CardHeader className="flex flex-row items-center justify-between p-3">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Settings2 className="h-4 w-4"/>
+    <Card className="shadow-lg"> 
+      <CardHeader className="flex flex-row items-center justify-between p-3"> 
+        <CardTitle className="flex items-center gap-2 text-sm"> 
+          <Settings2 className="h-4 w-4"/> 
           {plotTitle || "Data Plot"}
         </CardTitle>
         <div className="flex items-center gap-1">
@@ -422,7 +422,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
           
           {/* Column 1: Import & Validate */}
           {!isMinimalistView && (
-             <div className="md:col-span-2 flex flex-col space-y-1.5"> {/* Narrower: md:col-span-2 */}
+             <div className="md:col-span-2 flex flex-col space-y-1.5"> 
               <div className="space-y-1 border p-1.5 rounded-md">
                 <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5">
                    <UploadCloud className="h-3 w-3 text-[#2B7A78]" />
@@ -436,7 +436,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     accept=".csv"
                     onChange={handleFileChange}
                     disabled={isProcessing}
-                    className="text-xs file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+                    className="text-xs text-transparent file:text-primary-foreground file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary hover:file:bg-primary/90"
                   />
                 </div>
 
@@ -523,7 +523,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
           {/* Column 2: Select Variables */}
           {!isMinimalistView && (
-            <div className="md:col-span-2 flex flex-col space-y-1.5"> {/* Narrower: md:col-span-2 */}
+            <div className="md:col-span-2 flex flex-col space-y-1.5"> 
               <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1">
                   <ListFilter className="h-3 w-3 text-[#2B7A78]" />
@@ -545,7 +545,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                   </Label>
                 </div>
-                <ScrollArea className="w-full rounded-md border p-1 flex-1 min-h-0 h-48"> {/* Fixed height for variable list */}
+                <ScrollArea className="w-full rounded-md border p-1 h-48"> 
                   {dataSeries.length > 0 ? (
                     dataSeries.map((seriesName) => (
                       <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -576,7 +576,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
           {/* Column 3: Plot Area */}
           <div className={cn(
-            !isMinimalistView ? "md:col-span-8" : "col-span-full", // Wider: md:col-span-8
+            !isMinimalistView ? "md:col-span-8" : "col-span-full", 
             "flex flex-col"
           )}>
             <div className="flex-1 min-h-0">
@@ -592,7 +592,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
           </div>
         </CardContent>
       )}
-       {/* Plot Expansion Toggle - only if not minimalist and not minimized and has data */}
+       
        {!isMinimalistView && !isMinimized && parsedData.length > 0 && (
         <div className="flex justify-center pt-1 pb-1 border-t">
           <Button
@@ -609,3 +609,5 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     </Card>
   );
 }
+
+    
