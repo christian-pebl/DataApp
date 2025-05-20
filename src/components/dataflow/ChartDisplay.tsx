@@ -31,36 +31,28 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 258; // Reduced from 280
+const INTERNAL_DEFAULT_CHART_HEIGHT = 238; 
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
-    // Check if it's already in 'YY-MM-DD' format (e.g., from Brush)
     if (typeof timeValue === 'string' && /^\d{2}-\d{2}-\d{2}$/.test(timeValue)) {
       return timeValue;
     }
-
     const date = new Date(timeValue);
-    // Check if the date is valid
     if (isNaN(date.getTime())) {
-      // If not a valid date, try to parse common date-like strings
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
-        // For 'YYYY-MM-DD...' formats
         const year = timeValue.substring(2, 4);
         const month = timeValue.substring(5, 7);
         const day = timeValue.substring(8, 10);
         return `${year}-${month}-${day}`;
       }
-      // Fallback for other non-date strings or unparseable numbers
       return String(timeValue);
     }
-    // Format valid dates
     const year = date.getFullYear().toString().slice(-2);
     const month = ('0' + (date.getMonth() + 1)).slice(-2);
     const day = ('0' + date.getDate()).slice(-2);
     return `${year}-${month}-${day}`;
   } catch (e) {
-    // Fallback in case of any unexpected error during formatting
     return String(timeValue);
   }
 };
@@ -78,15 +70,14 @@ export function ChartDisplay({
     if (!data || data.length === 0) {
       return [];
     }
-    // Attempt to convert plottable series values to numbers
     return data.map(point => {
       const newPoint: DataPoint = { time: point.time };
       Object.keys(point).forEach(key => {
         if (key !== 'time') {
           const value = point[key];
           if (typeof value === 'string') {
-            const num = parseFloat(value.replace(/,/g, '')); // Remove commas for thousands
-            newPoint[key] = isNaN(num) ? value : num; // Keep as string if not a number
+            const num = parseFloat(value.replace(/,/g, ''));
+            newPoint[key] = isNaN(num) ? value : num;
           } else {
             newPoint[key] = value;
           }
@@ -129,21 +120,24 @@ export function ChartDisplay({
     );
   }
   
+  // Using chartHeightToUse directly as the chart rendering height.
+  // The wrapper div will directly use this height.
   const wrapperStyle: React.CSSProperties = {
-    height: `${chartHeightToUse * 0.80}px`, // Apply 20% clipping from bottom
-    overflow: 'hidden',
+    height: `${chartHeightToUse}px`, // Full chart height for the wrapper
   };
 
   return (
-    <div style={wrapperStyle} className="flex-1 min-h-0">
-      <ResponsiveContainer width="100%" height={chartHeightToUse}> {/* ResponsiveContainer uses full intended height */}
+    // This div now has the explicit height from chartHeightToUse
+    <div style={wrapperStyle} className="flex-1 min-h-0"> 
+      {/* ResponsiveContainer takes 100% of its parent (the div above) */}
+      <ResponsiveContainer width="100%" height="100%"> 
         <LineChart
           data={chartData}
           margin={{
             top: 5,
             right: 20,
             left: 5,
-            bottom: 63, // Adjusted for Brush and X-axis label (margin.bottom: 63)
+            bottom: 63, 
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -152,7 +146,7 @@ export function ChartDisplay({
             stroke="hsl(var(--foreground))"
             angle={-45}
             textAnchor="end"
-            height={60} // XAxis height: 60
+            height={48} 
             interval="preserveStartEnd"
             tickFormatter={formatXAxisTick}
             tick={{ fontSize: '0.6rem' }}
@@ -160,10 +154,10 @@ export function ChartDisplay({
             {timeAxisLabel && (
               <Label
                 value={`${timeAxisLabel} (Adjust time window with slider)`}
-                offset={15} // X-axis Label offset: 15
+                offset={15} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={23} // X-axis Label dy: 23
+                dy={21} 
                 style={{ fontSize: '0.6rem', textAnchor: 'middle' }}
               />
             )}
@@ -189,7 +183,7 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: '10px', fontSize: '0.6rem' }} // Legend paddingTop: '10px'
+            wrapperStyle={{ paddingTop: '8px', fontSize: '0.6rem' }} 
           />
           {plottableSeries.map((seriesName, index) => (
             <Line
@@ -205,11 +199,11 @@ export function ChartDisplay({
           ))}
           <Brush
             dataKey="time"
-            height={14} // Brush height: 14
+            height={11} 
             stroke="hsl(var(--primary))"
             fill="transparent"
             tickFormatter={formatXAxisTick}
-            travellerWidth={8} // Brush travellerWidth: 8
+            travellerWidth={8} 
           />
         </LineChart>
       </ResponsiveContainer>
@@ -217,3 +211,4 @@ export function ChartDisplay({
   );
 }
 
+    

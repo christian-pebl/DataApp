@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
-import { Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, TrendingDown, Scissors, UploadCloud } from "lucide-react";
+import { Hourglass, CheckCircle2, XCircle, ListFilter, X, Maximize2, Minimize2, Settings2, PanelRightClose, PanelRightOpen, ChevronsDown, ChevronsUp, UploadCloud, TrendingDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -42,9 +42,8 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'dataReady', label: 'Import complete', status: 'pending' },
 ];
 
-const DEFAULT_PLOT_HEIGHT = 258; // Reduced from 280
-const EXPANDED_PLOT_HEIGHT = 515; // Reduced from 560
-
+const DEFAULT_PLOT_HEIGHT = 238; 
+const EXPANDED_PLOT_HEIGHT = 474; 
 
 interface PlotInstanceProps {
   instanceId: string;
@@ -91,6 +90,9 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   };
 
   const parseAndValidateCsv = (csvText: string, fileName: string): { data: DataPoint[], seriesNames: string[], timeHeader: string } | null => {
+    const newValidationSteps = initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }));
+    setValidationSteps(newValidationSteps); 
+
     const lines = csvText.trim().split(/\r\n|\n/);
     if (lines.length < 2) {
       updateStepStatus('headerParse', 'error', `File "${fileName}": CSV content error. Must have a header row and at least one data row.`);
@@ -238,8 +240,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
 
   const processFile = async (file: File): Promise<{ data: DataPoint[], seriesNames: string[], timeHeader: string } | null> => {
-    const newValidationSteps = initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }));
-    setValidationSteps(newValidationSteps);
+    // Validation steps are initialized by parseAndValidateCsv
     setCurrentFileForValidation(file.name);
     setAccordionValue(""); 
 
@@ -297,7 +298,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     setIsProcessing(true);
-    setValidationSteps([]); 
     setCurrentFileForValidation(null);
 
     const file = event.target.files?.[0];
@@ -305,6 +305,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       setIsProcessing(false);
       return;
     }
+    // setCurrentFileForValidation will be set inside processFile
+    // Initialize validation steps at the start of processFile or parseAndValidateCsv
 
     const parsedResult = await processFile(file);
 
@@ -419,38 +421,35 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
       {!isMinimized && (
         <CardContent className={cn(
-          "p-2 pt-0",
-          !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block"
+            "p-2 pt-0",
+            !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block"
         )}>
           
-          {!isMinimalistView && (
-            <div className="md:col-span-2 flex flex-col space-y-1.5"> {/* Import & Validate Column */}
+          {!isMinimalistView && ( // "Import & Validate" column
+            <div className="md:col-span-2 flex flex-col space-y-1.5">
               <div className="space-y-1 border p-1.5 rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5">
                    <Settings2 className="h-3 w-3 text-[#2B7A78]" />
                    <h3 className="text-xs font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
                 </div>
                 <div className="px-1 py-1.5">
-                   <Label htmlFor={`file-upload-${instanceId}`} className="sr-only">Choose file</Label>
-                    <Button asChild variant="outline" size="sm" className="w-full h-8 text-xs" disabled={isProcessing}>
-                      <Label htmlFor={`file-upload-${instanceId}-${uniqueComponentId}`} className="cursor-pointer">
-                        Choose file
-                      </Label>
-                    </Button>
-                    <Input
-                      id={`file-upload-${instanceId}-${uniqueComponentId}`}
-                      type="file"
-                      accept=".csv"
-                      onChange={handleFileChange}
-                      disabled={isProcessing}
-                      className="sr-only"
-                    />
+                  <Button asChild variant="outline" size="sm" className="w-full h-8 text-xs" disabled={isProcessing}>
+                    <Label htmlFor={`file-upload-${instanceId}-${uniqueComponentId}`} className="cursor-pointer flex items-center justify-center">
+                       Choose file
+                    </Label>
+                  </Button>
+                  <Input
+                    id={`file-upload-${instanceId}-${uniqueComponentId}`}
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileChange}
+                    disabled={isProcessing}
+                    className="sr-only"
+                  />
                 </div>
-
                 {currentFileForValidation && !summaryStep && isProcessing && (
                      <p className="text-[0.6rem] text-primary animate-pulse px-1">Preparing to process: <span className="font-semibold">{currentFileForValidation}</span>...</p>
                 )}
-
                 {summaryStep && ( 
                   <div className="px-1">
                   <Accordion type="single" collapsible value={accordionValue} onValueChange={setAccordionValue} className="w-full">
@@ -466,8 +465,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                           {isProcessing || summaryStep.status === 'pending' ? <Hourglass className="h-3 w-3 animate-spin flex-shrink-0" /> :
                            summaryStep.status === 'success' ? <CheckCircle2 className="h-3 w-3 text-green-600 flex-shrink-0" /> :
                            <XCircle className="h-3 w-3 text-destructive flex-shrink-0" />}
-                          <span className="font-medium text-[0.6rem]">
-                            {summaryStep.label.length > 30 ? summaryStep.label.substring(0, 27) + "..." : summaryStep.label}
+                          <span className="font-medium text-[0.6rem] break-words">
+                            {summaryStep.label}
                             </span>
                         </div>
                       </AccordionTrigger>
@@ -530,9 +529,9 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             </div>
           )}
 
-           {!isMinimalistView && (
-            <div className="md:col-span-2 flex flex-col space-y-1.5"> {/* Select Variables Column */}
-              <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0"> 
+           {!isMinimalistView && ( // "Select Variables" column
+            <div className="md:col-span-2 flex flex-col space-y-1.5">
+               <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1">
                   <ListFilter className="h-3 w-3 text-[#2B7A78]" />
                   <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
@@ -553,7 +552,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                   </Label>
                 </div>
-                 <ScrollArea className="w-full rounded-md border p-1 h-48">
+                 <ScrollArea className="w-full rounded-md border p-1 h-32">
                   {dataSeries.length > 0 ? (
                     dataSeries.map((seriesName) => (
                       <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -582,19 +581,16 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             </div>
           )}
           
-           <div className={cn(
-            !isMinimalistView ? "md:col-span-8" : "col-span-full",
-            "flex flex-col" 
-          )}> {/* Plot Area Column */}
-             <div className="flex-1 min-h-0">
-                <ChartDisplay
-                    data={parsedData}
-                    plottableSeries={plottableSeries}
-                    timeAxisLabel={timeAxisLabel}
-                    plotTitle={plotTitle || "Chart"}
-                    chartRenderHeight={currentChartHeight}
-                />
-            </div>
+           <div className={cn( // "Plot Area" column
+              isMinimalistView ? "col-span-full flex-1 min-h-0" : "md:col-span-8"
+            )}>
+             <ChartDisplay
+                data={parsedData}
+                plottableSeries={plottableSeries}
+                timeAxisLabel={timeAxisLabel}
+                plotTitle={plotTitle || "Chart"}
+                chartRenderHeight={currentChartHeight}
+              />
           </div>
         </CardContent>
       )}
@@ -615,3 +611,4 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   );
 }
 
+    
