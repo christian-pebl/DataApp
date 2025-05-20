@@ -92,7 +92,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (!data || data.length === 0) {
     return (
-      <Card className="flex flex-col min-h-[300px]"> {/* Min height for empty state cards */}
+      <Card className="flex flex-col"> {/* Min height for empty state cards */}
         <CardHeader className="p-2">
           <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm">
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
@@ -111,7 +111,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (plottableSeries.length === 0) {
     return (
-      <Card className="flex flex-col min-h-[300px]">
+      <Card className="flex flex-col">
         <CardHeader className="p-2">
           <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm">
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
@@ -132,7 +132,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
 
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
-      <Card className="flex flex-col min-h-[300px]">
+      <Card className="flex flex-col">
         <CardHeader className="p-2">
           <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm">
             <LineChartIcon className="h-4 w-4" /> {plotTitle}
@@ -154,7 +154,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
   }
 
   return (
-    <Card className="flex flex-col"> {/* Removed min-h-[400px] */}
+    <Card className="flex flex-col">
       <CardHeader className="p-2">
         <CardTitle className="flex items-center gap-1.5 text-sm">
           <LineChartIcon className="h-4 w-4 text-primary" />
@@ -164,15 +164,15 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
           {currentFileName ? `Visualizing data from "${currentFileName}"` : "Visualizing uploaded data"} ({chartData.length} data points prepared for chart).
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex-grow pt-1 p-2"> {/* Removed h-[400px] */}
-        <ResponsiveContainer width="100%" height={500}> {/* Increased height from 300 to 500 */}
+      <CardContent className="flex-grow pt-1 p-2">
+        <ResponsiveContainer width="100%" height={350}> {/* Reduced height by 30% (500 * 0.7 = 350) */}
           <LineChart
             data={chartData}
             margin={{
               top: 5,
-              right: 15, // Increased right margin for Y-axis label
-              left: 5,  // Reduced left margin
-              bottom: 130, // Keep bottom margin for X-axis label, angled ticks, and brush
+              right: 15, 
+              left: 5,  
+              bottom: 130, 
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -181,19 +181,19 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
               stroke="hsl(var(--foreground))"
               angle={-45}
               textAnchor="end"
-              height={60} // Height for angled labels
-              interval="preserveStartEnd" // Show start and end ticks, Recharts decides others
+              height={60} 
+              interval="preserveStartEnd" 
               tickFormatter={formatXAxisTick}
-              tick={{ fontSize: '0.75em' }} // Reduced tick font size
+              tick={{ fontSize: '0.75em' }} 
             >
               {timeAxisLabel && (
                 <Label
                   value={timeAxisLabel ? `${timeAxisLabel} (Adjust time window with slider)` : "Time (Adjust time window with slider)"}
-                  offset={10} // Adjust offset as needed
+                  offset={10} 
                   position="insideBottom"
                   fill="hsl(var(--muted-foreground))"
-                  dy={45} // Distance from X-axis line
-                  style={{ fontSize: '0.75em', textAnchor: 'middle' }} // Reduced label font size
+                  dy={45} 
+                  style={{ fontSize: '0.75em', textAnchor: 'middle' }} 
                 />
               )}
             </XAxis>
@@ -211,7 +211,7 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                 backgroundColor: "hsl(var(--background))",
                 borderColor: "hsl(var(--border))",
                 color: "hsl(var(--foreground))",
-                fontSize: '0.75em', // Smaller tooltip font
+                fontSize: '0.75em', 
               }}
               itemStyle={{ color: "hsl(var(--foreground))" }}
               cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
@@ -224,16 +224,16 @@ export function ChartDisplay({ data, plottableSeries, timeAxisLabel, currentFile
                 dataKey={seriesName}
                 stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
                 strokeWidth={1.5}
-                dot={false} // No dots on the line
+                dot={false} 
                 name={seriesName}
-                connectNulls={true} // Connect line over null/NaN values
+                connectNulls={true} 
               />
             ))}
             <Brush
               dataKey="time"
-              height={20} // Slimmer brush
+              height={20} 
               stroke="hsl(var(--primary))"
-              fill="hsl(var(--muted))" // Add a fill to make brush more visible
+              fill="hsl(var(--muted))" 
               tickFormatter={formatXAxisTick}
             />
           </LineChart>

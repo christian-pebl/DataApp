@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -111,3 +112,27 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* --- DEBUG STYLES START --- */
+/* Uncomment to see element boundaries and help diagnose layout issues. */
+/*
+* {
+  outline: 1px solid rgba(255, 0, 0, 0.5) !important;
+}
+div {
+  outline: 1px solid rgba(0, 0, 255, 0.5) !important;
+}
+span {
+  outline: 1px solid rgba(0, 128, 0, 0.5) !important;
+}
+p {
+   outline: 1px solid rgba(255, 165, 0, 0.5) !important;
+}
+button {
+   outline: 1px solid rgba(128, 0, 128, 0.5) !important;
+}
+header, footer, main, section, article, aside, nav {
+  outline: 1px solid rgba(255, 105, 180, 0.5) !important;
+}
+*/
+/* --- DEBUG STYLES END --- */
