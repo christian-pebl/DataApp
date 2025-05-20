@@ -155,7 +155,7 @@ export function ChartDisplay({
                 offset={15} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={21} 
+                dy={22} 
                 style={{ fontSize: '0.6rem', textAnchor: 'middle' }}
               />
             )}
@@ -208,3 +208,4 @@ export function ChartDisplay({
     </div>
   );
 }
+

@@ -42,7 +42,7 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'dataReady', label: 'Import complete', status: 'pending' },
 ];
 
-const DEFAULT_PLOT_HEIGHT = 280; 
+const DEFAULT_PLOT_HEIGHT = 280;
 const EXPANDED_PLOT_HEIGHT = 560;
 
 
@@ -398,7 +398,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   const plottableSeries = dataSeries.filter(seriesName => visibleSeries[seriesName]);
 
   return (
-    <Card className="shadow-lg"> 
+    <Card className="shadow-lg">
       <CardHeader className="flex flex-row items-center justify-between p-3">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Settings2 className="h-4 w-4"/>
@@ -423,7 +423,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
           !isMinimalistView ? "grid grid-cols-1 md:grid-cols-12 gap-2" : "block"
         )}>
           
-          {/* Column 1: "Import & Validate" */}
           {!isMinimalistView && (
             <div className="md:col-span-2 flex flex-col space-y-1.5"> 
               <div className="space-y-1 border p-1.5 rounded-md flex flex-col flex-1 min-h-0">
@@ -431,7 +430,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                    <UploadCloud className="h-3 w-3 text-[#2B7A78]" />
                    <h3 className="text-xs font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
                 </div>
-                <div className="px-1 py-0.5">
+                <div className="px-1 py-0.5 flex justify-center">
                   <Label htmlFor={`file-upload-${instanceId}`} className="sr-only">Upload File</Label>
                   <Input
                     id={`file-upload-${instanceId}`}
@@ -439,7 +438,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     accept=".csv"
                     onChange={handleFileChange}
                     disabled={isProcessing}
-                    className="text-xs text-transparent file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-[0.7rem] file:font-normal file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+                    className="text-xs text-transparent w-fit file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[0.7rem] file:font-normal file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
                   />
                 </div>
 
@@ -524,7 +523,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             </div>
           )}
 
-          {/* Column 2: "Select Variables" */}
            {!isMinimalistView && (
             <div className="md:col-span-2 flex flex-col space-y-1.5">
               <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0"> 
@@ -548,7 +546,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                   </Label>
                 </div>
-                 <ScrollArea className="w-full rounded-md border p-1 flex-1">
+                 <ScrollArea className="w-full rounded-md border p-1 h-32">
                   {dataSeries.length > 0 ? (
                     dataSeries.map((seriesName) => (
                       <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -577,7 +575,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             </div>
           )}
           
-          {/* Column 3: "Plot Area" */}
            <div className={cn(
             !isMinimalistView ? "md:col-span-8 md:self-start" : "col-span-full",
             "flex flex-col" 
@@ -610,3 +607,4 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     </Card>
   );
 }
+
