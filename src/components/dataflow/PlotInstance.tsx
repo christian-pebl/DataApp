@@ -521,6 +521,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                 </div>
               </div>
 
+              {/* This inner div has flex-1 to allow scroll area to grow with plot expansion */}
               <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0"> 
                    <div className="flex items-center gap-1">
                       <ListFilter className="h-3 w-3 text-[#2B7A78]" />
@@ -542,6 +543,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                       {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                     </Label>
                   </div>
+                  {/* ScrollArea for variables now has flex-1 to grow */}
                   <ScrollArea className="w-full rounded-md border p-1 flex-1"> 
                     {dataSeries.length > 0 ? (
                       dataSeries.map((seriesName) => (
@@ -572,34 +574,85 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             </div>
           )}
 
-          <div className={cn(!isMinimalistView ? "md:col-span-8 md:self-start" : "")}>
-            <ChartDisplay
-              data={parsedData}
-              plottableSeries={plottableSeries}
-              timeAxisLabel={timeAxisLabel}
-              currentFileName={currentFileName}
-              plotTitle={plotTitle || "Chart"}
-              chartRenderHeight={currentChartHeight}
-            />
-          </div>
+          {/* This is the right-hand side card that contains variables and plot */}
+          <Card className={cn(!isMinimalistView ? "md:col-span-8 flex flex-col" : "col-span-full flex flex-col")}>
+            <CardContent className="p-2 flex-1 flex flex-col min-h-0">
+              {!isMinimalistView && (
+                <div className="space-y-1 p-1.5 border rounded-md flex flex-col h-48 mb-2"> {/* Select Variables section, fixed height */}
+                  <div className="flex items-center gap-1">
+                    <ListFilter className="h-3 w-3 text-[#2B7A78]" />
+                    <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
+                  </div>
+                  <div className="flex items-center space-x-1.5">
+                    <Checkbox
+                      id={`select-all-rhs-${instanceId}-${uniqueComponentId}`}
+                      checked={allSeriesSelected}
+                      onCheckedChange={() => handleSelectAllToggle(!allSeriesSelected)}
+                      disabled={dataSeries.length === 0}
+                      aria-label={allSeriesSelected ? "Deselect all series" : "Select all series"}
+                      className="h-3.5 w-3.5"
+                    />
+                    <Label
+                      htmlFor={`select-all-rhs-${instanceId}-${uniqueComponentId}`}
+                      className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
+                    </Label>
+                  </div>
+                  <ScrollArea className="w-full rounded-md border p-1 flex-1"> {/* ScrollArea will use remaining space in h-48 div */}
+                    {dataSeries.length > 0 ? (
+                      dataSeries.map((seriesName) => (
+                        <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
+                          <Checkbox
+                            id={`series-rhs-${seriesName}-${instanceId}-${uniqueComponentId}`}
+                            checked={!!visibleSeries[seriesName]}
+                            onCheckedChange={(checked) => handleSeriesVisibilityChange(seriesName, !!checked)}
+                            className="h-3.5 w-3.5"
+                          />
+                          <Label
+                            htmlFor={`series-rhs-${seriesName}-${instanceId}-${uniqueComponentId}`}
+                            className="text-xs leading-snug peer-disabled:cursor-not-allowed peer-disabled:opacity-70 truncate"
+                            title={seriesName}
+                          >
+                            {seriesName}
+                          </Label>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-center text-muted-foreground py-2">
+                        No variables found.
+                      </p>
+                    )}
+                  </ScrollArea>
+                </div>
+              )}
+              <div className="flex-1 min-h-0"> {/* This div will allow ChartDisplay to take available space */}
+                <ChartDisplay
+                  data={parsedData}
+                  plottableSeries={plottableSeries}
+                  timeAxisLabel={timeAxisLabel}
+                  currentFileName={currentFileName}
+                  plotTitle={plotTitle || "Chart"}
+                  chartRenderHeight={currentChartHeight}
+                />
+              </div>
+            </CardContent>
+            {parsedData.length > 0 && !isMinimalistView && !isMinimized && (
+              <div className="flex justify-center pt-1 pb-1 border-t">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsPlotExpanded(!isPlotExpanded)}
+                  aria-label={isPlotExpanded ? "Collapse plot height" : "Expand plot height"}
+                  className="h-6 w-6" 
+                >
+                  {isPlotExpanded ? <ChevronsUp className="h-4 w-4" /> : <ChevronsDown className="h-4 w-4" />}
+                </Button>
+              </div>
+            )}
+          </Card>
         </CardContent>
-      )}
-
-      {parsedData.length > 0 && !isMinimalistView && !isMinimized && (
-        <div className="flex justify-center pt-1 pb-1 border-t">
-            <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setIsPlotExpanded(!isPlotExpanded)}
-                aria-label={isPlotExpanded ? "Collapse plot height" : "Expand plot height"}
-                className="h-6 w-6" 
-            >
-                {isPlotExpanded ? <ChevronsUp className="h-4 w-4" /> : <ChevronsDown className="h-4 w-4" />}
-            </Button>
-        </div>
       )}
     </Card>
   );
 }
-
-    

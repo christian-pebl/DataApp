@@ -14,7 +14,6 @@ import {
   Label,
   Brush,
 } from "recharts";
-import { Card, CardContent } from "@/components/ui/card";
 import { Info } from "lucide-react"; 
 
 interface DataPoint {
@@ -95,137 +94,127 @@ export function ChartDisplay({
   }, [chartData, plottableSeries]);
   
   const wrapperStyle: React.CSSProperties = {
-    height: `${chartHeightToUse}px`,
+    height: `${chartHeightToUse}px`, // Use the dynamic chart height
   };
 
-  const chartBottomMargin = 80; 
+  const chartBottomMargin = 100; // Fixed margin for X-axis, title, Brush, Legend
 
   if (!data || data.length === 0) {
     return (
-      <Card className="flex flex-col h-fit">
-        <CardContent className="flex-grow flex items-center justify-center p-2">
-          <div className="text-center text-muted-foreground">
-            <Info className="h-10 w-10 mx-auto mb-1.5" />
-            <p className="text-xs">No data loaded for {plotTitle}. Upload a file to get started.</p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex flex-col h-full items-center justify-center p-2"> {/* Adjusted for no-card */}
+        <div className="text-center text-muted-foreground">
+          <Info className="h-10 w-10 mx-auto mb-1.5" />
+          <p className="text-xs">No data loaded for {plotTitle}. Upload a file to get started.</p>
+        </div>
+      </div>
     );
   }
 
   if (plottableSeries.length === 0) {
     return (
-      <Card className="flex flex-col h-fit">
-        <CardContent className="flex-grow flex items-center justify-center p-2">
-          <div className="text-center text-muted-foreground">
-            <Info className="h-10 w-10 mx-auto mb-1.5" />
-            <p className="text-xs">Please select at least one variable to plot for {plotTitle}.</p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex flex-col h-full items-center justify-center p-2"> {/* Adjusted for no-card */}
+        <div className="text-center text-muted-foreground">
+          <Info className="h-10 w-10 mx-auto mb-1.5" />
+          <p className="text-xs">Please select at least one variable to plot for {plotTitle}.</p>
+        </div>
+      </div>
     );
   }
 
   if (!hasAnyNumericDataForSelectedSeries && plottableSeries.length > 0) {
      return (
-      <Card className="flex flex-col h-fit">
-        <CardContent className="flex-grow flex items-center justify-center p-2">
-          <div className="text-center text-muted-foreground">
-            <Info className="h-10 w-10 mx-auto mb-1.5" />
-            <p className="text-xs">No valid numeric data found for the currently selected series in {plotTitle}: "{plottableSeries.join(', ')}".</p>
-            <p className="text-2xs mt-1">This can happen if the selected columns contain non-numeric text, are empty, or all values were treated as missing data.</p>
-            <p className="text-2xs mt-1">Please check the columns in your CSV file or select different variables.</p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex flex-col h-full items-center justify-center p-2"> {/* Adjusted for no-card */}
+        <div className="text-center text-muted-foreground">
+          <Info className="h-10 w-10 mx-auto mb-1.5" />
+          <p className="text-xs">No valid numeric data found for the currently selected series in {plotTitle}: "{plottableSeries.join(', ')}".</p>
+          <p className="text-2xs mt-1">This can happen if the selected columns contain non-numeric text, are empty, or all values were treated as missing data.</p>
+          <p className="text-2xs mt-1">Please check the columns in your CSV file or select different variables.</p>
+        </div>
+      </div>
     );
   }
 
+  // Directly return the chart container div
   return (
-    <Card className="flex flex-col h-fit">
-      <CardContent className="p-1 flex-shrink-0">
-        <div style={wrapperStyle}> 
-          <ResponsiveContainer width="100%" height={chartHeightToUse}>
-            <LineChart
-              data={chartData}
-              margin={{
-                top: 5,
-                right: 15, 
-                left: 5,  
-                bottom: chartBottomMargin,
-              }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis
-                dataKey="time"
-                stroke="hsl(var(--foreground))"
-                angle={-45}
-                textAnchor="end"
-                height={50} 
-                interval="preserveStartEnd" 
-                tickFormatter={formatXAxisTick}
-                tick={{ fontSize: '0.7rem' }} 
-              >
-                {timeAxisLabel && (
-                  <Label
-                    value={`${timeAxisLabel} (Adjust time window with slider)`}
-                    offset={10} 
-                    position="insideBottom"
-                    fill="hsl(var(--muted-foreground))"
-                    dy={15} 
-                    style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
-                  />
-                )}
-              </XAxis>
-              <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']} tick={{ fontSize: '0.7rem' }}>
-                <Label
-                  value="Value"
-                  angle={-90}
-                  position="insideLeft"
-                  style={{ textAnchor: 'middle', fontSize: '0.7rem' }}
-                  fill="hsl(var(--foreground))"
-                  dx={-5} 
-                />
-              </YAxis>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "hsl(var(--background))",
-                  borderColor: "hsl(var(--border))",
-                  color: "hsl(var(--foreground))",
-                  fontSize: '0.7rem', 
-                }}
-                itemStyle={{ color: "hsl(var(--foreground))" }}
-                cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
+    <div style={wrapperStyle} className="flex-1 min-h-0"> 
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart
+          data={chartData}
+          margin={{
+            top: 5,
+            right: 15, 
+            left: 5,  
+            bottom: chartBottomMargin,
+          }}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+          <XAxis
+            dataKey="time"
+            stroke="hsl(var(--foreground))"
+            angle={-45}
+            textAnchor="end"
+            height={70} 
+            interval="preserveStartEnd" 
+            tickFormatter={formatXAxisTick}
+            tick={{ fontSize: '0.7rem' }} 
+          >
+            {timeAxisLabel && (
+              <Label
+                value={`${timeAxisLabel} (Adjust time window with slider)`}
+                offset={10} 
+                position="insideBottom"
+                fill="hsl(var(--muted-foreground))"
+                dy={50} 
+                style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
               />
-              <Legend 
-                wrapperStyle={{ paddingTop: "5px", fontSize: '0.7rem' }} 
-              /> 
-              {plottableSeries.map((seriesName, index) => (
-                <Line
-                  key={seriesName}
-                  type="monotone"
-                  dataKey={seriesName}
-                  stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
-                  strokeWidth={1.5}
-                  dot={false} 
-                  name={seriesName}
-                  connectNulls={true} 
-                />
-              ))}
-              <Brush
-                dataKey="time"
-                height={12} 
-                stroke="hsl(var(--primary))"
-                fill="hsl(var(--muted))"
-                fillOpacity={0.3} 
-                tickFormatter={formatXAxisTick}
-                travellerWidth={10} 
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </CardContent>
-    </Card>
+            )}
+          </XAxis>
+          <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']} tick={{ fontSize: '0.7rem' }}>
+            <Label
+              value="Value"
+              angle={-90}
+              position="insideLeft"
+              style={{ textAnchor: 'middle', fontSize: '0.7rem' }}
+              fill="hsl(var(--foreground))"
+              dx={-5} 
+            />
+          </YAxis>
+          <Tooltip
+            contentStyle={{
+              backgroundColor: "hsl(var(--background))",
+              borderColor: "hsl(var(--border))",
+              color: "hsl(var(--foreground))",
+              fontSize: '0.7rem', 
+            }}
+            itemStyle={{ color: "hsl(var(--foreground))" }}
+            cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
+          />
+          <Legend 
+            wrapperStyle={{ paddingTop: "30px", fontSize: '0.7rem' }} 
+          /> 
+          {plottableSeries.map((seriesName, index) => (
+            <Line
+              key={seriesName}
+              type="monotone"
+              dataKey={seriesName}
+              stroke={`hsl(var(${chartColors[index % chartColors.length]}))`}
+              strokeWidth={1.5}
+              dot={false} 
+              name={seriesName}
+              connectNulls={true} 
+            />
+          ))}
+          <Brush
+            dataKey="time"
+            height={14} 
+            stroke="hsl(var(--primary))"
+            fill="hsl(var(--muted))"
+            fillOpacity={0.3} 
+            tickFormatter={formatXAxisTick}
+            travellerWidth={10} 
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
-
