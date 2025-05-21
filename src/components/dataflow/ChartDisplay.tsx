@@ -31,7 +31,7 @@ interface ChartDisplayProps {
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 278; // Default height for the ResponsiveContainer
+const INTERNAL_DEFAULT_CHART_HEIGHT = 272; // Default height for the ResponsiveContainer
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
@@ -211,3 +211,4 @@ export function ChartDisplay({
     </div>
   );
 }
+
