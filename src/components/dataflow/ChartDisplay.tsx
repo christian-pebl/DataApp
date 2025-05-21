@@ -28,10 +28,13 @@ interface ChartDisplayProps {
   timeAxisLabel: string | undefined;
   plotTitle?: string;
   chartRenderHeight?: number;
+  brushStartIndex?: number;
+  brushEndIndex?: number;
+  onBrushChange?: (newIndex: { startIndex?: number; endIndex?: number }) => void;
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 272; // Default height for the ResponsiveContainer
+const INTERNAL_DEFAULT_CHART_HEIGHT = 278; 
 
 const formatXAxisTick = (timeValue: string | number): string => {
   try {
@@ -63,6 +66,9 @@ export function ChartDisplay({
   timeAxisLabel,
   plotTitle,
   chartRenderHeight,
+  brushStartIndex,
+  brushEndIndex,
+  onBrushChange,
 }: ChartDisplayProps) {
   const chartHeightToUse = chartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
 
@@ -94,8 +100,7 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
 
-  // Visible height of the chart area (after potential crop)
-  const visibleChartAreaHeight = chartHeightToUse * 0.85; // Crop 15% from the bottom
+  const visibleChartAreaHeight = chartHeightToUse * 0.85; 
 
   const clippingWrapperStyle: React.CSSProperties = {
     height: `${visibleChartAreaHeight}px`,
@@ -114,7 +119,7 @@ export function ChartDisplay({
   );
 
   if (!data || data.length === 0) {
-    return renderNoDataMessage(<Info className="h-10 w-10 mx-auto" />, `No data loaded for ${plotTitle || 'this plot'}.`, "Upload a file to get started.");
+    return renderNoDataMessage(<Info className="h-10 w-10 mx-auto" />, `No data loaded for ${plotTitle || 'this plot'}.`, "Upload a file or load a saved plot to get started.");
   }
 
   if (plottableSeries.length === 0) {
@@ -204,11 +209,14 @@ export function ChartDisplay({
             stroke="hsl(var(--primary))"
             fill="transparent"
             tickFormatter={formatXAxisTick}
-            travellerWidth={8} 
+            travellerWidth={8}
+            startIndex={brushStartIndex}
+            endIndex={brushEndIndex}
+            onChange={onBrushChange}
           />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
-
+    

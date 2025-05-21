@@ -9,6 +9,7 @@ import { PlotInstance } from "@/components/dataflow/PlotInstance";
 interface PlotConfig {
   id: string;
   title: string;
+  // initialSavedState?: SavedPlotState; // This would be for loading a plot when app starts or loading a new plot from main page button
 }
 
 export default function DataFlowPage() {
@@ -29,7 +30,6 @@ export default function DataFlowPage() {
     if (storedTheme) {
       setTheme(storedTheme);
     } else {
-        // Check system preference only if no theme is stored
         const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
         if (systemPrefersDark) {
             setTheme("dark");
@@ -63,9 +63,9 @@ export default function DataFlowPage() {
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-14 items-center justify-between px-3 md:px-4"> {/* Reduced height and padding */}
-          <h1 className="text-2xl font-bold text-primary">PEBL</h1> {/* Changed to PEBL and slightly increased size for logo feel */}
-          <div className="flex items-center gap-1"> {/* Reduced gap */}
+        <div className="container flex h-14 items-center justify-between px-3 md:px-4">
+          <h1 className="text-2xl font-bold text-primary">PEBL</h1>
+          <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
               {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
             </Button>
@@ -78,23 +78,22 @@ export default function DataFlowPage() {
         </div>
       </header>
 
-      <main className="flex-grow container mx-auto p-2 md:p-3"> {/* Reduced padding */}
-        <div className="mb-3"> {/* Reduced margin */}
-          <Button onClick={addPlot} variant="outline" size="sm"> {/* Made button smaller */}
+      <main className="flex-grow container mx-auto p-2 md:p-3">
+        <div className="mb-3">
+          <Button onClick={addPlot} variant="outline" size="sm">
             <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot
           </Button>
         </div>
 
         {plots.length === 0 && (
-          <div className="flex flex-col items-center justify-center text-center text-muted-foreground py-6"> {/* Reduced py */}
-            {/* Placeholder icon or simple message if no plots exist, kept minimal */}
-            <PlusCircle className="h-10 w-10 mb-2" /> {/* Reduced size and margin */}
-            <p className="text-sm">No plots yet.</p> {/* Reduced text size */}
-            <p className="text-xs">Click "Add New Plot" to get started.</p> {/* Reduced text size */}
+          <div className="flex flex-col items-center justify-center text-center text-muted-foreground py-6">
+            <PlusCircle className="h-10 w-10 mb-2" />
+            <p className="text-sm">No plots yet.</p>
+            <p className="text-xs">Click "Add New Plot" to get started.</p>
           </div>
         )}
 
-        <div className="space-y-3"> {/* Reduced spacing between plots */}
+        <div className="space-y-3">
           {plots.map((plot, index) => (
             <PlotInstance
               key={plot.id}
@@ -105,9 +104,9 @@ export default function DataFlowPage() {
           ))}
         </div>
       </main>
-      <footer className="py-3 md:px-4 md:py-0 border-t"> {/* Reduced padding */}
-        <div className="container flex flex-col items-center justify-center gap-2 md:h-16 md:flex-row"> {/* Reduced gap and height */}
-          <p className="text-balance text-center text-xs leading-loose text-muted-foreground"> {/* Reduced text size */}
+      <footer className="py-3 md:px-4 md:py-0 border-t">
+        <div className="container flex flex-col items-center justify-center gap-2 md:h-16 md:flex-row">
+          <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
             Built with Next.js and ShadCN/UI.
           </p>
         </div>
@@ -115,3 +114,4 @@ export default function DataFlowPage() {
     </div>
   );
 }
+    
