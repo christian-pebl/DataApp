@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import dynamic from 'next/dynamic'; // Import dynamic
+import Image from "next/image"; // For placeholder
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SunMoon, CloudSun, LayoutGrid, AlertTriangle, Info } from "lucide-react";
@@ -17,22 +17,12 @@ import { usePathname } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 
-// Dynamically import InteractiveMap with SSR disabled
-const InteractiveMap = dynamic(
-  () => import('@/components/weather/InteractiveMap').then(mod => mod.InteractiveMap),
-  {
-    ssr: false,
-    loading: () => <div className="w-full h-full flex items-center justify-center bg-muted text-muted-foreground"><p>Loading map...</p></div>
-  }
-);
-
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
   const [weatherData, setWeatherData] = useState<WeatherDataPoint[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentSelectedVariable, setCurrentSelectedVariable] = useState<string>("temperature");
-  const [mapSelectedCoords, setMapSelectedCoords] = useState<{ lat: number; lon: number } | null>(null);
   const { toast } = useToast();
   const pathname = usePathname();
 
@@ -61,11 +51,6 @@ export default function WeatherPage() {
   const toggleTheme = () => {
     setTheme(theme === "light" ? "dark" : "light");
   };
-
-  const handleMapLocationSelect = React.useCallback((coords: { lat: number; lon: number }) => {
-    setMapSelectedCoords(coords);
-    toast({ title: "Location Set", description: `Latitude: ${coords.lat.toFixed(4)}, Longitude: ${coords.lon.toFixed(4)} selected from map.` });
-  }, [toast]); // setMapSelectedCoords is stable, toast should also be stable from useToast
 
   const handleFetchWeather = async (values: {latitude: number, longitude: number, startDate: string, endDate: string, variable: WeatherVariableValue}) => {
     setIsLoading(true);
@@ -156,13 +141,21 @@ export default function WeatherPage() {
             <div className="mb-4 p-4 border rounded-lg shadow-sm bg-card">
               <h3 className="text-md font-semibold mb-2 text-center">Location Selector</h3>
               <div className="aspect-[4/3] w-full bg-muted rounded-md flex items-center justify-center text-muted-foreground text-sm overflow-hidden mb-2">
-                <InteractiveMap onLocationSelect={handleMapLocationSelect} selectedCoords={mapSelectedCoords} />
+                {/* Placeholder for map */}
+                <Image
+                  src="https://placehold.co/600x450.png" // Placeholder image URL
+                  alt="Map placeholder"
+                  width={600}
+                  height={450}
+                  className="object-cover w-full h-full"
+                  data-ai-hint="world map"
+                />
               </div>
               <p className="text-xs text-center text-muted-foreground mb-3">
-                Click the map to select a location, or enter lat/lon below.
+                Enter latitude/longitude below to specify a location.
               </p>
             </div>
-            <WeatherControls onSubmit={handleFetchWeather} isLoading={isLoading} mapSelectedCoords={mapSelectedCoords} />
+            <WeatherControls onSubmit={handleFetchWeather} isLoading={isLoading} />
           </div>
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-lg h-full">

@@ -1,18 +1,18 @@
 
 import type {Metadata} from 'next';
-import { Inter, Roboto_Mono } from 'next/font/google'; // Changed from Geist to Inter and Roboto_Mono
+import { Inter, Roboto_Mono } from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
-import 'leaflet/dist/leaflet.css'; // Import Leaflet CSS
 
-const inter = Inter({ // Changed from Geist
+
+const inter = Inter({
   subsets: ['latin'],
-  variable: '--font-sans', // Using --font-sans for the primary sans-serif font
+  variable: '--font-sans',
 });
 
-const robotoMono = Roboto_Mono({ // Changed from Geist_Mono
+const robotoMono = Roboto_Mono({
   subsets: ['latin'],
-  variable: '--font-mono', // Using --font-mono for the monospace font
+  variable: '--font-mono',
 });
 
 export const metadata: Metadata = {
@@ -28,7 +28,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${robotoMono.variable} antialiased`}> {/* Updated to use new font variables */}
+      <body className={`${inter.variable} ${robotoMono.variable} antialiased`}>
         {children}
         <Toaster />
       </body>

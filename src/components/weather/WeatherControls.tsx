@@ -2,16 +2,16 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm, Controller } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Thermometer, Wind, Cloud, MapPin, CalendarDays, Search } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { subDays, formatISO } from "date-fns";
-import React, { useEffect } from "react"; // Added useEffect
+import React from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Label } from "@/components/ui/label"; // Label is not used directly in JSX, but FormLabel is from Form
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
@@ -43,10 +43,10 @@ export type WeatherControlsFormValues = z.infer<typeof weatherControlsSchema>;
 interface WeatherControlsProps {
   onSubmit: (values: {latitude: number, longitude: number, startDate: string, endDate: string, variable: WeatherVariableValue}) => void;
   isLoading: boolean;
-  mapSelectedCoords?: { lat: number; lon: number } | null; // New prop
+  // mapSelectedCoords prop removed
 }
 
-export function WeatherControls({ onSubmit, isLoading, mapSelectedCoords }: WeatherControlsProps) {
+export function WeatherControls({ onSubmit, isLoading }: WeatherControlsProps) {
   const form = useForm<WeatherControlsFormValues>({
     resolver: zodResolver(weatherControlsSchema),
     defaultValues: {
@@ -60,12 +60,7 @@ export function WeatherControls({ onSubmit, isLoading, mapSelectedCoords }: Weat
     },
   });
 
-  useEffect(() => {
-    if (mapSelectedCoords) {
-      form.setValue("latitude", mapSelectedCoords.lat, { shouldValidate: true });
-      form.setValue("longitude", mapSelectedCoords.lon, { shouldValidate: true });
-    }
-  }, [mapSelectedCoords, form]);
+  // useEffect hook for mapSelectedCoords removed
 
   function handleSubmit(values: WeatherControlsFormValues) {
     if (!values.dateRange.from || !values.dateRange.to) {
