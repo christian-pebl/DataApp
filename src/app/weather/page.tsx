@@ -257,13 +257,13 @@ export default function WeatherPage() {
         <TooltipProvider>
           <div className="container flex h-14 items-center justify-between px-3 md:px-4">
             <Link href="/weather" passHref>
-              <h1 className="text-xl font-bold font-sans text-foreground cursor-pointer">PEBL data app</h1>
+              <h1 className="text-xl dark:text-2xl font-bold font-sans text-foreground cursor-pointer">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link href="/weather" passHref> {/* Assuming CSV page will be moved or this becomes a general data page later */}
-                    <Button variant={pathname === '/weather' ? "secondary" : "ghost"} size="icon" aria-label="Data Explorer">
+                    <Button variant={"ghost"} size="icon" aria-label="Data Explorer"> {/* Always ghost as this page is weather */}
                       <LayoutGrid className="h-5 w-5" />
                     </Button>
                   </Link>
@@ -395,7 +395,7 @@ export default function WeatherPage() {
                 <CardTitle className="text-md">
                   Historical Weather Data
                 </CardTitle>
-                 <CardDescription className="text-xs">Data from Open-Meteo. Select location and date range, then click "Search & Fetch Weather".</CardDescription>
+                 <CardDescription className="text-xs">Select location and date range, then click "Search & Fetch Weather".</CardDescription>
               </CardHeader>
               <CardContent className="p-2 h-[calc(100%-5rem)]">
                 <WeatherPlotsGrid
@@ -419,3 +419,5 @@ export default function WeatherPage() {
     </div>
   );
 }
+
+    
