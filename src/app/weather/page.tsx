@@ -4,12 +4,12 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Moon, Sun, Github, Home, AlertTriangle, Info } from "lucide-react";
+import { Moon, Sun, CloudSun, LayoutGrid, AlertTriangle, Info } from "lucide-react"; // Added LayoutGrid, removed Github, Home
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import type { WeatherControlsFormValues, WeatherVariableValue } from "@/components/weather/WeatherControls";
-import { ChartDisplay } from "@/components/dataflow/ChartDisplay"; // Reusing from dataflow
+import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
 import { fetchWeatherDataAction } from "./actions";
-import type { WeatherDataPoint } from "./shared"; // Updated import
+import type { WeatherDataPoint } from "./shared";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 
@@ -21,7 +21,7 @@ export default function WeatherPage() {
   const [currentSelectedVariable, setCurrentSelectedVariable] = useState<string>("temperature");
   const { toast } = useToast();
 
-  // Theme management (similar to DataFlowPage)
+  // Theme management
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
     if (storedTheme) {
@@ -76,26 +76,29 @@ export default function WeatherPage() {
     }
   };
   
-  // ChartDisplay expects data in a slightly more generic format, this cast is safe
   const chartCompatibleData = weatherData as Array<{[key: string]: string | number | undefined; time: string | number}>;
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-14 items-center justify-between px-4 md:px-6">
-          <Link href="/" className="flex items-center gap-2">
-            <Home className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-bold text-primary">PEBL Weather</h1>
+        <div className="container flex h-14 items-center justify-between px-3 md:px-4">
+          <Link href="/" passHref>
+            <h1 className="text-2xl font-bold text-primary cursor-pointer">PEBL</h1>
           </Link>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
+            <Link href="/" passHref>
+              <Button variant="ghost" size="icon" aria-label="Data Explorer">
+                <LayoutGrid className="h-5 w-5" />
+              </Button>
+            </Link>
+            <Link href="/weather" passHref>
+              <Button variant="ghost" size="icon" aria-label="Weather Page">
+                <CloudSun className="h-5 w-5" />
+              </Button>
+            </Link>
+            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme (Settings)">
               {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
             </Button>
-            <a href="https://github.com/firebase/studio" target="_blank" rel="noopener noreferrer" aria-label="GitHub Repository">
-              <Button variant="ghost" size="icon">
-                <Github className="h-5 w-5" />
-              </Button>
-            </a>
           </div>
         </div>
       </header>
@@ -112,7 +115,7 @@ export default function WeatherPage() {
                   Weather Plot: {currentSelectedVariable.charAt(0).toUpperCase() + currentSelectedVariable.slice(1)}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-2 h-[calc(100%-4rem)]"> {/* Adjust height to fit card */}
+              <CardContent className="p-2 h-[calc(100%-4rem)]">
                 {isLoading && (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mr-2"></div>
@@ -139,7 +142,7 @@ export default function WeatherPage() {
                     plottableSeries={[currentSelectedVariable]}
                     timeAxisLabel="Date / Time"
                     plotTitle={`Weather Data: ${currentSelectedVariable}`}
-                    chartRenderHeight={400} // Adjust as needed, or make dynamic
+                    chartRenderHeight={400} 
                   />
                 )}
               </CardContent>
@@ -157,3 +160,4 @@ export default function WeatherPage() {
     </div>
   );
 }
+

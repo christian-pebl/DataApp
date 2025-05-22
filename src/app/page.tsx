@@ -3,9 +3,9 @@
 
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun, Github, PlusCircle, CloudSun } from "lucide-react"; // Added CloudSun
+import { Moon, Sun, CloudSun, LayoutGrid, PlusCircle } from "lucide-react"; // Added LayoutGrid
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
-import Link from "next/link"; // Added Link
+import Link from "next/link";
 
 interface PlotConfig {
   id: string;
@@ -63,21 +63,23 @@ export default function DataFlowPage() {
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-14 items-center justify-between px-3 md:px-4">
-          <h1 className="text-2xl font-bold text-primary">PEBL</h1>
+          <Link href="/" passHref>
+            <h1 className="text-2xl font-bold text-primary cursor-pointer">PEBL</h1>
+          </Link>
           <div className="flex items-center gap-1">
+            <Link href="/" passHref>
+              <Button variant="ghost" size="icon" aria-label="Data Explorer">
+                <LayoutGrid className="h-5 w-5" />
+              </Button>
+            </Link>
             <Link href="/weather" passHref>
               <Button variant="ghost" size="icon" aria-label="Weather Page">
                 <CloudSun className="h-5 w-5" />
               </Button>
             </Link>
-            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
+            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme (Settings)">
               {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
             </Button>
-            <a href="https://github.com/firebase/studio" target="_blank" rel="noopener noreferrer" aria-label="GitHub Repository">
-              <Button variant="ghost" size="icon">
-                <Github className="h-5 w-5" />
-              </Button>
-            </a>
           </div>
         </div>
       </header>
