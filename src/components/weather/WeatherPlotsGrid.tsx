@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Brush, Label } from 'recharts';
 import type { WeatherDataPoint } from '@/app/weather/shared';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Info, Thermometer, Wind, Cloud, Compass } from 'lucide-react';
+import { Info, Thermometer, Wind, Cloud, Compass, CalendarDays } from 'lucide-react';
 
 export interface WeatherPlotsGridProps {
   weatherData: WeatherDataPoint[];
@@ -16,12 +16,18 @@ export interface WeatherPlotsGridProps {
 
 const MPH_CONVERSION_FACTOR = 2.23694;
 
-// Reordered to put Wind Speed and Wind Direction together
-const plotConfigs: { dataKey: keyof WeatherDataPoint; title: string; unit: string; color: string, Icon: React.ElementType, dataTransform?: (value: number) => number }[] = [
-  { dataKey: 'temperature', title: 'Temp', unit: '°C', color: '--chart-1', Icon: Thermometer },
-  { dataKey: 'windSpeed', title: 'Wind', unit: ' mph', color: '--chart-2', Icon: Wind, dataTransform: (value) => parseFloat((value * MPH_CONVERSION_FACTOR).toFixed(1)) },
-  { dataKey: 'windDirection', title: 'Direction', unit: '°', color: '--chart-4', Icon: Compass },
-  { dataKey: 'cloudCover', title: 'Cloud', unit: '%', color: '--chart-3', Icon: Cloud },
+const plotConfigs: { 
+  dataKey: keyof WeatherDataPoint; 
+  title: string; 
+  unit: string; 
+  color: string; 
+  Icon: React.ElementType; 
+  dataTransform?: (value: number) => number 
+}[] = [
+  { dataKey: 'temperature', title: 'Temperature', unit: '°C', color: '--chart-1', Icon: Thermometer },
+  { dataKey: 'windSpeed', title: 'Wind Speed', unit: ' mph', color: '--chart-2', Icon: Wind, dataTransform: (value) => parseFloat((value * MPH_CONVERSION_FACTOR).toFixed(1)) },
+  { dataKey: 'windDirection', title: 'Wind Direction', unit: '°', color: '--chart-4', Icon: Compass },
+  { dataKey: 'cloudCover', title: 'Cloud Cover', unit: '%', color: '--chart-3', Icon: Cloud },
 ];
 
 const formatXAxisTickBrush = (timeValue: string | number): string => {
@@ -39,7 +45,6 @@ const formatXAxisTickBrush = (timeValue: string | number): string => {
     return String(timeValue);
   }
 };
-
 
 export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility }: WeatherPlotsGridProps) {
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
@@ -68,11 +73,10 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
     const end = Math.min(weatherData.length - 1, brushEndIndex);
     return weatherData.slice(start, end + 1);
   }, [weatherData, brushStartIndex, brushEndIndex]);
-  
+
   const visiblePlotConfigs = useMemo(() => {
     return plotConfigs.filter(config => plotVisibility[config.dataKey as string]);
   }, [plotVisibility]);
-
 
   if (isLoading) {
     return (
@@ -92,7 +96,7 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
       </div>
     );
   }
-  
+
   if (weatherData.length === 0 && !isLoading && !error) {
       return (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
@@ -102,7 +106,7 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
           </div>
         );
   }
-  
+
   if (visiblePlotConfigs.length === 0 && weatherData.length > 0) {
     return (
         <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
@@ -113,71 +117,69 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
       );
   }
 
-
   return (
     <div className="w-full h-full flex flex-col">
       <div className="flex-grow flex flex-col space-y-1 overflow-y-auto pr-1">
         {visiblePlotConfigs.map((config) => {
           const IconComponent = config.Icon;
-          
           const transformedDisplayData = displayData.map(point => {
             const value = point[config.dataKey];
+            if (value === undefined || value === null) return { ...point, [config.dataKey]: undefined };
             if (typeof value === 'number' && config.dataTransform) {
               return { ...point, [config.dataKey]: config.dataTransform(value) };
             }
             return point;
           });
 
+          const lastDataPoint = transformedDisplayData[transformedDisplayData.length - 1];
+          const currentValue = lastDataPoint ? lastDataPoint[config.dataKey] : undefined;
+          const displayValue = typeof currentValue === 'number' ? `${currentValue.toLocaleString()}${config.unit}` : "N/A";
+          
           const hasValidDataForSeries = transformedDisplayData.some(point => 
-            typeof point[config.dataKey] === 'number' && 
-            !isNaN(point[config.dataKey] as number)
+            point[config.dataKey] !== undefined && point[config.dataKey] !== null && !isNaN(Number(point[config.dataKey]))
           );
 
           return (
-            <div key={config.dataKey as string} className="h-[100px] w-full border rounded-md p-2 shadow-sm bg-card flex-shrink-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={transformedDisplayData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <YAxis
-                    domain={['auto', 'auto']}
-                    tickFormatter={(value) => `${value}${config.unit}`}
-                    tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
-                    stroke="hsl(var(--border))"
-                    width={45} 
-                    axisLine={false}
-                    tickLine={false}
-                    label={
-                      <Label 
-                        angle={-90} 
-                        position="insideLeft"
-                        style={{ fontSize: '0.6rem', fill: `hsl(var(${config.color}))`, textAnchor: 'middle' }}
-                        dy={5} // Adjusted for icon
-                        dx={-15} // Adjusted for icon
-                      >
-                        <IconComponent style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '2px', width: '10px', height: '10px' }} />
-                        {config.title}
-                      </Label>
-                    }
-                  />
-                  <XAxis dataKey="time" hide />
-                  {hasValidDataForSeries ? (
-                    <Line 
-                      type="monotone" 
-                      dataKey={config.dataKey as string} 
-                      stroke={`hsl(var(${config.color}))`} 
-                      strokeWidth={1.5} 
-                      dot={false} 
-                      connectNulls 
-                      name={config.title}
+            <div key={config.dataKey as string} className="h-[100px] w-full border rounded-md p-1 shadow-sm bg-card flex-shrink-0 flex flex-col">
+              <div className="flex items-center justify-between px-2 pt-0.5 pb-0.5 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <IconComponent className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="font-medium text-foreground">{config.title}</span>
+                </div>
+                <span className="text-muted-foreground">{displayValue}</span>
+              </div>
+              <div className="flex-grow">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <YAxis
+                      domain={['auto', 'auto']}
+                      tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString() : String(value)}
+                      tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
+                      stroke="hsl(var(--border))"
+                      width={30}
+                      axisLine={false}
+                      tickLine={false}
                     />
-                  ) : null}
-                   {transformedDisplayData.length > 0 && !hasValidDataForSeries && (
-                     <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" fill="hsl(var(--muted-foreground))" fontSize="0.7rem">
-                       No data for {config.title}
-                     </text>
-                   )}
-                </LineChart>
-              </ResponsiveContainer>
+                    <XAxis dataKey="time" hide />
+                    {hasValidDataForSeries ? (
+                      <Line
+                        type="monotone"
+                        dataKey={config.dataKey as string}
+                        stroke={`hsl(var(${config.color}))`}
+                        strokeWidth={1.5}
+                        dot={false}
+                        connectNulls
+                        name={config.title}
+                      />
+                    ) : (
+                       <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" fill="hsl(var(--muted-foreground))" fontSize="0.7rem">
+                         No data available
+                       </text>
+                     )}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           );
         })}
@@ -187,19 +189,19 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
         <div className="h-[60px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={weatherData} margin={{ top: 5, right: 25, left: 25, bottom: 5 }}>
-              <XAxis 
-                dataKey="time" 
-                tickFormatter={formatXAxisTickBrush} 
-                stroke="hsl(var(--muted-foreground))" 
+              <XAxis
+                dataKey="time"
+                tickFormatter={formatXAxisTickBrush}
+                stroke="hsl(var(--muted-foreground))"
                 tick={{ fontSize: '0.6rem' }}
-                height={30} 
-                dy={5} 
+                height={30}
+                dy={5}
               />
-              <Line dataKey={plotConfigs.find(pc => pc.dataKey === 'temperature')?.dataKey as string || 'temperature'} stroke="transparent" dot={false} />
-              <Brush 
-                dataKey="time" 
+              <Line dataKey={plotConfigs[0]?.dataKey as string || 'temperature'} stroke="transparent" dot={false} />
+              <Brush
+                dataKey="time"
                 height={20}
-                stroke="hsl(var(--primary))" 
+                stroke="hsl(var(--primary))"
                 fill="hsl(var(--muted))"
                 fillOpacity={0.3}
                 tickFormatter={formatXAxisTickBrush}
@@ -216,4 +218,3 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
     </div>
   );
 }
-
