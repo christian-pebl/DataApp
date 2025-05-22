@@ -1,147 +1,46 @@
 
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { Search } from "lucide-react";
+import React from "react";
 import type { DateRange } from "react-day-picker";
-import { subDays, formatISO } from "date-fns";
-import React, { useEffect } from "react";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-
-export const weatherControlsSchema = z.object({
-  latitude: z.coerce.number().min(-90, "Min -90").max(90, "Max 90"),
-  longitude: z.coerce.number().min(-180, "Min -180").max(180, "Max 180"),
-  dateRange: z.object({
-    from: z.date({ required_error: "Start date is required."}),
-    to: z.date({ required_error: "End date is required."}),
-  }).refine(data => data.from && data.to && data.from <= data.to, {
-    message: "Start date must be before or same as end date.",
-    path: ["dateRange"], 
-  }),
-});
-
-export type WeatherControlsFormValues = z.infer<typeof weatherControlsSchema>;
-
-interface SearchedCoords {
-  latitude: number;
-  longitude: number;
-}
+import { CalendarDays } from "lucide-react";
 
 interface WeatherControlsProps {
-  onSubmit: (values: {latitude: number, longitude: number, startDate: string, endDate: string}) => void;
-  isLoading: boolean;
-  initialCoords?: SearchedCoords | null;
+  dateRange: DateRange | undefined;
+  onDateChange: (date: DateRange | undefined) => void;
+  // isLoading prop is removed as the button triggering the load is now in the parent
 }
 
-export function WeatherControls({ onSubmit, isLoading, initialCoords }: WeatherControlsProps) {
-  const form = useForm<WeatherControlsFormValues>({
-    resolver: zodResolver(weatherControlsSchema),
-    defaultValues: {
-      latitude: 34.0522, // Default Los Angeles
-      longitude: -118.2437,
-      dateRange: {
-        from: subDays(new Date(), 7),
-        to: new Date(),
-      },
-    },
-  });
-
-  useEffect(() => {
-    if (initialCoords) {
-      form.setValue("latitude", initialCoords.latitude, { shouldValidate: true });
-      form.setValue("longitude", initialCoords.longitude, { shouldValidate: true });
-    }
-  }, [initialCoords, form]);
-
-  function handleSubmit(values: WeatherControlsFormValues) {
-    if (!values.dateRange.from || !values.dateRange.to) {
-        form.setError("dateRange", { type: "manual", message: "Both start and end dates are required." });
-        return;
-    }
-    onSubmit({
-        latitude: values.latitude,
-        longitude: values.longitude,
-        startDate: formatISO(values.dateRange.from),
-        endDate: formatISO(values.dateRange.to),
-    });
-  }
-
+export function WeatherControls({ dateRange, onDateChange }: WeatherControlsProps) {
   return (
     <Card className="w-full shadow-lg">
       <CardHeader className="p-4">
-        <CardTitle className="text-lg flex items-center gap-2">
-            <Search className="h-5 w-5 text-primary" /> Data Criteria
+        <CardTitle className="text-md flex items-center gap-2">
+            <CalendarDays className="h-5 w-5 text-primary" /> Date Range
         </CardTitle>
         <CardDescription className="text-xs">
-          Specify location and date range to plot weather data.
+          Select start and end dates for weather data.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-4">
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="latitude"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Latitude</FormLabel>
-                    <FormControl>
-                      <Input type="number" placeholder="e.g., 34.0522" {...field} disabled={isLoading} className="h-9"/>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+          <div className="space-y-4">
+            <div className="flex flex-col space-y-1">
+                <DatePickerWithRange
+                    date={dateRange}
+                    onDateChange={onDateChange}
+                    // disabled={isLoading} // Disable if parent indicates loading
+                />
+                {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && (
+                    <p className="text-xs text-destructive px-1">Start date must be before or same as end date.</p>
                 )}
-              />
-              <FormField
-                control={form.control}
-                name="longitude"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Longitude</FormLabel>
-                    <FormControl>
-                      <Input type="number" placeholder="e.g., -118.2437" {...field} disabled={isLoading} className="h-9"/>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </div>
-            
-            <FormField
-              control={form.control}
-              name="dateRange"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel className="mb-1">Date Range</FormLabel>
-                  <DatePickerWithRange
-                    date={field.value as DateRange | undefined} 
-                    onDateChange={field.onChange}
-                    disabled={isLoading}
-                  />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <Button type="submit" disabled={isLoading} className="w-full">
-              {isLoading ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-              ) : (
-                <Search className="mr-2 h-4 w-4" />
-              )}
-              Fetch Weather Data
-            </Button>
-          </form>
-        </Form>
+            {/* Fetch button removed, functionality moved to parent */}
+          </div>
       </CardContent>
     </Card>
   );
 }
+
+    

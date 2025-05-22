@@ -11,6 +11,7 @@ interface WeatherPlotsGridProps {
   weatherData: WeatherDataPoint[];
   isLoading: boolean;
   error: string | null;
+  plotVisibility: Record<string, boolean>; // New prop
 }
 
 const plotConfigs = [
@@ -26,7 +27,6 @@ const formatXAxisTickBrush = (timeValue: string | number): string => {
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) return String(timeValue);
 
-    // Show date for the first tick or if it's midnight
     if (date.getHours() === 0 && date.getMinutes() === 0) {
       const year = date.getFullYear().toString().slice(-2);
       const month = ('0' + (date.getMonth() + 1)).slice(-2);
@@ -40,7 +40,7 @@ const formatXAxisTickBrush = (timeValue: string | number): string => {
 };
 
 
-export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlotsGridProps) {
+export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility }: WeatherPlotsGridProps) {
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(weatherData.length > 0 ? weatherData.length -1 : undefined);
 
@@ -65,6 +65,11 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
     }
     return weatherData.slice(brushStartIndex, brushEndIndex + 1);
   }, [weatherData, brushStartIndex, brushEndIndex]);
+  
+  const visiblePlotConfigs = useMemo(() => {
+    return plotConfigs.filter(config => plotVisibility[config.dataKey]);
+  }, [plotVisibility]);
+
 
   if (isLoading) {
     return (
@@ -90,42 +95,51 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
             <Info className="h-10 w-10 mb-2" />
             <p>No data to display.</p>
-            <p className="text-sm">Please select criteria and fetch weather data.</p>
+            <p className="text-sm">Please select location and date range, then click "Search & Fetch Weather".</p>
           </div>
         );
+  }
+  
+  if (visiblePlotConfigs.length === 0 && weatherData.length > 0) {
+    return (
+        <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
+          <Info className="h-10 w-10 mb-2" />
+          <p>No plots selected for display.</p>
+          <p className="text-sm">Please check at least one weather parameter to view its plot.</p>
+        </div>
+      );
   }
 
 
   return (
-    <div className="w-full">
-      <div className="flex flex-col space-y-2 mb-3">
-        {plotConfigs.map((config) => {
-          // Check if there's any valid data for this specific series in the current displayData
+    <div className="w-full h-full flex flex-col">
+      <div className="flex-grow flex flex-col space-y-1 overflow-y-auto pr-1"> {/* Added pr-1 for scrollbar space */}
+        {visiblePlotConfigs.map((config) => {
           const hasValidDataForSeries = displayData.some(point => 
             typeof point[config.dataKey as keyof WeatherDataPoint] === 'number' && 
             !isNaN(point[config.dataKey as keyof WeatherDataPoint] as number)
           );
 
           return (
-            <div key={config.dataKey} className="h-[120px] w-full border rounded-md p-2 shadow-sm bg-card">
+            <div key={config.dataKey} className="h-[100px] w-full border rounded-md p-2 shadow-sm bg-card flex-shrink-0">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={displayData} margin={{ top: 5, right: 25, left: 25, bottom: 5 }}>
+                <LineChart data={displayData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                   <YAxis
                     domain={['auto', 'auto']}
                     tickFormatter={(value) => `${value}${config.unit}`}
                     tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
                     stroke="hsl(var(--border))"
-                    width={55} // Adjusted width for Y-axis labels
+                    width={45} 
                     axisLine={false}
                     tickLine={false}
                     label={{
                       value: config.title,
                       angle: -90,
                       position: 'insideLeft',
-                      style: { fontSize: '0.7rem', fill: `hsl(var(${config.color}))`, textAnchor: 'middle' },
-                      dy: 40, // Adjust dy to position label correctly
-                      dx: -15,
+                      style: { fontSize: '0.6rem', fill: `hsl(var(${config.color}))`, textAnchor: 'middle' },
+                      dy: 20, // Adjust dy to position label correctly
+                      dx: -10,
                     }}
                   />
                   <XAxis dataKey="time" hide />
@@ -139,10 +153,7 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
                       connectNulls 
                       name={config.title}
                     />
-                  ) : (
-                    // Optional: Render something if no data for this series, or just let it be blank
-                    null
-                  )}
+                  ) : null}
                    {displayData.length > 0 && !hasValidDataForSeries && (
                      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" fill="hsl(var(--muted-foreground))" fontSize="0.7rem">
                        No data for {config.title}
@@ -156,7 +167,7 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
       </div>
 
       {weatherData.length > 0 && (
-        <div className="h-[70px] w-full border rounded-md p-1 shadow-sm bg-card">
+        <div className="h-[60px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={weatherData} margin={{ top: 5, right: 25, left: 25, bottom: 5 }}>
               <XAxis 
@@ -164,10 +175,9 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
                 tickFormatter={formatXAxisTickBrush} 
                 stroke="hsl(var(--muted-foreground))" 
                 tick={{ fontSize: '0.6rem' }}
-                height={30} // Give XAxis some height
-                dy={5} // Push ticks down a bit
+                height={30} 
+                dy={5} 
               />
-               {/* Add a dummy line to make Brush show correctly with only XAxis in its own chart */}
               <Line dataKey={plotConfigs[0].dataKey as string} stroke="transparent" dot={false} />
               <Brush 
                 dataKey="time" 
@@ -180,7 +190,7 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
                 startIndex={brushStartIndex}
                 endIndex={brushEndIndex}
                 onChange={handleBrushChange}
-                y={15} // Position Brush slightly lower to not overlap X-axis labels
+                y={10} 
               />
             </LineChart>
           </ResponsiveContainer>
@@ -190,3 +200,4 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
   );
 }
 
+    
