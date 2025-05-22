@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { SunMoon, CloudSun, LayoutGrid, PlusCircle } from "lucide-react";
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
@@ -19,13 +19,16 @@ export default function DataFlowPage() {
   const [plots, setPlots] = useState<PlotConfig[]>([]);
   const [theme, setTheme] = useState("light");
   const pathname = usePathname();
+  const initialPlotAdded = useRef(false); // Ref to track if initial plot is added
 
   useEffect(() => {
-    if (plots.length === 0) {
+    // Ensure addPlot is called only once on initial mount
+    if (!initialPlotAdded.current && plots.length === 0) {
       addPlot();
+      initialPlotAdded.current = true;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // Empty dependency array ensures this runs on mount
 
 
   useEffect(() => {
@@ -151,4 +154,6 @@ export default function DataFlowPage() {
     </div>
   );
 }
+    
+
     

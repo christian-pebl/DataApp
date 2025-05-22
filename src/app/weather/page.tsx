@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Image from "next/image"; // Import next/image
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SunMoon, CloudSun, LayoutGrid, AlertTriangle, Info } from "lucide-react";
@@ -138,6 +139,22 @@ export default function WeatherPage() {
       <main className="flex-grow container mx-auto p-3 md:p-4">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
           <div className="md:col-span-4 lg:col-span-3">
+            <div className="mb-4 p-4 border rounded-lg shadow-sm bg-card">
+              <h3 className="text-md font-semibold mb-2 text-center">Location Selector</h3>
+              <div className="aspect-[4/3] w-full bg-muted rounded-md flex items-center justify-center text-muted-foreground text-sm overflow-hidden mb-2">
+                <Image 
+                  src="https://placehold.co/600x400.png" // Placeholder for map
+                  alt="Map placeholder" 
+                  width={600} 
+                  height={400}
+                  className="object-cover w-full h-full"
+                  data-ai-hint="world map"
+                />
+              </div>
+              <p className="text-xs text-center text-muted-foreground mb-3">
+                (Interactive map coming soon! Use lat/lon below.)
+              </p>
+            </div>
             <WeatherControls onSubmit={handleFetchWeather} isLoading={isLoading} />
           </div>
           <div className="md:col-span-8 lg:col-span-9">
@@ -192,3 +209,5 @@ export default function WeatherPage() {
     </div>
   );
 }
+
+    
