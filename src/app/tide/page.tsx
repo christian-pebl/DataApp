@@ -5,10 +5,10 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, Search, MapPin, SunMoon, LayoutGrid, CloudSun, Compass, Thermometer, Wind, CalendarDays, Info, Cloud, Waves } from "lucide-react"; // Added Waves
-import { WeatherControls } from "@/components/weather/WeatherControls";
-import { fetchWeatherDataAction } from "./actions";
-import type { WeatherDataPoint } from "./shared"; 
+import { Loader2, Search, MapPin, LayoutGrid, CloudSun, Waves, SunMoon } from "lucide-react";
+import { WeatherControls } from "@/components/weather/WeatherControls"; // Reusing for date range
+import { fetchTideDataAction } from "./actions";
+import type { TideDataPoint } from "./shared"; 
 import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
 import { formatISO, subDays } from "date-fns";
@@ -17,16 +17,13 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label as UiLabel } from "@/components/ui/label";
+import type { ChartDisplayProps } from "@/components/dataflow/ChartDisplay"; // Using ChartDisplay
 
-
-const WeatherPlotsGrid = dynamic<WeatherPlotsGridProps>(
-  () => import('@/components/weather/WeatherPlotsGrid').then(mod => mod.WeatherPlotsGrid),
+const ChartDisplay = dynamic<ChartDisplayProps>(
+  () => import('@/components/dataflow/ChartDisplay').then(mod => mod.ChartDisplay),
   {
     ssr: false,
-    loading: () => <div className="flex items-center justify-center h-full text-muted-foreground"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mr-2"></div>Loading plots...</div>
+    loading: () => <div className="flex items-center justify-center h-full text-muted-foreground"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mr-2"></div>Loading plot...</div>
   }
 );
 
@@ -41,7 +38,7 @@ const knownLocations: { [key: string]: { lat: number; lon: number; name: string 
   "bristol": { lat: 51.4545, lon: -2.5879, name: "Bristol" },
   "leeds": { lat: 53.8008, lon: -1.5491, name: "Leeds" },
   "sheffield": { lat: 53.3811, lon: -1.4701, name: "Sheffield" },
-  "stdavids": { lat: 51.8818, lon: -5.2661, name: "Saint David's" },
+  "stdavids": { lat: 51.8818, lon: -5.2661, name: "Saint David's" }, // Default
 };
 
 interface SearchedCoords {
@@ -56,26 +53,10 @@ interface Suggestion {
 
 const defaultLocationKey = "stdavids";
 
-type PlotVisibilityKeys = 'temperature' | 'windSpeed' | 'windDirection' | 'cloudCover';
-
-const plotConfigIcons: Record<PlotVisibilityKeys, React.ElementType> = {
-  temperature: Thermometer,
-  windSpeed: Wind,
-  cloudCover: Cloud,
-  windDirection: Compass,
-};
-
-const plotDisplayTitles: Record<PlotVisibilityKeys, string> = {
-  temperature: "Temperature",
-  windSpeed: "Wind Speed",
-  cloudCover: "Cloud Cover",
-  windDirection: "Wind Direction",
-};
-
-
-export default function WeatherPage() {
+export default function TidePage() {
   const [theme, setTheme] = useState("light");
-  const [weatherData, setWeatherData] = useState<WeatherDataPoint[]>([]);
+  const [tideData, setTideData] = useState<TideDataPoint[]>([]);
+  const [dataLocationContext, setDataLocationContext] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -93,26 +74,13 @@ export default function WeatherPage() {
   });
 
   const initialFetchDone = useRef(false);
-  const [plotVisibility, setPlotVisibility] = useState<Record<PlotVisibilityKeys, boolean>>({
-    temperature: true,
-    windSpeed: true,
-    cloudCover: true,
-    windDirection: true,
-  });
-  const handlePlotVisibilityChange = useCallback((plotKey: PlotVisibilityKeys, checked: boolean) => {
-    setPlotVisibility(prev => ({ ...prev, [plotKey]: checked }));
-  }, []);
-
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
-    if (storedTheme) {
-      setTheme(storedTheme);
-    } else {
+    if (storedTheme) setTheme(storedTheme);
+    else {
       const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      if (systemPrefersDark) {
-        setTheme("dark");
-      }
+      if (systemPrefersDark) setTheme("dark");
     }
     
     const defaultLoc = knownLocations[defaultLocationKey];
@@ -123,39 +91,35 @@ export default function WeatherPage() {
   }, []);
 
   useEffect(() => {
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    if (theme === "dark") document.documentElement.classList.add("dark");
+    else document.documentElement.classList.remove("dark");
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  const toggleTheme = () => {
-    setTheme(theme === "light" ? "dark" : "light");
-  };
+  const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
 
-  const handleFetchWeather = useCallback(async (coordsToUse?: SearchedCoords, datesToUse?: DateRange) => {
+  const handleFetchTideData = useCallback(async (coordsToUse?: SearchedCoords, datesToUse?: DateRange) => {
     const currentCoords = coordsToUse || initialCoords;
     const currentDates = datesToUse || dateRange;
 
     if (!currentCoords) {
-      toast({ variant: "destructive", title: "Missing Location", description: "Please search and select a location first." });
+      toast({ variant: "destructive", title: "Missing Location", description: "Please search and select a location." });
       return;
     }
     if (!currentDates || !currentDates.from || !currentDates.to) {
       toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range."});
       return;
     }
-     if (currentDates.from > currentDates.to) {
-        toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
-        return;
+    if (currentDates.from > currentDates.to) {
+      toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
+      return;
     }
 
     setIsLoading(true);
     setError(null);
+    setDataLocationContext(undefined);
 
-    const result = await fetchWeatherDataAction({
+    const result = await fetchTideDataAction({
       latitude: currentCoords.latitude,
       longitude: currentCoords.longitude,
       startDate: formatISO(currentDates.from, { representation: 'date' }),
@@ -164,22 +128,19 @@ export default function WeatherPage() {
 
     setIsLoading(false);
     if (result.success && result.data) {
-      setWeatherData(result.data as WeatherDataPoint[]);
+      setTideData(result.data as TideDataPoint[]);
+      setDataLocationContext(result.dataLocationContext);
       if (result.message) {
         toast({ title: "Info", description: result.message, duration: 3000 });
       } else if (result.data.length === 0) {
-        toast({ title: "No Data", description: "No weather data found for the selected criteria.", duration: 3000 });
+        toast({ title: "No Data", description: "No tide data found for the selected criteria.", duration: 3000 });
       } else {
-        const successToast = toast({ title: "Success", description: "Weather data fetched successfully." });
-         setTimeout(() => {
-            if (successToast && successToast.id) {
-                toast().dismiss(successToast.id);
-            }
-        }, 2000);
+        const successToast = toast({ title: "Success", description: "Tide data fetched." });
+        setTimeout(() => { if (successToast && successToast.id) toast().dismiss(successToast.id); }, 2000);
       }
     } else {
-      setError(result.error || "Failed to fetch weather data.");
-      toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch weather data." });
+      setError(result.error || "Failed to fetch tide data.");
+      toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch tide data." });
     }
   }, [initialCoords, dateRange, toast]);
   
@@ -187,9 +148,9 @@ export default function WeatherPage() {
     const term = searchTerm.trim().toLowerCase();
     setShowSuggestions(false); 
     if (!term) {
-      toast({ variant: "destructive", title: "Search Error", description: "Please enter a location to search." });
+      toast({ variant: "destructive", title: "Search Error", description: "Please enter a location." });
       setInitialCoords(null); 
-      setWeatherData([]); 
+      setTideData([]); 
       return;
     }
     const locationKey = Object.keys(knownLocations).find(
@@ -202,59 +163,49 @@ export default function WeatherPage() {
       const location = knownLocations[locationKey];
       coordsForFetch = { latitude: location.lat, longitude: location.lon };
       setInitialCoords(coordsForFetch); 
-      if (knownLocations[locationKey].name !== searchTerm) {
-        setSearchTerm(knownLocations[locationKey].name);
-      }
+      if (knownLocations[locationKey].name !== searchTerm) setSearchTerm(knownLocations[locationKey].name);
     } else {
       const currentKnownNameForInitialCoords = Object.values(knownLocations).find(loc => loc.lat === initialCoords?.latitude && loc.lon === initialCoords?.longitude)?.name;
       if (searchTerm.toLowerCase() !== currentKnownNameForInitialCoords?.toLowerCase()) {
-         setWeatherData([]); 
+         setTideData([]); 
          setInitialCoords(null); 
-         toast({ variant: "destructive", title: "Location Not Found", description: "Please select a location from the suggestions or a known UK city/postcode." });
+         toast({ variant: "destructive", title: "Location Not Found", description: "Please select a location from suggestions or a known UK city/postcode." });
          return;
       }
       coordsForFetch = initialCoords;
     }
     
     if (coordsForFetch && dateRange?.from && dateRange?.to) {
-      await handleFetchWeather(coordsForFetch, dateRange);
+      await handleFetchTideData(coordsForFetch, dateRange);
     } else if (!coordsForFetch) {
-        toast({ variant: "destructive", title: "Location Error", description: "Could not determine coordinates for fetching data." });
+        toast({ variant: "destructive", title: "Location Error", description: "Could not determine coordinates." });
     } else {
-        toast({ variant: "destructive", title: "Date Error", description: "Please select a valid date range before fetching." });
+        toast({ variant: "destructive", title: "Date Error", description: "Select a valid date range." });
     }
-
-  }, [searchTerm, toast, handleFetchWeather, dateRange, initialCoords]);
+  }, [searchTerm, toast, handleFetchTideData, dateRange, initialCoords]);
 
   useEffect(() => {
     if (initialCoords && dateRange?.from && dateRange?.to && !initialFetchDone.current && !isLoading && !error) {
-      handleFetchWeather(initialCoords, dateRange);
+      handleFetchTideData(initialCoords, dateRange);
       initialFetchDone.current = true;
     }
-  }, [initialCoords, dateRange, isLoading, error, handleFetchWeather]);
-
+  }, [initialCoords, dateRange, isLoading, error, handleFetchTideData]);
 
   useEffect(() => {
     const currentSearchTerm = searchTerm.trim();
     if (currentSearchTerm === "") {
-        if (document.activeElement === document.querySelector('input[type="text"]')) {
-           setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
-           setShowSuggestions(true);
-        } else {
-          setSuggestions([]);
-          setShowSuggestions(false); 
-        }
-        return;
+      if (document.activeElement === document.querySelector('input[type="text"]')) {
+         setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
+         setShowSuggestions(true);
+      } else {
+        setSuggestions([]); setShowSuggestions(false); 
       }
-
+      return;
+    }
     const termLower = currentSearchTerm.toLowerCase();
     const filtered = Object.entries(knownLocations)
-      .filter(([key, locObj]) =>
-        key.toLowerCase().includes(termLower) ||
-        locObj.name.toLowerCase().includes(termLower)
-      )
+      .filter(([key, locObj]) => key.toLowerCase().includes(termLower) || locObj.name.toLowerCase().includes(termLower))
       .map(([key, locObj]) => ({ key, name: locObj.name }));
-    
     setSuggestions(filtered.slice(0, 5)); 
     setShowSuggestions(filtered.length > 0);
   }, [searchTerm]);
@@ -279,12 +230,11 @@ export default function WeatherPage() {
     }
   };
   
-  const handleInputBlur = () => {
-    setTimeout(() => {
-      setShowSuggestions(false);
-    }, 150);
-  };
+  const handleInputBlur = () => { setTimeout(() => { setShowSuggestions(false); }, 150); };
 
+  const tideYAxisConfig: ChartDisplayProps['yAxisConfigs'] = [
+    { id: 'tide', orientation: 'left', label: 'Tide Height (m)', color: '--chart-1', dataKey: 'tideHeight', unit: 'm' }
+  ];
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -344,12 +294,7 @@ export default function WeatherPage() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onFocus={handleInputFocus}
                   onBlur={handleInputBlur}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleLocationSearchAndFetch(); 
-                      setShowSuggestions(false); 
-                    }
-                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { handleLocationSearchAndFetch(); setShowSuggestions(false); } }}
                   className="h-9 text-sm"
                 />
                 {showSuggestions && suggestions.length > 0 && (
@@ -373,54 +318,36 @@ export default function WeatherPage() {
                   Lat: {initialCoords.latitude.toFixed(4)}, Lon: {initialCoords.longitude.toFixed(4)}
                 </p>
               )}
-               <WeatherControls
-                  dateRange={dateRange}
-                  onDateChange={setDateRange}
-                  isLoading={isLoading} 
-              />
+               <WeatherControls dateRange={dateRange} onDateChange={setDateRange} isLoading={isLoading} />
                <Button 
                   onClick={handleLocationSearchAndFetch} 
                   disabled={isLoading || !searchTerm || !dateRange?.from || !dateRange?.to}
                   className="w-full h-9 text-sm mt-3"
                 >
                   {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
-                  {isLoading ? "Fetching..." : "Search & Fetch Weather"}
+                  {isLoading ? "Fetching..." : "Search & Fetch Tide Data"}
               </Button>
             </Card>
           </div>
 
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-lg h-full">
-              <CardHeader className="p-3 flex flex-col items-start space-y-1.5">
-                <CardTitle className="text-md">Data</CardTitle>
-                <div className="flex flex-wrap gap-x-3 gap-y-1 items-center">
-                  {Object.keys(plotVisibility).map((key) => {
-                      const plotKey = key as PlotVisibilityKeys;
-                      const IconComponent = plotConfigIcons[plotKey];
-                      return (
-                          <div key={plotKey} className="flex items-center space-x-1.5">
-                          <Checkbox
-                              id={`visibility-${plotKey}`}
-                              checked={plotVisibility[plotKey]}
-                              onCheckedChange={(checked) => handlePlotVisibilityChange(plotKey, !!checked)}
-                              className="h-4 w-4"
-                          />
-                          <UiLabel htmlFor={`visibility-${plotKey}`} className="text-xs font-normal flex items-center gap-1 cursor-pointer">
-                              {IconComponent && <IconComponent className="h-3.5 w-3.5 text-muted-foreground" />}
-                              {plotDisplayTitles[plotKey]}
-                          </UiLabel>
-                          </div>
-                      );
-                  })}
-                </div>
+              <CardHeader className="p-3">
+                 <CardTitle className="text-md">Tide Data {dataLocationContext ? `- ${dataLocationContext}` : ''}</CardTitle>
               </CardHeader>
-              <CardContent className="p-2 h-[calc(100%-5rem)]"> 
-                <WeatherPlotsGrid
-                    weatherData={weatherData}
-                    isLoading={isLoading}
-                    error={error}
-                    plotVisibility={plotVisibility}
-                />
+              <CardContent className="p-2 h-[calc(100%-3.5rem)]"> 
+                 {isLoading && <div className="flex items-center justify-center h-full text-muted-foreground"><Loader2 className="h-8 w-8 animate-spin text-primary mr-2" /> Fetching data...</div>}
+                 {!isLoading && error && <div className="flex flex-col items-center justify-center h-full text-destructive p-4 text-center"><Waves className="h-10 w-10 mb-2" /><p className="font-semibold">Error Fetching Data</p><p className="text-sm">{error}</p></div>}
+                 {!isLoading && !error && tideData.length === 0 && <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center"><Waves className="h-10 w-10 mb-2" /><p>No tide data to display.</p><p className="text-sm">Search for a location and select a date range.</p></div>}
+                 {!isLoading && !error && tideData.length > 0 && (
+                    <ChartDisplay
+                        data={tideData}
+                        plottableSeries={['tideHeight']}
+                        timeAxisLabel="Time"
+                        yAxisConfigs={tideYAxisConfig}
+                        chartRenderHeight={500} // Adjust as needed
+                    />
+                 )}
               </CardContent>
             </Card>
           </div>
@@ -429,7 +356,7 @@ export default function WeatherPage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-16 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            Weather data provided by Open-Meteo. Built with Next.js and ShadCN/UI.
+            Tide data provided by Open-Meteo. Built with Next.js and ShadCN/UI.
           </p>
         </div>
       </footer>

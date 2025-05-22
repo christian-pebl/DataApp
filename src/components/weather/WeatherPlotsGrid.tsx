@@ -5,8 +5,6 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Brush } from 'recharts';
 import type { WeatherDataPoint } from '@/app/weather/shared'; 
 import { Info, Thermometer, Wind, Cloud, Compass, CheckCircle2, XCircle } from 'lucide-react';
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label as UiLabel } from "@/components/ui/label"; 
 
 type PlotVisibilityKeys = 'temperature' | 'windSpeed' | 'windDirection' | 'cloudCover';
 type SeriesAvailabilityStatus = 'pending' | 'available' | 'unavailable';
@@ -15,7 +13,7 @@ export interface WeatherPlotsGridProps {
   weatherData: WeatherDataPoint[] | null;
   isLoading: boolean;
   error: string | null;
-  // tideStationName?: string; // Removed tideStationName
+  plotVisibility: Record<PlotVisibilityKeys, boolean>;
 }
 
 const MPH_CONVERSION_FACTOR = 2.23694;
@@ -27,15 +25,7 @@ interface PlotConfig {
   color: string;
   Icon: React.ElementType;
   dataTransform?: (value: number) => number;
-  // stationName?: string; // Removed stationName from plotConfig
 }
-
-const initialPlotVisibility: Record<PlotVisibilityKeys, boolean> = {
-  temperature: true,
-  windSpeed: true,
-  windDirection: true,
-  cloudCover: true,
-};
 
 const formatXAxisTickBrush = (timeValue: string | number): string => {
   try {
@@ -53,12 +43,10 @@ const formatXAxisTickBrush = (timeValue: string | number): string => {
   }
 };
 
-export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlotsGridProps) {
+export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility }: WeatherPlotsGridProps) {
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
   
-  const [plotVisibility, setPlotVisibility] = useState(initialPlotVisibility);
-
   const plotConfigs = useMemo((): PlotConfig[] => [
     { dataKey: 'temperature', title: 'Temperature', unit: '°C', color: '--chart-1', Icon: Thermometer },
     { dataKey: 'windSpeed', title: 'Wind Speed', unit: ' mph', color: '--chart-2', Icon: Wind, dataTransform: (value) => parseFloat((value * MPH_CONVERSION_FACTOR).toFixed(1)) },
@@ -107,15 +95,8 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
         newAvailability[pc.dataKey] = hasData ? 'available' : 'unavailable';
       });
     }
-    
     setSeriesDataAvailability(newAvailability as Record<PlotVisibilityKeys, SeriesAvailabilityStatus>);
-
   }, [weatherData, isLoading, plotConfigs, initialAvailability]);
-
-
-  const handlePlotVisibilityChange = useCallback((plotKey: PlotVisibilityKeys, checked: boolean) => {
-    setPlotVisibility(prev => ({ ...prev, [plotKey]: checked }));
-  }, []);
 
   const handleBrushChange = (newIndex: { startIndex?: number; endIndex?: number }) => {
     setBrushStartIndex(newIndex.startIndex);
@@ -165,9 +146,10 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
     <div className="w-full h-full flex flex-col">
       <div className="flex-grow flex flex-col space-y-1 overflow-y-auto pr-1">
         {plotConfigs.map((config) => {
+          if (!plotVisibility[config.dataKey]) return null; // Skip rendering if not visible
+
           const IconComponent = config.Icon;
           const availabilityStatus = seriesDataAvailability[config.dataKey];
-          const isPlotEffectivelyVisible = plotVisibility[config.dataKey];
 
           const transformedDisplayData = displayData.map(point => {
             const value = point[config.dataKey as keyof WeatherDataPoint] as number | undefined;
@@ -182,7 +164,7 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
           const currentValue = lastDataPoint ? lastDataPoint[config.dataKey as keyof WeatherDataPoint] as number | undefined : undefined;
           
           let displayValue = "";
-          if (isPlotEffectivelyVisible && typeof currentValue === 'number' && !isNaN(currentValue)) {
+          if (availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue)) {
             displayValue = `${currentValue.toLocaleString()}${config.unit}`;
           }
           
@@ -190,57 +172,47 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
             <div key={config.dataKey as string} className="h-auto w-full border rounded-md p-1 shadow-sm bg-card flex-shrink-0 flex flex-col">
               <div className="flex items-center justify-between px-2 pt-0.5 pb-0.5 text-xs">
                 <div className="flex items-center gap-1.5">
-                  <Checkbox
-                    id={`plot-visibility-${config.dataKey}`}
-                    checked={plotVisibility[config.dataKey]}
-                    onCheckedChange={(checked) => handlePlotVisibilityChange(config.dataKey, !!checked)}
-                    className="h-3.5 w-3.5"
-                  />
-                  <UiLabel htmlFor={`plot-visibility-${config.dataKey}`} className="flex items-center gap-1 cursor-pointer">
-                    <IconComponent className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="font-medium text-foreground">{config.title}</span>
-                  </UiLabel>
+                  <IconComponent className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="font-medium text-foreground">{config.title}</span>
                   {availabilityStatus === 'available' && <CheckCircle2 className="h-3.5 w-3.5 text-green-500 ml-1" />}
                   {availabilityStatus === 'unavailable' && <XCircle className="h-3.5 w-3.5 text-red-500 ml-1" />}
                 </div>
-                {isPlotEffectivelyVisible && availabilityStatus === 'available' && displayValue && (
+                {availabilityStatus === 'available' && displayValue && (
                   <span className="text-muted-foreground text-xs ml-auto pl-2">{displayValue}</span>
                 )}
               </div>
 
-              {isPlotEffectivelyVisible && (
-                availabilityStatus === 'available' ? (
-                  <div className="flex-grow h-[80px]"> 
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                        <YAxis
-                          domain={['auto', 'auto']}
-                          tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString() : String(value)}
-                          tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
-                          stroke="hsl(var(--border))"
-                          width={45}
-                          axisLine={false}
-                          tickLine={false}
-                        />
-                        <XAxis dataKey="time" hide />
-                        <Line
-                          type="monotone"
-                          dataKey={config.dataKey as string}
-                          stroke={`hsl(var(${config.color}))`}
-                          strokeWidth={1.5}
-                          dot={false}
-                          connectNulls
-                          name={config.title}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <div className="flex-grow h-[80px] flex items-center justify-center text-xs text-red-500 italic">
-                    Data unavailable for this plot.
-                  </div>
-                )
+              {availabilityStatus === 'available' ? (
+                <div className="flex-grow h-[80px]"> 
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                      <YAxis
+                        domain={['auto', 'auto']}
+                        tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString() : String(value)}
+                        tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
+                        stroke="hsl(var(--border))"
+                        width={45}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <XAxis dataKey="time" hide />
+                      <Line
+                        type="monotone"
+                        dataKey={config.dataKey as string}
+                        stroke={`hsl(var(${config.color}))`}
+                        strokeWidth={1.5}
+                        dot={false}
+                        connectNulls
+                        name={config.title}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="flex-grow h-[80px] flex items-center justify-center text-xs text-red-500 italic">
+                  Data unavailable for this plot.
+                </div>
               )}
             </div>
           );
@@ -259,7 +231,6 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
                 height={30}
                 dy={5}
               />
-              {/* Render a transparent line for the Brush to have a data reference */}
               <Line dataKey={plotConfigs.find(p => plotVisibility[p.dataKey] && seriesDataAvailability[p.dataKey] === 'available')?.dataKey || plotConfigs[0].dataKey} stroke="transparent" dot={false} /> 
               <Brush
                 dataKey="time"
