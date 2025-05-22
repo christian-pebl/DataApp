@@ -7,6 +7,7 @@ import { z } from "zod";
 import { Thermometer, Wind, Cloud, MapPin, CalendarDays, Search } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { subDays, formatISO } from "date-fns";
+import React, { useEffect } from "react"; // Added useEffect
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +23,7 @@ export const weatherVariables = [
   { value: "cloudCover", label: "Cloud Cover", icon: Cloud },
 ] as const;
 
-type WeatherVariableValue = typeof weatherVariables[number]['value'];
+export type WeatherVariableValue = typeof weatherVariables[number]['value'];
 
 export const weatherControlsSchema = z.object({
   latitude: z.coerce.number().min(-90, "Min -90").max(90, "Max 90"),
@@ -32,7 +33,7 @@ export const weatherControlsSchema = z.object({
     to: z.date({ required_error: "End date is required."}),
   }).refine(data => data.from && data.to && data.from <= data.to, {
     message: "Start date must be before or same as end date.",
-    path: ["dateRange"], // Path to show error under dateRange field
+    path: ["dateRange"], 
   }),
   variable: z.enum(weatherVariables.map(v => v.value) as [WeatherVariableValue, ...WeatherVariableValue[]]),
 });
@@ -42,13 +43,14 @@ export type WeatherControlsFormValues = z.infer<typeof weatherControlsSchema>;
 interface WeatherControlsProps {
   onSubmit: (values: {latitude: number, longitude: number, startDate: string, endDate: string, variable: WeatherVariableValue}) => void;
   isLoading: boolean;
+  mapSelectedCoords?: { lat: number; lon: number } | null; // New prop
 }
 
-export function WeatherControls({ onSubmit, isLoading }: WeatherControlsProps) {
+export function WeatherControls({ onSubmit, isLoading, mapSelectedCoords }: WeatherControlsProps) {
   const form = useForm<WeatherControlsFormValues>({
     resolver: zodResolver(weatherControlsSchema),
     defaultValues: {
-      latitude: 34.0522, // Default to Los Angeles
+      latitude: 34.0522, 
       longitude: -118.2437,
       dateRange: {
         from: subDays(new Date(), 7),
@@ -57,6 +59,13 @@ export function WeatherControls({ onSubmit, isLoading }: WeatherControlsProps) {
       variable: "temperature",
     },
   });
+
+  useEffect(() => {
+    if (mapSelectedCoords) {
+      form.setValue("latitude", mapSelectedCoords.lat, { shouldValidate: true });
+      form.setValue("longitude", mapSelectedCoords.lon, { shouldValidate: true });
+    }
+  }, [mapSelectedCoords, form]);
 
   function handleSubmit(values: WeatherControlsFormValues) {
     if (!values.dateRange.from || !values.dateRange.to) {

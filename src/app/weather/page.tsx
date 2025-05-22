@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Image from "next/image"; // Import next/image
+// Removed Image from "next/image" as placeholder is replaced
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SunMoon, CloudSun, LayoutGrid, AlertTriangle, Info } from "lucide-react";
@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePathname } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-
+import { InteractiveMap } from "@/components/weather/InteractiveMap"; // New Import
 
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
@@ -24,6 +24,7 @@ export default function WeatherPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentSelectedVariable, setCurrentSelectedVariable] = useState<string>("temperature");
+  const [mapSelectedCoords, setMapSelectedCoords] = useState<{ lat: number; lon: number } | null>(null); // New state for map coords
   const { toast } = useToast();
   const pathname = usePathname();
 
@@ -51,6 +52,11 @@ export default function WeatherPage() {
 
   const toggleTheme = () => {
     setTheme(theme === "light" ? "dark" : "light");
+  };
+
+  const handleMapLocationSelect = (coords: { lat: number; lon: number }) => {
+    setMapSelectedCoords(coords);
+    toast({ title: "Location Set", description: `Latitude: ${coords.lat}, Longitude: ${coords.lon} selected from map.` });
   };
 
   const handleFetchWeather = async (values: {latitude: number, longitude: number, startDate: string, endDate: string, variable: WeatherVariableValue}) => {
@@ -142,20 +148,13 @@ export default function WeatherPage() {
             <div className="mb-4 p-4 border rounded-lg shadow-sm bg-card">
               <h3 className="text-md font-semibold mb-2 text-center">Location Selector</h3>
               <div className="aspect-[4/3] w-full bg-muted rounded-md flex items-center justify-center text-muted-foreground text-sm overflow-hidden mb-2">
-                <Image 
-                  src="https://placehold.co/600x400.png" // Placeholder for map
-                  alt="Map placeholder" 
-                  width={600} 
-                  height={400}
-                  className="object-cover w-full h-full"
-                  data-ai-hint="world map"
-                />
+                <InteractiveMap onLocationSelect={handleMapLocationSelect} />
               </div>
               <p className="text-xs text-center text-muted-foreground mb-3">
-                (Interactive map coming soon! Use lat/lon below.)
+                Click the area above to set a sample location, or enter lat/lon below.
               </p>
             </div>
-            <WeatherControls onSubmit={handleFetchWeather} isLoading={isLoading} />
+            <WeatherControls onSubmit={handleFetchWeather} isLoading={isLoading} mapSelectedCoords={mapSelectedCoords} />
           </div>
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-lg h-full">
@@ -209,5 +208,3 @@ export default function WeatherPage() {
     </div>
   );
 }
-
-    
