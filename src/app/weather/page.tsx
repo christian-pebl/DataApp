@@ -16,12 +16,11 @@ import { useToast } from "@/hooks/use-toast";
 import { usePathname } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-// import { InteractiveMap } from "@/components/weather/InteractiveMap"; // Remove static import
 
 // Dynamically import InteractiveMap with SSR disabled
 const InteractiveMap = dynamic(
   () => import('@/components/weather/InteractiveMap').then(mod => mod.InteractiveMap),
-  { 
+  {
     ssr: false,
     loading: () => <div className="w-full h-full flex items-center justify-center bg-muted text-muted-foreground"><p>Loading map...</p></div>
   }
@@ -63,10 +62,10 @@ export default function WeatherPage() {
     setTheme(theme === "light" ? "dark" : "light");
   };
 
-  const handleMapLocationSelect = (coords: { lat: number; lon: number }) => {
+  const handleMapLocationSelect = React.useCallback((coords: { lat: number; lon: number }) => {
     setMapSelectedCoords(coords);
     toast({ title: "Location Set", description: `Latitude: ${coords.lat.toFixed(4)}, Longitude: ${coords.lon.toFixed(4)} selected from map.` });
-  };
+  }, [toast]); // setMapSelectedCoords is stable, toast should also be stable from useToast
 
   const handleFetchWeather = async (values: {latitude: number, longitude: number, startDate: string, endDate: string, variable: WeatherVariableValue}) => {
     setIsLoading(true);
@@ -96,7 +95,7 @@ export default function WeatherPage() {
       toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch weather data." });
     }
   };
-  
+
   const chartCompatibleData = weatherData as Array<{[key: string]: string | number | undefined; time: string | number}>;
 
   return (
@@ -120,7 +119,7 @@ export default function WeatherPage() {
                   <p>Data Explorer</p>
                 </TooltipContent>
               </Tooltip>
-              
+
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link href="/weather" passHref>
@@ -135,7 +134,7 @@ export default function WeatherPage() {
               </Tooltip>
 
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
-              
+
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme (Settings)">
@@ -199,7 +198,7 @@ export default function WeatherPage() {
                     plottableSeries={[currentSelectedVariable]}
                     timeAxisLabel="Date / Time"
                     plotTitle={`Weather Data: ${currentSelectedVariable}`}
-                    chartRenderHeight={400} 
+                    chartRenderHeight={400}
                   />
                 )}
               </CardContent>
