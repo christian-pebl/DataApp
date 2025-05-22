@@ -30,15 +30,22 @@ const MapEventsHandler = ({ onLocationSelect }: { onLocationSelect: InteractiveM
 
 export function InteractiveMap({ onLocationSelect, selectedCoords }: InteractiveMapProps) {
   const mapRef = useRef<L.Map | null>(null);
-  const [position, setPosition] = React.useState<[number, number]>(
-    selectedCoords ? [selectedCoords.lat, selectedCoords.lon] : [37.7749, -122.4194] // Default to SF or selected
-  );
+
+  // Determine the initial center for the map. This won't change on re-renders unless the component is remounted.
+  const initialCenter: [number, number] = React.useMemo(() => {
+    return selectedCoords
+      ? [selectedCoords.lat, selectedCoords.lon]
+      : [37.7749, -122.4194]; // Default to SF
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array means this is calculated once on mount
 
   useEffect(() => {
-    if (selectedCoords) {
+    // This effect handles updates to the map's view when selectedCoords prop changes
+    if (selectedCoords && mapRef.current) {
       const newPos: [number, number] = [selectedCoords.lat, selectedCoords.lon];
-      setPosition(newPos);
-      if (mapRef.current) {
+      const currentMapCenter = mapRef.current.getCenter();
+      // Only call setView if the new coordinates are different from the current map center
+      if (currentMapCenter.lat !== newPos[0] || currentMapCenter.lng !== newPos[1]) {
         mapRef.current.setView(newPos, mapRef.current.getZoom());
       }
     }
@@ -47,7 +54,7 @@ export function InteractiveMap({ onLocationSelect, selectedCoords }: Interactive
 
   return (
     <MapContainer 
-        center={position} 
+        center={initialCenter} // Use the memoized initialCenter
         zoom={10} 
         scrollWheelZoom={false} 
         style={{ height: '100%', width: '100%' }}
