@@ -63,10 +63,8 @@ export default function WeatherPage() {
   const { toast } = useToast();
   const pathname = usePathname();
 
-  const [searchTerm, setSearchTerm] = useState("man");
-  const [initialCoords, setInitialCoords] = useState<SearchedCoords | null>(
-    manchesterLocation ? { latitude: manchesterLocation.lat, longitude: manchesterLocation.lon } : null
-  );
+  const [searchTerm, setSearchTerm] = useState(""); // Changed from "man" to ""
+  const [initialCoords, setInitialCoords] = useState<SearchedCoords | null>(null); // Changed from manchesterLocation
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
