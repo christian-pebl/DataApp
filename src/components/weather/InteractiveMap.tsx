@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from 'react'; // Added useCallback
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents, Popup } from 'react-leaflet';
 import L from 'leaflet'; // Import Leaflet library for icon customization
 
@@ -32,23 +32,26 @@ export function InteractiveMap({ onLocationSelect, selectedCoords }: Interactive
   const mapRef = useRef<L.Map | null>(null);
   const [renderMap, setRenderMap] = useState(false);
 
+  // initialCenter should reflect the current selectedCoords if the map needs to be re-initialized
   const initialCenter: [number, number] = React.useMemo(() => {
     return selectedCoords
       ? [selectedCoords.lat, selectedCoords.lon]
       : [37.7749, -122.4194]; // Default to SF
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [selectedCoords]); // Make initialCenter dependent on selectedCoords
 
 
   useEffect(() => {
+    // Ensures map rendering logic runs only on the client side
     setRenderMap(true);
   }, []);
 
+  // This effect updates the map view when selectedCoords prop changes on an already initialized map
   useEffect(() => {
     if (renderMap && selectedCoords && mapRef.current) {
       const newPos: [number, number] = [selectedCoords.lat, selectedCoords.lon];
       const currentMapCenter = mapRef.current.getCenter();
 
+      // Check if the view actually needs to change to avoid unnecessary setView calls
       if (currentMapCenter.lat.toFixed(5) !== newPos[0].toFixed(5) ||
           currentMapCenter.lng.toFixed(5) !== newPos[1].toFixed(5)) {
         mapRef.current.setView(newPos, mapRef.current.getZoom());
@@ -66,11 +69,11 @@ export function InteractiveMap({ onLocationSelect, selectedCoords }: Interactive
 
   return (
     <MapContainer
-        center={initialCenter}
+        center={initialCenter} // Use the potentially updated initialCenter for initialization/re-initialization
         zoom={10}
         scrollWheelZoom={false}
         style={{ height: '100%', width: '100%' }}
-        whenCreated={handleWhenCreated} // Use memoized callback
+        whenCreated={handleWhenCreated}
         className='rounded-md'
     >
       <TileLayer
