@@ -7,11 +7,11 @@ import { z } from "zod";
 import { Thermometer, Wind, Cloud, MapPin, CalendarDays, Search } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { subDays, formatISO } from "date-fns";
-import React from "react";
+import React, { useEffect } from "react"; // Added useEffect
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label"; // Label is not used directly in JSX, but FormLabel is from Form
+// Label is not used directly in JSX, but FormLabel is from Form
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
@@ -40,17 +40,22 @@ export const weatherControlsSchema = z.object({
 
 export type WeatherControlsFormValues = z.infer<typeof weatherControlsSchema>;
 
+interface SearchedCoords {
+  latitude: number;
+  longitude: number;
+}
+
 interface WeatherControlsProps {
   onSubmit: (values: {latitude: number, longitude: number, startDate: string, endDate: string, variable: WeatherVariableValue}) => void;
   isLoading: boolean;
-  // mapSelectedCoords prop removed
+  initialCoords?: SearchedCoords | null;
 }
 
-export function WeatherControls({ onSubmit, isLoading }: WeatherControlsProps) {
+export function WeatherControls({ onSubmit, isLoading, initialCoords }: WeatherControlsProps) {
   const form = useForm<WeatherControlsFormValues>({
     resolver: zodResolver(weatherControlsSchema),
     defaultValues: {
-      latitude: 34.0522, 
+      latitude: 34.0522, // Default Los Angeles
       longitude: -118.2437,
       dateRange: {
         from: subDays(new Date(), 7),
@@ -60,7 +65,12 @@ export function WeatherControls({ onSubmit, isLoading }: WeatherControlsProps) {
     },
   });
 
-  // useEffect hook for mapSelectedCoords removed
+  useEffect(() => {
+    if (initialCoords) {
+      form.setValue("latitude", initialCoords.latitude, { shouldValidate: true });
+      form.setValue("longitude", initialCoords.longitude, { shouldValidate: true });
+    }
+  }, [initialCoords, form]);
 
   function handleSubmit(values: WeatherControlsFormValues) {
     if (!values.dateRange.from || !values.dateRange.to) {
@@ -78,10 +88,10 @@ export function WeatherControls({ onSubmit, isLoading }: WeatherControlsProps) {
     <Card className="w-full shadow-lg">
       <CardHeader className="p-4">
         <CardTitle className="text-lg flex items-center gap-2">
-            <MapPin className="h-5 w-5 text-primary" /> Weather Data Explorer
+            <Search className="h-5 w-5 text-primary" /> Data Criteria
         </CardTitle>
         <CardDescription className="text-xs">
-          Select a location, date range, and variable to plot weather data.
+          Specify location, date, and variable to plot weather data.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-4">
@@ -123,7 +133,7 @@ export function WeatherControls({ onSubmit, isLoading }: WeatherControlsProps) {
                 <FormItem className="flex flex-col">
                   <FormLabel className="mb-1">Date Range</FormLabel>
                   <DatePickerWithRange
-                    date={field.value as DateRange | undefined}
+                    date={field.value as DateRange | undefined} // Cast as react-day-picker's DateRange
                     onDateChange={field.onChange}
                     disabled={isLoading}
                   />
@@ -174,3 +184,5 @@ export function WeatherControls({ onSubmit, isLoading }: WeatherControlsProps) {
     </Card>
   );
 }
+
+    

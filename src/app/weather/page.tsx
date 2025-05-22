@@ -1,11 +1,10 @@
 
 "use client";
 
-import React, { useState, useEffect } from "react";
-import Image from "next/image"; // For placeholder
+import React, { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SunMoon, CloudSun, LayoutGrid, AlertTriangle, Info } from "lucide-react";
+import { SunMoon, CloudSun, LayoutGrid, AlertTriangle, Info, Search as SearchIcon, MapPin } from "lucide-react"; // Added SearchIcon
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import type { WeatherControlsFormValues, WeatherVariableValue } from "@/components/weather/WeatherControls";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
@@ -16,6 +15,21 @@ import { useToast } from "@/hooks/use-toast";
 import { usePathname } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input"; // Added Input
+
+// Simulated geocoding data
+const knownLocations: { [key: string]: { lat: number; lon: number; name: string } } = {
+  "london": { lat: 51.5074, lon: -0.1278, name: "London" },
+  "manchester": { lat: 53.4808, lon: -2.2426, name: "Manchester" },
+  "edinburgh": { lat: 55.9533, lon: -3.1883, name: "Edinburgh" },
+  "eh1 1aa": { lat: 55.9522, lon: -3.1900, name: "Edinburgh (EH1 1AA)" }, // Example UK postcode
+  "birmingham": { lat: 52.4862, lon: -1.8904, name: "Birmingham" },
+};
+
+interface SearchedCoords {
+  latitude: number;
+  longitude: number;
+}
 
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
@@ -25,6 +39,10 @@ export default function WeatherPage() {
   const [currentSelectedVariable, setCurrentSelectedVariable] = useState<string>("temperature");
   const { toast } = useToast();
   const pathname = usePathname();
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [initialCoords, setInitialCoords] = useState<SearchedCoords | null>(null);
+
 
   // Theme management
   useEffect(() => {
@@ -73,13 +91,36 @@ export default function WeatherPage() {
       } else if (result.data.length === 0) {
         toast({ title: "No Data", description: "No weather data found for the selected criteria." });
       } else {
-        toast({ title: "Success", description: "Weather data fetched successfully." });
+        // Toast for successful data fetch
+        const successToast = toast({ title: "Success", description: "Weather data fetched successfully." });
+        setTimeout(() => {
+            if (successToast && successToast.id) {
+             toast().dismiss(successToast.id);
+            }
+        }, 2000);
       }
     } else {
       setError(result.error || "Failed to fetch weather data.");
       toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch weather data." });
     }
   };
+  
+  const handleLocationSearch = () => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) {
+      toast({ variant: "destructive", title: "Search Error", description: "Please enter a location to search." });
+      return;
+    }
+    const location = knownLocations[term];
+    if (location) {
+      setInitialCoords({ latitude: location.lat, longitude: location.lon });
+      toast({ title: "Location Found", description: `Coordinates for ${location.name} updated.` });
+    } else {
+      setInitialCoords(null); // Clear if previous search was successful
+      toast({ variant: "destructive", title: "Location Not Found", description: "Location not found. Try a major UK city or postcode, or enter coordinates manually." });
+    }
+  };
+
 
   const chartCompatibleData = weatherData as Array<{[key: string]: string | number | undefined; time: string | number}>;
 
@@ -138,24 +179,33 @@ export default function WeatherPage() {
       <main className="flex-grow container mx-auto p-3 md:p-4">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
           <div className="md:col-span-4 lg:col-span-3">
-            <div className="mb-4 p-4 border rounded-lg shadow-sm bg-card">
-              <h3 className="text-md font-semibold mb-2 text-center">Location Selector</h3>
-              <div className="aspect-[4/3] w-full bg-muted rounded-md flex items-center justify-center text-muted-foreground text-sm overflow-hidden mb-2">
-                {/* Placeholder for map */}
-                <Image
-                  src="https://placehold.co/600x450.png" // Placeholder image URL
-                  alt="Map placeholder"
-                  width={600}
-                  height={450}
-                  className="object-cover w-full h-full"
-                  data-ai-hint="world map"
+            <Card className="mb-4 p-4 border rounded-lg shadow-sm bg-card">
+              <h3 className="text-md font-semibold mb-2 text-center flex items-center justify-center gap-2">
+                <MapPin className="h-5 w-5 text-primary" /> Location Selector
+              </h3>
+              <div className="flex items-center gap-2 mb-2">
+                <Input
+                  type="text"
+                  placeholder="Search UK place or postcode..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleLocationSearch(); }}
+                  className="h-9 text-sm"
                 />
+                <Button onClick={handleLocationSearch} size="icon" variant="outline" className="h-9 w-9 shrink-0">
+                  <SearchIcon className="h-4 w-4" />
+                  <span className="sr-only">Search</span>
+                </Button>
               </div>
-              <p className="text-xs text-center text-muted-foreground mb-3">
-                Enter latitude/longitude below to specify a location.
+              <p className="text-xs text-center text-muted-foreground mb-1">
+                Or enter latitude/longitude below.
               </p>
-            </div>
-            <WeatherControls onSubmit={handleFetchWeather} isLoading={isLoading} />
+            </Card>
+            <WeatherControls 
+              onSubmit={handleFetchWeather} 
+              isLoading={isLoading}
+              initialCoords={initialCoords} 
+            />
           </div>
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-lg h-full">
@@ -164,7 +214,7 @@ export default function WeatherPage() {
                   Weather Plot: {currentSelectedVariable.charAt(0).toUpperCase() + currentSelectedVariable.slice(1)}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-2 h-[calc(100%-4rem)]">
+              <CardContent className="p-2 h-[calc(100%-4rem)]"> {/* Adjust height calculation if header padding changes */}
                 {isLoading && (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mr-2"></div>
@@ -191,7 +241,7 @@ export default function WeatherPage() {
                     plottableSeries={[currentSelectedVariable]}
                     timeAxisLabel="Date / Time"
                     plotTitle={`Weather Data: ${currentSelectedVariable}`}
-                    chartRenderHeight={400}
+                    chartRenderHeight={400} // Example height, adjust as needed
                   />
                 )}
               </CardContent>
@@ -209,3 +259,5 @@ export default function WeatherPage() {
     </div>
   );
 }
+
+    
