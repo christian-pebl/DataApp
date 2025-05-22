@@ -14,12 +14,23 @@ export const WeatherDataPointSchema = z.object({
 });
 export type WeatherDataPoint = z.infer<typeof WeatherDataPointSchema>;
 
+// Helper function for robust date string validation
+const isValidDateString = (val: string): boolean => {
+  try {
+    // Check if parseISO results in a valid date and valueOf returns a number
+    return !isNaN(parseISO(val).valueOf());
+  } catch (e) {
+    // If parseISO throws (e.g., for a completely malformed string), it's not valid
+    return false;
+  }
+};
+
 // Define input schema for the server action
 export const FetchWeatherInputSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
-  startDate: z.string().refine((val) => !isNaN(parseISO(val).valueOf()), { message: "Invalid start date" }),
-  endDate: z.string().refine((val) => !isNaN(parseISO(val).valueOf()), { message: "Invalid end date" }),
+  startDate: z.string().refine(isValidDateString, { message: "Invalid start date format or value." }),
+  endDate: z.string().refine(isValidDateString, { message: "Invalid end date format or value." }),
 });
 export type FetchWeatherInput = z.infer<typeof FetchWeatherInputSchema>;
 
@@ -29,8 +40,8 @@ async function fetchWeatherDataFromLocalAPI(input: FetchWeatherInput): Promise<W
 
   const { startDate, endDate } = input;
   const data: WeatherDataPoint[] = [];
-  let currentDate = parseISO(startDate);
-  const finalDate = parseISO(endDate);
+  let currentDate = parseISO(startDate); // Assume startDate is valid by this point due to schema validation
+  const finalDate = parseISO(endDate);   // Assume endDate is valid by this point
 
   if (currentDate > finalDate) {
     return [];
@@ -64,6 +75,8 @@ export async function fetchWeatherDataAction(
       return { success: false, error: `Invalid input: ${errorMessages}` };
     }
     
+    // Additional check, although refine should catch individual invalid dates.
+    // This ensures that valid dates are also logically ordered.
     if (parseISO(validatedInput.data.startDate) > parseISO(validatedInput.data.endDate)) {
         return { success: false, error: "Start date cannot be after end date." };
     }
@@ -75,6 +88,10 @@ export async function fetchWeatherDataAction(
     return { success: true, data: weatherData };
   } catch (e) {
     console.error("Error fetching weather data:", e);
-    return { success: false, error: e instanceof Error ? e.message : "An unknown error occurred while fetching weather data." };
+    // Ensure a proper error message is returned
+    const errorMessage = e instanceof Error ? e.message : "An unknown error occurred while fetching weather data.";
+    // It's good practice to log the actual error object for server-side debugging
+    // if (e instanceof Error) console.error(e.stack); 
+    return { success: false, error: errorMessage };
   }
 }
