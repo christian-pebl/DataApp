@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { SunMoon, LayoutGrid, Info, MapPin, CloudSun, Thermometer, Wind, Cloud, Compass } from "lucide-react";
+import { SunMoon, LayoutGrid, Info, MapPin, CloudSun, Thermometer, Wind, Cloud, Compass, Loader2 } from "lucide-react"; // Added Loader2
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import { fetchWeatherDataAction } from "./actions";
 import type { WeatherDataPoint } from "./shared";
@@ -15,11 +15,12 @@ import { usePathname } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid";
+import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid"; // Corrected import path
 import type { DateRange } from "react-day-picker";
 import { formatISO, subDays } from "date-fns";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import Image from 'next/image'; // Import next/image
 
 const WeatherPlotsGrid = dynamic<WeatherPlotsGridProps>(
   () => import('@/components/weather/WeatherPlotsGrid').then(mod => mod.WeatherPlotsGrid),
@@ -118,30 +119,32 @@ export default function WeatherPage() {
     setTheme(theme === "light" ? "dark" : "light");
   };
 
-  const handleFetchWeather = useCallback(async () => {
-    if (!initialCoords) {
+  const handleFetchWeather = useCallback(async (currentCoords?: SearchedCoords, currentDates?: DateRange) => {
+    const coordsToUse = currentCoords || initialCoords;
+    const datesToUse = currentDates || dateRange;
+
+    if (!coordsToUse) {
       toast({ variant: "destructive", title: "Missing Location", description: "Please search and select a location first." });
       return;
     }
-    if (!dateRange || !dateRange.from || !dateRange.to) {
+    if (!datesToUse || !datesToUse.from || !datesToUse.to) {
       toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range."});
       return;
     }
-    if (dateRange.from > dateRange.to) {
+    if (datesToUse.from > datesToUse.to) {
         toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
         return;
     }
 
     setIsLoading(true);
     setError(null);
-    // Do not clear weatherData here, so previous data remains if new fetch fails or returns empty
-    // setWeatherData([]); 
+    // setWeatherData([]); // Optionally clear previous data, or keep it for comparison / if new fetch fails
 
     const result = await fetchWeatherDataAction({
-      latitude: initialCoords.latitude,
-      longitude: initialCoords.longitude,
-      startDate: formatISO(dateRange.from),
-      endDate: formatISO(dateRange.to),
+      latitude: coordsToUse.latitude,
+      longitude: coordsToUse.longitude,
+      startDate: formatISO(datesToUse.from),
+      endDate: formatISO(datesToUse.to),
     });
 
     setIsLoading(false);
@@ -164,7 +167,7 @@ export default function WeatherPage() {
       toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch weather data." });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialCoords, dateRange, toast]); 
+  }, [initialCoords, dateRange, toast]); // Removed handleFetchWeather from its own deps
 
   const handleLocationSearchAndFetch = useCallback(async () => {
     const term = searchTerm.trim().toLowerCase();
@@ -172,33 +175,43 @@ export default function WeatherPage() {
     if (!term) {
       toast({ variant: "destructive", title: "Search Error", description: "Please enter a location to search." });
       setInitialCoords(null);
-      setWeatherData([]); // Clear data if search is empty
+      setWeatherData([]); 
       return;
     }
     const locationKey = Object.keys(knownLocations).find(
       key => key.toLowerCase() === term || knownLocations[key].name.toLowerCase() === term
     );
 
+    let coordsForFetch: SearchedCoords | null = null;
     if (locationKey) {
       const location = knownLocations[locationKey];
-      setInitialCoords({ latitude: location.lat, longitude: location.lon });
-      // Trigger fetch after setting coords
-      await handleFetchWeather(); 
+      coordsForFetch = { latitude: location.lat, longitude: location.lon };
+      setInitialCoords(coordsForFetch); 
     } else {
       setInitialCoords(null);
-      setWeatherData([]); // Clear data if location not found
+      setWeatherData([]); 
       toast({ variant: "destructive", title: "Location Not Found", description: "Location not found. Try a major UK city or postcode." });
+      return; 
     }
+    
+    if (coordsForFetch && dateRange?.from && dateRange?.to) {
+      await handleFetchWeather(coordsForFetch, dateRange);
+    } else if (!coordsForFetch) {
+        toast({ variant: "destructive", title: "Location Error", description: "Could not determine coordinates for fetching data." });
+    } else {
+        toast({ variant: "destructive", title: "Date Error", description: "Please select a valid date range before fetching." });
+    }
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, toast, handleFetchWeather]); // Added handleFetchWeather to deps
+  }, [searchTerm, toast, handleFetchWeather, dateRange]);
 
   useEffect(() => {
     if (initialCoords && !initialFetchDone.current && !isLoading && !error) {
-      handleFetchWeather();
+      handleFetchWeather(initialCoords, dateRange); // Pass current dateRange
       initialFetchDone.current = true;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialCoords]);
+  }, [initialCoords, dateRange]); // Added dateRange to deps
 
   useEffect(() => {
     if (searchTerm.trim() === "") {
@@ -219,14 +232,18 @@ export default function WeatherPage() {
   const handleSuggestionClick = useCallback(async (suggestionKey: string) => {
     const location = knownLocations[suggestionKey];
     if (location) {
-      setSearchTerm(location.name); // Update search term to clicked suggestion
-      setInitialCoords({ latitude: location.lat, longitude: location.lon });
+      setSearchTerm(location.name); 
+      const newCoords = { latitude: location.lat, longitude: location.lon };
+      setInitialCoords(newCoords);
       setShowSuggestions(false);
-      // Trigger fetch after setting coords from suggestion
-      await handleFetchWeather(); 
+      if (dateRange?.from && dateRange?.to) {
+          await handleFetchWeather(newCoords, dateRange);
+      } else {
+          toast({ variant: "destructive", title: "Date Error", description: "Please select a valid date range before fetching." });
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast, handleFetchWeather]);
+  }, [toast, handleFetchWeather, dateRange]);
 
   const handleInputBlur = () => {
     setTimeout(() => {
@@ -244,13 +261,13 @@ export default function WeatherPage() {
         <TooltipProvider>
           <div className="container flex h-14 items-center justify-between px-3 md:px-4">
             <Link href="/weather" passHref>
-              <h1 className="text-2xl font-bold text-primary cursor-pointer">Paddle Data App</h1>
+              <h1 className="text-2xl font-bold font-mono text-foreground cursor-pointer">PPBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link href="/weather" passHref> 
-                    <Button variant={pathname === '/' || pathname.startsWith('/explorer') ? "secondary" : "ghost"} size="icon" aria-label="Data Explorer">
+                    <Button variant={pathname === '/weather' ? "secondary" : "ghost"} size="icon" aria-label="Data Explorer">
                       <LayoutGrid className="h-5 w-5" />
                     </Button>
                   </Link>
@@ -277,7 +294,7 @@ export default function WeatherPage() {
 
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme (Settings)">
+                  <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme">
                     <SunMoon className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
@@ -293,7 +310,7 @@ export default function WeatherPage() {
       <main className="flex-grow container mx-auto p-3 md:p-4">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
           <div className="md:col-span-4 lg:col-span-3 space-y-4">
-            <Card className="p-4 border rounded-lg shadow-sm bg-card">
+             <Card className="p-4 border rounded-lg shadow-sm bg-card">
               <h3 className="text-md font-semibold mb-2 text-center flex items-center justify-center gap-2">
                 <MapPin className="h-5 w-5 text-primary" /> Location & Date
               </h3>
@@ -311,7 +328,7 @@ export default function WeatherPage() {
                   onBlur={handleInputBlur}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
-                      handleLocationSearchAndFetch(); // This now also fetches
+                      handleLocationSearchAndFetch(); 
                       setShowSuggestions(false);
                     }
                   }}
@@ -325,7 +342,7 @@ export default function WeatherPage() {
                         type="button"
                         className="w-full text-left px-3 py-2 text-sm hover:bg-muted focus:bg-muted focus:outline-none"
                         onClick={() => handleSuggestionClick(suggestion.key)}
-                        onMouseDown={(e) => e.preventDefault()} // Prevents blur from hiding suggestions before click
+                        onMouseDown={(e) => e.preventDefault()} 
                       >
                         {suggestion.name}
                       </button>
@@ -338,16 +355,17 @@ export default function WeatherPage() {
                   Lat: {initialCoords.latitude.toFixed(4)}, Lon: {initialCoords.longitude.toFixed(4)}
                 </p>
               )}
-              <WeatherControls
+               <WeatherControls
                   dateRange={dateRange}
                   onDateChange={setDateRange}
-                  isLoading={isLoading} // Pass isLoading to disable date picker if needed
+                  isLoading={isLoading} 
               />
                <Button 
                   onClick={handleLocationSearchAndFetch} 
                   disabled={isLoading || !searchTerm} 
                   className="w-full h-9 text-sm mt-3"
                 >
+                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   {isLoading ? "Fetching..." : "Search & Fetch Weather"}
               </Button>
             </Card>

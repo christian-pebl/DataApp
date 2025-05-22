@@ -3,7 +3,6 @@ import type {Metadata} from 'next';
 import { Inter, Roboto_Mono } from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
-// import 'leaflet/dist/leaflet.css'; // Removed this line
 
 
 const inter = Inter({
@@ -17,7 +16,7 @@ const robotoMono = Roboto_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Paddle Data App',
+  title: 'PPBL data app',
   description: 'Weather data visualization and analysis.',
   icons: [],
 };
