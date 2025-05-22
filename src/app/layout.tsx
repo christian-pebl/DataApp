@@ -3,6 +3,7 @@ import type {Metadata} from 'next';
 import { Inter, Roboto_Mono } from 'next/font/google'; // Changed from Geist to Inter and Roboto_Mono
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
+import 'leaflet/dist/leaflet.css'; // Import Leaflet CSS
 
 const inter = Inter({ // Changed from Geist
   subsets: ['latin'],
@@ -17,7 +18,7 @@ const robotoMono = Roboto_Mono({ // Changed from Geist_Mono
 export const metadata: Metadata = {
   title: 'DataFlow',
   description: 'Visualize your time series data with ease.',
-  icons: null, // Explicitly set icons to null
+  icons: [],
 };
 
 export default function RootLayout({
