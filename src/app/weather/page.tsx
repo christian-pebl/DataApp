@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { SunMoon, LayoutGrid, Info, MapPin, CloudSun, Thermometer, Wind, Cloud, Compass, Loader2 } from "lucide-react";
+import { SunMoon, LayoutGrid, Info, MapPin, CloudSun, Thermometer, Wind, Cloud, Compass, Loader2, Search } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import { fetchWeatherDataAction } from "./actions";
 import type { WeatherDataPoint } from "./shared";
@@ -262,8 +262,8 @@ export default function WeatherPage() {
             <div className="flex items-center gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Link href="/weather" passHref> {/* Assuming CSV page will be moved or this becomes a general data page later */}
-                    <Button variant={"ghost"} size="icon" aria-label="Data Explorer"> {/* Always ghost as this page is weather */}
+                  <Link href="/weather" passHref> 
+                    <Button variant={"ghost"} size="icon" aria-label="Data Explorer">
                       <LayoutGrid className="h-5 w-5" />
                     </Button>
                   </Link>
@@ -361,31 +361,9 @@ export default function WeatherPage() {
                   disabled={isLoading || !searchTerm} 
                   className="w-full h-9 text-sm mt-3"
                 >
-                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
                   {isLoading ? "Fetching..." : "Search & Fetch Weather"}
               </Button>
-            </Card>
-
-            <Card className="p-4 border rounded-lg shadow-sm bg-card">
-                <h3 className="text-md font-semibold mb-3 text-center">Display Plots</h3>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                    {(Object.keys(plotVisibility) as PlotVisibilityKeys[]).map((key) => {
-                        const IconComponent = plotConfigIcons[key];
-                        return (
-                            <div key={key} className="flex items-center space-x-2">
-                                <Checkbox
-                                    id={`visibility-${key}`}
-                                    checked={plotVisibility[key]}
-                                    onCheckedChange={(checked) => handlePlotVisibilityChange(key, !!checked)}
-                                />
-                                <Label htmlFor={`visibility-${key}`} className="text-sm font-normal capitalize cursor-pointer flex items-center gap-1.5">
-                                    {IconComponent && <IconComponent className="h-4 w-4 text-muted-foreground" />}
-                                    {key.replace(/([A-Z])/g, ' $1').trim()}
-                                </Label>
-                            </div>
-                        );
-                    })}
-                </div>
             </Card>
           </div>
 
@@ -393,11 +371,31 @@ export default function WeatherPage() {
             <Card className="shadow-lg h-full">
               <CardHeader className="p-3">
                 <CardTitle className="text-md">
-                  Historical Weather Data
+                  Data
                 </CardTitle>
-                 <CardDescription className="text-xs">Select location and date range, then click "Search & Fetch Weather".</CardDescription>
+                <div className="mt-2">
+                    <h4 className="text-sm font-medium mb-2 text-muted-foreground">Display Plots</h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2">
+                        {(Object.keys(plotVisibility) as PlotVisibilityKeys[]).map((key) => {
+                            const IconComponent = plotConfigIcons[key];
+                            return (
+                                <div key={key} className="flex items-center space-x-2">
+                                    <Checkbox
+                                        id={`visibility-${key}`}
+                                        checked={plotVisibility[key]}
+                                        onCheckedChange={(checked) => handlePlotVisibilityChange(key, !!checked)}
+                                    />
+                                    <Label htmlFor={`visibility-${key}`} className="text-sm font-normal capitalize cursor-pointer flex items-center gap-1.5">
+                                        {IconComponent && <IconComponent className="h-4 w-4 text-muted-foreground" />}
+                                        {key.replace(/([A-Z])/g, ' $1').trim()}
+                                    </Label>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
               </CardHeader>
-              <CardContent className="p-2 h-[calc(100%-5rem)]">
+              <CardContent className="p-2 h-[calc(100%-8rem)]"> {/* Adjusted height to account for checkboxes in header */}
                 <WeatherPlotsGrid
                     weatherData={weatherData}
                     isLoading={isLoading}
@@ -419,5 +417,6 @@ export default function WeatherPage() {
     </div>
   );
 }
+    
 
     
