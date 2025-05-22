@@ -16,7 +16,7 @@ const robotoMono = Roboto_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'PPBL data app',
+  title: 'PEBL data app',
   description: 'Weather data visualization and analysis.',
   icons: [],
 };

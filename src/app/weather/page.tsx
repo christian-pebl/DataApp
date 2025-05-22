@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { SunMoon, LayoutGrid, Info, MapPin, CloudSun, Thermometer, Wind, Cloud, Compass, Loader2 } from "lucide-react"; // Added Loader2
+import { SunMoon, LayoutGrid, Info, MapPin, CloudSun, Thermometer, Wind, Cloud, Compass, Loader2 } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import { fetchWeatherDataAction } from "./actions";
 import type { WeatherDataPoint } from "./shared";
@@ -15,12 +15,12 @@ import { usePathname } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid"; // Corrected import path
+import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid";
 import type { DateRange } from "react-day-picker";
 import { formatISO, subDays } from "date-fns";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import Image from 'next/image'; // Import next/image
+import Image from 'next/image';
 
 const WeatherPlotsGrid = dynamic<WeatherPlotsGridProps>(
   () => import('@/components/weather/WeatherPlotsGrid').then(mod => mod.WeatherPlotsGrid),
@@ -138,7 +138,7 @@ export default function WeatherPage() {
 
     setIsLoading(true);
     setError(null);
-    // setWeatherData([]); // Optionally clear previous data, or keep it for comparison / if new fetch fails
+    // setWeatherData([]); 
 
     const result = await fetchWeatherDataAction({
       latitude: coordsToUse.latitude,
@@ -166,8 +166,7 @@ export default function WeatherPage() {
       setError(result.error || "Failed to fetch weather data.");
       toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch weather data." });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialCoords, dateRange, toast]); // Removed handleFetchWeather from its own deps
+  }, [initialCoords, dateRange, toast]);
 
   const handleLocationSearchAndFetch = useCallback(async () => {
     const term = searchTerm.trim().toLowerCase();
@@ -202,16 +201,14 @@ export default function WeatherPage() {
         toast({ variant: "destructive", title: "Date Error", description: "Please select a valid date range before fetching." });
     }
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, toast, handleFetchWeather, dateRange]);
 
   useEffect(() => {
     if (initialCoords && !initialFetchDone.current && !isLoading && !error) {
-      handleFetchWeather(initialCoords, dateRange); // Pass current dateRange
+      handleFetchWeather(initialCoords, dateRange);
       initialFetchDone.current = true;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialCoords, dateRange]); // Added dateRange to deps
+  }, [initialCoords, dateRange, isLoading, error, handleFetchWeather]);
 
   useEffect(() => {
     if (searchTerm.trim() === "") {
@@ -242,7 +239,6 @@ export default function WeatherPage() {
           toast({ variant: "destructive", title: "Date Error", description: "Please select a valid date range before fetching." });
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast, handleFetchWeather, dateRange]);
 
   const handleInputBlur = () => {
@@ -261,12 +257,12 @@ export default function WeatherPage() {
         <TooltipProvider>
           <div className="container flex h-14 items-center justify-between px-3 md:px-4">
             <Link href="/weather" passHref>
-              <h1 className="text-2xl font-bold font-mono text-foreground cursor-pointer">PPBL data app</h1>
+              <h1 className="text-xl font-bold font-sans text-foreground cursor-pointer">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Link href="/weather" passHref> 
+                  <Link href="/weather" passHref> {/* Assuming CSV page will be moved or this becomes a general data page later */}
                     <Button variant={pathname === '/weather' ? "secondary" : "ghost"} size="icon" aria-label="Data Explorer">
                       <LayoutGrid className="h-5 w-5" />
                     </Button>
