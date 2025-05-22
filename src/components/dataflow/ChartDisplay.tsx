@@ -22,6 +22,16 @@ interface DataPoint {
   [key: string]: string | number | undefined;
 }
 
+export interface YAxisConfig { // Export YAxisConfig
+  id: string;
+  orientation: 'left' | 'right';
+  label: string;
+  color: string; // CSS variable for stroke
+  dataKey: string; // The key in DataPoint this YAxis is for
+  unit?: string;
+}
+
+
 interface ChartDisplayProps {
   data: DataPoint[];
   plottableSeries: string[];
@@ -31,40 +41,65 @@ interface ChartDisplayProps {
   brushStartIndex?: number;
   brushEndIndex?: number;
   onBrushChange?: (newIndex: { startIndex?: number; endIndex?: number }) => void;
-  yAxisConfigs?: Array<{
-    id: string;
-    orientation: 'left' | 'right';
-    label: string;
-    color: string; // CSS variable for stroke
-    dataKey: string; // The key in DataPoint this YAxis is for
-    unit?: string;
-  }>;
+  yAxisConfigs?: YAxisConfig[]; // Made optional
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
 const INTERNAL_DEFAULT_CHART_HEIGHT = 278; 
 
-const formatXAxisTick = (timeValue: string | number): string => {
+const formatXAxisTick = (timeValue: string | number, dataForFormatting?: DataPoint[]): string => {
   try {
     if (typeof timeValue === 'string' && /^\d{2}-\d{2}-\d{2}$/.test(timeValue)) {
-      return timeValue;
+      return timeValue; // Already in YY-MM-DD from PlotInstance
     }
+    
     const date = new Date(timeValue);
     if (isNaN(date.getTime())) {
-      if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(timeValue)) {
-        const year = timeValue.substring(2, 4);
-        const month = timeValue.substring(5, 7);
-        const day = timeValue.substring(8, 10);
-        return `${year}-${month}-${day}`;
+      // Handle cases where date might already be pre-formatted or is just a string
+      if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(timeValue)) {
+        // ISO string like "2024-07-16T14:00"
+        const year = date.getFullYear().toString().slice(-2);
+        const month = ('0' + (date.getMonth() + 1)).slice(-2);
+        const day = ('0' + date.getDate()).slice(-2);
+        const hours = ('0' + date.getHours()).slice(-2);
+        const minutes = ('0' + date.getMinutes()).slice(-2);
+        
+        // Check if it's a daily tick (00:00)
+        if (date.getHours() === 0 && date.getMinutes() === 0 && (dataForFormatting?.[0]?.time === timeValue || !dataForFormatting)) {
+            return `${year}-${month}-${day}`;
+        }
+        return `${hours}:${minutes}`; // Default to H:M for hourly data
       }
-      return String(timeValue);
+      return String(timeValue); // Fallback for other string types
     }
-    // More detailed for hourly data, less detailed for daily/longer
-    const diff = data.length > 1 ? new Date(data[1].time).getTime() - new Date(data[0].time).getTime() : 0;
-    const oneDay = 24 * 60 * 60 * 1000;
 
-    if (diff < oneDay && data.length > 24) { // Show H:M if less than a day interval and many points
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit'});
+    // Determine data interval for smarter formatting
+    let isHourly = false;
+    if (dataForFormatting && dataForFormatting.length > 1) {
+        const firstTime = new Date(dataForFormatting[0].time).getTime();
+        const secondTime = new Date(dataForFormatting[1].time).getTime();
+        if (!isNaN(firstTime) && !isNaN(secondTime)) {
+            const diff = secondTime - firstTime;
+            const oneHour = 60 * 60 * 1000;
+            if (diff <= oneHour * 1.5) { // allow some flexibility for hourly data
+                isHourly = true;
+            }
+        }
+    } else if (typeof timeValue === 'string' && timeValue.includes('T')) { // Assume hourly if it's an ISO timestamp string
+        isHourly = true;
+    }
+
+
+    if (isHourly) {
+      // Show date for the first tick or if it's midnight
+      const isFirstTick = dataForFormatting && dataForFormatting.length > 0 && dataForFormatting[0].time === timeValue;
+      if (isFirstTick || (date.getHours() === 0 && date.getMinutes() === 0)) {
+        const year = date.getFullYear().toString().slice(-2);
+        const month = ('0' + (date.getMonth() + 1)).slice(-2);
+        const day = ('0' + date.getDate()).slice(-2);
+        return `${day}-${month}-${year}`; // Use DD-MM-YY for the date part on hourly data key ticks
+      }
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit'});
     } else { // Show YY-MM-DD for daily or sparser data
         const year = date.getFullYear().toString().slice(-2);
         const month = ('0' + (date.getMonth() + 1)).slice(-2);
@@ -72,7 +107,7 @@ const formatXAxisTick = (timeValue: string | number): string => {
         return `${year}-${month}-${day}`;
     }
   } catch (e) {
-    return String(timeValue);
+    return String(timeValue); // Fallback
   }
 };
 
@@ -100,7 +135,7 @@ export function ChartDisplay({
           const value = point[key];
           if (typeof value === 'string') {
             const num = parseFloat(value.replace(/,/g, ''));
-            newPoint[key] = isNaN(num) ? undefined : num; // Store as number or undefined
+            newPoint[key] = isNaN(num) ? undefined : num; 
           } else if (typeof value === 'number') {
             newPoint[key] = value;
           } else {
@@ -118,7 +153,7 @@ export function ChartDisplay({
       chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName])))
     );
   }, [chartData, plottableSeries]);
-
+  
   const visibleChartAreaHeight = chartHeightToUse * 0.85; 
 
   const clippingWrapperStyle: React.CSSProperties = {
@@ -126,9 +161,9 @@ export function ChartDisplay({
     width: '100%',
     overflow: 'hidden',
   };
-
+  
   const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
-    <div style={{ height: `${visibleChartAreaHeight}px`, width: '100%' }} className="flex flex-col items-center justify-center p-2 h-full">
+    <div style={yAxisConfigs.length > 0 ? { height: `${chartHeightToUse}px`, width: '100%'} : clippingWrapperStyle} className="flex flex-col items-center justify-center p-2 h-full">
       <div className="text-center text-muted-foreground">
         {icon}
         <p className="text-sm mt-2">{primaryText}</p>
@@ -140,12 +175,18 @@ export function ChartDisplay({
   if (!data || data.length === 0) {
     return renderNoDataMessage(<Info className="h-10 w-10 mx-auto" />, `No data loaded for ${plotTitle || 'this plot'}.`, "Fetch data to get started.");
   }
+  
+  const activeSeriesToPlot = plottableSeries.filter(seriesName =>
+    yAxisConfigs.some(config => config.dataKey === seriesName) || // If it has a Y-axis config
+    chartData.some(point => typeof point[seriesName] === 'number' && !isNaN(Number(point[seriesName]))) // Or if it has numeric data and no specific Y-axis (default behavior)
+  );
 
-  if (plottableSeries.length === 0 && yAxisConfigs.length === 0) {
-    return renderNoDataMessage(<Info className="h-10 w-10 mx-auto" />, `Please select at least one variable to plot for ${plotTitle || 'this plot'}.`);
+
+  if (activeSeriesToPlot.length === 0) {
+     return renderNoDataMessage(<Info className="h-10 w-10 mx-auto" />, `Please select at least one variable to plot with valid data for ${plotTitle || 'this plot'}.`);
   }
 
-  if (!hasAnyNumericDataForSelectedSeries && yAxisConfigs.every(config => !plottableSeries.includes(config.dataKey))) {
+  if (!hasAnyNumericDataForSelectedSeries) {
      return renderNoDataMessage(
       <Info className="h-10 w-10 mx-auto" />,
       `No valid numeric data for selected series in ${plotTitle || 'this plot'}.`,
@@ -154,19 +195,26 @@ export function ChartDisplay({
   }
   
   const yAxisOffset = (index: number) => {
-    if (index === 0) return 0; // First right axis
-    return index * 60; // Subsequent right axes offset by 60px
+    // Only apply offset to right-oriented axes after the first one on the right
+    const rightAxes = yAxisConfigs.filter(c => c.orientation === 'right');
+    const currentAxisIndexOnRight = rightAxes.findIndex(c => c.id === yAxisConfigs[index]?.id);
+     if (yAxisConfigs[index]?.orientation === 'right' && currentAxisIndexOnRight > 0) {
+        return currentAxisIndexOnRight * 60; 
+    }
+    return 0;
   };
 
 
   return (
+    // Conditionally apply clipping wrapper style only if NOT using yAxisConfigs (like on the main page)
+    // For weather page with yAxisConfigs, we let the chart take its full height.
     <div style={yAxisConfigs.length > 0 ? { height: `${chartHeightToUse}px`, width: '100%'} : clippingWrapperStyle}> 
       <ResponsiveContainer width="100%" height={chartHeightToUse}>
         <LineChart
           data={chartData}
           margin={{
             top: 5,
-            right: yAxisConfigs.filter(c => c.orientation === 'right').length * 50 + 20, // Dynamic right margin
+            right: yAxisConfigs.filter(c => c.orientation === 'right').length * 50 + (yAxisConfigs.filter(c => c.orientation === 'right').length > 1 ? 30 : 20), // Dynamic right margin
             left: yAxisConfigs.filter(c => c.orientation === 'left').length * 50 + 5,   // Dynamic left margin
             bottom: 78, 
           }}
@@ -179,16 +227,16 @@ export function ChartDisplay({
             textAnchor="end"
             height={60} 
             interval="preserveStartEnd"
-            tickFormatter={(tick) => formatXAxisTick(tick)}
+            tickFormatter={(tick) => formatXAxisTick(tick, chartData)}
             tick={{ fontSize: '0.6rem' }}
           >
             {timeAxisLabel && (
               <Label
                 value={`${timeAxisLabel} (Adjust time window with slider)`}
-                offset={28} 
+                offset={15} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={30} 
+                dy={35} 
                 style={{ fontSize: '0.6rem', textAnchor: 'middle' }}
               />
             )}
@@ -211,7 +259,7 @@ export function ChartDisplay({
                 dx: config.orientation === 'left' ? -5 : 5,
               }}
               // Apply offset only to subsequent right axes
-              dx={config.orientation === 'right' ? yAxisOffset(yAxisConfigs.filter(c => c.orientation === 'right').findIndex(c => c.id === config.id)) : 0}
+              dx={yAxisOffset(index)}
             />
           )) : (
              <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']} tick={{ fontSize: '0.6rem' }}>
@@ -237,9 +285,9 @@ export function ChartDisplay({
             cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
           />
           <Legend
-            wrapperStyle={{ paddingTop: '25px', fontSize: '0.6rem' }} 
+            wrapperStyle={{ paddingTop: '10px', fontSize: '0.6rem' }} 
           />
-          {plottableSeries.map((seriesName, index) => {
+          {activeSeriesToPlot.map((seriesName, index) => {
             const yAxisConfig = yAxisConfigs.find(c => c.dataKey === seriesName);
             return (
                 <Line
@@ -251,17 +299,17 @@ export function ChartDisplay({
                 dot={false}
                 name={seriesName.charAt(0).toUpperCase() + seriesName.slice(1)} // Capitalize for legend
                 connectNulls={true}
-                yAxisId={yAxisConfig ? yAxisConfig.id : (yAxisConfigs[0]?.id || 0)} // Default to first yAxisId or 0 if none
+                yAxisId={yAxisConfig ? yAxisConfig.id : (yAxisConfigs[0]?.id || 0)} 
                 />
             );
            })}
           <Brush
             dataKey="time"
-            height={14} 
+            height={12} 
             stroke="hsl(var(--primary))"
             fill="transparent"
             fillOpacity={0.3}
-            tickFormatter={(tick) => formatXAxisTick(tick)}
+            tickFormatter={(tick) => formatXAxisTick(tick, chartData)}
             travellerWidth={8}
             startIndex={brushStartIndex}
             endIndex={brushEndIndex}

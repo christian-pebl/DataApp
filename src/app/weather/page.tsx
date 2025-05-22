@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { SunMoon, LayoutGrid, AlertTriangle, Info, Search as SearchIcon, MapPin, CloudSun } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls";
-import type { WeatherControlsFormValues } from "@/components/weather/WeatherControls"; // No longer WeatherVariableValue
 // ChartDisplay is used, so keep it.
-import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
+import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay"; // Import YAxisConfig
 import { fetchWeatherDataAction } from "./actions";
 import type { WeatherDataPoint } from "./shared";
 import Link from "next/link";
@@ -42,7 +41,15 @@ interface Suggestion {
   name: string;
 }
 
-const PLOTTABLE_WEATHER_SERIES = ['temperature', 'windSpeed', 'cloudCover'];
+const PLOTTABLE_WEATHER_SERIES = ['temperature', 'windSpeed', 'cloudCover', 'windDirection'];
+
+const yAxisConfigs: YAxisConfig[] = [
+  { id: 'temp', orientation: 'left', label: 'Temp (°C)', color: '--chart-1', dataKey: 'temperature', unit: '°C' },
+  { id: 'wind', orientation: 'right', label: 'Wind (m/s)', color: '--chart-2', dataKey: 'windSpeed', unit: ' m/s' },
+  { id: 'cloud', orientation: 'right', label: 'Cloud (%)', color: '--chart-3', dataKey: 'cloudCover', unit: '%' },
+  { id: 'windDir', orientation: 'right', label: 'Wind Dir (°)', color: '--chart-4', dataKey: 'windDirection', unit: '°' },
+];
+
 
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
@@ -314,9 +321,10 @@ export default function WeatherPage() {
                 {!isLoading && !error && weatherData.length > 0 && (
                   <ChartDisplay
                     data={chartCompatibleData}
-                    plottableSeries={PLOTTABLE_WEATHER_SERIES} // Pass all relevant series
+                    plottableSeries={PLOTTABLE_WEATHER_SERIES}
+                    yAxisConfigs={yAxisConfigs}
                     timeAxisLabel="Date / Time"
-                    plotTitle="Weather Data" // Generic title
+                    plotTitle="Weather Data"
                     chartRenderHeight={400}
                   />
                 )}
