@@ -5,7 +5,9 @@ import { parseISO } from 'date-fns';
 // Helper function for robust date string validation
 const isValidDateString = (val: string): boolean => {
   try {
-    return !isNaN(parseISO(val).valueOf());
+    // Check if parsing results in a valid date and the original string is not just 'Invalid Date' or similar
+    const date = parseISO(val);
+    return !isNaN(date.valueOf()) && date.toISOString().startsWith(val.substring(0,10)); // Basic check if date part matches
   } catch (e) {
     return false;
   }
@@ -26,12 +28,15 @@ export type WeatherDataPoint = z.infer<typeof WeatherDataPointSchema>;
 export const FetchWeatherInputSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
-  startDate: z.string().refine(isValidDateString, { message: "Invalid start date format or value." }),
-  endDate: z.string().refine(isValidDateString, { message: "Invalid end date format or value." }),
+  startDate: z.string().refine(isValidDateString, { message: "Invalid start date format or value. Ensure YYYY-MM-DD format." }),
+  endDate: z.string().refine(isValidDateString, { message: "Invalid end date format or value. Ensure YYYY-MM-DD format." }),
 });
 export type FetchWeatherInput = z.infer<typeof FetchWeatherInputSchema>;
 
-// Define a type for the combined weather and tide data action response
-export interface WeatherAndTideDataPoint extends WeatherDataPoint {
-  tideStationName?: string; // To be passed along with the data if available
-}
+// This type was slightly redundant as tideStationName is part of the overall response, not each point.
+// WeatherDataPoint already includes tideHeight.
+// export interface WeatherAndTideDataPoint extends WeatherDataPoint {
+//   tideStationName?: string; 
+// }
+// We will use WeatherDataPoint directly for the array of data.
+

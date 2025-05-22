@@ -4,20 +4,22 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Search, MapPin, SunMoon, LayoutGrid, CloudSun, CalendarDays } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Loader2, Search, MapPin, SunMoon, LayoutGrid, CloudSun, Compass, Thermometer, Wind, Waves, CalendarDays, Info } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import { fetchWeatherDataAction } from "./actions";
-import type { WeatherAndTideDataPoint } from "./shared"; 
+import type { WeatherDataPoint } from "./shared"; // Updated type
 import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
-import { formatISO, subDays } from "date-fns";
+import { formatISO, subDays, parseISO } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid";
+import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid"; // Keep this if used by dynamic import
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 
 const WeatherPlotsGrid = dynamic<WeatherPlotsGridProps>(
@@ -55,9 +57,28 @@ interface Suggestion {
 const defaultLocationKey = "stdavids";
 const defaultLocation = knownLocations[defaultLocationKey];
 
+type PlotVisibilityKeys = 'temperature' | 'windSpeed' | 'windDirection' | 'cloudCover' | 'tideHeight';
+
+const plotConfigIcons: Record<PlotVisibilityKeys, React.ElementType> = {
+  temperature: Thermometer,
+  windSpeed: Wind,
+  cloudCover: Cloud,
+  windDirection: Compass,
+  tideHeight: Waves,
+};
+
+const plotDisplayTitles: Record<PlotVisibilityKeys, string> = {
+  temperature: "Temperature",
+  windSpeed: "Wind Speed",
+  cloudCover: "Cloud Cover",
+  windDirection: "Wind Direction",
+  tideHeight: "Tide Height",
+};
+
+
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
-  const [weatherData, setWeatherData] = useState<WeatherAndTideDataPoint[]>([]);
+  const [weatherData, setWeatherData] = useState<WeatherDataPoint[]>([]); // Updated type
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -71,6 +92,18 @@ export default function WeatherPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [tideStationName, setTideStationName] = useState<string | undefined>(undefined);
+
+  const [plotVisibility, setPlotVisibility] = useState<Record<PlotVisibilityKeys, boolean>>({
+    temperature: true,
+    windSpeed: true,
+    windDirection: true,
+    cloudCover: true,
+    tideHeight: true,
+  });
+
+  const handlePlotVisibilityChange = (plotKey: PlotVisibilityKeys, checked: boolean) => {
+    setPlotVisibility(prev => ({ ...prev, [plotKey]: checked }));
+  };
 
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
@@ -117,25 +150,25 @@ export default function WeatherPage() {
       toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range."});
       return;
     }
-    if (datesToUse.from > datesToUse.to) {
+     if (datesToUse.from > datesToUse.to) {
         toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
         return;
     }
 
     setIsLoading(true);
     setError(null);
-    setTideStationName(undefined); // Reset tide station name
+    setTideStationName(undefined); 
 
     const result = await fetchWeatherDataAction({
       latitude: coordsToUse.latitude,
       longitude: coordsToUse.longitude,
-      startDate: formatISO(datesToUse.from),
-      endDate: formatISO(datesToUse.to),
+      startDate: formatISO(datesToUse.from, { representation: 'date' }),
+      endDate: formatISO(datesToUse.to, { representation: 'date' }),
     });
 
     setIsLoading(false);
     if (result.success && result.data) {
-      setWeatherData(result.data);
+      setWeatherData(result.data as WeatherDataPoint[]); // Ensure correct type
       setTideStationName(result.tideStationName);
       if (result.message) {
         toast({ title: "Info", description: result.message, duration: 3000 });
@@ -179,29 +212,11 @@ export default function WeatherPage() {
         setSearchTerm(knownLocations[locationKey].name);
       }
     } else {
-      // If not in known locations, attempt to use current initialCoords (if any) or show error.
-      // For a real app, here you'd call a geocoding API.
-      if (!initialCoords) { 
-        setWeatherData([]); 
-        setTideStationName(undefined);
-        toast({ variant: "destructive", title: "Location Not Found", description: "Location not found. Try a major UK city or postcode from the predefined list." });
-        return;
-      }
-      // If we have initialCoords but search term didn't match, it means user typed something new.
-      // We could try to geocode searchTerm here in a real app. For now, we'll just use initialCoords if it exists.
-      // To prevent fetching for a non-understood typed location if initialCoords isn't set, we can just return.
-      // A better UX might involve clearing initialCoords if searchTerm doesn't match any known location.
-      // For now, let's assume if user types something new and it's not known, we don't auto-set coords.
-      // This means they'd have to pick from suggestions or type a known name.
-      // If we wanted to use last known good coords, we'd set `coordsForFetch = initialCoords;`
-      // However, to force selection, let's re-evaluate:
-      // if no locationKey, and it's a new search term, we should probably clear initialCoords
-      // unless the searchTerm IS what initialCoords represent.
       const currentKnownNameForInitialCoords = Object.values(knownLocations).find(loc => loc.lat === initialCoords?.latitude && loc.lon === initialCoords?.longitude)?.name;
       if (searchTerm.toLowerCase() !== currentKnownNameForInitialCoords?.toLowerCase()) {
          setWeatherData([]); 
          setTideStationName(undefined);
-         setInitialCoords(null); // Clear coords if search term doesn't match any known, forcing selection
+         setInitialCoords(null); 
          toast({ variant: "destructive", title: "Location Not Found", description: "Please select a location from the suggestions or a known UK city/postcode." });
          return;
       }
@@ -230,8 +245,6 @@ export default function WeatherPage() {
   useEffect(() => {
     const currentSearchTerm = searchTerm.trim();
     if (currentSearchTerm === "") {
-      // When empty, show all known locations as suggestions if input is focused
-      // If not focused, clear suggestions
       if (document.activeElement === document.querySelector('input[type="text"]')) {
          setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
          setShowSuggestions(true);
@@ -254,36 +267,30 @@ export default function WeatherPage() {
     setShowSuggestions(filtered.length > 0);
   }, [searchTerm]);
 
-  const handleSuggestionClick = useCallback(async (suggestionKey: string) => {
+  const handleSuggestionClick = useCallback((suggestionKey: string) => {
     const location = knownLocations[suggestionKey];
     if (location) {
       setSearchTerm(location.name); 
       const newCoords = { latitude: location.lat, longitude: location.lon };
       setInitialCoords(newCoords); 
       setShowSuggestions(false);
-      // Automatically fetch data for the selected suggestion
-      // if (dateRange?.from && dateRange?.to) {
-      //   await handleFetchWeather(newCoords, dateRange);
-      // }
     }
-  }, [dateRange, handleFetchWeather]); 
+  }, []); 
 
   const handleInputFocus = () => {
     const currentSearchTerm = searchTerm.trim();
-    // If input is empty or already a known location name, show all suggestions
     if (currentSearchTerm === "" || Object.values(knownLocations).some(loc => loc.name === currentSearchTerm)) {
       setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
       setShowSuggestions(true);
-    } else if (suggestions.length > 0) { // If there are already filtered suggestions from typing, show them
+    } else if (suggestions.length > 0) {
       setShowSuggestions(true);
     }
   };
   
   const handleInputBlur = () => {
-    // Delay hiding suggestions to allow click event on suggestion to fire
     setTimeout(() => {
       setShowSuggestions(false);
-    }, 150); // 150ms delay might need adjustment
+    }, 150);
   };
 
 
@@ -299,13 +306,13 @@ export default function WeatherPage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link href="/weather" passHref> 
-                    <Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer">
+                    <Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (Currently Weather Page)">
                       <LayoutGrid className="h-5 w-5" />
                     </Button>
                   </Link>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Data Explorer</p>
+                  <p>Data Explorer (Currently Weather Page)</p>
                 </TooltipContent>
               </Tooltip>
 
@@ -357,7 +364,7 @@ export default function WeatherPage() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       handleLocationSearchAndFetch(); 
-                      setShowSuggestions(false); // Hide suggestions after Enter
+                      setShowSuggestions(false); 
                     }
                   }}
                   className="h-9 text-sm"
@@ -370,7 +377,7 @@ export default function WeatherPage() {
                         type="button"
                         className="w-full text-left px-3 py-2 text-sm hover:bg-muted focus:bg-muted focus:outline-none"
                         onClick={() => handleSuggestionClick(suggestion.key)}
-                        onMouseDown={(e) => e.preventDefault()} // Prevents input blur before click
+                        onMouseDown={(e) => e.preventDefault()}
                       >
                         {suggestion.name}
                       </button>
@@ -390,7 +397,7 @@ export default function WeatherPage() {
               />
                <Button 
                   onClick={handleLocationSearchAndFetch} 
-                  disabled={isLoading || !searchTerm}
+                  disabled={isLoading || !searchTerm || !dateRange?.from || !dateRange?.to}
                   className="w-full h-9 text-sm mt-3"
                 >
                   {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
@@ -401,10 +408,27 @@ export default function WeatherPage() {
 
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-lg h-full">
-              <CardHeader className="p-3">
-                <CardTitle className="text-md">
-                   Data
-                </CardTitle>
+              <CardHeader className="p-3 flex flex-row items-center justify-between">
+                <CardTitle className="text-md">Data</CardTitle>
+                 <div className="flex items-center space-x-2 md:space-x-3">
+                    {(Object.keys(plotVisibility) as PlotVisibilityKeys[]).map((key) => {
+                        const IconComponent = plotConfigIcons[key];
+                        return (
+                        <div key={key} className="flex items-center space-x-1.5">
+                            <Checkbox
+                            id={`plot-visibility-${key}`}
+                            checked={plotVisibility[key]}
+                            onCheckedChange={(checked) => handlePlotVisibilityChange(key, !!checked)}
+                            className="h-3.5 w-3.5"
+                            />
+                            <Label htmlFor={`plot-visibility-${key}`} className="text-xs flex items-center gap-1 cursor-pointer">
+                               {IconComponent && <IconComponent className="h-3.5 w-3.5 text-muted-foreground" />}
+                                {plotDisplayTitles[key]}
+                            </Label>
+                        </div>
+                        );
+                    })}
+                 </div>
               </CardHeader>
               <CardContent className="p-2 h-[calc(100%-3.5rem)]"> 
                 <WeatherPlotsGrid
@@ -412,6 +436,7 @@ export default function WeatherPage() {
                     isLoading={isLoading}
                     error={error}
                     tideStationName={tideStationName}
+                    plotVisibility={plotVisibility}
                 />
               </CardContent>
             </Card>
