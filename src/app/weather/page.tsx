@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -90,6 +90,8 @@ export default function WeatherPage() {
   });
 
   const [plotVisibility, setPlotVisibility] = useState(initialPlotVisibility);
+  const initialFetchDone = useRef(false);
+
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
@@ -164,14 +166,6 @@ export default function WeatherPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCoords, dateRange, toast]); 
 
-  // Effect for initial data fetch if coords are pre-filled
-  useEffect(() => {
-    if (initialCoords && weatherData.length === 0 && !error && !isLoading) {
-      handleFetchWeather();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialCoords]); // Only trigger this effect if initialCoords changes (or on initial mount if set)
-
   const handleLocationSearchAndFetch = useCallback(async () => {
     const term = searchTerm.trim().toLowerCase();
     setShowSuggestions(false);
@@ -188,9 +182,8 @@ export default function WeatherPage() {
     if (locationKey) {
       const location = knownLocations[locationKey];
       setInitialCoords({ latitude: location.lat, longitude: location.lon });
-      // handleFetchWeather will be called by the useEffect that watches initialCoords
-      // or it can be called directly here if we want immediate fetch on this action
-      await handleFetchWeather();
+      // Trigger fetch after setting coords
+      await handleFetchWeather(); 
     } else {
       setInitialCoords(null);
       setWeatherData([]); // Clear data if location not found
@@ -198,6 +191,14 @@ export default function WeatherPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, toast, handleFetchWeather]); // Added handleFetchWeather to deps
+
+  useEffect(() => {
+    if (initialCoords && !initialFetchDone.current && !isLoading && !error) {
+      handleFetchWeather();
+      initialFetchDone.current = true;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCoords]);
 
   useEffect(() => {
     if (searchTerm.trim() === "") {
@@ -218,10 +219,11 @@ export default function WeatherPage() {
   const handleSuggestionClick = useCallback(async (suggestionKey: string) => {
     const location = knownLocations[suggestionKey];
     if (location) {
-      setSearchTerm(location.name);
+      setSearchTerm(location.name); // Update search term to clicked suggestion
       setInitialCoords({ latitude: location.lat, longitude: location.lon });
       setShowSuggestions(false);
-      await handleFetchWeather();
+      // Trigger fetch after setting coords from suggestion
+      await handleFetchWeather(); 
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast, handleFetchWeather]);
@@ -241,13 +243,12 @@ export default function WeatherPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <TooltipProvider>
           <div className="container flex h-14 items-center justify-between px-3 md:px-4">
-            <Link href="/weather" passHref> {/* PEBL logo now also points to /weather as it's the default */}
-              <h1 className="text-2xl font-bold text-primary cursor-pointer">PEBL</h1>
+            <Link href="/weather" passHref>
+              <h1 className="text-2xl font-bold text-primary cursor-pointer">Paddle Data App</h1>
             </Link>
             <div className="flex items-center gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  {/* This link might need to change if the CSV page gets a new route e.g. /explorer */}
                   <Link href="/weather" passHref> 
                     <Button variant={pathname === '/' || pathname.startsWith('/explorer') ? "secondary" : "ghost"} size="icon" aria-label="Data Explorer">
                       <LayoutGrid className="h-5 w-5" />
@@ -255,7 +256,7 @@ export default function WeatherPage() {
                   </Link>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Data Explorer (CSV)</p>
+                  <p>Data Explorer</p>
                 </TooltipContent>
               </Tooltip>
 
@@ -324,7 +325,7 @@ export default function WeatherPage() {
                         type="button"
                         className="w-full text-left px-3 py-2 text-sm hover:bg-muted focus:bg-muted focus:outline-none"
                         onClick={() => handleSuggestionClick(suggestion.key)}
-                        onMouseDown={(e) => e.preventDefault()}
+                        onMouseDown={(e) => e.preventDefault()} // Prevents blur from hiding suggestions before click
                       >
                         {suggestion.name}
                       </button>
@@ -340,7 +341,7 @@ export default function WeatherPage() {
               <WeatherControls
                   dateRange={dateRange}
                   onDateChange={setDateRange}
-                  isLoading={isLoading}
+                  isLoading={isLoading} // Pass isLoading to disable date picker if needed
               />
                <Button 
                   onClick={handleLocationSearchAndFetch} 
