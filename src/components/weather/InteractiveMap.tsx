@@ -32,18 +32,25 @@ export function InteractiveMap({ onLocationSelect, selectedCoords }: Interactive
   const mapRef = useRef<L.Map | null>(null);
   const [renderMap, setRenderMap] = useState(false);
 
-  // initialCenter should reflect the current selectedCoords if the map needs to be re-initialized
   const initialCenter: [number, number] = React.useMemo(() => {
     return selectedCoords
       ? [selectedCoords.lat, selectedCoords.lon]
       : [37.7749, -122.4194]; // Default to SF
-  }, [selectedCoords]); // Make initialCenter dependent on selectedCoords
+  }, [selectedCoords]);
 
 
   useEffect(() => {
     // Ensures map rendering logic runs only on the client side
     setRenderMap(true);
-  }, []);
+
+    // Cleanup function for when the component unmounts
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove(); // Leaflet's own remove method
+        mapRef.current = null;
+      }
+    };
+  }, []); // Empty dependency means this runs once on mount and cleanup on unmount.
 
   // This effect updates the map view when selectedCoords prop changes on an already initialized map
   useEffect(() => {
@@ -61,7 +68,7 @@ export function InteractiveMap({ onLocationSelect, selectedCoords }: Interactive
 
   const handleWhenCreated = useCallback((mapInstance: L.Map) => {
     mapRef.current = mapInstance;
-  }, []); // Empty dependency array, so this function identity is stable.
+  }, []);
 
   if (!renderMap) {
     return <div className="w-full h-full flex items-center justify-center bg-muted text-muted-foreground"><p>Initializing map...</p></div>;
@@ -69,7 +76,7 @@ export function InteractiveMap({ onLocationSelect, selectedCoords }: Interactive
 
   return (
     <MapContainer
-        center={initialCenter} // Use the potentially updated initialCenter for initialization/re-initialization
+        center={initialCenter}
         zoom={10}
         scrollWheelZoom={false}
         style={{ height: '100%', width: '100%' }}
