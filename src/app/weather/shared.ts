@@ -20,7 +20,7 @@ export const WeatherDataPointSchema = z.object({
   windSpeed: z.number().optional().describe("Wind speed in m/s"),
   cloudCover: z.number().optional().describe("Cloud cover percentage"),
   windDirection: z.number().optional().describe("Wind direction in degrees (0-360)"),
-  tideHeight: z.number().optional().describe("Tide height in meters"),
+  // tideHeight: z.number().optional().describe("Tide height in meters"), // Removed tideHeight
 });
 export type WeatherDataPoint = z.infer<typeof WeatherDataPointSchema>;
 
@@ -32,11 +32,3 @@ export const FetchWeatherInputSchema = z.object({
   endDate: z.string().refine(isValidDateString, { message: "Invalid end date format or value. Ensure YYYY-MM-DD format." }),
 });
 export type FetchWeatherInput = z.infer<typeof FetchWeatherInputSchema>;
-
-// This type was slightly redundant as tideStationName is part of the overall response, not each point.
-// WeatherDataPoint already includes tideHeight.
-// export interface WeatherAndTideDataPoint extends WeatherDataPoint {
-//   tideStationName?: string; 
-// }
-// We will use WeatherDataPoint directly for the array of data.
-

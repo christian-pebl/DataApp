@@ -6,64 +6,6 @@ import { format, parseISO } from 'date-fns';
 import type { WeatherDataPoint, FetchWeatherInput } from './shared';
 import { FetchWeatherInputSchema } from './shared';
 
-// Function to fetch tide data from Open-Meteo Marine API
-async function fetchTideDataFromOpenMeteo(startDate: string, endDate: string, latitude: number, longitude: number): Promise<{ stationName: string, data: { time: string; tideHeight: number }[] }> {
-  const stationName = "Tide at selected location";
-  const formattedStartDate = format(parseISO(startDate), 'yyyy-MM-dd');
-  const formattedEndDate = format(parseISO(endDate), 'yyyy-MM-dd');
-
-  const apiUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${latitude}&longitude=${longitude}&start_date=${formattedStartDate}&end_date=${formattedEndDate}&hourly=sea_level&timezone=auto`;
-
-  try {
-    const response = await fetch(apiUrl);
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`Open-Meteo Marine API request failed: ${response.status}`, errorBody);
-      throw new Error(`Tide API request failed with status ${response.status}: ${errorBody}`);
-    }
-
-    const data = await response.json();
-
-    if (data.error) {
-      console.error(`Open-Meteo Marine API Error: ${data.reason}`);
-      throw new Error(`Open-Meteo Marine API Error: ${data.reason}`);
-    }
-
-    if (
-      !data.hourly ||
-      !Array.isArray(data.hourly.time) ||
-      !Array.isArray(data.hourly.sea_level) ||
-      data.hourly.time.length === 0
-    ) {
-      console.warn("Open-Meteo Marine API returned incomplete or empty hourly sea_level data for the location/period.");
-      return { stationName, data: [] };
-    }
-    
-    if (data.hourly.sea_level.length !== data.hourly.time.length) {
-        console.warn("Open-Meteo Marine API returned mismatched array lengths for hourly data.");
-        return { stationName, data: [] };
-    }
-
-    const times = data.hourly.time as string[];
-    const seaLevels = data.hourly.sea_level as (number | null)[];
-
-    const tideData: { time: string; tideHeight: number }[] = times.map((time, index) => ({
-      time: time,
-      tideHeight: seaLevels[index] !== null && seaLevels[index] !== undefined ? parseFloat(seaLevels[index]!.toFixed(2)) : undefined,
-    })).filter(p => p.tideHeight !== undefined) as { time: string; tideHeight: number }[];
-
-    return { stationName, data: tideData };
-
-  } catch (error) {
-    console.error("Error fetching or processing tide data from Open-Meteo Marine API:", error);
-    if (error instanceof Error) {
-        throw new Error(`Failed to fetch tide data from Open-Meteo: ${error.message}`);
-    }
-    throw new Error("An unknown error occurred while fetching tide data from Open-Meteo.");
-  }
-}
-
-
 async function fetchWeatherDataFromOpenMeteo(input: FetchWeatherInput): Promise<WeatherDataPoint[]> {
   const { latitude, longitude, startDate, endDate } = input;
 
@@ -144,7 +86,7 @@ async function fetchWeatherDataFromOpenMeteo(input: FetchWeatherInput): Promise<
 // Server Action
 export async function fetchWeatherDataAction(
   input: FetchWeatherInput
-): Promise<{ success: boolean; data?: WeatherDataPoint[]; error?: string; message?: string, tideStationName?: string }> {
+): Promise<{ success: boolean; data?: WeatherDataPoint[]; error?: string; message?: string }> {
   try {
     const validatedInput = FetchWeatherInputSchema.safeParse(input);
     if (!validatedInput.success) {
@@ -156,45 +98,13 @@ export async function fetchWeatherDataAction(
         return { success: false, error: "Start date cannot be after end date." };
     }
 
-    const weatherDataPromise = fetchWeatherDataFromOpenMeteo(validatedInput.data);
-    const tideDataPromise = fetchTideDataFromOpenMeteo(
-      validatedInput.data.startDate,
-      validatedInput.data.endDate,
-      validatedInput.data.latitude,
-      validatedInput.data.longitude
-    );
-
-    const [weatherData, { stationName: tideStationName, data: tideData }] = await Promise.all([
-      weatherDataPromise,
-      tideDataPromise
-    ]);
-
-    const combinedData: WeatherDataPoint[] = weatherData.map(wd => {
-      const correspondingTidePoint = tideData.find(td => td.time === wd.time);
-      return {
-        ...wd,
-        tideHeight: correspondingTidePoint?.tideHeight,
-      };
-    });
+    const weatherData = await fetchWeatherDataFromOpenMeteo(validatedInput.data);
     
-    if (weatherData.length === 0 && tideData.length === 0) { 
-        return { success: true, data: [], message: "No historical weather or tide data found for the selected location and date range from Open-Meteo.", tideStationName };
-    }
-    if (combinedData.length === 0 && weatherData.length > 0 && tideData.length === 0) { // Weather data but no tide data
-      return { success: true, data: weatherData, message: "Weather data found, but no tide data for this location/period. Displaying available weather data.", tideStationName };
-    }
-     if (combinedData.length === 0 && weatherData.length === 0 && tideData.length > 0) { // Tide data but no weather data
-        // Create WeatherDataPoint entries from tideData if weatherData is empty
-        const tideOnlyData: WeatherDataPoint[] = tideData.map(td => ({
-            time: td.time,
-            tideHeight: td.tideHeight,
-            // Other weather fields will be undefined
-        }));
-      return { success: true, data: tideOnlyData, message: "Tide data found, but no weather data for this location/period. Displaying available tide data.", tideStationName };
+    if (weatherData.length === 0) { 
+        return { success: true, data: [], message: "No historical weather data found for the selected location and date range from Open-Meteo." };
     }
 
-
-    return { success: true, data: combinedData, tideStationName };
+    return { success: true, data: weatherData };
   } catch (e) {
     console.error("Error in fetchWeatherDataAction:", e);
     const errorMessage = e instanceof Error ? e.message : "An unknown error occurred while fetching weather data.";
