@@ -5,10 +5,10 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, Search, MapPin, SunMoon, LayoutGrid, CloudSun, Compass, Thermometer, Wind, Waves, CalendarDays, Info } from "lucide-react";
+import { Loader2, Search, MapPin, SunMoon, LayoutGrid, CloudSun, Compass, Thermometer, Wind, Waves, CalendarDays, Info, Cloud } from "lucide-react"; // Added Cloud
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import { fetchWeatherDataAction } from "./actions";
-import type { WeatherDataPoint } from "./shared"; // Updated type
+import type { WeatherDataPoint } from "./shared"; 
 import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
 import { formatISO, subDays, parseISO } from "date-fns";
@@ -17,7 +17,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid"; // Keep this if used by dynamic import
+import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
@@ -78,17 +78,15 @@ const plotDisplayTitles: Record<PlotVisibilityKeys, string> = {
 
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
-  const [weatherData, setWeatherData] = useState<WeatherDataPoint[]>([]); // Updated type
+  const [weatherData, setWeatherData] = useState<WeatherDataPoint[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const pathname = usePathname();
 
-  const [searchTerm, setSearchTerm] = useState(defaultLocation.name);
-  const [initialCoords, setInitialCoords] = useState<SearchedCoords | null>({
-    latitude: defaultLocation.lat,
-    longitude: defaultLocation.lon,
-  });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [initialCoords, setInitialCoords] = useState<SearchedCoords | null>(null);
+
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [tideStationName, setTideStationName] = useState<string | undefined>(undefined);
@@ -104,7 +102,6 @@ export default function WeatherPage() {
   const handlePlotVisibilityChange = (plotKey: PlotVisibilityKeys, checked: boolean) => {
     setPlotVisibility(prev => ({ ...prev, [plotKey]: checked }));
   };
-
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 7),
@@ -123,6 +120,12 @@ export default function WeatherPage() {
         setTheme("dark");
       }
     }
+     // Set default location and trigger initial fetch
+    const defaultLoc = knownLocations[defaultLocationKey];
+    if (defaultLoc) {
+      setSearchTerm(defaultLoc.name);
+      setInitialCoords({ latitude: defaultLoc.lat, longitude: defaultLoc.lon });
+    }
   }, []);
 
   useEffect(() => {
@@ -138,19 +141,19 @@ export default function WeatherPage() {
     setTheme(theme === "light" ? "dark" : "light");
   };
 
-  const handleFetchWeather = useCallback(async (currentCoords?: SearchedCoords, currentDates?: DateRange) => {
-    const coordsToUse = currentCoords || initialCoords;
-    const datesToUse = currentDates || dateRange;
+  const handleFetchWeather = useCallback(async (coordsToUse?: SearchedCoords, datesToUse?: DateRange) => {
+    const currentCoords = coordsToUse || initialCoords;
+    const currentDates = datesToUse || dateRange;
 
-    if (!coordsToUse) {
+    if (!currentCoords) {
       toast({ variant: "destructive", title: "Missing Location", description: "Please search and select a location first." });
       return;
     }
-    if (!datesToUse || !datesToUse.from || !datesToUse.to) {
+    if (!currentDates || !currentDates.from || !currentDates.to) {
       toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range."});
       return;
     }
-     if (datesToUse.from > datesToUse.to) {
+     if (currentDates.from > currentDates.to) {
         toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
         return;
     }
@@ -160,15 +163,15 @@ export default function WeatherPage() {
     setTideStationName(undefined); 
 
     const result = await fetchWeatherDataAction({
-      latitude: coordsToUse.latitude,
-      longitude: coordsToUse.longitude,
-      startDate: formatISO(datesToUse.from, { representation: 'date' }),
-      endDate: formatISO(datesToUse.to, { representation: 'date' }),
+      latitude: currentCoords.latitude,
+      longitude: currentCoords.longitude,
+      startDate: formatISO(currentDates.from, { representation: 'date' }),
+      endDate: formatISO(currentDates.to, { representation: 'date' }),
     });
 
     setIsLoading(false);
     if (result.success && result.data) {
-      setWeatherData(result.data as WeatherDataPoint[]); // Ensure correct type
+      setWeatherData(result.data as WeatherDataPoint[]);
       setTideStationName(result.tideStationName);
       if (result.message) {
         toast({ title: "Info", description: result.message, duration: 3000 });
@@ -187,7 +190,7 @@ export default function WeatherPage() {
       toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch weather data." });
     }
   }, [initialCoords, dateRange, toast]);
-
+  
   const handleLocationSearchAndFetch = useCallback(async () => {
     const term = searchTerm.trim().toLowerCase();
     setShowSuggestions(false); 
@@ -233,7 +236,6 @@ export default function WeatherPage() {
 
   }, [searchTerm, toast, handleFetchWeather, dateRange, initialCoords]);
 
-
   useEffect(() => {
     if (initialCoords && dateRange?.from && dateRange?.to && !initialFetchDone.current && !isLoading && !error) {
       handleFetchWeather(initialCoords, dateRange);
@@ -245,15 +247,15 @@ export default function WeatherPage() {
   useEffect(() => {
     const currentSearchTerm = searchTerm.trim();
     if (currentSearchTerm === "") {
-      if (document.activeElement === document.querySelector('input[type="text"]')) {
-         setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
-         setShowSuggestions(true);
-      } else {
-        setSuggestions([]);
-        setShowSuggestions(false); 
+        if (document.activeElement === document.querySelector('input[type="text"]')) {
+           setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
+           setShowSuggestions(true);
+        } else {
+          setSuggestions([]);
+          setShowSuggestions(false); 
+        }
+        return;
       }
-      return;
-    }
 
     const termLower = currentSearchTerm.toLowerCase();
     const filtered = Object.entries(knownLocations)
@@ -274,15 +276,18 @@ export default function WeatherPage() {
       const newCoords = { latitude: location.lat, longitude: location.lon };
       setInitialCoords(newCoords); 
       setShowSuggestions(false);
+      // Optionally trigger fetch here or let user click the main button
+      // handleFetchWeather(newCoords, dateRange); 
     }
-  }, []); 
+  }, [dateRange, handleFetchWeather]); // Added dependencies
 
   const handleInputFocus = () => {
     const currentSearchTerm = searchTerm.trim();
+    // Show all known locations if input is empty or matches a known location name on focus
     if (currentSearchTerm === "" || Object.values(knownLocations).some(loc => loc.name === currentSearchTerm)) {
       setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
       setShowSuggestions(true);
-    } else if (suggestions.length > 0) {
+    } else if (suggestions.length > 0) { // If there are already filtered suggestions, show them
       setShowSuggestions(true);
     }
   };
@@ -306,13 +311,13 @@ export default function WeatherPage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link href="/weather" passHref> 
-                    <Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (Currently Weather Page)">
+                    <Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer">
                       <LayoutGrid className="h-5 w-5" />
                     </Button>
                   </Link>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Data Explorer (Currently Weather Page)</p>
+                  <p>Data Explorer</p>
                 </TooltipContent>
               </Tooltip>
 
@@ -377,7 +382,7 @@ export default function WeatherPage() {
                         type="button"
                         className="w-full text-left px-3 py-2 text-sm hover:bg-muted focus:bg-muted focus:outline-none"
                         onClick={() => handleSuggestionClick(suggestion.key)}
-                        onMouseDown={(e) => e.preventDefault()}
+                        onMouseDown={(e) => e.preventDefault()} // Prevents blur before click
                       >
                         {suggestion.name}
                       </button>
@@ -393,7 +398,7 @@ export default function WeatherPage() {
                <WeatherControls
                   dateRange={dateRange}
                   onDateChange={setDateRange}
-                  isLoading={isLoading}
+                  isLoading={isLoading} // Pass isLoading to disable date picker if needed
               />
                <Button 
                   onClick={handleLocationSearchAndFetch} 
@@ -453,4 +458,6 @@ export default function WeatherPage() {
     </div>
   );
 }
+    
+
     
