@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Moon, Sun, CloudSun, LayoutGrid, AlertTriangle, Info } from "lucide-react"; // Added LayoutGrid, removed Github, Home
+import { SunMoon, CloudSun, LayoutGrid, AlertTriangle, Info } from "lucide-react"; // Changed Moon, Sun to SunMoon
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import type { WeatherControlsFormValues, WeatherVariableValue } from "@/components/weather/WeatherControls";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
@@ -97,7 +97,7 @@ export default function WeatherPage() {
               </Button>
             </Link>
             <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme (Settings)">
-              {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+              <SunMoon className="h-5 w-5" />
             </Button>
           </div>
         </div>

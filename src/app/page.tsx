@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun, CloudSun, LayoutGrid, PlusCircle } from "lucide-react"; // Added LayoutGrid
+import { SunMoon, CloudSun, LayoutGrid, PlusCircle } from "lucide-react"; // Changed Moon, Sun to SunMoon
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
 import Link from "next/link";
 
@@ -78,7 +78,7 @@ export default function DataFlowPage() {
               </Button>
             </Link>
             <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme (Settings)">
-              {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+              <SunMoon className="h-5 w-5" />
             </Button>
           </div>
         </div>
