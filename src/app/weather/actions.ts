@@ -3,36 +3,8 @@
 
 import { z } from 'zod';
 import { subDays, addHours, formatISO, parseISO } from 'date-fns';
-
-// Define a schema for the weather data points
-export const WeatherDataPointSchema = z.object({
-  time: z.string().describe("ISO timestamp for the data point"),
-  temperature: z.number().optional().describe("Temperature in Celsius"),
-  windSpeed: z.number().optional().describe("Wind speed in m/s"),
-  // windDirection: z.number().optional().describe("Wind direction in degrees"), // Add later if simple plotting is desired
-  cloudCover: z.number().optional().describe("Cloud cover percentage"),
-});
-export type WeatherDataPoint = z.infer<typeof WeatherDataPointSchema>;
-
-// Helper function for robust date string validation
-const isValidDateString = (val: string): boolean => {
-  try {
-    // Check if parseISO results in a valid date and valueOf returns a number
-    return !isNaN(parseISO(val).valueOf());
-  } catch (e) {
-    // If parseISO throws (e.g., for a completely malformed string), it's not valid
-    return false;
-  }
-};
-
-// Define input schema for the server action
-export const FetchWeatherInputSchema = z.object({
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
-  startDate: z.string().refine(isValidDateString, { message: "Invalid start date format or value." }),
-  endDate: z.string().refine(isValidDateString, { message: "Invalid end date format or value." }),
-});
-export type FetchWeatherInput = z.infer<typeof FetchWeatherInputSchema>;
+import type { WeatherDataPoint, FetchWeatherInput } from './shared'; // Import types
+import { FetchWeatherInputSchema } from './shared'; // Import schema
 
 // Mock function to simulate fetching data from a local API
 async function fetchWeatherDataFromLocalAPI(input: FetchWeatherInput): Promise<WeatherDataPoint[]> {

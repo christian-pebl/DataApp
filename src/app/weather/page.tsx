@@ -9,7 +9,7 @@ import { WeatherControls } from "@/components/weather/WeatherControls";
 import type { WeatherControlsFormValues, WeatherVariableValue } from "@/components/weather/WeatherControls";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay"; // Reusing from dataflow
 import { fetchWeatherDataAction } from "./actions";
-import type { WeatherDataPoint } from "./actions";
+import type { WeatherDataPoint } from "./shared"; // Updated import
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 
