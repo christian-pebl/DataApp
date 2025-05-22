@@ -247,6 +247,16 @@ export default function TidePage() {
             <div className="flex items-center gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
+                  <Link href="/data-explorer" passHref>
+                    <Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer">
+                      <LayoutGrid className="h-5 w-5" />
+                    </Button>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent><p>Data Explorer (CSV)</p></TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <Link href="/weather" passHref> 
                     <Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Weather Page">
                       <CloudSun className="h-5 w-5" />
