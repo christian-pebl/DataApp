@@ -6,18 +6,22 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tool
 import type { WeatherDataPoint } from '@/app/weather/shared';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Info, Thermometer, Wind, Cloud, Compass, CalendarDays } from 'lucide-react';
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label as UiLabel } from "@/components/ui/label"; // Aliasing to avoid conflict with Recharts Label
 
 export interface WeatherPlotsGridProps {
   weatherData: WeatherDataPoint[];
   isLoading: boolean;
   error: string | null;
-  plotVisibility: Record<string, boolean>;
+  // plotVisibility prop is removed
 }
+
+type PlotVisibilityKeys = 'temperature' | 'windSpeed' | 'windDirection' | 'cloudCover';
 
 const MPH_CONVERSION_FACTOR = 2.23694;
 
 const plotConfigs: { 
-  dataKey: keyof WeatherDataPoint; 
+  dataKey: PlotVisibilityKeys; 
   title: string; 
   unit: string; 
   color: string; 
@@ -46,9 +50,20 @@ const formatXAxisTickBrush = (timeValue: string | number): string => {
   }
 };
 
-export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility }: WeatherPlotsGridProps) {
+export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlotsGridProps) {
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(weatherData.length > 0 ? weatherData.length -1 : undefined);
+  
+  const [plotVisibility, setPlotVisibility] = useState<Record<PlotVisibilityKeys, boolean>>({
+    temperature: true,
+    windSpeed: true,
+    windDirection: true,
+    cloudCover: true,
+  });
+
+  const handlePlotVisibilityChange = (plotKey: PlotVisibilityKeys, checked: boolean) => {
+    setPlotVisibility(prev => ({ ...prev, [plotKey]: checked }));
+  };
 
   useEffect(() => {
     if (weatherData.length > 0) {
@@ -74,9 +89,6 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
     return weatherData.slice(start, end + 1);
   }, [weatherData, brushStartIndex, brushEndIndex]);
 
-  const visiblePlotConfigs = useMemo(() => {
-    return plotConfigs.filter(config => plotVisibility[config.dataKey as string]);
-  }, [plotVisibility]);
 
   if (isLoading) {
     return (
@@ -106,8 +118,9 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
           </div>
         );
   }
-
-  if (visiblePlotConfigs.length === 0 && weatherData.length > 0) {
+  
+  const visiblePlots = plotConfigs.filter(config => plotVisibility[config.dataKey]);
+  if (visiblePlots.length === 0 && weatherData.length > 0) {
     return (
         <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
           <Info className="h-10 w-10 mb-2" />
@@ -117,11 +130,14 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
       );
   }
 
+
   return (
     <div className="w-full h-full flex flex-col">
       <div className="flex-grow flex flex-col space-y-1 overflow-y-auto pr-1">
-        {visiblePlotConfigs.map((config) => {
+        {plotConfigs.map((config) => {
           const IconComponent = config.Icon;
+          const isVisible = plotVisibility[config.dataKey];
+          
           const transformedDisplayData = displayData.map(point => {
             const value = point[config.dataKey];
             if (value === undefined || value === null) return { ...point, [config.dataKey]: undefined };
@@ -133,7 +149,11 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
 
           const lastDataPoint = transformedDisplayData[transformedDisplayData.length - 1];
           const currentValue = lastDataPoint ? lastDataPoint[config.dataKey] : undefined;
-          const displayValue = typeof currentValue === 'number' ? `${currentValue.toLocaleString()}${config.unit}` : "N/A";
+          
+          let displayValue = "";
+          if (isVisible && typeof currentValue === 'number') {
+            displayValue = `${currentValue.toLocaleString()}${config.unit}`;
+          }
           
           const hasValidDataForSeries = transformedDisplayData.some(point => 
             point[config.dataKey] !== undefined && point[config.dataKey] !== null && !isNaN(Number(point[config.dataKey]))
@@ -143,43 +163,61 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
             <div key={config.dataKey as string} className="h-[100px] w-full border rounded-md p-1 shadow-sm bg-card flex-shrink-0 flex flex-col">
               <div className="flex items-center justify-between px-2 pt-0.5 pb-0.5 text-xs">
                 <div className="flex items-center gap-1.5">
-                  <IconComponent className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="font-medium text-foreground">{config.title}</span>
+                  <Checkbox
+                      id={`visibility-${config.dataKey}`}
+                      checked={isVisible}
+                      onCheckedChange={(checked) => handlePlotVisibilityChange(config.dataKey, !!checked)}
+                      className="h-3.5 w-3.5"
+                  />
+                  <UiLabel htmlFor={`visibility-${config.dataKey}`} className="flex items-center gap-1 cursor-pointer">
+                    <IconComponent className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="font-medium text-foreground">{config.title}</span>
+                  </UiLabel>
                 </div>
-                <span className="text-muted-foreground">{displayValue}</span>
+                {isVisible && <span className="text-muted-foreground">{displayValue}</span>}
               </div>
-              <div className="flex-grow">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                    <YAxis
-                      domain={['auto', 'auto']}
-                      tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString() : String(value)}
-                      tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
-                      stroke="hsl(var(--border))"
-                      width={30}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <XAxis dataKey="time" hide />
-                    {hasValidDataForSeries ? (
-                      <Line
-                        type="monotone"
-                        dataKey={config.dataKey as string}
-                        stroke={`hsl(var(${config.color}))`}
-                        strokeWidth={1.5}
-                        dot={false}
-                        connectNulls
-                        name={config.title}
+              {isVisible && (
+                <div className="flex-grow">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                      <YAxis
+                        domain={['auto', 'auto']}
+                        tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString() : String(value)}
+                        tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
+                        stroke="hsl(var(--border))"
+                        width={45} // Reduced from 55
+                        axisLine={false}
+                        tickLine={false}
+                        // label={{ // Label is now in header
+                        //   value: `${config.title} (${config.unit})`,
+                        //   angle: -90,
+                        //   position: 'insideLeft',
+                        //   style: { fontSize: '0.6rem', fill: 'hsl(var(--foreground))' },
+                        //   dy: 5, // Adjusted from -10
+                        //   dx: -5,
+                        // }}
                       />
-                    ) : (
-                       <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" fill="hsl(var(--muted-foreground))" fontSize="0.7rem">
-                         No data available
-                       </text>
-                     )}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+                      <XAxis dataKey="time" hide />
+                      {hasValidDataForSeries ? (
+                        <Line
+                          type="monotone"
+                          dataKey={config.dataKey as string}
+                          stroke={`hsl(var(${config.color}))`}
+                          strokeWidth={1.5}
+                          dot={false}
+                          connectNulls
+                          name={config.title}
+                        />
+                      ) : (
+                         <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" fill="hsl(var(--muted-foreground))" fontSize="0.7rem">
+                           No data available
+                         </text>
+                       )}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
           );
         })}
@@ -197,7 +235,8 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
                 height={30}
                 dy={5}
               />
-              <Line dataKey={plotConfigs[0]?.dataKey as string || 'temperature'} stroke="transparent" dot={false} />
+              {/* Invisible line to give the brush context */}
+              <Line dataKey={plotConfigs[0]?.dataKey as string || 'temperature'} stroke="transparent" dot={false} /> 
               <Brush
                 dataKey="time"
                 height={20}
@@ -209,7 +248,7 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
                 startIndex={brushStartIndex}
                 endIndex={brushEndIndex}
                 onChange={handleBrushChange}
-                y={10}
+                y={10} 
               />
             </LineChart>
           </ResponsiveContainer>
@@ -218,3 +257,4 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error, plotVisibility
     </div>
   );
 }
+

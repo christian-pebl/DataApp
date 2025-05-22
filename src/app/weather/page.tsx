@@ -4,23 +4,21 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { SunMoon, LayoutGrid, Info, MapPin, CloudSun, Thermometer, Wind, Cloud, Compass, Loader2, Search } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Thermometer, Wind, Cloud, Compass, Loader2, Search, MapPin, CalendarDays } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import { fetchWeatherDataAction } from "./actions";
 import type { WeatherDataPoint } from "./shared";
-import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
-import { usePathname } from "next/navigation";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Separator } from "@/components/ui/separator";
-import { Input } from "@/components/ui/input";
-import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid";
 import type { DateRange } from "react-day-picker";
 import { formatISO, subDays } from "date-fns";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import Image from 'next/image';
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid";
+
 
 const WeatherPlotsGrid = dynamic<WeatherPlotsGridProps>(
   () => import('@/components/weather/WeatherPlotsGrid').then(mod => mod.WeatherPlotsGrid),
@@ -53,21 +51,6 @@ interface Suggestion {
   name: string;
 }
 
-const initialPlotVisibility = {
-  temperature: true,
-  windSpeed: true,
-  cloudCover: true,
-  windDirection: true,
-};
-type PlotVisibilityKeys = keyof typeof initialPlotVisibility;
-
-const plotConfigIcons: Record<PlotVisibilityKeys, React.ElementType> = {
-    temperature: Thermometer,
-    windSpeed: Wind,
-    cloudCover: Cloud,
-    windDirection: Compass,
-};
-
 const manchesterLocation = knownLocations["manchester"];
 
 export default function WeatherPage() {
@@ -90,7 +73,6 @@ export default function WeatherPage() {
     to: new Date(),
   });
 
-  const [plotVisibility, setPlotVisibility] = useState(initialPlotVisibility);
   const initialFetchDone = useRef(false);
 
 
@@ -204,7 +186,7 @@ export default function WeatherPage() {
   }, [searchTerm, toast, handleFetchWeather, dateRange]);
 
   useEffect(() => {
-    if (initialCoords && !initialFetchDone.current && !isLoading && !error) {
+    if (initialCoords && dateRange?.from && dateRange?.to && !initialFetchDone.current && !isLoading && !error) {
       handleFetchWeather(initialCoords, dateRange);
       initialFetchDone.current = true;
     }
@@ -234,12 +216,13 @@ export default function WeatherPage() {
       setInitialCoords(newCoords);
       setShowSuggestions(false);
       if (dateRange?.from && dateRange?.to) {
-          await handleFetchWeather(newCoords, dateRange);
+          // No auto-fetch on suggestion click, user will use the main button
+          // await handleFetchWeather(newCoords, dateRange); 
       } else {
           toast({ variant: "destructive", title: "Date Error", description: "Please select a valid date range before fetching." });
       }
     }
-  }, [toast, handleFetchWeather, dateRange]);
+  }, [toast, dateRange]); // Removed handleFetchWeather from dependencies here
 
   const handleInputBlur = () => {
     setTimeout(() => {
@@ -247,9 +230,6 @@ export default function WeatherPage() {
     }, 150);
   };
 
-  const handlePlotVisibilityChange = (plotKey: PlotVisibilityKeys, checked: boolean) => {
-    setPlotVisibility(prev => ({ ...prev, [plotKey]: checked }));
-  };
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -263,13 +243,13 @@ export default function WeatherPage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link href="/weather" passHref> 
-                    <Button variant={"ghost"} size="icon" aria-label="Data Explorer">
+                    <Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer">
                       <LayoutGrid className="h-5 w-5" />
                     </Button>
                   </Link>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Data Explorer</p>
+                  <p>Data Explorer (Weather Page)</p>
                 </TooltipContent>
               </Tooltip>
 
@@ -373,34 +353,13 @@ export default function WeatherPage() {
                 <CardTitle className="text-md">
                   Data
                 </CardTitle>
-                <div className="mt-2">
-                    <h4 className="text-sm font-medium mb-2 text-muted-foreground">Display Plots</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2">
-                        {(Object.keys(plotVisibility) as PlotVisibilityKeys[]).map((key) => {
-                            const IconComponent = plotConfigIcons[key];
-                            return (
-                                <div key={key} className="flex items-center space-x-2">
-                                    <Checkbox
-                                        id={`visibility-${key}`}
-                                        checked={plotVisibility[key]}
-                                        onCheckedChange={(checked) => handlePlotVisibilityChange(key, !!checked)}
-                                    />
-                                    <Label htmlFor={`visibility-${key}`} className="text-sm font-normal capitalize cursor-pointer flex items-center gap-1.5">
-                                        {IconComponent && <IconComponent className="h-4 w-4 text-muted-foreground" />}
-                                        {key.replace(/([A-Z])/g, ' $1').trim()}
-                                    </Label>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
+                {/* Removed "Display Plots" checkboxes from here */}
               </CardHeader>
-              <CardContent className="p-2 h-[calc(100%-8rem)]"> {/* Adjusted height to account for checkboxes in header */}
+              <CardContent className="p-2 h-[calc(100%-3.5rem)]"> {/* Adjusted height based on header size */}
                 <WeatherPlotsGrid
                     weatherData={weatherData}
                     isLoading={isLoading}
                     error={error}
-                    plotVisibility={plotVisibility}
                 />
               </CardContent>
             </Card>
@@ -417,6 +376,4 @@ export default function WeatherPage() {
     </div>
   );
 }
-    
-
     
