@@ -2,36 +2,33 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Brush, Label as RechartsLabel } from 'recharts';
-import type { WeatherDataPoint } from '@/app/weather/shared';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Info, Thermometer, Wind, Cloud, Compass } from 'lucide-react';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Brush } from 'recharts';
+import type { WeatherAndTideDataPoint } from '@/app/weather/shared'; // Ensure this includes tideHeight
+import { Info, Thermometer, Wind, Cloud, Compass, Waves } from 'lucide-react';
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label as UiLabel } from "@/components/ui/label";
+import { Label as UiLabel } from "@/components/ui/label"; // Aliasing to avoid conflict with Recharts Label
 
 export interface WeatherPlotsGridProps {
-  weatherData: WeatherDataPoint[];
+  weatherData: WeatherAndTideDataPoint[];
   isLoading: boolean;
   error: string | null;
+  tideStationName?: string;
 }
 
-type PlotVisibilityKeys = 'temperature' | 'windSpeed' | 'windDirection' | 'cloudCover';
+type PlotVisibilityKeys = 'temperature' | 'windSpeed' | 'windDirection' | 'cloudCover' | 'tideHeight';
 
 const MPH_CONVERSION_FACTOR = 2.23694;
 
-const plotConfigs: { 
-  dataKey: PlotVisibilityKeys; 
-  title: string; 
-  unit: string; 
-  color: string; 
-  Icon: React.ElementType; 
-  dataTransform?: (value: number) => number 
-}[] = [
-  { dataKey: 'temperature', title: 'Temperature', unit: '°C', color: '--chart-1', Icon: Thermometer },
-  { dataKey: 'windSpeed', title: 'Wind Speed', unit: ' mph', color: '--chart-2', Icon: Wind, dataTransform: (value) => parseFloat((value * MPH_CONVERSION_FACTOR).toFixed(1)) },
-  { dataKey: 'windDirection', title: 'Wind Direction', unit: '°', color: '--chart-4', Icon: Compass },
-  { dataKey: 'cloudCover', title: 'Cloud Cover', unit: '%', color: '--chart-3', Icon: Cloud },
-];
+interface PlotConfig {
+  dataKey: PlotVisibilityKeys;
+  title: string;
+  unit: string;
+  color: string;
+  Icon: React.ElementType;
+  dataTransform?: (value: number) => number;
+  stationName?: string; // For tide plot
+}
+
 
 const formatXAxisTickBrush = (timeValue: string | number): string => {
   try {
@@ -49,16 +46,18 @@ const formatXAxisTickBrush = (timeValue: string | number): string => {
   }
 };
 
-export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlotsGridProps) {
+export function WeatherPlotsGrid({ weatherData, isLoading, error, tideStationName }: WeatherPlotsGridProps) {
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(weatherData.length > 0 ? weatherData.length -1 : undefined);
   
-  const [plotVisibility, setPlotVisibility] = useState<Record<PlotVisibilityKeys, boolean>>({
+  const initialPlotVisibility: Record<PlotVisibilityKeys, boolean> = {
     temperature: true,
     windSpeed: true,
     windDirection: true,
     cloudCover: true,
-  });
+    tideHeight: true,
+  };
+  const [plotVisibility, setPlotVisibility] = useState<Record<PlotVisibilityKeys, boolean>>(initialPlotVisibility);
 
   const handlePlotVisibilityChange = (plotKey: PlotVisibilityKeys, checked: boolean) => {
     setPlotVisibility(prev => ({ ...prev, [plotKey]: checked }));
@@ -87,6 +86,14 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
     const end = Math.min(weatherData.length - 1, brushEndIndex);
     return weatherData.slice(start, end + 1);
   }, [weatherData, brushStartIndex, brushEndIndex]);
+
+  const plotConfigs: PlotConfig[] = [
+    { dataKey: 'temperature', title: 'Temperature', unit: '°C', color: '--chart-1', Icon: Thermometer },
+    { dataKey: 'windSpeed', title: 'Wind Speed', unit: ' mph', color: '--chart-2', Icon: Wind, dataTransform: (value) => parseFloat((value * MPH_CONVERSION_FACTOR).toFixed(1)) },
+    { dataKey: 'windDirection', title: 'Wind Direction', unit: '°', color: '--chart-4', Icon: Compass },
+    { dataKey: 'cloudCover', title: 'Cloud Cover', unit: '%', color: '--chart-3', Icon: Cloud },
+    { dataKey: 'tideHeight', title: 'Tide', unit: 'm', color: '--chart-5', Icon: Waves, stationName: tideStationName },
+  ];
 
 
   if (isLoading) {
@@ -138,7 +145,7 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
           const isVisible = plotVisibility[config.dataKey];
           
           const transformedDisplayData = displayData.map(point => {
-            const value = point[config.dataKey];
+            const value = point[config.dataKey as keyof WeatherAndTideDataPoint] as number | undefined; // Type assertion
             if (value === undefined || value === null) return { ...point, [config.dataKey]: undefined };
             if (typeof value === 'number' && config.dataTransform) {
               return { ...point, [config.dataKey]: config.dataTransform(value) };
@@ -147,16 +154,18 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
           });
 
           const lastDataPoint = transformedDisplayData[transformedDisplayData.length - 1];
-          const currentValue = lastDataPoint ? lastDataPoint[config.dataKey] : undefined;
+          // Use type assertion for accessing potentially dynamic keys
+          const currentValue = lastDataPoint ? lastDataPoint[config.dataKey as keyof WeatherAndTideDataPoint] as number | undefined : undefined;
           
           let displayValue = "";
-          if (isVisible && typeof currentValue === 'number') {
+          if (isVisible && typeof currentValue === 'number' && !isNaN(currentValue)) {
             displayValue = `${currentValue.toLocaleString()}${config.unit}`;
           }
           
-          const hasValidDataForSeries = transformedDisplayData.some(point => 
-            point[config.dataKey] !== undefined && point[config.dataKey] !== null && !isNaN(Number(point[config.dataKey]))
-          );
+          const hasValidDataForSeries = transformedDisplayData.some(point => {
+            const val = point[config.dataKey as keyof WeatherAndTideDataPoint];
+            return val !== undefined && val !== null && !isNaN(Number(val));
+          });
 
           return (
             <div key={config.dataKey as string} className="h-auto w-full border rounded-md p-1 shadow-sm bg-card flex-shrink-0 flex flex-col">
@@ -171,12 +180,15 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
                   <UiLabel htmlFor={`visibility-${config.dataKey}`} className="flex items-center gap-1 cursor-pointer">
                     <IconComponent className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="font-medium text-foreground">{config.title}</span>
+                    {config.dataKey === 'tideHeight' && config.stationName && (
+                        <span className="text-muted-foreground text-[0.65rem] ml-1">({config.stationName})</span>
+                    )}
                   </UiLabel>
                 </div>
-                {isVisible && typeof currentValue === 'number' && <span className="text-muted-foreground">{displayValue}</span>}
+                {isVisible && displayValue && <span className="text-muted-foreground">{displayValue}</span>}
               </div>
               {isVisible && (
-                <div className="flex-grow h-[80px]"> {/* Reduced height for chart area */}
+                <div className="flex-grow h-[80px]"> 
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
@@ -226,6 +238,7 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
                 height={30}
                 dy={5}
               />
+              {/* Render a transparent line for the first available series to ensure Brush works with transformed/dynamic keys */}
               <Line dataKey={(plotConfigs.find(p => plotVisibility[p.dataKey])?.dataKey || 'temperature') as string} stroke="transparent" dot={false} /> 
               <Brush
                 dataKey="time"
@@ -247,5 +260,3 @@ export function WeatherPlotsGrid({ weatherData, isLoading, error }: WeatherPlots
     </div>
   );
 }
-
-    

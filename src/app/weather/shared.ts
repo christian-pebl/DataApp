@@ -2,13 +2,11 @@
 import { z } from 'zod';
 import { parseISO } from 'date-fns';
 
-// Helper function for robust date string validation (can be kept here or in a utils file if used more broadly)
+// Helper function for robust date string validation
 const isValidDateString = (val: string): boolean => {
   try {
-    // Check if parseISO results in a valid date and valueOf returns a number
     return !isNaN(parseISO(val).valueOf());
   } catch (e) {
-    // If parseISO throws (e.g., for a completely malformed string), it's not valid
     return false;
   }
 };
@@ -20,6 +18,7 @@ export const WeatherDataPointSchema = z.object({
   windSpeed: z.number().optional().describe("Wind speed in m/s"),
   cloudCover: z.number().optional().describe("Cloud cover percentage"),
   windDirection: z.number().optional().describe("Wind direction in degrees (0-360)"),
+  tideHeight: z.number().optional().describe("Tide height in meters"),
 });
 export type WeatherDataPoint = z.infer<typeof WeatherDataPointSchema>;
 
@@ -32,3 +31,7 @@ export const FetchWeatherInputSchema = z.object({
 });
 export type FetchWeatherInput = z.infer<typeof FetchWeatherInputSchema>;
 
+// Define a type for the combined weather and tide data action response
+export interface WeatherAndTideDataPoint extends WeatherDataPoint {
+  tideStationName?: string; // To be passed along with the data if available
+}

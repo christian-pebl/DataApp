@@ -4,11 +4,11 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Thermometer, Wind, Cloud, Compass, Loader2, Search, MapPin, SunMoon, LayoutGrid, CloudSun, CalendarDays, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, Search, MapPin, SunMoon, LayoutGrid, CloudSun, CalendarDays } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import { fetchWeatherDataAction } from "./actions";
-import type { WeatherDataPoint } from "./shared";
+import type { WeatherAndTideDataPoint } from "./shared"; 
 import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
 import { formatISO, subDays } from "date-fns";
@@ -18,8 +18,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 
 
 const WeatherPlotsGrid = dynamic<WeatherPlotsGridProps>(
@@ -59,7 +57,7 @@ const defaultLocation = knownLocations[defaultLocationKey];
 
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
-  const [weatherData, setWeatherData] = useState<WeatherDataPoint[]>([]);
+  const [weatherData, setWeatherData] = useState<WeatherAndTideDataPoint[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -72,6 +70,8 @@ export default function WeatherPage() {
   });
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [tideStationName, setTideStationName] = useState<string | undefined>(undefined);
+
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 7),
@@ -124,7 +124,7 @@ export default function WeatherPage() {
 
     setIsLoading(true);
     setError(null);
-    // setWeatherData([]); // Optionally clear previous data immediately
+    setTideStationName(undefined); // Reset tide station name
 
     const result = await fetchWeatherDataAction({
       latitude: coordsToUse.latitude,
@@ -136,6 +136,7 @@ export default function WeatherPage() {
     setIsLoading(false);
     if (result.success && result.data) {
       setWeatherData(result.data);
+      setTideStationName(result.tideStationName);
       if (result.message) {
         toast({ title: "Info", description: result.message, duration: 3000 });
       } else if (result.data.length === 0) {
@@ -161,6 +162,7 @@ export default function WeatherPage() {
       toast({ variant: "destructive", title: "Search Error", description: "Please enter a location to search." });
       setInitialCoords(null); 
       setWeatherData([]); 
+      setTideStationName(undefined);
       return;
     }
     const locationKey = Object.keys(knownLocations).find(
@@ -177,12 +179,33 @@ export default function WeatherPage() {
         setSearchTerm(knownLocations[locationKey].name);
       }
     } else {
+      // If not in known locations, attempt to use current initialCoords (if any) or show error.
+      // For a real app, here you'd call a geocoding API.
       if (!initialCoords) { 
         setWeatherData([]); 
-        toast({ variant: "destructive", title: "Location Not Found", description: "Location not found in predefined list. Try a major UK city or postcode." });
+        setTideStationName(undefined);
+        toast({ variant: "destructive", title: "Location Not Found", description: "Location not found. Try a major UK city or postcode from the predefined list." });
         return;
       }
-      coordsForFetch = initialCoords; 
+      // If we have initialCoords but search term didn't match, it means user typed something new.
+      // We could try to geocode searchTerm here in a real app. For now, we'll just use initialCoords if it exists.
+      // To prevent fetching for a non-understood typed location if initialCoords isn't set, we can just return.
+      // A better UX might involve clearing initialCoords if searchTerm doesn't match any known location.
+      // For now, let's assume if user types something new and it's not known, we don't auto-set coords.
+      // This means they'd have to pick from suggestions or type a known name.
+      // If we wanted to use last known good coords, we'd set `coordsForFetch = initialCoords;`
+      // However, to force selection, let's re-evaluate:
+      // if no locationKey, and it's a new search term, we should probably clear initialCoords
+      // unless the searchTerm IS what initialCoords represent.
+      const currentKnownNameForInitialCoords = Object.values(knownLocations).find(loc => loc.lat === initialCoords?.latitude && loc.lon === initialCoords?.longitude)?.name;
+      if (searchTerm.toLowerCase() !== currentKnownNameForInitialCoords?.toLowerCase()) {
+         setWeatherData([]); 
+         setTideStationName(undefined);
+         setInitialCoords(null); // Clear coords if search term doesn't match any known, forcing selection
+         toast({ variant: "destructive", title: "Location Not Found", description: "Please select a location from the suggestions or a known UK city/postcode." });
+         return;
+      }
+      coordsForFetch = initialCoords;
     }
     
     if (coordsForFetch && dateRange?.from && dateRange?.to) {
@@ -207,8 +230,15 @@ export default function WeatherPage() {
   useEffect(() => {
     const currentSearchTerm = searchTerm.trim();
     if (currentSearchTerm === "") {
-      setSuggestions([]);
-      setShowSuggestions(false); 
+      // When empty, show all known locations as suggestions if input is focused
+      // If not focused, clear suggestions
+      if (document.activeElement === document.querySelector('input[type="text"]')) {
+         setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
+         setShowSuggestions(true);
+      } else {
+        setSuggestions([]);
+        setShowSuggestions(false); 
+      }
       return;
     }
 
@@ -231,23 +261,29 @@ export default function WeatherPage() {
       const newCoords = { latitude: location.lat, longitude: location.lon };
       setInitialCoords(newCoords); 
       setShowSuggestions(false);
+      // Automatically fetch data for the selected suggestion
+      // if (dateRange?.from && dateRange?.to) {
+      //   await handleFetchWeather(newCoords, dateRange);
+      // }
     }
-  }, []); 
+  }, [dateRange, handleFetchWeather]); 
 
   const handleInputFocus = () => {
     const currentSearchTerm = searchTerm.trim();
+    // If input is empty or already a known location name, show all suggestions
     if (currentSearchTerm === "" || Object.values(knownLocations).some(loc => loc.name === currentSearchTerm)) {
       setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
       setShowSuggestions(true);
-    } else if (suggestions.length > 0) {
+    } else if (suggestions.length > 0) { // If there are already filtered suggestions from typing, show them
       setShowSuggestions(true);
     }
   };
   
   const handleInputBlur = () => {
+    // Delay hiding suggestions to allow click event on suggestion to fire
     setTimeout(() => {
       setShowSuggestions(false);
-    }, 150);
+    }, 150); // 150ms delay might need adjustment
   };
 
 
@@ -269,7 +305,7 @@ export default function WeatherPage() {
                   </Link>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Data Explorer (CSV plotting page - currently redirects to Weather)</p>
+                  <p>Data Explorer</p>
                 </TooltipContent>
               </Tooltip>
 
@@ -321,7 +357,7 @@ export default function WeatherPage() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       handleLocationSearchAndFetch(); 
-                      setShowSuggestions(false); 
+                      setShowSuggestions(false); // Hide suggestions after Enter
                     }
                   }}
                   className="h-9 text-sm"
@@ -334,7 +370,7 @@ export default function WeatherPage() {
                         type="button"
                         className="w-full text-left px-3 py-2 text-sm hover:bg-muted focus:bg-muted focus:outline-none"
                         onClick={() => handleSuggestionClick(suggestion.key)}
-                        onMouseDown={(e) => e.preventDefault()} 
+                        onMouseDown={(e) => e.preventDefault()} // Prevents input blur before click
                       >
                         {suggestion.name}
                       </button>
@@ -375,6 +411,7 @@ export default function WeatherPage() {
                     weatherData={weatherData}
                     isLoading={isLoading}
                     error={error}
+                    tideStationName={tideStationName}
                 />
               </CardContent>
             </Card>
@@ -384,13 +421,11 @@ export default function WeatherPage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-16 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            Weather data provided by Open-Meteo. Built with Next.js and ShadCN/UI.
+            Weather data provided by Open-Meteo. Tide data is illustrative. Built with Next.js and ShadCN/UI.
           </p>
         </div>
       </footer>
     </div>
   );
 }
-    
-
     
