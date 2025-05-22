@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import dynamic from 'next/dynamic'; // Import dynamic
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SunMoon, CloudSun, LayoutGrid, AlertTriangle, Info } from "lucide-react";
@@ -15,7 +16,16 @@ import { useToast } from "@/hooks/use-toast";
 import { usePathname } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { InteractiveMap } from "@/components/weather/InteractiveMap"; 
+// import { InteractiveMap } from "@/components/weather/InteractiveMap"; // Remove static import
+
+// Dynamically import InteractiveMap with SSR disabled
+const InteractiveMap = dynamic(
+  () => import('@/components/weather/InteractiveMap').then(mod => mod.InteractiveMap),
+  { 
+    ssr: false,
+    loading: () => <div className="w-full h-full flex items-center justify-center bg-muted text-muted-foreground"><p>Loading map...</p></div>
+  }
+);
 
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
@@ -147,7 +157,6 @@ export default function WeatherPage() {
             <div className="mb-4 p-4 border rounded-lg shadow-sm bg-card">
               <h3 className="text-md font-semibold mb-2 text-center">Location Selector</h3>
               <div className="aspect-[4/3] w-full bg-muted rounded-md flex items-center justify-center text-muted-foreground text-sm overflow-hidden mb-2">
-                {/* InteractiveMap component will render here */}
                 <InteractiveMap onLocationSelect={handleMapLocationSelect} selectedCoords={mapSelectedCoords} />
               </div>
               <p className="text-xs text-center text-muted-foreground mb-3">
