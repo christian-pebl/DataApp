@@ -4,8 +4,8 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Thermometer, Wind, Cloud, Compass, Loader2, Search, MapPin, CalendarDays } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Thermometer, Wind, Cloud, Compass, Loader2, Search, MapPin, SunMoon, LayoutGrid, CloudSun, CalendarDays } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import { fetchWeatherDataAction } from "./actions";
 import type { WeatherDataPoint } from "./shared";
@@ -18,6 +18,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 
 const WeatherPlotsGrid = dynamic<WeatherPlotsGridProps>(
@@ -237,7 +239,7 @@ export default function WeatherPage() {
         <TooltipProvider>
           <div className="container flex h-14 items-center justify-between px-3 md:px-4">
             <Link href="/weather" passHref>
-              <h1 className="text-xl dark:text-2xl font-bold font-sans text-foreground cursor-pointer">PEBL data app</h1>
+              <h1 className="text-xl dark:text-2xl font-sans text-foreground cursor-pointer">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
               <Tooltip>
