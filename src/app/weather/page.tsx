@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SunMoon, CloudSun, LayoutGrid, AlertTriangle, Info } from "lucide-react"; // Changed Moon, Sun to SunMoon
+import { SunMoon, CloudSun, LayoutGrid, AlertTriangle, Info } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import type { WeatherControlsFormValues, WeatherVariableValue } from "@/components/weather/WeatherControls";
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
@@ -12,6 +12,10 @@ import { fetchWeatherDataAction } from "./actions";
 import type { WeatherDataPoint } from "./shared";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+import { usePathname } from "next/navigation";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
+
 
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
@@ -20,6 +24,7 @@ export default function WeatherPage() {
   const [error, setError] = useState<string | null>(null);
   const [currentSelectedVariable, setCurrentSelectedVariable] = useState<string>("temperature");
   const { toast } = useToast();
+  const pathname = usePathname();
 
   // Theme management
   useEffect(() => {
@@ -81,26 +86,53 @@ export default function WeatherPage() {
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-14 items-center justify-between px-3 md:px-4">
-          <Link href="/" passHref>
-            <h1 className="text-2xl font-bold text-primary cursor-pointer">PEBL</h1>
-          </Link>
-          <div className="flex items-center gap-1">
+        <TooltipProvider>
+          <div className="container flex h-14 items-center justify-between px-3 md:px-4">
             <Link href="/" passHref>
-              <Button variant="ghost" size="icon" aria-label="Data Explorer">
-                <LayoutGrid className="h-5 w-5" />
-              </Button>
+              <h1 className="text-2xl font-bold text-primary cursor-pointer">PEBL</h1>
             </Link>
-            <Link href="/weather" passHref>
-              <Button variant="ghost" size="icon" aria-label="Weather Page">
-                <CloudSun className="h-5 w-5" />
-              </Button>
-            </Link>
-            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme (Settings)">
-              <SunMoon className="h-5 w-5" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link href="/" passHref>
+                    <Button variant={pathname === '/' ? "secondary" : "ghost"} size="icon" aria-label="Data Explorer">
+                      <LayoutGrid className="h-5 w-5" />
+                    </Button>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Data Explorer</p>
+                </TooltipContent>
+              </Tooltip>
+              
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link href="/weather" passHref>
+                    <Button variant={pathname === '/weather' ? "secondary" : "ghost"} size="icon" aria-label="Weather Page">
+                      <CloudSun className="h-5 w-5" />
+                    </Button>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Weather Page</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
+              
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme (Settings)">
+                    <SunMoon className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Toggle Theme</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
           </div>
-        </div>
+        </TooltipProvider>
       </header>
 
       <main className="flex-grow container mx-auto p-3 md:p-4">
@@ -160,4 +192,3 @@ export default function WeatherPage() {
     </div>
   );
 }
-
