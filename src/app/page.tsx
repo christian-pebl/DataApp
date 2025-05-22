@@ -3,20 +3,19 @@
 
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun, Github, PlusCircle } from "lucide-react";
+import { Moon, Sun, Github, PlusCircle, CloudSun } from "lucide-react"; // Added CloudSun
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
+import Link from "next/link"; // Added Link
 
 interface PlotConfig {
   id: string;
   title: string;
-  // initialSavedState?: SavedPlotState; // This would be for loading a plot when app starts or loading a new plot from main page button
 }
 
 export default function DataFlowPage() {
   const [plots, setPlots] = useState<PlotConfig[]>([]);
   const [theme, setTheme] = useState("light");
 
-  // Initialize with one plot by default
   useEffect(() => {
     if (plots.length === 0) {
       addPlot();
@@ -66,6 +65,11 @@ export default function DataFlowPage() {
         <div className="container flex h-14 items-center justify-between px-3 md:px-4">
           <h1 className="text-2xl font-bold text-primary">PEBL</h1>
           <div className="flex items-center gap-1">
+            <Link href="/weather" passHref>
+              <Button variant="ghost" size="icon" aria-label="Weather Page">
+                <CloudSun className="h-5 w-5" />
+              </Button>
+            </Link>
             <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
               {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
             </Button>
