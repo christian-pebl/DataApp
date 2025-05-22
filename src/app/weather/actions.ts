@@ -14,9 +14,8 @@ async function fetchWeatherDataFromOpenMeteo(input: FetchWeatherInput): Promise<
   const formattedEndDate = format(parseISO(endDate), 'yyyy-MM-dd');
 
   // Construct the API URL
-  // We'll request temperature, wind speed, and cloud cover hourly.
-  // Open-Meteo's windspeed_10m is in km/h. Temperature is in °C. Cloudcover in %.
-  const hourlyVariables = "temperature_2m,windspeed_10m,cloudcover";
+  // Request temperature, wind speed, cloud cover, and wind direction hourly.
+  const hourlyVariables = "temperature_2m,windspeed_10m,cloudcover,winddirection_10m";
   const apiUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${latitude}&longitude=${longitude}&start_date=${formattedStartDate}&end_date=${formattedEndDate}&hourly=${hourlyVariables}&timezone=auto`;
 
   try {
@@ -32,8 +31,7 @@ async function fetchWeatherDataFromOpenMeteo(input: FetchWeatherInput): Promise<
       throw new Error(`Open-Meteo API Error: ${data.reason}`);
     }
 
-    if (!data.hourly || !data.hourly.time || !data.hourly.temperature_2m || !data.hourly.windspeed_10m || !data.hourly.cloudcover) {
-      // This can happen if the date range is too far in the past or future for historical data, or no data exists.
+    if (!data.hourly || !data.hourly.time || !data.hourly.temperature_2m || !data.hourly.windspeed_10m || !data.hourly.cloudcover || !data.hourly.winddirection_10m) {
       return []; 
     }
     
@@ -41,6 +39,7 @@ async function fetchWeatherDataFromOpenMeteo(input: FetchWeatherInput): Promise<
     const temperatures = data.hourly.temperature_2m as (number | null)[];
     const windSpeedsKmh = data.hourly.windspeed_10m as (number | null)[];
     const cloudCovers = data.hourly.cloudcover as (number | null)[];
+    const windDirections = data.hourly.winddirection_10m as (number | null)[];
 
     const transformedData: WeatherDataPoint[] = times.map((time, index) => {
       // Convert km/h to m/s for wind speed: 1 km/h = 5/18 m/s
@@ -53,6 +52,7 @@ async function fetchWeatherDataFromOpenMeteo(input: FetchWeatherInput): Promise<
         temperature: temperatures[index] ?? undefined,
         windSpeed: windSpeedMs,
         cloudCover: cloudCovers[index] ?? undefined,
+        windDirection: windDirections[index] ?? undefined,
       };
     });
 

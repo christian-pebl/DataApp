@@ -4,26 +4,16 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { Thermometer, Wind, Cloud, MapPin, CalendarDays, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { subDays, formatISO } from "date-fns";
-import React, { useEffect } from "react"; // Added useEffect
+import React, { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-// Label is not used directly in JSX, but FormLabel is from Form
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-
-export const weatherVariables = [
-  { value: "temperature", label: "Temperature", icon: Thermometer },
-  { value: "windSpeed", label: "Wind Speed", icon: Wind },
-  { value: "cloudCover", label: "Cloud Cover", icon: Cloud },
-] as const;
-
-export type WeatherVariableValue = typeof weatherVariables[number]['value'];
 
 export const weatherControlsSchema = z.object({
   latitude: z.coerce.number().min(-90, "Min -90").max(90, "Max 90"),
@@ -35,7 +25,6 @@ export const weatherControlsSchema = z.object({
     message: "Start date must be before or same as end date.",
     path: ["dateRange"], 
   }),
-  variable: z.enum(weatherVariables.map(v => v.value) as [WeatherVariableValue, ...WeatherVariableValue[]]),
 });
 
 export type WeatherControlsFormValues = z.infer<typeof weatherControlsSchema>;
@@ -46,7 +35,7 @@ interface SearchedCoords {
 }
 
 interface WeatherControlsProps {
-  onSubmit: (values: {latitude: number, longitude: number, startDate: string, endDate: string, variable: WeatherVariableValue}) => void;
+  onSubmit: (values: {latitude: number, longitude: number, startDate: string, endDate: string}) => void;
   isLoading: boolean;
   initialCoords?: SearchedCoords | null;
 }
@@ -61,7 +50,6 @@ export function WeatherControls({ onSubmit, isLoading, initialCoords }: WeatherC
         from: subDays(new Date(), 7),
         to: new Date(),
       },
-      variable: "temperature",
     },
   });
 
@@ -78,7 +66,8 @@ export function WeatherControls({ onSubmit, isLoading, initialCoords }: WeatherC
         return;
     }
     onSubmit({
-        ...values,
+        latitude: values.latitude,
+        longitude: values.longitude,
         startDate: formatISO(values.dateRange.from),
         endDate: formatISO(values.dateRange.to),
     });
@@ -91,7 +80,7 @@ export function WeatherControls({ onSubmit, isLoading, initialCoords }: WeatherC
             <Search className="h-5 w-5 text-primary" /> Data Criteria
         </CardTitle>
         <CardDescription className="text-xs">
-          Specify location, date, and variable to plot weather data.
+          Specify location and date range to plot weather data.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-4">
@@ -133,38 +122,10 @@ export function WeatherControls({ onSubmit, isLoading, initialCoords }: WeatherC
                 <FormItem className="flex flex-col">
                   <FormLabel className="mb-1">Date Range</FormLabel>
                   <DatePickerWithRange
-                    date={field.value as DateRange | undefined} // Cast as react-day-picker's DateRange
+                    date={field.value as DateRange | undefined} 
                     onDateChange={field.onChange}
                     disabled={isLoading}
                   />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="variable"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Weather Variable</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isLoading}>
-                    <FormControl>
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder="Select a variable" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {weatherVariables.map((variable) => (
-                        <SelectItem key={variable.value} value={variable.value}>
-                          <div className="flex items-center gap-2">
-                            <variable.icon className="h-4 w-4" />
-                            {variable.label}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
@@ -184,5 +145,3 @@ export function WeatherControls({ onSubmit, isLoading, initialCoords }: WeatherC
     </Card>
   );
 }
-
-    

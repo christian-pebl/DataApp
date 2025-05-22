@@ -19,6 +19,7 @@ export const WeatherDataPointSchema = z.object({
   temperature: z.number().optional().describe("Temperature in Celsius"),
   windSpeed: z.number().optional().describe("Wind speed in m/s"),
   cloudCover: z.number().optional().describe("Cloud cover percentage"),
+  windDirection: z.number().optional().describe("Wind direction in degrees (0-360)"),
 });
 export type WeatherDataPoint = z.infer<typeof WeatherDataPointSchema>;
 
@@ -30,3 +31,4 @@ export const FetchWeatherInputSchema = z.object({
   endDate: z.string().refine(isValidDateString, { message: "Invalid end date format or value." }),
 });
 export type FetchWeatherInput = z.infer<typeof FetchWeatherInputSchema>;
+

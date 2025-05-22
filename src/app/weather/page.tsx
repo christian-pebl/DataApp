@@ -2,11 +2,13 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { SunMoon, LayoutGrid, AlertTriangle, Info, Search as SearchIcon, MapPin, CloudSun } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls";
-import type { WeatherControlsFormValues, WeatherVariableValue } from "@/components/weather/WeatherControls";
+import type { WeatherControlsFormValues } from "@/components/weather/WeatherControls"; // No longer WeatherVariableValue
+// ChartDisplay is used, so keep it.
 import { ChartDisplay } from "@/components/dataflow/ChartDisplay";
 import { fetchWeatherDataAction } from "./actions";
 import type { WeatherDataPoint } from "./shared";
@@ -17,12 +19,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 
-// Simulated geocoding data
 const knownLocations: { [key: string]: { lat: number; lon: number; name: string } } = {
   "london": { lat: 51.5074, lon: -0.1278, name: "London" },
   "manchester": { lat: 53.4808, lon: -2.2426, name: "Manchester" },
   "edinburgh": { lat: 55.9533, lon: -3.1883, name: "Edinburgh" },
-  "eh1 1aa": { lat: 55.9522, lon: -3.1900, name: "Edinburgh (EH1 1AA)" }, // Example UK postcode
+  "eh1 1aa": { lat: 55.9522, lon: -3.1900, name: "Edinburgh (EH1 1AA)" },
   "birmingham": { lat: 52.4862, lon: -1.8904, name: "Birmingham" },
   "glasgow": { lat: 55.8642, lon: -4.2518, name: "Glasgow" },
   "liverpool": { lat: 53.4084, lon: -2.9916, name: "Liverpool" },
@@ -41,12 +42,13 @@ interface Suggestion {
   name: string;
 }
 
+const PLOTTABLE_WEATHER_SERIES = ['temperature', 'windSpeed', 'cloudCover'];
+
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
   const [weatherData, setWeatherData] = useState<WeatherDataPoint[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentSelectedVariable, setCurrentSelectedVariable] = useState<string>("temperature");
   const { toast } = useToast();
   const pathname = usePathname();
 
@@ -55,7 +57,6 @@ export default function WeatherPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  // Theme management
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
     if (storedTheme) {
@@ -81,11 +82,10 @@ export default function WeatherPage() {
     setTheme(theme === "light" ? "dark" : "light");
   };
 
-  const handleFetchWeather = async (values: {latitude: number, longitude: number, startDate: string, endDate: string, variable: WeatherVariableValue}) => {
+  const handleFetchWeather = async (values: {latitude: number, longitude: number, startDate: string, endDate: string}) => {
     setIsLoading(true);
     setError(null);
     setWeatherData([]); 
-    setCurrentSelectedVariable(values.variable);
 
     const result = await fetchWeatherDataAction({
       latitude: values.latitude,
@@ -117,7 +117,7 @@ export default function WeatherPage() {
   
   const handleLocationSearch = () => {
     const term = searchTerm.trim().toLowerCase();
-    setShowSuggestions(false); // Hide suggestions when explicit search is triggered
+    setShowSuggestions(false);
     if (!term) {
       toast({ variant: "destructive", title: "Search Error", description: "Please enter a location to search." });
       return;
@@ -150,14 +150,14 @@ export default function WeatherPage() {
       )
       .map(([key, locObj]) => ({ key, name: locObj.name }));
 
-    setSuggestions(filtered.slice(0, 5)); // Limit to 5 suggestions
+    setSuggestions(filtered.slice(0, 5));
     setShowSuggestions(filtered.length > 0);
   }, [searchTerm]);
 
   const handleSuggestionClick = (suggestionKey: string) => {
     const location = knownLocations[suggestionKey];
     if (location) {
-      setSearchTerm(location.name); // Update search bar with the selected name
+      setSearchTerm(location.name);
       setInitialCoords({ latitude: location.lat, longitude: location.lon });
       toast({ title: "Location Selected", description: `Coordinates for ${location.name} updated.` });
       setShowSuggestions(false);
@@ -165,7 +165,6 @@ export default function WeatherPage() {
   };
 
   const handleInputBlur = () => {
-    // Delay hiding suggestions to allow click event on suggestion to fire
     setTimeout(() => {
       setShowSuggestions(false);
     }, 150);
@@ -232,7 +231,7 @@ export default function WeatherPage() {
               <h3 className="text-md font-semibold mb-2 text-center flex items-center justify-center gap-2">
                 <MapPin className="h-5 w-5 text-primary" /> Location Selector
               </h3>
-              <div className="relative"> {/* Wrapper for positioning suggestions */}
+              <div className="relative">
                 <div className="flex items-center gap-2 mb-1">
                   <Input
                     type="text"
@@ -248,7 +247,7 @@ export default function WeatherPage() {
                     onKeyDown={(e) => { 
                       if (e.key === 'Enter') {
                         handleLocationSearch();
-                        setShowSuggestions(false); // Hide suggestions on Enter
+                        setShowSuggestions(false);
                       }
                     }}
                     className="h-9 text-sm"
@@ -266,7 +265,7 @@ export default function WeatherPage() {
                         type="button"
                         className="w-full text-left px-3 py-2 text-sm hover:bg-muted focus:bg-muted focus:outline-none"
                         onClick={() => handleSuggestionClick(suggestion.key)}
-                        onMouseDown={(e) => e.preventDefault()} // Prevents input blur before click registers
+                        onMouseDown={(e) => e.preventDefault()}
                       >
                         {suggestion.name}
                       </button>
@@ -274,7 +273,7 @@ export default function WeatherPage() {
                   </div>
                 )}
               </div>
-              <p className="text-xs text-center text-muted-foreground mt-2 mb-1"> {/* Added mt-2 for spacing */}
+              <p className="text-xs text-center text-muted-foreground mt-2 mb-1">
                 Or enter latitude/longitude below.
               </p>
             </Card>
@@ -288,10 +287,10 @@ export default function WeatherPage() {
             <Card className="shadow-lg h-full">
               <CardHeader className="p-3">
                 <CardTitle className="text-md">
-                  Weather Plot: {currentSelectedVariable.charAt(0).toUpperCase() + currentSelectedVariable.slice(1)}
+                  Weather Data Plot
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-2 h-[calc(100%-4rem)]">
+              <CardContent className="p-2 h-[calc(100%-4rem)]"> {/* Adjusted height calculation */}
                 {isLoading && (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mr-2"></div>
@@ -315,9 +314,9 @@ export default function WeatherPage() {
                 {!isLoading && !error && weatherData.length > 0 && (
                   <ChartDisplay
                     data={chartCompatibleData}
-                    plottableSeries={[currentSelectedVariable]}
+                    plottableSeries={PLOTTABLE_WEATHER_SERIES} // Pass all relevant series
                     timeAxisLabel="Date / Time"
-                    plotTitle={`Weather Data: ${currentSelectedVariable}`}
+                    plotTitle="Weather Data" // Generic title
                     chartRenderHeight={400}
                   />
                 )}
@@ -329,11 +328,10 @@ export default function WeatherPage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-16 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            Weather data is illustrative. Built with Next.js and ShadCN/UI.
+            Weather data provided by Open-Meteo. Built with Next.js and ShadCN/UI.
           </p>
         </div>
       </footer>
     </div>
   );
 }
-    
