@@ -42,16 +42,16 @@ const initialValidationSteps: ValidationStep[] = [
   { id: 'dataReady', label: 'Import complete', status: 'pending' },
 ];
 
-const DEFAULT_PLOT_HEIGHT = 278;
-const EXPANDED_PLOT_HEIGHT = 555;
+const DEFAULT_PLOT_HEIGHT = 278; // Default render height for chart
+const EXPANDED_PLOT_HEIGHT = 555; // Expanded render height for chart
 
 interface SavedPlotState {
   rawCsvText: string;
   currentFileName: string;
   plotTitle: string;
   timeAxisLabel?: string;
-  dataSeries: string[]; // Array of original series names from the CSV used at save time
-  visibleSeries: Record<string, boolean>; // Map of series names to their visibility state
+  dataSeries: string[];
+  visibleSeries: Record<string, boolean>;
   isPlotExpanded: boolean;
   isMinimalistView: boolean;
   brushStartIndex?: number;
@@ -87,7 +87,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(undefined);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
   
-
   const currentChartHeight = isPlotExpanded ? EXPANDED_PLOT_HEIGHT : DEFAULT_PLOT_HEIGHT;
 
   useEffect(() => {
@@ -262,25 +261,24 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       setRawCsvText(fileContent);
       setParsedData(parsedResult.data);
       setCurrentFileName(fileName);
-      setPlotTitle(fileName); // Default plot title to filename
+      setPlotTitle(fileName); 
       setDataSeries(parsedResult.seriesNames);
       setTimeAxisLabel(parsedResult.timeHeader);
       
-      // Default visibility - this will be overridden if loading a saved plot
-      const defaultVisibleSeries: Record<string, boolean> = {};
+      const newVisibleSeries: Record<string, boolean> = {};
       parsedResult.seriesNames.forEach((name, index) => {
-        defaultVisibleSeries[name] = index < 4;
+        newVisibleSeries[name] = index < 4; // Default to first 4 series visible
       });
-      setVisibleSeries(defaultVisibleSeries); 
+      setVisibleSeries(newVisibleSeries); 
 
-      setBrushStartIndex(undefined); // Reset brush on new data
+      setBrushStartIndex(undefined); 
       setBrushEndIndex(undefined);
       const successToast = toast({
         title: "File Processed Successfully",
         description: `${fileName} has been processed.`,
       });
       setTimeout(() => {
-        dismiss(successToast.id);
+        if(successToast && successToast.id) dismiss(successToast.id);
       }, 2000);
       return { success: true, seriesNames: parsedResult.seriesNames };
     }
@@ -288,29 +286,37 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   };
 
 
-  const handleCsvFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     setIsProcessing(true);
-    setCurrentFileForValidation(null);
+    setCurrentFileForValidation(null); // Reset filename for validation summary
     const file = event.target.files?.[0];
+    
+    // Reset validation steps for each new file upload attempt
+    const freshValidationSteps = initialValidationSteps.map(step => ({...step, status: 'pending', message: undefined }));
+    setValidationSteps(freshValidationSteps);
+    setAccordionValue(""); // Close accordion initially
+
     if (!file) {
       setIsProcessing(false);
+      if (event.target) event.target.value = ""; // Clear the input
       return;
     }
 
     setCurrentFileForValidation(file.name);
-    setAccordionValue(""); 
 
     const updateAndReturnError = (stepId: string, errorMsg: string, title?: string) => {
-      updateStepStatus(stepId, 'error', errorMsg);
-      const stepIndex = initialValidationSteps.findIndex(s => s.id === stepId);
-      if (stepIndex !== -1) {
-        for (let i = stepIndex + 1; i < initialValidationSteps.length; i++) {
-            const currentStep = validationSteps.find(s => s.id === initialValidationSteps[i].id) || initialValidationSteps[i];
-            if(currentStep.status === 'pending') { 
-                 updateStepStatus(initialValidationSteps[i].id, 'error', 'Prerequisite step failed.');
-            }
-        }
-      }
+      setValidationSteps(prevSteps =>
+        prevSteps.map(step => {
+          if (step.id === stepId) return { ...step, status: 'error', message: errorMsg };
+          // Mark subsequent steps as failed due to prerequisite failure
+          const stepIndex = initialValidationSteps.findIndex(s => s.id === step.id);
+          const errorStepIndex = initialValidationSteps.findIndex(s => s.id === stepId);
+          if (stepIndex > errorStepIndex && step.status === 'pending') {
+            return { ...step, status: 'error', message: 'Prerequisite step failed.' };
+          }
+          return step;
+        })
+      );
       toast({ variant: "destructive", title: title || "File Validation Error", description: errorMsg });
       setAccordionValue("validation-details-" + instanceId); 
       return null;
@@ -370,9 +376,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       const jsonText = await file.text();
       const savedState = JSON.parse(jsonText) as SavedPlotState;
 
-      // Validate loaded state structure (basic check)
       if (!savedState.rawCsvText || !savedState.currentFileName || !savedState.plotTitle || !savedState.dataSeries || savedState.visibleSeries === undefined) {
-        throw new Error("Invalid save file structure. Missing essential fields (rawCsvText, currentFileName, plotTitle, dataSeries, visibleSeries).");
+        throw new Error("Invalid save file structure. Missing essential fields.");
       }
       
       const { success: successfullyProcessed, seriesNames: actualSeriesInLoadedCsv } = processCsvFileContent(savedState.rawCsvText, savedState.currentFileName);
@@ -391,7 +396,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
         setBrushStartIndex(savedState.brushStartIndex);
         setBrushEndIndex(savedState.brushEndIndex);
         
-        // Restore timeAxisLabel if it was saved and differs from what the CSV parsing might set
         if (savedState.timeAxisLabel !== undefined) {
             setTimeAxisLabel(savedState.timeAxisLabel);
         }
@@ -404,7 +408,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
          toast({
           variant: "destructive",
           title: "Load Error",
-          description: `Could not process CSV data from loaded file ${file.name}. Check validation details if any.`,
+          description: `Could not process CSV data from loaded file ${file.name}. Check validation details.`,
         });
       }
     } catch (error: any) {
@@ -412,9 +416,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       toast({
         variant: "destructive",
         title: "Load Failed",
-        description: error.message || `Could not load plot state from ${file.name}. The file might be corrupted or not a valid save file.`,
+        description: error.message || `Could not load plot state from ${file.name}. Invalid file.`,
       });
-      setValidationSteps(initialValidationSteps.map(s => s.id === 'fileSelection' ? {...s, status: 'error', message: `Failed to load plot state from ${file.name}: ${error.message || 'Invalid file'}`} : {...s, status: 'error', message: 'Prerequisite step failed.'} ));
+      const freshValidationSteps = initialValidationSteps.map(s => s.id === 'fileSelection' ? {...s, status: 'error', message: `Failed to load plot state from ${file.name}: ${error.message || 'Invalid file'}`} : {...s, status: 'error', message: 'Prerequisite step failed.'} );
+      setValidationSteps(freshValidationSteps);
       setAccordionValue("validation-details-" + instanceId);
     }
 
@@ -439,7 +444,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
       currentFileName,
       plotTitle,
       timeAxisLabel,
-      dataSeries, // This should be the unique series names used for plotting
+      dataSeries, 
       visibleSeries,
       isPlotExpanded,
       isMinimalistView,
@@ -482,7 +487,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
     setCurrentFileForValidation(null);
     setAccordionValue("");
     setIsPlotExpanded(false); 
-    setIsMinimalistView(false); // Also reset minimalist view
+    setIsMinimalistView(false);
     setBrushStartIndex(undefined);
     setBrushEndIndex(undefined);
     toast({
@@ -544,7 +549,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
   return (
     <Card className="shadow-lg">
       <CardHeader className="flex flex-row items-center justify-between p-3">
-        <CardTitle className="flex items-center gap-2 text-sm">
+        <CardTitle className="flex items-center gap-2 text-sm"> 
           <Settings2 className="h-4 w-4"/> 
           {plotTitle || "Data Plot"}
         </CardTitle>
@@ -555,14 +560,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setIsPlotExpanded(!isPlotExpanded)}
-            aria-label={isPlotExpanded ? "Collapse plot height" : "Expand plot height"}
+            onClick={() => setIsMinimalistView(!isMinimalistView)}
+            aria-label={isMinimalistView ? "Show controls" : "Hide controls"}
             className="h-7 w-7"
-            disabled={parsedData.length === 0}
           >
-            {isPlotExpanded ? <ChevronsUp className="h-4 w-4" /> : <ChevronsDown className="h-4 w-4" />}
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => setIsMinimalistView(!isMinimalistView)} aria-label={isMinimalistView ? "Show controls" : "Hide controls"} className="h-7 w-7">
             {isMinimalistView ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
           </Button>
           <Button variant="ghost" size="icon" onClick={() => setIsMinimized(!isMinimized)} aria-label={isMinimized ? "Expand plot" : "Minimize plot"} className="h-7 w-7">
@@ -576,14 +577,15 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
 
       {!isMinimized && (
         <CardContent className={cn("p-2 pt-0 md:grid gap-2", isMinimalistView ? "block" : "md:grid-cols-12")}>
+          {/* Import & Validate Section */}
           {!isMinimalistView && (
-             <div className="md:col-span-2 flex flex-col space-y-1.5">
+            <div className="md:col-span-2 flex flex-col space-y-1.5"> 
               <div className="space-y-1 border p-1.5 rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1 px-1 pt-0.5 pb-0.5">
                    <Settings2 className="h-3 w-3 text-[#2B7A78]" />
                    <h3 className="text-xs font-semibold text-[#2B7A78]">Import & Validate</h3>
                 </div>
-                 <div className="px-1 py-1.5">
+                <div className="px-1 py-1.5">
                    <Button asChild variant="outline" size="sm" className="w-full h-8 text-xs">
                      <Label htmlFor={csvFileInputId} className="cursor-pointer flex items-center justify-center">
                        Choose file
@@ -593,7 +595,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                      id={csvFileInputId}
                      type="file"
                      accept=".csv"
-                     onChange={handleCsvFileChange}
+                     onChange={handleFileChange}
                      disabled={isProcessing}
                      className="sr-only"
                    />
@@ -637,11 +639,11 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                            </span>
                         </div>
                       </AccordionTrigger>
-                      <AccordionContent className="pt-0.5 pb-0">
+                      <AccordionContent className="pt-0.5 pb-0 max-h-28 overflow-y-auto"> {/* Added max-h and overflow */}
                         <div className="text-[0.55rem] text-muted-foreground px-1 pb-0.5">
                             File: {currentFileForValidation || currentFileName || "N/A"}
                         </div>
-                        <ScrollArea className="w-full rounded-md border p-1 bg-muted/20 max-h-28 overflow-y-auto"> 
+                        <ScrollArea className="w-full rounded-md border p-1 bg-muted/20"> 
                           {validationSteps.map(step => (
                             <li key={step.id} className="flex items-start list-none">
                               <div className="flex-shrink-0 w-2.5 h-2.5 mr-1 mt-0.5"> 
@@ -696,6 +698,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             </div>
           )}
           
+          {/* Select Variables Section */}
           {!isMinimalistView && (
             <div className="md:col-span-2 flex flex-col space-y-1.5">
                <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0">
@@ -719,7 +722,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                   </Label>
                 </div>
-                 <ScrollArea className="w-full rounded-md border p-1 h-32">
+                 <ScrollArea className="w-full rounded-md border p-1 h-48">
                   {dataSeries.length > 0 ? (
                     dataSeries.map((seriesName) => (
                       <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -748,6 +751,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
             </div>
           )}
           
+          {/* Plot Area */}
            <div className={cn(isMinimalistView ? "col-span-full" : "md:col-span-8", "flex flex-col min-h-0")}>
              <div className={cn(isMinimalistView ? "flex-1 min-h-0" : "")}>
                 <ChartDisplay
@@ -761,10 +765,22 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "New
                     onBrushChange={handleBrushChange}
                 />
              </div>
+              {parsedData.length > 0 && !isMinimalistView && !isMinimized && (
+                <div className="flex justify-center pt-1 pb-1 border-t">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setIsPlotExpanded(!isPlotExpanded)}
+                    aria-label={isPlotExpanded ? "Collapse plot height" : "Expand plot height"}
+                    className="h-7 w-7"
+                  >
+                    {isPlotExpanded ? <ChevronsUp className="h-4 w-4" /> : <ChevronsDown className="h-4 w-4" />}
+                  </Button>
+                </div>
+              )}
           </div>
         </CardContent>
       )}
     </Card>
   );
 }
-
