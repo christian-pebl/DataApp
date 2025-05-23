@@ -7,12 +7,10 @@ import { format, parseISO } from 'date-fns';
 
 interface OpenMeteoMarineHourlyResponse {
   time: string[];
-  sea_level?: (number | null)[];
   wave_height?: (number | null)[];
   wave_direction?: (number | null)[];
   wave_period?: (number | null)[];
   sea_surface_temperature?: (number | null)[];
-  wind_speed_10m?: (number | null)[];
 }
 
 interface OpenMeteoMarineApiResponse {
@@ -130,9 +128,6 @@ export async function fetchOpenMeteoMarineDataAction(
     for (let i = 0; i < numTimestamps; i++) {
       const point: MarineDataPoint = { time: times[i] };
       
-      if (selectedParamKeys.includes('seaLevel') && apiData.hourly.sea_level && apiData.hourly.sea_level[i] !== null) {
-        point.seaLevel = apiData.hourly.sea_level[i];
-      }
       if (selectedParamKeys.includes('waveHeight') && apiData.hourly.wave_height && apiData.hourly.wave_height[i] !== null) {
         point.waveHeight = apiData.hourly.wave_height[i];
       }
@@ -144,9 +139,6 @@ export async function fetchOpenMeteoMarineDataAction(
       }
       if (selectedParamKeys.includes('seaSurfaceTemperature') && apiData.hourly.sea_surface_temperature && apiData.hourly.sea_surface_temperature[i] !== null) {
         point.seaSurfaceTemperature = apiData.hourly.sea_surface_temperature[i];
-      }
-      if (selectedParamKeys.includes('windSpeed10m') && apiData.hourly.wind_speed_10m && apiData.hourly.wind_speed_10m[i] !== null) {
-        point.windSpeed10m = apiData.hourly.wind_speed_10m[i];
       }
       marineData.push(point);
     }
@@ -168,5 +160,3 @@ export async function fetchOpenMeteoMarineDataAction(
     return { success: false, error: `Error fetching Open-Meteo marine data: ${errorMessage}`, log };
   }
 }
-
-    

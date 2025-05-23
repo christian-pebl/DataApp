@@ -37,16 +37,14 @@ const knownLocations: { [key: string]: { lat: number; lon: number; name: string 
 };
 const defaultLocationKey = "stdavidshead";
 
-MARINE_PARAMETER_CONFIG.seaLevel.icon = Waves;
+// Assign icons to parameter configs
 MARINE_PARAMETER_CONFIG.waveHeight.icon = Sailboat;
 MARINE_PARAMETER_CONFIG.waveDirection.icon = Compass;
 MARINE_PARAMETER_CONFIG.wavePeriod.icon = Timer;
 if (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature) {
   MARINE_PARAMETER_CONFIG.seaSurfaceTemperature.icon = Thermometer;
 }
-if (MARINE_PARAMETER_CONFIG.windSpeed10m) {
-  MARINE_PARAMETER_CONFIG.windSpeed10m.icon = Wind;
-}
+
 
 export default function OMMarineExplorerPage() {
   const [theme, setTheme] = useState("light");
@@ -417,5 +415,3 @@ export default function OMMarineExplorerPage() {
     </div>
   );
 }
-
-    

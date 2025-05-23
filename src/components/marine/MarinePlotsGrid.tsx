@@ -2,12 +2,9 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush, Label as RechartsLabel } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts';
 import type { MarineParameterKey, MarineDataPoint } from '@/app/om-marine-explorer/shared'; // Updated path
-import { Info, Waves, Sailboat, Compass, Timer, CheckCircle2, XCircle, Loader2, AlertCircle, Thermometer, Wind } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label as UiLabel } from "@/components/ui/label";
+import { Info, Waves, Sailboat, Compass, Timer, CheckCircle2, XCircle, Loader2, AlertCircle, Thermometer } from "lucide-react"; // Removed Wind as it's no longer a parameter
 
 interface PlotConfig {
   dataKey: MarineParameterKey;
@@ -55,12 +52,10 @@ export function MarinePlotsGrid({
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
   
   const plotConfigs = useMemo((): PlotConfig[] => [
-    { dataKey: 'seaLevel', title: 'Sea Level', unit: 'm', color: '--chart-1', Icon: Waves },
     { dataKey: 'waveHeight', title: 'Wave Height', unit: 'm', color: '--chart-2', Icon: Sailboat },
     { dataKey: 'waveDirection', title: 'Wave Direction', unit: '°', color: '--chart-4', Icon: Compass },
     { dataKey: 'wavePeriod', title: 'Wave Period', unit: 's', color: '--chart-3', Icon: Timer },
     { dataKey: 'seaSurfaceTemperature', title: 'Sea Surface Temp', unit: '°C', color: '--chart-5', Icon: Thermometer },
-    { dataKey: 'windSpeed10m', title: 'Wind Speed (10m)', unit: 'm/s', color: '--primary', Icon: Wind },
   ], []);
 
   const initialAvailability = useMemo(() => 
