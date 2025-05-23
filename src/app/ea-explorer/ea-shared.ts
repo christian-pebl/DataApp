@@ -9,9 +9,8 @@ export interface EAStationInfo {
   lat?: number;
   long?: number;
   notation?: string; // Often the station ID like "E72534"
-  stationReference?: string; // Another form of ID
+  stationReference: string; // Crucial ID for fetching measures, e.g., "E72534" or "0401"
   type?: string[];
-  measures?: EAMeasureInfo[]; // Optional: if we fetch measures along with station details
 }
 
 // Information about a specific measure at an EA station
@@ -38,7 +37,14 @@ export interface EATimeSeriesDataPoint {
   value: number;
 }
 
-export const FetchEAUniqueParametersInputSchema = z.object({}); // No specific input for now
+export interface LogStep {
+  message: string;
+  status: 'info' | 'success' | 'error' | 'pending' | 'warning';
+  details?: string;
+}
+
+// Schemas for Server Action inputs
+export const FetchEAUniqueParametersInputSchema = z.object({});
 export type FetchEAUniqueParametersInput = z.infer<typeof FetchEAUniqueParametersInputSchema>;
 
 export const FetchEAStationsForParameterInputSchema = z.object({
@@ -56,9 +62,3 @@ export const FetchEATimeSeriesInputSchema = z.object({
   }),
 });
 export type FetchEATimeSeriesInput = z.infer<typeof FetchEATimeSeriesInputSchema>;
-
-export interface LogStep {
-  message: string;
-  status: 'info' | 'success' | 'error' | 'pending';
-  details?: string;
-}

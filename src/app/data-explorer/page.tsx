@@ -146,11 +146,10 @@ export default function DataExplorerPage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            PEBL data app - CSV Data Explorer.
+            PEBL data app - CSV Data Explorer. Weather & Open Access Data.
           </p>
         </div>
       </footer>
     </div>
   );
 }
-
