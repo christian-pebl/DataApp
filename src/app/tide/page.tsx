@@ -21,15 +21,16 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
-const knownLocations: { [key: string]: { lat: number; lon: number; name: string, eaStationId?: string } } = {
-  "milfordhaven": { lat: 51.710, lon: -5.042, name: "Milford Haven", eaStationId: "0401" },
+// Focus on locations with known EA Station IDs for tide data
+// Note: EA Station IDs can be complex and specific. These are examples and may need verification for the exact API endpoint.
+// The format E###### (e.g., E71524) is common for some EA systems, while simpler numbers (e.g., 0001) might be for others.
+const knownLocations: { [key: string]: { lat: number; lon: number; name: string, eaStationId: string } } = {
+  "milfordhaven": { lat: 51.710, lon: -5.042, name: "Milford Haven", eaStationId: "E71524" }, 
   "newlyn": { lat: 50.102, lon: -5.549, name: "Newlyn", eaStationId: "0001" },
   "dover": { lat: 51.124, lon: 1.323, name: "Dover", eaStationId: "0023" },
-  "holyhead": { lat: 53.3075, lon: -4.6281, name: "Holyhead", eaStationId: "E71525" }, // Example complex ID
-  "liverpool": { lat: 53.410, lon: -3.017, name: "Liverpool (Gladstone Dock)", eaStationId: "E71896" }, // Example complex ID
+  "holyhead": { lat: 53.3075, lon: -4.6281, name: "Holyhead", eaStationId: "E71525" },
+  "liverpool": { lat: 53.410, lon: -3.017, name: "Liverpool (Gladstone Dock)", eaStationId: "E71896" },
   "portsmouth": { lat: 50.81, lon: -1.08, name: "Portsmouth", eaStationId: "E72614"},
-  "southampton_docks": { lat: 50.90, lon: -1.40, name: "Southampton Docks"}, // No EA ID, will use Open-Meteo
-  // Add more verified EA station locations if needed
 };
 
 const defaultLocationKey = "milfordhaven";
@@ -37,8 +38,8 @@ const defaultLocationKey = "milfordhaven";
 interface SearchedCoords {
   latitude: number;
   longitude: number;
-  eaStationId?: string;
-  key?: string; 
+  eaStationId: string; // Made mandatory as we rely on it for EA fetching
+  key: string; 
 }
 
 interface Suggestion {
@@ -75,7 +76,7 @@ export default function TidePage() {
   
   const initialFetchDone = useRef(false);
   const [fetchLogSteps, setFetchLogSteps] = useState<FetchLogStep[]>([]);
-  const [logAccordionValue, setLogAccordionValue] = useState<string>(""); // To control accordion open/close
+  const [logAccordionValue, setLogAccordionValue] = useState<string>(""); 
   const [logOverallStatus, setLogOverallStatus] = useState<'pending' | 'success' | 'error' | 'idle'>('idle');
 
 
@@ -100,13 +101,13 @@ export default function TidePage() {
       if (systemPrefersDark) setTheme("dark");
     }
     
-    const defaultLoc = knownLocations[defaultLocationKey];
+    const defaultLoc = knownLocations[defaultLocationKey as keyof typeof knownLocations];
     if (defaultLoc) {
       setSearchTerm(defaultLoc.name);
-      const defaultDetails = { 
+      const defaultDetails: SearchedCoords = { 
         latitude: defaultLoc.lat, 
         longitude: defaultLoc.lon, 
-        eaStationId: defaultLoc.eaStationId,
+        eaStationId: defaultLoc.eaStationId, 
         key: defaultLocationKey 
       };
       setCurrentLocationDetails(defaultDetails);
@@ -115,7 +116,8 @@ export default function TidePage() {
          initialFetchDone.current = true;
       }
     }
-  }, []); 
+  // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, []); // Initial fetch should only run once based on default location.
 
   useEffect(() => {
     if (theme === "dark") document.documentElement.classList.add("dark");
@@ -128,11 +130,10 @@ export default function TidePage() {
   const handleFetchMarineData = useCallback(async (locationDetails?: SearchedCoords, datesToUse?: DateRange, isInitialFetch = false) => {
     const currentLoc = locationDetails || currentLocationDetails;
     const currentDates = datesToUse || dateRange;
-    const currentLocKey = currentLoc?.key || null;
-
+    
     if (!isInitialFetch) {
-        if (!currentLoc) {
-          toast({ variant: "destructive", title: "Missing Location", description: "Please search and select a location." });
+        if (!currentLoc || !currentLoc.eaStationId) { 
+          toast({ variant: "destructive", title: "Missing EA Station ID", description: "Please select a predefined location with an EA Station ID." });
           return;
         }
         if (!currentDates || !currentDates.from || !currentDates.to) {
@@ -143,14 +144,14 @@ export default function TidePage() {
           toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
           return;
         }
-        const maxDays = 90; 
+        const maxDays = 30; // EA API typical limit for readings
         if (addDays(currentDates.from, maxDays) < currentDates.to) {
-            toast({ variant: "destructive", title: "Date Range Too Large", description: `Please select a range within ${maxDays} days.` });
+            toast({ variant: "destructive", title: "Date Range Too Large", description: `For EA data, please select a range within ${maxDays} days.` });
             return;
         }
     }
     
-    if (!currentLoc || !currentDates?.from || !currentDates?.to) return;
+    if (!currentLoc || !currentLoc.eaStationId || !currentDates?.from || !currentDates?.to) return;
 
 
     setIsLoading(true);
@@ -158,24 +159,26 @@ export default function TidePage() {
     setDataLocationContext(undefined);
     setMarineData(null);
     setFetchLogSteps([]); 
-    addLogStep(`Initiating data fetch for ${currentLoc.key ? knownLocations[currentLoc.key]?.name : `Lat: ${currentLoc.latitude.toFixed(2)}, Lon: ${currentLoc.longitude.toFixed(2)}`}...`, 'pending');
+    addLogStep(`Initiating data fetch for ${knownLocations[currentLoc.key as keyof typeof knownLocations]?.name || `EA ID: ${currentLoc.eaStationId}`} (EA ID: ${currentLoc.eaStationId})...`, 'pending');
     setLogAccordionValue("fetch-log-details"); 
     setLogOverallStatus('pending');
 
 
     const result = await fetchMarineDataAction({
-      latitude: currentLoc.latitude,
+      // latitude and longitude are optional in input schema but good to pass if available from knownLocations
+      latitude: currentLoc.latitude, 
       longitude: currentLoc.longitude,
       startDate: formatISO(currentDates.from, { representation: 'date' }),
       endDate: formatISO(currentDates.to, { representation: 'date' }),
-      eaStationId: currentLoc.eaStationId,
+      eaStationId: currentLoc.eaStationId, 
     });
 
     setIsLoading(false);
     if (result.log) {
       setFetchLogSteps(prev => {
         const newLogs = result.log!.map((l, index) => ({ id: `server-log-${Date.now()}-${index}`, ...l }));
-        return prev.length > 0 && prev[0].status === 'pending' ? newLogs : [...prev, ...newLogs];
+        // Replace the initial "pending" step with the detailed logs from server
+        return prev.length > 0 && prev[0].status === 'pending' && prev[0].message.startsWith("Initiating data fetch") ? newLogs : [...prev, ...newLogs];
       });
     }
 
@@ -183,19 +186,19 @@ export default function TidePage() {
       setMarineData(result.data as MarineDataPoint[]);
       setDataLocationContext(result.dataLocationContext);
       setLogOverallStatus('success');
-      addLogStep("Data fetch successful.", 'success', true);
+      addLogStep(result.message || "Data fetch successful.", 'success', result.log ? true : false); // Replace last server log if it was success
       if (result.message && !isInitialFetch) { 
         toast({ title: "Info", description: result.message, duration: 5000 });
       }
       if (result.data.length === 0 && !result.error && !isInitialFetch) {
-        toast({ title: "No Data", description: "No tide data found for the selected criteria.", duration: 3000 });
+        toast({ title: "No Data", description: result.message || "No tide data found for the selected criteria from EA.", duration: 3000 });
       }
     } else {
-      setError(result.error || "Failed to fetch marine data.");
+      setError(result.error || "Failed to fetch tide data from EA.");
       setLogOverallStatus('error');
-      addLogStep(`Fetch failed: ${result.error || "Unknown error"}`, 'error', true);
+      addLogStep(result.error || "Fetch failed: Unknown error", 'error', result.log ? true : false); // Replace last server log if it was error
       if (!isInitialFetch) {
-        toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch marine data." });
+        toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch tide data from EA." });
       }
     }
   }, [currentLocationDetails, dateRange, toast, addLogStep]);
@@ -213,36 +216,36 @@ export default function TidePage() {
     let locDetailsToFetch: SearchedCoords | null = null;
     
     const locationKey = Object.keys(knownLocations).find(
-      key => knownLocations[key].name.toLowerCase() === term
+      key => knownLocations[key as keyof typeof knownLocations].name.toLowerCase() === term
     );
 
     if (locationKey) {
-      const location = knownLocations[locationKey];
+      const location = knownLocations[locationKey as keyof typeof knownLocations];
       locDetailsToFetch = { 
         latitude: location.lat, 
         longitude: location.lon, 
         eaStationId: location.eaStationId,
         key: locationKey
       };
-      if (locDetailsToFetch.key !== currentLocationDetails?.key || 
-          locDetailsToFetch.latitude !== currentLocationDetails?.latitude ||
-          locDetailsToFetch.longitude !== currentLocationDetails?.longitude) {
-          setCurrentLocationDetails(locDetailsToFetch);
-      }
-       if (knownLocations[locationKey].name !== searchTerm) setSearchTerm(knownLocations[locationKey].name);
-    } else if (currentLocationDetails && searchTerm.toLowerCase() === knownLocations[currentLocationDetails.key as string]?.name.toLowerCase()) {
-      locDetailsToFetch = currentLocationDetails;
+       // Only update current location details if it's different or if EA station ID differs
+       if (locDetailsToFetch.eaStationId !== currentLocationDetails?.eaStationId || locDetailsToFetch.key !== currentLocationDetails?.key) {
+           setCurrentLocationDetails(locDetailsToFetch);
+       }
+       if (location.name !== searchTerm) setSearchTerm(location.name); // Standardize search term to official name
+    } else if (currentLocationDetails && searchTerm.toLowerCase() === knownLocations[currentLocationDetails.key as keyof typeof knownLocations]?.name.toLowerCase()) {
+        // Current search term matches current location name, no need to re-select, just re-fetch if date changed.
+        locDetailsToFetch = currentLocationDetails;
     } else {
-      toast({ variant: "destructive", title: "Location Not Found", description: "Please select a known marine location from suggestions or search for coordinates." });
+      toast({ variant: "destructive", title: "Location Not Found", description: "Please select a known marine location with an EA Station ID from suggestions." });
       setMarineData(null); 
       setCurrentLocationDetails(null);
       return;
     }
     
-    if (locDetailsToFetch && dateRange?.from && dateRange?.to) {
+    if (locDetailsToFetch && locDetailsToFetch.eaStationId && dateRange?.from && dateRange?.to) {
       await handleFetchMarineData(locDetailsToFetch, dateRange);
-    } else if (!locDetailsToFetch) {
-        toast({ variant: "destructive", title: "Location Error", description: "Could not determine coordinates." });
+    } else if (!locDetailsToFetch || !locDetailsToFetch.eaStationId) {
+        toast({ variant: "destructive", title: "Location Error", description: "Selected location does not have an EA Station ID." });
     } else {
         toast({ variant: "destructive", title: "Date Error", description: "Select a valid date range." });
     }
@@ -269,10 +272,10 @@ export default function TidePage() {
   }, [searchTerm]);
 
   const handleSuggestionClick = useCallback((suggestionKey: string) => {
-    const location = knownLocations[suggestionKey];
-    if (location) {
+    const location = knownLocations[suggestionKey as keyof typeof knownLocations];
+    if (location && location.eaStationId) { 
       setSearchTerm(location.name); 
-      const newDetails = { 
+      const newDetails: SearchedCoords = { 
         latitude: location.lat, 
         longitude: location.lon, 
         eaStationId: location.eaStationId,
@@ -285,12 +288,15 @@ export default function TidePage() {
       } else {
         toast({ variant: "destructive", title: "Date Error", description: "Please select a valid date range before fetching." });
       }
+    } else {
+         toast({ variant: "destructive", title: "Invalid Selection", description: "Selected location does not have an EA Station ID." });
     }
   }, [dateRange, handleFetchMarineData, toast]); 
 
   const handleInputFocus = () => {
     const currentSearchTerm = searchTerm.trim();
-    if (currentSearchTerm === "" || Object.values(knownLocations).some(loc => loc.name.toLowerCase() === currentSearchTerm.toLowerCase())) {
+    const currentSearchTermLower = currentSearchTerm.toLowerCase();
+    if (currentSearchTerm === "" || Object.values(knownLocations).some(loc => loc.name.toLowerCase() === currentSearchTermLower)) {
       setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
       setShowSuggestions(true);
     } else if (suggestions.length > 0) { 
@@ -408,14 +414,13 @@ export default function TidePage() {
               </div>
               {currentLocationDetails && (
                 <p className="text-xs text-center text-muted-foreground mb-1">
-                  Lat: {currentLocationDetails.latitude.toFixed(4)}, Lon: {currentLocationDetails.longitude.toFixed(4)}
-                  {currentLocationDetails.eaStationId && ` (EA ID: ${currentLocationDetails.eaStationId})`}
+                  {currentLocationDetails.eaStationId ? `EA ID: ${currentLocationDetails.eaStationId}` : `Lat: ${currentLocationDetails.latitude.toFixed(4)}, Lon: ${currentLocationDetails.longitude.toFixed(4)}`}
                 </p>
               )}
                <WeatherControls dateRange={dateRange} onDateChange={setDateRange} isLoading={isLoading} />
                <Button 
                   onClick={handleLocationSearchAndFetch} 
-                  disabled={isLoading || !searchTerm || !dateRange?.from || !dateRange?.to}
+                  disabled={isLoading || !searchTerm || !currentLocationDetails?.eaStationId || !dateRange?.from || !dateRange?.to}
                   className="w-full h-9 text-sm mt-3"
                 >
                   {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
@@ -434,8 +439,8 @@ export default function TidePage() {
                     >
                       {getLogTriggerContent()}
                     </AccordionTrigger>
-                    <AccordionContent className="pt-1 pb-1 max-h-[30rem]"> {/* Increased max-height */}
-                      <ScrollArea className="w-full rounded-md border p-1.5 bg-muted/20 h-full"> {/* Set ScrollArea to h-full */}
+                    <AccordionContent className="pt-1 pb-1 max-h-[30rem]"> 
+                      <ScrollArea className="w-full rounded-md border p-1.5 bg-muted/20 h-full"> 
                         {fetchLogSteps.map((step) => (
                           <li key={step.id} className="flex items-start list-none py-0.5">
                             <div className="flex-shrink-0 w-3 h-3 mr-1.5 mt-0.5">
@@ -485,13 +490,10 @@ export default function TidePage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-16 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            Tide data from Environment Agency / Open-Meteo. Built with Next.js and ShadCN/UI.
+            Tide data from Environment Agency. Built with Next.js and ShadCN/UI.
           </p>
         </div>
       </footer>
     </div>
   );
 }
-
-
-    

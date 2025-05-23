@@ -22,23 +22,27 @@ interface EAStationResponse {
   items: EAStationReading[];
 }
 
+const FALLBACK_EA_STATION_ID = "0001"; // Newlyn as a general fallback
+const FALLBACK_EA_STATION_NAME = "Newlyn";
+
 // Fetches tide data from Environment Agency (EA)
 async function fetchTideDataFromEA(
   stationId: string,
   startDate: string,
   endDate: string,
   log: LogEntry[]
-): Promise<{ data: MarineDataPoint[]; stationName?: string; error?: string } | null> {
+): Promise<{ data: MarineDataPoint[]; stationName?: string; error?: string; success: boolean }> {
   const formattedStartDate = format(parseISO(startDate), 'yyyy-MM-dd');
   const formattedEndDate = format(parseISO(endDate), 'yyyy-MM-dd');
 
   log.push({ message: `Attempting to fetch from Environment Agency for station ID: ${stationId}.`, status: 'info' });
   log.push({ message: `Date range: ${formattedStartDate} to ${formattedEndDate}.`, status: 'info'});
 
+  // EA API might have a limit on the number of days, e.g., 30 days.
   if (differenceInDays(parseISO(endDate), parseISO(startDate)) > 30) {
     const errorMsg = "Date range too large for EA API (max 30 days). Try a shorter period.";
     log.push({ message: `EA API request for station ${stationId} exceeds 30 day limit. ${errorMsg}`, status: 'error' });
-    return { data: [], error: errorMsg };
+    return { data: [], error: errorMsg, success: false };
   }
 
   const eaApiUrl = `https://environment.data.gov.uk/flood-monitoring/id/stations/${stationId}/readings?_sorted&parameter=TidalLevel&startdate=${formattedStartDate}&enddate=${formattedEndDate}&_limit=2000`;
@@ -46,24 +50,27 @@ async function fetchTideDataFromEA(
 
   try {
     const response = await fetch(eaApiUrl, { cache: 'no-store' });
-    log.push({ message: `EA API response status: ${response.status} ${response.statusText}`, status: response.ok ? 'info' : 'error' });
+    log.push({ message: `EA API response status for station ${stationId}: ${response.status} ${response.statusText}`, status: response.ok ? 'info' : 'error' });
 
     if (!response.ok) {
       const errorBody = await response.text();
-      const errorMsg = `EA API request failed (status ${response.status}). Details: ${errorBody.substring(0, 100)}${errorBody.length > 100 ? '...' : ''}`;
+      const errorMsg = `EA API request failed for station ${stationId} (status ${response.status}). Details: ${errorBody.substring(0, 100)}${errorBody.length > 100 ? '...' : ''}`;
       log.push({ message: errorMsg, status: 'error' });
-      return { data: [], error: errorMsg };
+      return { data: [], error: errorMsg, success: false };
     }
 
     const data: EAStationResponse = await response.json();
-    log.push({ message: `Successfully fetched data from EA API.`, status: 'success' });
+    
 
     if (!data.items || data.items.length === 0) {
-      log.push({ message: `No tide data items returned from EA for station ${stationId} for the period.`, status: 'info' });
-      return { data: [], error: "No tide data found for this station/period from EA." };
+      const noDataMsg = `No tide data items returned from EA for station ${stationId} for the period.`;
+      log.push({ message: noDataMsg, status: 'info' });
+      // For fallback logic, we consider no data as a type of "failure" for the current station
+      return { data: [], error: noDataMsg, success: false, stationName: `EA Station ${stationId}` }; 
     }
-
-    log.push({ message: `Found ${data.items.length} readings from EA. Transforming data...`, status: 'info' });
+    
+    log.push({ message: `Successfully fetched ${data.items.length} readings from EA API for station ${stationId}.`, status: 'success' });
+    log.push({ message: `Transforming data for station ${stationId}...`, status: 'info' });
     const transformedData: MarineDataPoint[] = data.items
       .filter(item => item.dateTime && typeof item.value === 'number')
       .map(item => ({
@@ -71,96 +78,28 @@ async function fetchTideDataFromEA(
         tideHeight: item.value,
       }));
     
-    let stationName = `EA Station ${stationId}`;
+    let stationName = `EA Station ${stationId}`; // Default name
     try {
       log.push({ message: `Attempting to fetch EA station details for ID: ${stationId}...`, status: 'info' });
       const stationDetailsResponse = await fetch(`https://environment.data.gov.uk/flood-monitoring/id/stations/${stationId}`);
       if (stationDetailsResponse.ok) {
           const stationDetails = await stationDetailsResponse.json();
+          // The actual name might be in stationDetails.items.label or similar
           stationName = stationDetails?.items?.label || stationName;
           log.push({ message: `Fetched EA station name: ${stationName}`, status: 'success' });
       } else {
-          log.push({ message: `Could not fetch EA station details, using default name. Status: ${stationDetailsResponse.status}`, status: 'info' });
+          log.push({ message: `Could not fetch EA station details for ${stationId}, using default name. Status: ${stationDetailsResponse.status}`, status: 'info' });
       }
     } catch (detailsError) {
-        log.push({ message: `Error fetching EA station details: ${(detailsError as Error).message}`, status: 'error' });
+        log.push({ message: `Error fetching EA station details for ${stationId}: ${(detailsError as Error).message}`, status: 'error' });
     }
-    log.push({ message: `EA data transformation complete. ${transformedData.length} points.`, status: 'success' });
-    return { data: transformedData, stationName };
+    log.push({ message: `EA data transformation complete for station ${stationId}. ${transformedData.length} points.`, status: 'success' });
+    return { data: transformedData, stationName, success: true };
 
   } catch (error) {
     const errorMsg = `Error fetching or processing data from EA API for station ${stationId}: ${(error as Error).message}`;
     log.push({ message: errorMsg, status: 'error' });
-    return { data: [], error: `EA API Error: ${(error as Error).message}` };
-  }
-}
-
-
-// Fetches sea level data from Open-Meteo Marine API
-async function fetchMarineDataFromOpenMeteo(
-  latitude: number,
-  longitude: number,
-  startDate: string,
-  endDate: string,
-  log: LogEntry[]
-): Promise<{ data: MarineDataPoint[]; error?: string }> {
-  const formattedStartDate = format(parseISO(startDate), 'yyyy-MM-dd');
-  const formattedEndDate = format(parseISO(endDate), 'yyyy-MM-dd');
-  
-  log.push({ message: `Attempting to fetch from Open-Meteo Marine API.`, status: 'info' });
-  log.push({ message: `Coords: Lat ${latitude.toFixed(4)}, Lon ${longitude.toFixed(4)}. Date range: ${formattedStartDate} to ${formattedEndDate}.`, status: 'info'});
-  
-  const hourlyVariables = "sea_level";
-  const marineApiUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${latitude}&longitude=${longitude}&start_date=${formattedStartDate}&end_date=${formattedEndDate}&hourly=${hourlyVariables}&timezone=auto`;
-  log.push({ message: `Constructed Open-Meteo API URL: ${marineApiUrl}`, status: 'info' });
-
-  try {
-    const response = await fetch(marineApiUrl);
-    log.push({ message: `Open-Meteo API response status: ${response.status} ${response.statusText}`, status: response.ok ? 'info' : 'error' });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      const errorMsg = `Open-Meteo Marine API request failed (status ${response.status}). Details: ${errorBody.substring(0,100)}${errorBody.length > 100 ? '...' : ''}`;
-      log.push({ message: errorMsg, status: 'error' });
-      return { data: [], error: errorMsg };
-    }
-    const data = await response.json();
-    log.push({ message: `Successfully fetched data from Open-Meteo API.`, status: 'success' });
-
-
-    if (data.error) {
-      const errorMsg = `Open-Meteo Marine API Error: ${data.reason}`;
-      log.push({ message: errorMsg, status: 'error' });
-      return { data: [], error: errorMsg};
-    }
-
-    if (!data.hourly || !Array.isArray(data.hourly.time) || data.hourly.time.length === 0) {
-      log.push({ message: "Open-Meteo Marine API returned incomplete or empty hourly time data.", status: 'info' });
-      return { data: [], error: "Open-Meteo: No time data." };
-    }
-    
-    const numTimestamps = data.hourly.time.length;
-    if (!data.hourly.sea_level || !Array.isArray(data.hourly.sea_level) || data.hourly.sea_level.length !== numTimestamps) {
-        log.push({ message: `Open-Meteo Marine API returned mismatched or missing array for sea_level. Time points: ${numTimestamps}, Sea level points: ${data.hourly.sea_level?.length || 0}.`, status: 'error' });
-        return { data: [], error: "Mismatched data arrays from Open-Meteo." };
-    }
-
-    log.push({ message: `Found ${numTimestamps} readings from Open-Meteo. Transforming data...`, status: 'info' });
-    const times = data.hourly.time as string[];
-    const seaLevels = data.hourly.sea_level as (number | null)[];
-
-    const transformedData: MarineDataPoint[] = times.map((time, index) => ({
-      time: time,
-      tideHeight: seaLevels[index] === null || seaLevels[index] === undefined ? undefined : seaLevels[index],
-    }));
-    
-    log.push({ message: `Open-Meteo data transformation complete. ${transformedData.length} points.`, status: 'success' });
-    return { data: transformedData };
-
-  } catch (error) {
-    const errorMsg = `Error fetching or processing data from Open-Meteo Marine API: ${(error as Error).message}`;
-    log.push({ message: errorMsg, status: 'error' });
-    return { data: [], error: errorMsg };
+    return { data: [], error: `EA API Error for ${stationId}: ${(error as Error).message}`, success: false };
   }
 }
 
@@ -186,7 +125,7 @@ export async function fetchMarineDataAction(
     }
     log.push({ message: "Input validation successful.", status: 'success' });
     
-    const { latitude, longitude, startDate, endDate, eaStationId } = validatedInput.data;
+    const { startDate, endDate, eaStationId } = validatedInput.data;
 
     if (parseISO(startDate) > parseISO(endDate)) {
         const errorMsg = "Start date cannot be after end date.";
@@ -195,47 +134,51 @@ export async function fetchMarineDataAction(
     }
 
     let marineData: MarineDataPoint[] = [];
-    let dataLocationContext: string = "Tide data at selected location";
+    let dataLocationContext: string = "Tide data";
     let sourceMessage: string | undefined;
     let fetchError: string | undefined;
 
-    if (eaStationId) {
-      log.push({ message: `EA Station ID provided: ${eaStationId}. Attempting to fetch from EA first.`, status: 'info' });
-      const eaResult = await fetchTideDataFromEA(eaStationId, startDate, endDate, log);
-      if (eaResult && eaResult.data.length > 0 && !eaResult.error) {
-        marineData = eaResult.data;
-        dataLocationContext = `Tide from ${eaResult.stationName || `EA Station ${eaStationId}`}`;
-        sourceMessage = `Data sourced from Environment Agency (${eaResult.stationName || eaStationId}).`;
-        log.push({ message: `Successfully fetched data from EA: ${eaResult.data.length} points. Station: ${eaResult.stationName || eaStationId}`, status: 'success' });
-      } else {
-        const fallbackReason = eaResult?.error ? ` (${eaResult.error})` : (eaResult?.data.length === 0 ? ' (No data returned from EA)' : ' (Unknown EA issue)');
-        sourceMessage = `Could not fetch data from Environment Agency for station ${eaStationId}${fallbackReason}. Falling back to Open-Meteo.`;
-        log.push({ message: sourceMessage, status: 'info' });
-        const omResult = await fetchMarineDataFromOpenMeteo(latitude, longitude, startDate, endDate, log);
-        marineData = omResult.data;
-        dataLocationContext = "Tide from Open-Meteo (fallback)";
-        fetchError = omResult.error;
-        if (!fetchError && marineData.length > 0) {
-            log.push({ message: `Successfully fetched data from Open-Meteo (fallback): ${marineData.length} points.`, status: 'success' });
-        } else if (fetchError) {
-            log.push({ message: `Open-Meteo (fallback) fetch failed. Error: ${fetchError}`, status: 'error' });
-        } else {
-            log.push({ message: `Open-Meteo (fallback) fetch succeeded but returned no data.`, status: 'info' });
-        }
-      }
+    if (!eaStationId) {
+      const noIdMsg = "No EA Station ID provided. Please select a predefined location with an EA Station ID.";
+      log.push({ message: noIdMsg, status: 'error' });
+      return { success: false, error: noIdMsg, log, message: noIdMsg };
+    }
+
+    log.push({ message: `Primary attempt for EA Station ID: ${eaStationId}.`, status: 'info' });
+    let result = await fetchTideDataFromEA(eaStationId, startDate, endDate, log);
+
+    if (result.success && result.data.length > 0) {
+      marineData = result.data;
+      dataLocationContext = `Tide from ${result.stationName || `EA Station ${eaStationId}`}`;
+      sourceMessage = `Data successfully fetched from Environment Agency (${result.stationName || eaStationId}).`;
+      log.push({ message: `Successfully fetched data from primary EA station ${eaStationId}: ${result.data.length} points.`, status: 'success' });
     } else {
-      log.push({ message: `No EA Station ID. Fetching from Open-Meteo for lat: ${latitude}, lon: ${longitude}`, status: 'info' });
-      const omResult = await fetchMarineDataFromOpenMeteo(latitude, longitude, startDate, endDate, log);
-      marineData = omResult.data;
-      dataLocationContext = "Tide from Open-Meteo";
-      sourceMessage = "Data sourced from Open-Meteo.";
-      fetchError = omResult.error;
-      if (!fetchError && marineData.length > 0) {
-        log.push({ message: `Successfully fetched data from Open-Meteo: ${marineData.length} points.`, status: 'success' });
-      } else if (fetchError) {
-        log.push({ message: `Open-Meteo fetch failed. Error: ${fetchError}`, status: 'error' });
+      // Primary attempt failed or returned no data, try fallback
+      const primaryFailReason = result.error ? result.error : "No data returned from primary EA station.";
+      log.push({ message: `Primary EA station ${eaStationId} attempt failed or yielded no data: ${primaryFailReason}. Attempting fallback to EA Station ${FALLBACK_EA_STATION_ID} (${FALLBACK_EA_STATION_NAME}).`, status: 'info' });
+      
+      // Fetch station name for fallback station to use in messages.
+      let actualFallbackStationName = FALLBACK_EA_STATION_NAME;
+       try {
+        const fallbackStationDetailsResponse = await fetch(`https://environment.data.gov.uk/flood-monitoring/id/stations/${FALLBACK_EA_STATION_ID}`);
+        if (fallbackStationDetailsResponse.ok) {
+            const stationDetails = await fallbackStationDetailsResponse.json();
+            actualFallbackStationName = stationDetails?.items?.label || FALLBACK_EA_STATION_NAME;
+        }
+      } catch {}
+
+
+      result = await fetchTideDataFromEA(FALLBACK_EA_STATION_ID, startDate, endDate, log);
+      if (result.success && result.data.length > 0) {
+        marineData = result.data;
+        const fallbackContextName = result.stationName || actualFallbackStationName;
+        dataLocationContext = `Tide from ${fallbackContextName}`;
+        sourceMessage = `Primary EA station failed. Data fetched from fallback Environment Agency station (${fallbackContextName}).`;
+        log.push({ message: `Successfully fetched data from fallback EA station ${FALLBACK_EA_STATION_ID}: ${result.data.length} points.`, status: 'success' });
       } else {
-        log.push({ message: `Open-Meteo fetch succeeded but returned no data.`, status: 'info' });
+        fetchError = result.error || `No data found for primary station ${eaStationId} or fallback station ${FALLBACK_EA_STATION_ID} (${actualFallbackStationName}).`;
+        log.push({ message: `Fallback EA station ${FALLBACK_EA_STATION_ID} also failed or yielded no data. Error: ${fetchError}`, status: 'error' });
+        sourceMessage = `Could not fetch data from selected EA station (${eaStationId}) or fallback station (${actualFallbackStationName}). ${fetchError}`;
       }
     }
     
@@ -245,7 +188,7 @@ export async function fetchMarineDataAction(
     }
 
     if (marineData.length === 0) { 
-        const noDataMsg = sourceMessage || "No marine data found for the selected location and date range.";
+        const noDataMsg = sourceMessage || "No marine data found for the selected EA station(s) and date range.";
         log.push({ message: noDataMsg, status: 'info' });
         return { success: true, data: [], dataLocationContext, message: noDataMsg, log };
     }
