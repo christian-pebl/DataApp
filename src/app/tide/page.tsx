@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Search, MapPin, LayoutGrid, CloudSun, Waves, SunMoon } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls"; // Reusing for date range
 import { fetchTideDataAction } from "./actions";
@@ -38,7 +38,8 @@ const knownLocations: { [key: string]: { lat: number; lon: number; name: string 
   "bristol": { lat: 51.4545, lon: -2.5879, name: "Bristol" },
   "leeds": { lat: 53.8008, lon: -1.5491, name: "Leeds" },
   "sheffield": { lat: 53.3811, lon: -1.4701, name: "Sheffield" },
-  "stdavids": { lat: 51.8818, lon: -5.2661, name: "Saint David's" }, // Default
+  "stdavids": { lat: 51.8818, lon: -5.2661, name: "Saint David's" },
+  "milfordhaven": { lat: 51.7150, lon: -5.0400, name: "Milford Haven" }, // Added Milford Haven
 };
 
 interface SearchedCoords {
@@ -51,7 +52,7 @@ interface Suggestion {
   name: string;
 }
 
-const defaultLocationKey = "stdavids";
+const defaultLocationKey = "milfordhaven"; // Changed default location
 
 export default function TidePage() {
   const [theme, setTheme] = useState("light");
@@ -129,7 +130,7 @@ export default function TidePage() {
     setIsLoading(false);
     if (result.success && result.data) {
       setTideData(result.data as TideDataPoint[]);
-      setDataLocationContext(result.dataLocationContext);
+      setDataLocationContext(result.dataLocationContext); // This will be "Tide at selected location"
       if (result.message) {
         toast({ title: "Info", description: result.message, duration: 3000 });
       } else if (result.data.length === 0) {
@@ -355,7 +356,7 @@ export default function TidePage() {
                         plottableSeries={['tideHeight']}
                         timeAxisLabel="Time"
                         yAxisConfigs={tideYAxisConfig}
-                        chartRenderHeight={500} // Adjust as needed
+                        chartRenderHeight={500} 
                     />
                  )}
               </CardContent>
@@ -373,3 +374,5 @@ export default function TidePage() {
     </div>
   );
 }
+
+    
