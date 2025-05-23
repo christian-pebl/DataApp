@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
-import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay"; // Assuming ChartDisplay can handle generic data
+import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay"; 
 import { useToast } from "@/hooks/use-toast";
 import { formatISO, subDays } from 'date-fns';
 import type { DateRange } from "react-day-picker";
@@ -28,12 +28,12 @@ type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle' | 'warning';
 const knownLocations: { [key: string]: { lat: number; lon: number; name: string } } = {
   "stdavidshead": { lat: 52.0, lon: -5.3, name: "St David's Head" },
   "milfordhaven": { lat: 51.71, lon: -5.04, name: "Milford Haven" },
-  "newlyn": { lat: 50.10, lon: -5.55, name: "Newlyn" },
+  "newlyn": { lat: 50.10, lon: -5.55, name: "Newlyn" }, // Primary tidal observatory
   "dover": { lat: 51.12, lon: 1.32, name: "Dover" },
   "liverpool": { lat: 53.40, lon: -2.99, name: "Liverpool" },
   "portsmouth": { lat: 50.81, lon: -1.08, name: "Portsmouth" },
 };
-const defaultLocationKey = "stdavidshead";
+const defaultLocationKey = "newlyn"; // Changed default to Newlyn
 
 export default function TideExplorerPage() {
   const [theme, setTheme] = useState("light");
@@ -41,7 +41,8 @@ export default function TideExplorerPage() {
   const { toast, dismiss } = useToast();
   
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
-    from: subDays(new Date(), 7), to: new Date(),
+    from: subDays(new Date(), 37), // Default to a 7-day period from 37 days ago to 30 days ago
+    to: subDays(new Date(), 30),
   }));
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -130,8 +131,8 @@ export default function TideExplorerPage() {
             <AccordionTrigger className="px-3 py-1.5 text-xs hover:no-underline [&_svg.lucide-chevron-down]:h-3 [&_svg.lucide-chevron-down]:w-3">
               {getLogTriggerContent(overallStatus, isLoading, title, errorDetails || undefined)}
             </AccordionTrigger>
-            <AccordionContent className="px-2 pb-1 pt-0">
-              <ScrollArea className="max-h-[35rem] h-auto w-full rounded-md border bg-muted/30 dark:bg-muted/10 p-1.5 mt-1">
+            <AccordionContent className="px-2 pb-1 pt-0 max-h-[35rem]">
+              <ScrollArea className="h-full w-full rounded-md border bg-muted/30 dark:bg-muted/10 p-1.5 mt-1">
                 <ul className="space-y-1 text-[0.7rem]">
                   {logSteps.map((step, index) => (
                     <li key={index} className="flex items-start gap-1.5">
@@ -196,15 +197,15 @@ export default function TideExplorerPage() {
     }
 
     if (!coordsToUse || !locationNameToUse) {
-      toast({ variant: "destructive", title: "Missing Location", description: "Could not determine coordinates for fetching."});
+      if(!isAutoFetch) toast({ variant: "destructive", title: "Missing Location", description: "Could not determine coordinates for fetching."});
       return;
     }
     if (!dateRange || !dateRange.from || !dateRange.to) {
-      toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range."});
+      if(!isAutoFetch) toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range."});
       return;
     }
     if (dateRange.from > dateRange.to) {
-      toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
+      if(!isAutoFetch) toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
       return;
     }
 
@@ -212,7 +213,7 @@ export default function TideExplorerPage() {
     setFetchLogSteps([{message: `Fetching tide data for ${locationNameToUse}...`, status: 'pending'}]); 
     setIsLogLoading(true); setLogOverallStatus('pending'); setShowFetchLogAccordion("tide-fetch-log-item");
     
-    const loadingToastId = toast({ title: "Fetching Tide Data", description: `Fetching tide data for ${locationNameToUse}...`}).id;
+    const loadingToastId = !isAutoFetch ? toast({ title: "Fetching Tide Data", description: `Fetching tide data for ${locationNameToUse}...`}).id : undefined;
     
     const result = await fetchTideExplorerDataAction({
       latitude: coordsToUse.latitude,
@@ -229,18 +230,18 @@ export default function TideExplorerPage() {
       setTideData(result.data);
       setDataLocationContext(result.dataLocationContext || `Tide data for ${locationNameToUse}`);
       if (result.data.length === 0 && !result.error) { 
-        toast({ variant: "default", title: "No Data", description: "No tide data points found for the selected criteria.", duration: 4000 });
+        if(!isAutoFetch) toast({ variant: "default", title: "No Data", description: "No tide data points found for the selected criteria.", duration: 4000 });
         setLogOverallStatus('warning');
       } else if (result.data.length === 0 && result.error) {
-         toast({ variant: "default", title: "No Data", description: result.error, duration: 4000 });
+         if(!isAutoFetch) toast({ variant: "default", title: "No Data", description: result.error, duration: 4000 });
          setLogOverallStatus('warning');
       } else {
-        toast({ title: "Tide Data Loaded", description: `Loaded ${result.data.length} tide data points for ${locationNameToUse}.` });
+        if(!isAutoFetch) toast({ title: "Tide Data Loaded", description: `Loaded ${result.data.length} tide data points for ${locationNameToUse}.` });
         setLogOverallStatus('success'); setShowFetchLogAccordion("");
       }
     } else {
       setErrorData(result.error || `Failed to load tide data for ${locationNameToUse}.`);
-      toast({ variant: "destructive", title: "Error Loading Tide Data", description: result.error || `Failed to load data for ${locationNameToUse}.` });
+      if(!isAutoFetch) toast({ variant: "destructive", title: "Error Loading Tide Data", description: result.error || `Failed to load data for ${locationNameToUse}.` });
       setLogOverallStatus('error');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -263,17 +264,18 @@ export default function TideExplorerPage() {
   }, []); // Auto-fetch on mount for default location
 
   useEffect(() => {
-    const currentSearchTerm = searchTerm.trim();
+    const currentSearchTermVal = searchTerm.trim();
     const inputElement = document.activeElement as HTMLInputElement;
-    const isFocused = inputElement && inputElement.placeholder === "Search UK coastal location...";
+    const isFocused = inputElement && inputElement.id === "tide-location-search";
 
-    if (currentSearchTerm === "" && isFocused) {
+
+    if (currentSearchTermVal === "" && isFocused) {
        setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
        setShowSuggestions(true); return;
     }
-    if (currentSearchTerm === "") { setSuggestions([]); setShowSuggestions(false); return; }
+    if (currentSearchTermVal === "") { setSuggestions([]); setShowSuggestions(false); return; }
 
-    const termLower = currentSearchTerm.toLowerCase();
+    const termLower = currentSearchTermVal.toLowerCase();
     const filtered = Object.entries(knownLocations)
       .filter(([key, locObj]) => key.toLowerCase().includes(termLower) || locObj.name.toLowerCase().includes(termLower))
       .map(([key, locObj]) => ({ key, name: locObj.name }));
@@ -286,11 +288,17 @@ export default function TideExplorerPage() {
     if (location) {
       setSearchTerm(location.name); 
       setCurrentLocationKey(suggestionKey);
-      setInitialCoords({ latitude: location.lat, longitude: location.lon }); 
+      const newCoords = { latitude: location.lat, longitude: location.lon };
+      setInitialCoords(newCoords); 
       setCurrentLocationName(location.name);
       setShowSuggestions(false);
+      // Auto-fetch on suggestion click if date range is valid
+      if (dateRange?.from && dateRange?.to) {
+        handleLocationSearchAndFetch(newCoords, location.name, false);
+      }
     }
-  }, []); 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange, handleLocationSearchAndFetch]); 
 
   const yAxisConfigs: YAxisConfig[] = [
     { id: 'seaLevel', orientation: 'left', label: 'Sea Level (m)', color: '--chart-1', dataKey: 'seaLevel', unit: 'm' }
@@ -346,7 +354,7 @@ export default function TideExplorerPage() {
                     onChange={(e) => setSearchTerm(e.target.value)}
                     onFocus={() => setShowSuggestions(true)}
                     onBlur={() => setTimeout(() => setShowSuggestions(false), 150)} 
-                    onKeyDown={(e) => { if (e.key === 'Enter') { handleLocationSearchAndFetch(); setShowSuggestions(false); } }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { handleLocationSearchAndFetch(undefined, undefined, false); setShowSuggestions(false); } }}
                     className="h-9 text-xs" />
                   {showSuggestions && suggestions.length > 0 && (
                     <div className="absolute z-20 w-full mt-0 bg-card border rounded-md shadow-lg max-h-60 overflow-y-auto">
@@ -360,7 +368,7 @@ export default function TideExplorerPage() {
                   <DatePickerWithRange id="tide-date-range" date={dateRange} onDateChange={setDateRange} disabled={isLoadingData} />
                   {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && <p className="text-xs text-destructive px-1 pt-1">Start date error.</p>}
                 </div>
-                <Button onClick={() => handleLocationSearchAndFetch()} disabled={isLoadingData || !searchTerm || !dateRange?.from || !dateRange?.to} className="w-full h-9 text-xs">
+                <Button onClick={() => handleLocationSearchAndFetch(undefined, undefined, false)} disabled={isLoadingData || !searchTerm || !dateRange?.from || !dateRange?.to} className="w-full h-9 text-xs">
                   {isLoadingData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
                   {isLoadingData ? "Fetching Tide Data..." : "Fetch Tide Data"}
                 </Button>
@@ -378,6 +386,7 @@ export default function TideExplorerPage() {
                     yAxisConfigs={yAxisConfigs}
                     timeAxisLabel="Time"
                     plotTitle={dataLocationContext || "Tide Height"}
+                    chartRenderHeight={350} // Example height, adjust as needed
                 />
               </CardContent>
             </Card>
@@ -394,3 +403,4 @@ export default function TideExplorerPage() {
     </div>
   );
 }
+
