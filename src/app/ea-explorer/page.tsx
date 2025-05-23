@@ -6,33 +6,48 @@ import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
-import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, ListChecks, AlertCircle, Target, Activity, CalendarDays, Search, TrendingUp } from "lucide-react";
+import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, ListChecks, AlertCircle, Target, Activity, CalendarDays, Search, TrendingUp, Info, CheckCircle2, XCircle, ChevronDown } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { fetchMonitoringStationsAction, fetchStationMeasuresAction, fetchEATimeSeriesDataAction } from "./actions";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { fetchMonitoringStationsAction, fetchStationMeasuresAction, fetchEATimeSeriesDataAction, type LogStep } from "./actions";
 import type { EAStationInfo, EAMeasureInfo, EATimeSeriesDataPoint, FetchEATimeSeriesInput } from "./shared";
 import { useToast } from "@/hooks/use-toast";
-import { DatePickerWithRange } from "@/components/ui/date-picker-with-range"; // Reusing this
-import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay"; // Reusing ChartDisplay
+import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
+import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay";
 import { subDays, formatISO } from 'date-fns';
 import type { DateRange } from "react-day-picker";
+import { cn } from "@/lib/utils";
+
+
+type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle';
 
 export default function EAExplorerPage() {
   const [theme, setTheme] = useState("light");
   const pathname = usePathname();
   const { toast } = useToast();
 
+  // Stations state
   const [stations, setStations] = useState<EAStationInfo[]>([]);
   const [isLoadingStations, setIsLoadingStations] = useState(false);
   const [errorStations, setErrorStations] = useState<string | null>(null);
 
+  // Measures state
   const [selectedStation, setSelectedStation] = useState<EAStationInfo | null>(null);
   const [stationMeasures, setStationMeasures] = useState<EAMeasureInfo[]>([]);
   const [isLoadingMeasures, setIsLoadingMeasures] = useState(false);
   const [errorMeasures, setErrorMeasures] = useState<string | null>(null);
   const [currentStationNameForMeasures, setCurrentStationNameForMeasures] = useState<string | null>(null);
+  
+  // Measure fetch log state
+  const [measureFetchLogSteps, setMeasureFetchLogSteps] = useState<LogStep[]>([]);
+  const [showMeasureFetchLog, setShowMeasureFetchLog] = useState<string>(""); // Accordion value
+  const [isMeasureLogLoading, setIsMeasureLogLoading] = useState(false);
+  const [measureLogOverallStatus, setMeasureLogOverallStatus] = useState<LogOverallStatus>('idle');
 
+
+  // Time series state
   const [selectedMeasure, setSelectedMeasure] = useState<EAMeasureInfo | null>(null);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
     from: subDays(new Date(), 7),
@@ -41,6 +56,12 @@ export default function EAExplorerPage() {
   const [timeSeriesData, setTimeSeriesData] = useState<EATimeSeriesDataPoint[] | null>(null);
   const [isLoadingTimeSeries, setIsLoadingTimeSeries] = useState(false);
   const [errorTimeSeries, setErrorTimeSeries] = useState<string | null>(null);
+  
+  // Time series fetch log state
+  const [timeSeriesFetchLogSteps, setTimeSeriesFetchLogSteps] = useState<LogStep[]>([]);
+  const [showTimeSeriesFetchLog, setShowTimeSeriesFetchLog] = useState<string>("");
+  const [isTimeSeriesLogLoading, setIsTimeSeriesLogLoading] = useState(false);
+  const [timeSeriesLogOverallStatus, setTimeSeriesLogOverallStatus] = useState<LogOverallStatus>('idle');
 
 
   useEffect(() => {
@@ -60,6 +81,15 @@ export default function EAExplorerPage() {
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
 
+  const addMeasureLogStep = useCallback((message: string, status: LogStep['status'], details?: string) => {
+    setMeasureFetchLogSteps(prev => [...prev, { message, status, details }]);
+  }, []);
+  
+  const addTimeSeriesLogStep = useCallback((message: string, status: LogStep['status'], details?: string) => {
+    setTimeSeriesFetchLogSteps(prev => [...prev, { message, status, details }]);
+  }, []);
+
+
   const handleLoadStations = async () => {
     setIsLoadingStations(true);
     setErrorStations(null);
@@ -68,6 +98,14 @@ export default function EAExplorerPage() {
     setSelectedMeasure(null);
     setTimeSeriesData(null);
     setStations([]);
+    setMeasureFetchLogSteps([]);
+    setMeasureLogOverallStatus('idle');
+    setShowMeasureFetchLog("");
+    setTimeSeriesFetchLogSteps([]);
+    setTimeSeriesLogOverallStatus('idle');
+    setShowTimeSeriesFetchLog("");
+
+
     const result = await fetchMonitoringStationsAction();
     setIsLoadingStations(false);
     if (result.success && result.stations) {
@@ -88,35 +126,53 @@ export default function EAExplorerPage() {
     setTimeSeriesData(null);
     setCurrentStationNameForMeasures(station.name);
 
+    // Reset and prepare logs for measure fetching
+    setMeasureFetchLogSteps([]);
+    addMeasureLogStep(`Initiating measure fetch for ${station.name} (ID: ${station.id})...`, 'pending');
+    setIsMeasureLogLoading(true);
+    setMeasureLogOverallStatus('pending');
+    setShowMeasureFetchLog("measure-log-accordion-item"); // Open accordion
+
     toast({ title: "Fetching Measures", description: `Loading measures for ${station.name}...`});
-    const result = await fetchStationMeasuresAction(station.id);
+    const result = await fetchStationMeasuresAction(station.id, station.name);
+    
+    setMeasureFetchLogSteps(result.log || []); // Overwrite with detailed logs from action
+
     setIsLoadingMeasures(false);
+    setIsMeasureLogLoading(false);
 
     if (result.success && result.measures) {
       setStationMeasures(result.measures);
       if (result.stationName) setCurrentStationNameForMeasures(result.stationName);
       if (result.measures.length === 0) {
         toast({ variant: "default", title: "No Measures", description: `No specific measures found for ${result.stationName || station.name}.`, duration: 3000 });
+        addMeasureLogStep(`No measures found for ${result.stationName || station.name}.`, 'info');
+        setMeasureLogOverallStatus('success'); // Success in fetching, but no measures
       } else {
         toast({ title: "Measures Loaded", description: `Found ${result.measures.length} measures for ${result.stationName || station.name}.` });
+        addMeasureLogStep(`Successfully loaded ${result.measures.length} measures.`, 'success');
+        setMeasureLogOverallStatus('success');
       }
     } else {
       setErrorMeasures(result.error || `Failed to load measures for ${station.name}.`);
       toast({ variant: "destructive", title: "Error Loading Measures", description: result.error || `Failed to load measures for ${station.name}.` });
+      addMeasureLogStep(`Failed to load measures: ${result.error || 'Unknown error'}.`, 'error');
+      setMeasureLogOverallStatus('error');
     }
-  }, [toast]);
+  }, [addMeasureLogStep, toast]);
 
   const handleSelectMeasure = (measure: EAMeasureInfo) => {
     setSelectedMeasure(measure);
-    setTimeSeriesData(null); // Clear previous plot data
+    setTimeSeriesData(null); 
     setErrorTimeSeries(null);
-    // Optionally, you could auto-fetch here if a default date range is always fine
-    // or wait for user to click "Fetch & Plot Data"
+    setTimeSeriesFetchLogSteps([]);
+    setTimeSeriesLogOverallStatus('idle');
+    setShowTimeSeriesFetchLog("");
   };
 
   const handleFetchTimeSeries = async () => {
-    if (!selectedMeasure) {
-      toast({ variant: "destructive", title: "No Measure Selected", description: "Please select a measure to plot." });
+    if (!selectedStation || !selectedMeasure) {
+      toast({ variant: "destructive", title: "Selection Missing", description: "Please select a station and a measure to plot." });
       return;
     }
     if (!dateRange || !dateRange.from || !dateRange.to) {
@@ -132,26 +188,46 @@ export default function EAExplorerPage() {
     setErrorTimeSeries(null);
     setTimeSeriesData(null);
 
+    // Reset and prepare logs for time series fetching
+    setTimeSeriesFetchLogSteps([]);
+    addTimeSeriesLogStep(`Initiating time series data fetch for measure '${selectedMeasure.parameterName}' at station '${currentStationNameForMeasures || selectedStation.name}'...`, 'pending');
+    setIsTimeSeriesLogLoading(true);
+    setTimeSeriesLogOverallStatus('pending');
+    setShowTimeSeriesFetchLog("timeseries-log-accordion-item");
+
+
     const input: FetchEATimeSeriesInput = {
-      measureId: selectedMeasure.id, // This is the full URL for the measure
+      measureId: selectedMeasure.id, 
       startDate: formatISO(dateRange.from, { representation: 'date' }),
       endDate: formatISO(dateRange.to, { representation: 'date' }),
+      measureParameterName: selectedMeasure.parameterName,
+      stationName: currentStationNameForMeasures || selectedStation.name,
     };
     
     toast({ title: "Fetching Data", description: `Fetching '${selectedMeasure.parameterName}' data...` });
     const result = await fetchEATimeSeriesDataAction(input);
+    
+    setTimeSeriesFetchLogSteps(result.log || []);
+
     setIsLoadingTimeSeries(false);
+    setIsTimeSeriesLogLoading(false);
 
     if (result.success && result.data) {
       setTimeSeriesData(result.data);
       if (result.data.length === 0) {
         toast({ variant: "default", title: "No Data", description: `No data points found for '${selectedMeasure.parameterName}' in the selected range.`, duration: 4000 });
+         addTimeSeriesLogStep(`No data points found.`, 'info');
+        setTimeSeriesLogOverallStatus('success');
       } else {
         toast({ title: "Data Loaded", description: `Successfully loaded ${result.data.length} data points for '${selectedMeasure.parameterName}'.` });
+        addTimeSeriesLogStep(`Successfully loaded ${result.data.length} data points.`, 'success');
+        setTimeSeriesLogOverallStatus('success');
       }
     } else {
       setErrorTimeSeries(result.error || `Failed to load time series data for '${selectedMeasure.parameterName}'.`);
       toast({ variant: "destructive", title: "Error Loading Data", description: result.error || `Failed to load data for '${selectedMeasure.parameterName}'.` });
+      addTimeSeriesLogStep(`Failed to load time series data: ${result.error || 'Unknown error'}.`, 'error');
+      setTimeSeriesLogOverallStatus('error');
     }
   };
 
@@ -163,6 +239,21 @@ export default function EAExplorerPage() {
     dataKey: 'value',
     unit: selectedMeasure.unitName || '',
   }] : undefined;
+
+  const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string) => {
+    if (isLoading) return <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Fetching details...</>;
+    if (status === 'success') return <><CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />{defaultTitle}: Success</>;
+    if (status === 'error') return <><XCircle className="mr-2 h-4 w-4 text-destructive" />{defaultTitle}: Failed</>;
+    if (status === 'pending') return <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{defaultTitle}: In Progress</>;
+    return <><Info className="mr-2 h-4 w-4 text-muted-foreground" />{defaultTitle}: Idle</>;
+  };
+  
+  const getLogAccordionItemClass = (status: LogOverallStatus) => {
+    if (status === 'pending' || isMeasureLogLoading || isTimeSeriesLogLoading) return "bg-blue-500/10";
+    if (status === 'success') return "bg-green-500/10";
+    if (status === 'error') return "bg-destructive/10";
+    return "";
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -230,13 +321,12 @@ export default function EAExplorerPage() {
               {isLoadingStations ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListChecks className="mr-2 h-4 w-4" />}
               Load Monitoring Stations
             </Button>
-            {/* Stations List */}
             {isLoadingStations && <div className="flex items-center justify-center p-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Loading stations...</p></div>}
             {errorStations && !isLoadingStations && <div className="text-destructive p-2 bg-destructive/10 rounded-md"><AlertCircle className="inline mr-2"/>{errorStations}</div>}
             {stations.length > 0 && !isLoadingStations && (
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold">Available Stations ({stations.length})</h3>
-                <ScrollArea className="h-60 w-full rounded-md border p-2">
+                <ScrollArea className="h-96 w-full rounded-md border p-2"> {/* Increased height */}
                   <ul className="space-y-1">
                     {stations.map((station) => (
                       <li key={station.id}>
@@ -256,7 +346,6 @@ export default function EAExplorerPage() {
           </CardContent>
         </Card>
 
-        {/* Measures List */}
         {selectedStation && (
           <Card>
             <CardHeader>
@@ -265,8 +354,8 @@ export default function EAExplorerPage() {
             </CardHeader>
             <CardContent>
               {isLoadingMeasures && <div className="flex items-center justify-center p-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Loading measures...</p></div>}
-              {errorMeasures && !isLoadingMeasures && <div className="text-destructive p-2 bg-destructive/10 rounded-md"><AlertCircle className="inline mr-2"/>{errorMeasures}</div>}
-              {stationMeasures.length > 0 && !isLoadingMeasures && (
+              {!isLoadingMeasures && errorMeasures && <div className="text-destructive p-2 bg-destructive/10 rounded-md"><AlertCircle className="inline mr-2"/>{errorMeasures}</div>}
+              {!isLoadingMeasures && stationMeasures.length > 0 && (
                 <ScrollArea className="h-60 w-full rounded-md border p-2">
                   <ul className="divide-y divide-border">
                     {stationMeasures.map((measure) => (
@@ -282,12 +371,41 @@ export default function EAExplorerPage() {
                   </ul>
                 </ScrollArea>
               )}
-              {stationMeasures.length === 0 && !isLoadingMeasures && !errorMeasures && <p className="text-sm text-muted-foreground">No measures found for this station.</p>}
+              {!isLoadingMeasures && stationMeasures.length === 0 && !errorMeasures && <p className="text-sm text-muted-foreground">No measures found for this station.</p>}
             </CardContent>
+             {/* Measure Fetch Log Accordion */}
+            {(isMeasureLogLoading || measureFetchLogSteps.length > 0 || measureLogOverallStatus !== 'idle') && (
+              <CardFooter className="pt-4">
+                <Accordion type="single" collapsible value={showMeasureFetchLog} onValueChange={setShowMeasureFetchLog} className="w-full">
+                  <AccordionItem value="measure-log-accordion-item" className={cn("border rounded-md", getLogAccordionItemClass(measureLogOverallStatus))}>
+                    <AccordionTrigger className="px-4 py-2 text-sm hover:no-underline">
+                      {getLogTriggerContent(measureLogOverallStatus, isMeasureLogLoading, 'Measure Fetch Log')}
+                    </AccordionTrigger>
+                    <AccordionContent className="px-4 pb-2 pt-0">
+                      <ScrollArea className="max-h-[30rem] h-auto w-full rounded-md border bg-muted/30 p-2 mt-1">
+                        <ul className="space-y-1.5 text-xs">
+                          {measureFetchLogSteps.map((step, index) => (
+                            <li key={index} className="flex items-start gap-2">
+                              {step.status === 'pending' && <Loader2 className="h-4 w-4 mt-0.5 text-blue-500 animate-spin flex-shrink-0" />}
+                              {step.status === 'success' && <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 flex-shrink-0" />}
+                              {step.status === 'error' && <XCircle className="h-4 w-4 mt-0.5 text-destructive flex-shrink-0" />}
+                              {step.status === 'info' && <Info className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />}
+                              <div className="min-w-0">
+                                <p className={cn(step.status === 'error' && "text-destructive font-semibold")}>{step.message}</p>
+                                {step.details && <p className="text-muted-foreground text-[0.7rem] whitespace-pre-wrap">{step.details}</p>}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </ScrollArea>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </CardFooter>
+            )}
           </Card>
         )}
 
-        {/* Date Range and Plotting Area */}
         {selectedMeasure && (
           <Card>
             <CardHeader>
@@ -305,7 +423,7 @@ export default function EAExplorerPage() {
               </Button>
 
               {isLoadingTimeSeries && <div className="flex items-center justify-center p-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Loading data...</p></div>}
-              {errorTimeSeries && !isLoadingTimeSeries && <div className="text-destructive p-2 bg-destructive/10 rounded-md"><AlertCircle className="inline mr-2"/>{errorTimeSeries}</div>}
+              {!isLoadingTimeSeries && errorTimeSeries && <div className="text-destructive p-2 bg-destructive/10 rounded-md"><AlertCircle className="inline mr-2"/>{errorTimeSeries}</div>}
               
               {timeSeriesData && !isLoadingTimeSeries && (
                 <div className="h-[400px] w-full mt-4 border rounded-md p-2">
@@ -326,6 +444,36 @@ export default function EAExplorerPage() {
                 </div>
               )}
             </CardContent>
+             {/* Time Series Fetch Log Accordion */}
+            {(isTimeSeriesLogLoading || timeSeriesFetchLogSteps.length > 0 || timeSeriesLogOverallStatus !== 'idle') && (
+              <CardFooter className="pt-4">
+                 <Accordion type="single" collapsible value={showTimeSeriesFetchLog} onValueChange={setShowTimeSeriesFetchLog} className="w-full">
+                  <AccordionItem value="timeseries-log-accordion-item" className={cn("border rounded-md", getLogAccordionItemClass(timeSeriesLogOverallStatus))}>
+                    <AccordionTrigger className="px-4 py-2 text-sm hover:no-underline">
+                      {getLogTriggerContent(timeSeriesLogOverallStatus, isTimeSeriesLogLoading, 'Time Series Fetch Log')}
+                    </AccordionTrigger>
+                    <AccordionContent className="px-4 pb-2 pt-0">
+                      <ScrollArea className="max-h-[30rem] h-auto w-full rounded-md border bg-muted/30 p-2 mt-1">
+                        <ul className="space-y-1.5 text-xs">
+                          {timeSeriesFetchLogSteps.map((step, index) => (
+                            <li key={index} className="flex items-start gap-2">
+                              {step.status === 'pending' && <Loader2 className="h-4 w-4 mt-0.5 text-blue-500 animate-spin flex-shrink-0" />}
+                              {step.status === 'success' && <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 flex-shrink-0" />}
+                              {step.status === 'error' && <XCircle className="h-4 w-4 mt-0.5 text-destructive flex-shrink-0" />}
+                              {step.status === 'info' && <Info className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />}
+                              <div className="min-w-0">
+                                <p className={cn(step.status === 'error' && "text-destructive font-semibold")}>{step.message}</p>
+                                {step.details && <p className="text-muted-foreground text-[0.7rem] whitespace-pre-wrap">{step.details}</p>}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </ScrollArea>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </CardFooter>
+            )}
           </Card>
         )}
       </main>
@@ -340,3 +488,5 @@ export default function EAExplorerPage() {
     </div>
   );
 }
+
+    
