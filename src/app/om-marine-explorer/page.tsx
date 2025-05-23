@@ -8,14 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label as UiLabel } from "@/components/ui/label"; 
+import { Label as UiLabel } from "@/components/ui/label";
 import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Droplets, Sailboat, Compass, Timer } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
-import { MarinePlotsGrid } from "@/components/marine/MarinePlotsGrid"; // Assuming this will be adapted or reused
+import { MarinePlotsGrid } from "@/components/marine/MarinePlotsGrid";
 import { useToast } from "@/hooks/use-toast";
 import { formatISO, subDays } from 'date-fns';
 import type { DateRange } from "react-day-picker";
@@ -89,7 +89,7 @@ export default function OMMarineExplorerPage() {
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
 
-  // Log Accordion Helper
+  // Log Accordion Helper functions
   const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string) => {
     if (isLoading) return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Fetching log...</>;
     if (status === 'success') return <><CheckCircle2 className="mr-2 h-3 w-3 text-green-500" />{defaultTitle}: Success</>;
@@ -107,6 +107,48 @@ export default function OMMarineExplorerPage() {
     return "";
   };
 
+  const renderLogAccordion = (
+    logSteps: LogStep[], 
+    accordionValue: string, 
+    onValueChange: (value: string) => void, 
+    isLoading: boolean, 
+    overallStatus: LogOverallStatus, 
+    title: string, 
+    errorDetails?: string | null
+  ) => (
+    (isLoading || logSteps.length > 0 || overallStatus === 'error' || overallStatus === 'warning') && (
+      <CardFooter className="p-0 pt-2">
+        <Accordion type="single" collapsible value={accordionValue} onValueChange={onValueChange} className="w-full">
+          <AccordionItem value={title.toLowerCase().replace(/\s+/g, '-') + "-log-item"} className={cn("border rounded-md", getLogAccordionItemClass(overallStatus))}>
+            <AccordionTrigger className="px-3 py-1.5 text-xs hover:no-underline [&_svg.lucide-chevron-down]:h-3 [&_svg.lucide-chevron-down]:w-3">
+              {getLogTriggerContent(overallStatus, isLoading, title, errorDetails || undefined)}
+            </AccordionTrigger>
+            <AccordionContent className="px-2 pb-1 pt-0">
+              <ScrollArea className="max-h-[30rem] h-auto w-full rounded-md border bg-muted/30 dark:bg-muted/10 p-1.5 mt-1">
+                <ul className="space-y-1 text-[0.7rem]">
+                  {logSteps.map((step, index) => (
+                    <li key={index} className="flex items-start gap-1.5">
+                      {step.status === 'pending' && <Loader2 className="h-3 w-3 mt-0.5 text-blue-500 animate-spin flex-shrink-0" />}
+                      {step.status === 'success' && <CheckCircle2 className="h-3 w-3 mt-0.5 text-green-500 flex-shrink-0" />}
+                      {step.status === 'error' && <XCircle className="h-3 w-3 mt-0.5 text-destructive flex-shrink-0" />}
+                      {step.status === 'info' && <Info className="h-3 w-3 mt-0.5 text-muted-foreground flex-shrink-0" />}
+                      {step.status === 'warning' && <Info className="h-3 w-3 mt-0.5 text-yellow-500 flex-shrink-0" />}
+                      <div className="min-w-0">
+                        <p className={cn("break-words", step.status === 'error' && "text-destructive font-semibold", step.status === 'warning' && "text-yellow-600 dark:text-yellow-400")}>{step.message}</p>
+                        {step.details && <p className="text-muted-foreground text-[0.6rem] whitespace-pre-wrap break-all">{step.details}</p>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {logSteps.length === 0 && !isLoading && <p className="text-center text-muted-foreground text-[0.65rem] py-2">No log details for this operation.</p>}
+              </ScrollArea>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </CardFooter>
+    )
+  );
+
   // Initialize default location
   useEffect(() => {
     const defaultLoc = knownLocations[defaultLocationKey];
@@ -121,6 +163,7 @@ export default function OMMarineExplorerPage() {
         initialFetchDone.current = true;
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateRange]); // Rerun if dateRange changes and initial fetch hasn't happened
 
   // Location Search Suggestions
@@ -286,7 +329,7 @@ export default function OMMarineExplorerPage() {
               <CardContent className="space-y-1">
                 {ALL_MARINE_PARAMETERS.map((key) => {
                   const paramConfig = MARINE_PARAMETER_CONFIG[key];
-                  const IconComp = paramConfig.icon || Info; // Default to Info icon if none specified
+                  const IconComp = paramConfig.icon || Info; 
                   return (
                     <div key={key} className="flex items-center space-x-1.5">
                       <Checkbox id={`om-visibility-${key}`} checked={plotVisibility[key]} onCheckedChange={(c) => handlePlotVisibilityChange(key, !!c)} className="h-3.5 w-3.5"/>
@@ -324,9 +367,9 @@ export default function OMMarineExplorerPage() {
                   {isLoadingData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
                   {isLoadingData ? "Fetching..." : "Fetch Marine Data"}
                 </Button>
+                 {renderLogAccordion(fetchLogSteps, showFetchLogAccordion, setShowFetchLogAccordion, isLogLoading, logOverallStatus, "OM Marine Fetch Log", errorData)}
               </CardContent>
             </Card>
-            {renderLogAccordion(fetchLogSteps, showFetchLogAccordion, setShowFetchLogAccordion, isLogLoading, logOverallStatus, "OM Marine Fetch Log", errorData)}
           </div>
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-sm h-full">
@@ -337,7 +380,6 @@ export default function OMMarineExplorerPage() {
                     isLoading={isLoadingData} 
                     error={errorData} 
                     plotVisibility={plotVisibility}
-                    // handlePlotVisibilityChange is not needed here as it's managed on this page
                 />
               </CardContent>
             </Card>
