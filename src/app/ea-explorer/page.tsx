@@ -1,76 +1,116 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
-import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, ListChecks, AlertCircle, Target, Activity, CalendarDays, Search, TrendingUp, Info, CheckCircle2, XCircle, ChevronDown, Edit } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label as UiLabel } from "@/components/ui/label";
+import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, Search, MapPin, CalendarDays, Thermometer, Wind, Cloud as CloudIconLucide, Compass, Sailboat, Timer, ListChecks, AlertCircle, Target, Activity, Info, CheckCircle2, XCircle, ChevronDown } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { fetchMonitoringStationsAction, fetchStationMeasuresAction, fetchEATimeSeriesDataAction, type LogStep } from "./actions";
-import type { EAStationInfo, EAMeasureInfo, EATimeSeriesDataPoint, FetchEATimeSeriesInput } from "./shared";
-import { useToast } from "@/hooks/use-toast";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
-import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay";
-import { subDays, formatISO } from 'date-fns';
+import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay"; // Re-using this for single plot
+import { useToast } from "@/hooks/use-toast";
+import { formatISO, subDays, parseISO, isValid } from 'date-fns';
 import type { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
+import type { MarineDataPoint, FetchMarineDataInput, LogStep, MarinePlotVisibilityKeys } from "./shared";
+import { fetchOpenMeteoMarineDataAction } from "./actions";
+// New component for marine plots grid (can be adapted from WeatherPlotsGrid or created new)
+import { MarinePlotsGrid } from "@/components/marine/MarinePlotsGrid";
 
+
+const knownLocations: { [key: string]: { lat: number; lon: number; name: string } } = {
+  "milfordhaven": { lat: 51.71, lon: -5.04, name: "Milford Haven" },
+  "newlyn": { lat: 50.10, lon: -5.55, name: "Newlyn" },
+  "dover": { lat: 51.12, lon: -1.31, name: "Dover" },
+  "liverpool": { lat: 53.40, lon: -2.99, name: "Liverpool" },
+  "portsmouth": { lat: 50.81, lon: -1.08, name: "Portsmouth" },
+};
+const defaultLocationKey = "milfordhaven";
+
+interface SearchedCoords {
+  latitude: number;
+  longitude: number;
+}
+interface Suggestion {
+  key: string;
+  name: string;
+}
 
 type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle';
 
-export default function EAExplorerPage() {
+const marinePlotConfigIcons: Record<MarinePlotVisibilityKeys, React.ElementType> = {
+  seaLevel: Waves,
+  waveHeight: Sailboat, // Using Sailboat for distinction
+  waveDirection: Compass,
+  wavePeriod: Timer,
+};
+
+const marinePlotDisplayTitles: Record<MarinePlotVisibilityKeys, string> = {
+  seaLevel: "Sea Level (Tide)",
+  waveHeight: "Wave Height",
+  waveDirection: "Wave Direction",
+  wavePeriod: "Wave Period",
+};
+
+
+export default function MarineExplorerPage() {
   const [theme, setTheme] = useState("light");
   const pathname = usePathname();
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
 
-  // Stations state
-  const [stations, setStations] = useState<EAStationInfo[]>([]);
-  const [isLoadingStations, setIsLoadingStations] = useState(false);
-  const [errorStations, setErrorStations] = useState<string | null>(null);
-  const [showStationList, setShowStationList] = useState(true);
+  // Location state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [initialCoords, setInitialCoords] = useState<SearchedCoords | null>(null);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [currentLocationName, setCurrentLocationName] = useState<string | null>(null);
 
-  // Measures state
-  const [selectedStation, setSelectedStation] = useState<EAStationInfo | null>(null);
-  const [stationMeasures, setStationMeasures] = useState<EAMeasureInfo[]>([]);
-  const [isLoadingMeasures, setIsLoadingMeasures] = useState(false);
-  const [errorMeasures, setErrorMeasures] = useState<string | null>(null);
-  const [currentStationNameForMeasures, setCurrentStationNameForMeasures] = useState<string | null>(null);
-  
-  // Measure fetch log state
-  const [measureFetchLogSteps, setMeasureFetchLogSteps] = useState<LogStep[]>([]);
-  const [showMeasureFetchLogAccordion, setShowMeasureFetchLogAccordion] = useState<string>(""); 
-  const [isMeasureLogLoading, setIsMeasureLogLoading] = useState(false);
-  const [measureLogOverallStatus, setMeasureLogOverallStatus] = useState<LogOverallStatus>('idle');
-
-
-  // Time series state
-  const [selectedMeasure, setSelectedMeasure] = useState<EAMeasureInfo | null>(null);
+  // Date state
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
     from: subDays(new Date(), 7),
     to: new Date(),
   }));
-  const [timeSeriesData, setTimeSeriesData] = useState<EATimeSeriesDataPoint[] | null>(null);
-  const [isLoadingTimeSeries, setIsLoadingTimeSeries] = useState(false);
-  const [errorTimeSeries, setErrorTimeSeries] = useState<string | null>(null);
-  
-  // Time series fetch log state
-  const [timeSeriesFetchLogSteps, setTimeSeriesFetchLogSteps] = useState<LogStep[]>([]);
-  const [showTimeSeriesFetchLogAccordion, setShowTimeSeriesFetchLogAccordion] = useState<string>("");
-  const [isTimeSeriesLogLoading, setIsTimeSeriesLogLoading] = useState(false);
-  const [timeSeriesLogOverallStatus, setTimeSeriesLogOverallStatus] = useState<LogOverallStatus>('idle');
 
+  // Data state
+  const [marineData, setMarineData] = useState<MarineDataPoint[] | null>(null);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [errorData, setErrorData] = useState<string | null>(null);
+  const [dataLocationContext, setDataLocationContext] = useState<string | null>(null);
+
+  // Plot visibility state
+  const [plotVisibility, setPlotVisibility] = useState<Record<MarinePlotVisibilityKeys, boolean>>({
+    seaLevel: true,
+    waveHeight: true,
+    waveDirection: true,
+    wavePeriod: true,
+  });
+  
+  // Fetch log state
+  const [fetchLogSteps, setFetchLogSteps] = useState<LogStep[]>([]);
+  const [showFetchLogAccordion, setShowFetchLogAccordion] = useState<string>(""); 
+  const [isLogLoading, setIsLogLoading] = useState(false);
+  const [logOverallStatus, setLogOverallStatus] = useState<LogOverallStatus>('idle');
+
+  const initialFetchDone = useRef(false);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
     if (storedTheme) setTheme(storedTheme);
-    else {
-      const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      if (systemPrefersDark) setTheme("dark");
+    else if (window.matchMedia("(prefers-color-scheme: dark)").matches) setTheme("dark");
+
+    const defaultLoc = knownLocations[defaultLocationKey];
+    if (defaultLoc) {
+      setSearchTerm(defaultLoc.name); 
+      setInitialCoords({ latitude: defaultLoc.lat, longitude: defaultLoc.lon });
+      setCurrentLocationName(defaultLoc.name);
     }
   }, []);
 
@@ -81,116 +121,66 @@ export default function EAExplorerPage() {
   }, [theme]);
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
-  
-  const addTimeSeriesLogStep = useCallback((message: string, status: LogStep['status'], details?: string) => {
-    setTimeSeriesFetchLogSteps(prev => [...prev, { message, status, details }]);
+
+  const handlePlotVisibilityChange = useCallback((key: MarinePlotVisibilityKeys, checked: boolean) => {
+    setPlotVisibility(prev => ({ ...prev, [key]: checked }));
   }, []);
 
+  const handleLocationSearchAndFetch = useCallback(async () => {
+    const term = searchTerm.trim().toLowerCase();
+    setShowSuggestions(false); 
+    let coordsToUse = initialCoords;
+    let locationNameToUse = currentLocationName;
 
-  const handleLoadStations = async () => {
-    setIsLoadingStations(true);
-    setErrorStations(null);
-    setSelectedStation(null);
-    setStationMeasures([]);
-    setSelectedMeasure(null);
-    setTimeSeriesData(null);
-    setStations([]);
-    setMeasureFetchLogSteps([]);
-    setMeasureLogOverallStatus('idle');
-    setShowMeasureFetchLogAccordion("");
-    setTimeSeriesFetchLogSteps([]);
-    setTimeSeriesLogOverallStatus('idle');
-    setShowTimeSeriesFetchLogAccordion("");
-    setShowStationList(true);
-
-
-    const result = await fetchMonitoringStationsAction();
-    setIsLoadingStations(false);
-    if (result.success && result.stations) {
-      setStations(result.stations);
-      toast({ title: "Success", description: `Found ${result.stations.length} active EA monitoring stations.` });
-    } else {
-      setErrorStations(result.error || "Failed to load stations.");
-      toast({ variant: "destructive", title: "Error", description: result.error || "Failed to load stations." });
+    if (!term) {
+      toast({ variant: "destructive", title: "Search Error", description: "Please enter a location." });
+      setInitialCoords(null); 
+      setCurrentLocationName(null);
+      setMarineData(null); 
+      return;
     }
-  };
 
-  const handleSelectStation = useCallback(async (station: EAStationInfo) => {
-    setSelectedStation(station);
-    setShowStationList(false); // Hide station list
-    setIsLoadingMeasures(true);
-    setErrorMeasures(null);
-    setStationMeasures([]);
-    setSelectedMeasure(null);
-    setTimeSeriesData(null);
-    setCurrentStationNameForMeasures(station.name);
+    const locationKey = Object.keys(knownLocations).find(
+      key => key.toLowerCase() === term || knownLocations[key].name.toLowerCase() === term
+    );
 
-    // Reset and prepare logs for measure fetching
-    setMeasureFetchLogSteps([]);
-    // addMeasureLogStep(`Initiating measure fetch for ${station.name} (ID: ${station.id})...`, 'pending'); // This will be the first step from action
-    setIsMeasureLogLoading(true);
-    setMeasureLogOverallStatus('pending');
-    setShowMeasureFetchLogAccordion("measure-log-accordion-item"); // Open accordion
-
-    toast({ title: "Fetching Measures", description: `Loading measures for ${station.name}...`});
-    const result = await fetchStationMeasuresAction(station.id, station.name);
-    
-    setMeasureFetchLogSteps(result.log || []); 
-
-    setIsLoadingMeasures(false);
-    setIsMeasureLogLoading(false);
-
-    if (result.success && result.measures) {
-      setStationMeasures(result.measures);
-      if (result.stationName) setCurrentStationNameForMeasures(result.stationName);
-      if (result.measures.length === 0) {
-        toast({ variant: "default", title: "No Measures", description: `No specific measures found for ${result.stationName || station.name}.`, duration: 3000 });
-        setMeasureLogOverallStatus('success'); 
-        setShowMeasureFetchLogAccordion(""); // Close on success if no measures
-      } else {
-        toast({ title: "Measures Loaded", description: `Found ${result.measures.length} measures for ${result.stationName || station.name}.` });
-        setMeasureLogOverallStatus('success');
-        setShowMeasureFetchLogAccordion(""); // Close on success
+    if (locationKey) {
+      const location = knownLocations[locationKey];
+      coordsToUse = { latitude: location.lat, longitude: location.lon };
+      locationNameToUse = location.name;
+      if (location.name !== searchTerm) setSearchTerm(location.name);
+      setInitialCoords(coordsToUse);
+      setCurrentLocationName(locationNameToUse);
+    } else {
+      // If not a known location, try to use previously set coords if search term matches current name
+      // Otherwise, prompt for known location. A real geocoding API would go here.
+      if (!initialCoords || searchTerm.toLowerCase() !== (currentLocationName || "").toLowerCase()) {
+          setMarineData(null); 
+          setInitialCoords(null);
+          setCurrentLocationName(null);
+          toast({ variant: "destructive", title: "Location Not Found", description: "Please select a known UK coastal location from suggestions or enter a valid one." });
+          return;
       }
-    } else {
-      setErrorMeasures(result.error || `Failed to load measures for ${station.name}.`);
-      toast({ variant: "destructive", title: "Error Loading Measures", description: result.error || `Failed to load measures for ${station.name}.` });
-      setMeasureLogOverallStatus('error');
-      // Keep accordion open on error
+      // Use existing initialCoords if search term matches current name
+      coordsToUse = initialCoords;
+      locationNameToUse = currentLocationName;
     }
-  }, [toast]);
+    
+    if (coordsToUse && dateRange?.from && dateRange?.to) {
+      await handleFetchMarineData(coordsToUse, locationNameToUse || "Selected Location");
+    } else if (!coordsToUse) {
+        toast({ variant: "destructive", title: "Missing Location", description: "Could not determine coordinates for fetching." });
+    }
+  }, [searchTerm, initialCoords, currentLocationName, dateRange, toast]);
 
-  const handleChangeStation = () => {
-    setSelectedStation(null);
-    setStationMeasures([]);
-    setSelectedMeasure(null);
-    setTimeSeriesData(null);
-    setErrorMeasures(null);
-    setMeasureFetchLogSteps([]);
-    setShowMeasureFetchLogAccordion("");
-    setMeasureLogOverallStatus('idle');
-    setTimeSeriesFetchLogSteps([]);
-    setShowTimeSeriesFetchLogAccordion("");
-    setTimeSeriesLogOverallStatus('idle');
-    setShowStationList(true); // Show station list again
-  };
 
-  const handleSelectMeasure = (measure: EAMeasureInfo) => {
-    setSelectedMeasure(measure);
-    setTimeSeriesData(null); 
-    setErrorTimeSeries(null);
-    setTimeSeriesFetchLogSteps([]);
-    setTimeSeriesLogOverallStatus('idle');
-    setShowTimeSeriesFetchLogAccordion("");
-  };
-
-  const handleFetchTimeSeries = async () => {
-    if (!selectedStation || !selectedMeasure) {
-      toast({ variant: "destructive", title: "Selection Missing", description: "Please select a station and a measure to plot." });
+  const handleFetchMarineData = async (coords: SearchedCoords, locationName: string) => {
+    if (!coords) {
+      toast({ variant: "destructive", title: "Missing Location", description: "Please search and select a location." });
       return;
     }
     if (!dateRange || !dateRange.from || !dateRange.to) {
-      toast({ variant: "destructive", title: "Invalid Date Range", description: "Please select a valid start and end date." });
+      toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range."});
       return;
     }
      if (dateRange.from > dateRange.to) {
@@ -198,59 +188,109 @@ export default function EAExplorerPage() {
         return;
     }
 
-    setIsLoadingTimeSeries(true);
-    setErrorTimeSeries(null);
-    setTimeSeriesData(null);
+    setIsLoadingData(true);
+    setErrorData(null);
+    setMarineData(null);
+    setDataLocationContext(null);
 
-    setTimeSeriesFetchLogSteps([]);
-    setIsTimeSeriesLogLoading(true);
-    setTimeSeriesLogOverallStatus('pending');
-    setShowTimeSeriesFetchLogAccordion("timeseries-log-accordion-item"); // Open accordion
+    setFetchLogSteps([]);
+    setIsLogLoading(true);
+    setLogOverallStatus('pending');
+    setShowFetchLogAccordion("marine-fetch-log-item");
 
-
-    const input: FetchEATimeSeriesInput = {
-      measureId: selectedMeasure.id, 
+    const input: FetchMarineDataInput = {
+      latitude: coords.latitude,
+      longitude: coords.longitude,
       startDate: formatISO(dateRange.from, { representation: 'date' }),
       endDate: formatISO(dateRange.to, { representation: 'date' }),
-      measureParameterName: selectedMeasure.parameterName,
-      stationName: currentStationNameForMeasures || selectedStation.name,
     };
     
-    toast({ title: "Fetching Data", description: `Fetching '${selectedMeasure.parameterName}' data...` });
-    const result = await fetchEATimeSeriesDataAction(input);
+    const loadingToastId = toast({ title: "Fetching Data", description: `Fetching marine data for ${locationName}...`}).id;
     
-    setTimeSeriesFetchLogSteps(result.log || []);
-
-    setIsLoadingTimeSeries(false);
-    setIsTimeSeriesLogLoading(false);
+    const result = await fetchOpenMeteoMarineDataAction(input);
+    
+    if(loadingToastId) dismiss(loadingToastId);
+    setFetchLogSteps(result.log || []);
+    setIsLoadingData(false);
+    setIsLogLoading(false);
 
     if (result.success && result.data) {
-      setTimeSeriesData(result.data);
+      setMarineData(result.data);
+      setDataLocationContext(result.dataLocationContext || `Marine data for ${locationName}`);
       if (result.data.length === 0) {
-        toast({ variant: "default", title: "No Data", description: `No data points found for '${selectedMeasure.parameterName}' in the selected range.`, duration: 4000 });
-        setTimeSeriesLogOverallStatus('success');
-        setShowTimeSeriesFetchLogAccordion(""); // Close on success if no data
+        toast({ variant: "default", title: "No Data", description: result.error || `No marine data points found for ${locationName} in the selected range.`, duration: 4000 });
+        setLogOverallStatus('success'); 
+        setShowFetchLogAccordion(""); 
       } else {
-        toast({ title: "Data Loaded", description: `Successfully loaded ${result.data.length} data points for '${selectedMeasure.parameterName}'.` });
-        setTimeSeriesLogOverallStatus('success');
-        setShowTimeSeriesFetchLogAccordion(""); // Close on success
+        toast({ title: "Data Loaded", description: `Successfully loaded ${result.data.length} marine data points for ${locationName}.` });
+        setLogOverallStatus('success');
+        setShowFetchLogAccordion("");
       }
     } else {
-      setErrorTimeSeries(result.error || `Failed to load time series data for '${selectedMeasure.parameterName}'.`);
-      toast({ variant: "destructive", title: "Error Loading Data", description: result.error || `Failed to load data for '${selectedMeasure.parameterName}'.` });
-      setTimeSeriesLogOverallStatus('error');
-      // Keep accordion open on error
+      setErrorData(result.error || `Failed to load marine data for ${locationName}.`);
+      toast({ variant: "destructive", title: "Error Loading Data", description: result.error || `Failed to load data for ${locationName}.` });
+      setLogOverallStatus('error');
     }
   };
+  
+  // Auto-fetch for default location on initial load
+  useEffect(() => {
+    if (initialCoords && dateRange?.from && dateRange?.to && !initialFetchDone.current && !isLoadingData && !errorData) {
+      handleFetchMarineData(initialCoords, currentLocationName || "Default Location");
+      initialFetchDone.current = true;
+    }
+  }, [initialCoords, dateRange, isLoadingData, errorData, currentLocationName, handleFetchMarineData]);
 
-  const yAxisPlotConfig: YAxisConfig[] | undefined = selectedMeasure ? [{
-    id: 'value',
-    orientation: 'left',
-    label: `${selectedMeasure.parameterName} (${selectedMeasure.unitName || 'N/A'})`,
-    color: '--chart-1',
-    dataKey: 'value',
-    unit: selectedMeasure.unitName || '',
-  }] : undefined;
+
+  useEffect(() => {
+    const currentSearchTerm = searchTerm.trim();
+    if (currentSearchTerm === "") {
+        if (document.activeElement === document.querySelector('input[placeholder="Search UK coastal location..."]')) {
+           setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
+           setShowSuggestions(true);
+        } else {
+          setSuggestions([]); setShowSuggestions(false); 
+        }
+        return;
+      }
+
+    const termLower = currentSearchTerm.toLowerCase();
+    const filtered = Object.entries(knownLocations)
+      .filter(([key, locObj]) =>
+        key.toLowerCase().includes(termLower) || 
+        locObj.name.toLowerCase().includes(termLower) 
+      )
+      .map(([key, locObj]) => ({ key, name: locObj.name }));
+    
+    setSuggestions(filtered.slice(0, 5)); 
+    setShowSuggestions(filtered.length > 0 && document.activeElement === document.querySelector('input[placeholder="Search UK coastal location..."]'));
+  }, [searchTerm]);
+
+  const handleSuggestionClick = useCallback((suggestionKey: string) => {
+    const location = knownLocations[suggestionKey];
+    if (location) {
+      setSearchTerm(location.name); 
+      const newCoords = { latitude: location.lat, longitude: location.lon };
+      setInitialCoords(newCoords); 
+      setCurrentLocationName(location.name);
+      setShowSuggestions(false);
+      // Auto-fetch will be triggered by handleLocationSearchAndFetch button
+    }
+  }, []); 
+
+  const handleInputFocus = () => {
+    const currentSearchTerm = searchTerm.trim();
+    if (currentSearchTerm === "" || Object.values(knownLocations).some(loc => loc.name.toLowerCase() === currentSearchTerm.toLowerCase())) {
+      setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
+      setShowSuggestions(true);
+    } else if (suggestions.length > 0) { 
+      setShowSuggestions(true);
+    }
+  };
+  
+  const handleInputBlur = () => {
+    setTimeout(() => { setShowSuggestions(false); }, 150);
+  };
 
   const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string) => {
     if (isLoading) return <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Fetching details...</>;
@@ -261,7 +301,7 @@ export default function EAExplorerPage() {
   };
   
   const getLogAccordionItemClass = (status: LogOverallStatus) => {
-    if (status === 'pending' || isMeasureLogLoading || isTimeSeriesLogLoading) return "bg-blue-500/10";
+    if (status === 'pending' || isLogLoading) return "bg-blue-500/10";
     if (status === 'success') return "bg-green-500/10";
     if (status === 'error') return "bg-destructive/10";
     return "";
@@ -272,245 +312,157 @@ export default function EAExplorerPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <TooltipProvider>
           <div className="container flex h-full items-center justify-between px-3 md:px-4">
-            <Link href="/data-explorer" passHref>
+            <Link href="/marine-explorer" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/data-explorer" passHref>
-                    <Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer">
-                      <LayoutGrid className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>Data Explorer (CSV)</p></TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/weather" passHref>
-                    <Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Weather Page">
-                      <CloudSun className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>Weather Page</p></TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/ea-explorer" passHref>
-                    <Button variant={pathname === '/ea-explorer' ? "secondary": "ghost"} size="icon" aria-label="EA Explorer">
-                      <Waves className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>EA Data Explorer</p></TooltipContent>
-              </Tooltip>
+              <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer (CSV)</p></TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Link href="/weather" passHref><Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Weather Page"><CloudSun className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Weather Page</p></TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Link href="/marine-explorer" passHref><Button variant={pathname === '/marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="Marine Data Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Marine Data Explorer</p></TooltipContent></Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme">
-                    <SunMoon className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent><p>Toggle Theme</p></TooltipContent>
-              </Tooltip>
+              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
           </div>
         </TooltipProvider>
       </header>
 
-      <main className="flex-grow container mx-auto p-3 md:p-4 space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Environment Agency Data Explorer</CardTitle>
-            <CardDescription>
-              Load EA stations, select a station, then a measure, set a date range, and plot the data.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-2">
-                <Button onClick={handleLoadStations} disabled={isLoadingStations}>
-                {isLoadingStations ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListChecks className="mr-2 h-4 w-4" />}
-                {stations.length > 0 ? "Reload Stations" : "Load Monitoring Stations"}
-                </Button>
-                {stations.length > 0 && (
-                    <Button variant="outline" onClick={() => setShowStationList(!showStationList)} size="sm" className="h-9">
-                        <ChevronDown className={cn("h-4 w-4 transition-transform", showStationList && "rotate-180")} />
-                        {showStationList ? "Hide Stations" : `Show Stations (${stations.length})`}
-                    </Button>
-                )}
-            </div>
-            {isLoadingStations && <div className="flex items-center justify-center p-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Loading stations...</p></div>}
-            {errorStations && !isLoadingStations && <div className="text-destructive p-2 bg-destructive/10 rounded-md"><AlertCircle className="inline mr-2"/>{errorStations}</div>}
-            
-            {stations.length > 0 && !isLoadingStations && showStationList && (
-              <div className="space-y-2">
-                <h3 className="text-lg font-semibold">Available Stations ({stations.length})</h3>
-                <ScrollArea className="h-96 w-full rounded-md border p-2">
-                  <ul className="space-y-1">
-                    {stations.map((station) => (
-                      <li key={station.id}>
-                        <Button variant={selectedStation?.id === station.id ? "secondary" : "ghost"} className="w-full justify-start text-left p-2 h-auto" onClick={() => handleSelectStation(station)} disabled={isLoadingMeasures && selectedStation?.id === station.id}>
-                           <div className="flex flex-col">
-                            <span className="font-medium text-sm">{station.name}</span>
-                            <span className="text-xs text-muted-foreground">ID: {station.id}{station.notation && station.notation !== station.id && ` (Notation: ${station.notation})`}{station.lat && station.lon && ` | Lat: ${station.lat.toFixed(4)}, Lon: ${station.lon.toFixed(4)}`}</span>
-                           </div>
-                           {isLoadingMeasures && selectedStation?.id === station.id && <Loader2 className="ml-auto h-4 w-4 animate-spin" />}
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                </ScrollArea>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {selectedStation && !showStationList && (
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle className="flex items-center gap-2"><Target className="h-5 w-5 text-primary"/>Measures for: {currentStationNameForMeasures || selectedStation.name}</CardTitle>
-                <Button variant="outline" size="sm" onClick={handleChangeStation} className="h-8 text-xs">
-                    <Edit className="mr-2 h-3 w-3" /> Change Station
-                </Button>
-              </div>
-              <CardDescription>Station ID: {selectedStation.id}. Click a measure to select it for plotting.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoadingMeasures && <div className="flex items-center justify-center p-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Loading measures...</p></div>}
-              {!isLoadingMeasures && errorMeasures && <div className="text-destructive p-2 bg-destructive/10 rounded-md"><AlertCircle className="inline mr-2"/>{errorMeasures}</div>}
-              {!isLoadingMeasures && stationMeasures.length > 0 && (
-                <ScrollArea className="h-60 w-full rounded-md border p-2">
-                  <ul className="divide-y divide-border">
-                    {stationMeasures.map((measure) => (
-                      <li key={measure.id}>
-                        <Button variant={selectedMeasure?.id === measure.id ? "secondary" : "ghost"} className="w-full justify-start text-left p-2 h-auto hover:bg-muted/50" onClick={() => handleSelectMeasure(measure)}>
-                          <div className="flex flex-col">
-                            <p className="font-medium text-sm flex items-center gap-1.5"><Activity className="h-4 w-4 text-muted-foreground"/>{measure.parameterName}{measure.qualifier && <span className="text-xs text-muted-foreground">({measure.qualifier})</span>}</p>
-                            <p className="text-xs text-muted-foreground ml-5">Unit: {measure.unitName}</p>
-                          </div>
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                </ScrollArea>
-              )}
-              {!isLoadingMeasures && stationMeasures.length === 0 && !errorMeasures && <p className="text-sm text-muted-foreground">No measures found for this station.</p>}
-            </CardContent>
-            {(isMeasureLogLoading || measureFetchLogSteps.length > 0 || measureLogOverallStatus !== 'idle') && (
-              <CardFooter className="pt-4">
-                <Accordion type="single" collapsible value={showMeasureFetchLogAccordion} onValueChange={setShowMeasureFetchLogAccordion} className="w-full">
-                  <AccordionItem value="measure-log-accordion-item" className={cn("border rounded-md", getLogAccordionItemClass(measureLogOverallStatus))}>
-                    <AccordionTrigger className="px-4 py-2 text-sm hover:no-underline">
-                      {getLogTriggerContent(measureLogOverallStatus, isMeasureLogLoading, 'Measure Fetch Log')}
-                    </AccordionTrigger>
-                    <AccordionContent className="px-4 pb-2 pt-0">
-                      <ScrollArea className="max-h-[30rem] h-auto w-full rounded-md border bg-muted/30 p-2 mt-1">
-                        <ul className="space-y-1.5 text-xs">
-                          {measureFetchLogSteps.map((step, index) => (
-                            <li key={index} className="flex items-start gap-2">
-                              {step.status === 'pending' && <Loader2 className="h-4 w-4 mt-0.5 text-blue-500 animate-spin flex-shrink-0" />}
-                              {step.status === 'success' && <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 flex-shrink-0" />}
-                              {step.status === 'error' && <XCircle className="h-4 w-4 mt-0.5 text-destructive flex-shrink-0" />}
-                              {step.status === 'info' && <Info className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />}
-                              <div className="min-w-0">
-                                <p className={cn(step.status === 'error' && "text-destructive font-semibold")}>{step.message}</p>
-                                {step.details && <p className="text-muted-foreground text-[0.7rem] whitespace-pre-wrap">{step.details}</p>}
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </ScrollArea>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              </CardFooter>
-            )}
-          </Card>
-        )}
-
-        {selectedMeasure && !showStationList && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5 text-primary"/> Plot: {selectedMeasure.parameterName}</CardTitle>
-              <CardDescription>For station: {currentStationNameForMeasures || selectedStation?.name}. Select date range and fetch data.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="max-w-sm">
-                <label htmlFor="date-range-picker" className="text-sm font-medium mb-1 block">Date Range</label>
-                <DatePickerWithRange id="date-range-picker" date={dateRange} onDateChange={setDateRange} disabled={isLoadingTimeSeries} />
-              </div>
-              <Button onClick={handleFetchTimeSeries} disabled={isLoadingTimeSeries || !dateRange?.from || !dateRange?.to}>
-                {isLoadingTimeSeries ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                Fetch & Plot Data
-              </Button>
-
-              {isLoadingTimeSeries && <div className="flex items-center justify-center p-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Loading data...</p></div>}
-              {!isLoadingTimeSeries && errorTimeSeries && <div className="text-destructive p-2 bg-destructive/10 rounded-md"><AlertCircle className="inline mr-2"/>{errorTimeSeries}</div>}
-              
-              {timeSeriesData && !isLoadingTimeSeries && (
-                <div className="h-[400px] w-full mt-4 border rounded-md p-2">
-                  {timeSeriesData.length > 0 ? (
-                    <ChartDisplay
-                      data={timeSeriesData.map(d => ({ time: d.time, value: d.value }))}
-                      plottableSeries={['value']}
-                      timeAxisLabel="Time"
-                      yAxisConfigs={yAxisPlotConfig}
-                      plotTitle={`${selectedMeasure.parameterName} for ${currentStationNameForMeasures || selectedStation?.name}`}
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                        <AlertCircle className="w-10 h-10 mb-2 opacity-50"/>
-                        <p>No data points found for the selected criteria.</p>
+      <main className="flex-grow container mx-auto p-3 md:p-4">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+          {/* Controls Column */}
+          <div className="md:col-span-4 lg:col-span-3 space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2"><MapPin className="h-5 w-5 text-primary"/>Location & Date</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="relative">
+                  <Input
+                    type="text"
+                    placeholder="Search UK coastal location..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onFocus={handleInputFocus}
+                    onBlur={handleInputBlur}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { handleLocationSearchAndFetch(); setShowSuggestions(false); } }}
+                    className="h-9 text-sm"
+                  />
+                  {showSuggestions && suggestions.length > 0 && (
+                    <div className="absolute z-20 w-full mt-0 bg-card border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                      {suggestions.map((suggestion) => (
+                        <button key={suggestion.key} type="button" className="w-full text-left px-3 py-2 text-sm hover:bg-muted focus:bg-muted focus:outline-none" onClick={() => handleSuggestionClick(suggestion.key)} onMouseDown={(e) => e.preventDefault()}>
+                          {suggestion.name}
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
-              )}
-            </CardContent>
-            {(isTimeSeriesLogLoading || timeSeriesFetchLogSteps.length > 0 || timeSeriesLogOverallStatus !== 'idle') && (
-              <CardFooter className="pt-4">
-                 <Accordion type="single" collapsible value={showTimeSeriesFetchLogAccordion} onValueChange={setShowTimeSeriesFetchLogAccordion} className="w-full">
-                  <AccordionItem value="timeseries-log-accordion-item" className={cn("border rounded-md", getLogAccordionItemClass(timeSeriesLogOverallStatus))}>
-                    <AccordionTrigger className="px-4 py-2 text-sm hover:no-underline">
-                      {getLogTriggerContent(timeSeriesLogOverallStatus, isTimeSeriesLogLoading, 'Time Series Fetch Log')}
-                    </AccordionTrigger>
-                    <AccordionContent className="px-4 pb-2 pt-0">
-                      <ScrollArea className="max-h-[30rem] h-auto w-full rounded-md border bg-muted/30 p-2 mt-1">
-                        <ul className="space-y-1.5 text-xs">
-                          {timeSeriesFetchLogSteps.map((step, index) => (
-                            <li key={index} className="flex items-start gap-2">
-                              {step.status === 'pending' && <Loader2 className="h-4 w-4 mt-0.5 text-blue-500 animate-spin flex-shrink-0" />}
-                              {step.status === 'success' && <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 flex-shrink-0" />}
-                              {step.status === 'error' && <XCircle className="h-4 w-4 mt-0.5 text-destructive flex-shrink-0" />}
-                              {step.status === 'info' && <Info className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />}
-                              <div className="min-w-0">
-                                <p className={cn(step.status === 'error' && "text-destructive font-semibold")}>{step.message}</p>
-                                {step.details && <p className="text-muted-foreground text-[0.7rem] whitespace-pre-wrap">{step.details}</p>}
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </ScrollArea>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              </CardFooter>
-            )}
-          </Card>
-        )}
-      </main>
+                {initialCoords && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    Lat: {initialCoords.latitude.toFixed(4)}, Lon: {initialCoords.longitude.toFixed(4)}
+                  </p>
+                )}
+                <div>
+                  <UiLabel htmlFor="date-range-picker" className="text-sm font-medium mb-1 block">Date Range</UiLabel>
+                  <DatePickerWithRange id="date-range-picker" date={dateRange} onDateChange={setDateRange} disabled={isLoadingData} />
+                   {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && (
+                    <p className="text-xs text-destructive px-1 pt-1">Start date must be before or same as end date.</p>
+                  )}
+                </div>
+                 <Button 
+                    onClick={handleLocationSearchAndFetch}
+                    disabled={isLoadingData || !searchTerm || !dateRange?.from || !dateRange?.to}
+                    className="w-full h-9 text-sm"
+                  >
+                    {isLoadingData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
+                    {isLoadingData ? "Fetching..." : "Fetch Marine Data"}
+                </Button>
+              </CardContent>
+            </Card>
 
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Display Plots</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                {(Object.keys(plotVisibility) as MarinePlotVisibilityKeys[]).map((key) => {
+                  const IconComponent = marinePlotConfigIcons[key];
+                  return (
+                    <div key={key} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`visibility-${key}`}
+                        checked={plotVisibility[key]}
+                        onCheckedChange={(checked) => handlePlotVisibilityChange(key, !!checked)}
+                        className="h-4 w-4"
+                      />
+                      <UiLabel htmlFor={`visibility-${key}`} className="text-sm font-medium flex items-center gap-1.5 cursor-pointer">
+                        <IconComponent className="h-4 w-4 text-muted-foreground" />
+                        {marinePlotDisplayTitles[key]}
+                      </UiLabel>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+
+            {(isLogLoading || fetchLogSteps.length > 0 || logOverallStatus !== 'idle') && (
+              <Card>
+                <CardFooter className="p-2">
+                  <Accordion type="single" collapsible value={showFetchLogAccordion} onValueChange={setShowFetchLogAccordion} className="w-full">
+                    <AccordionItem value="marine-fetch-log-item" className={cn("border rounded-md", getLogAccordionItemClass(logOverallStatus))}>
+                      <AccordionTrigger className="px-4 py-2 text-sm hover:no-underline">
+                        {getLogTriggerContent(logOverallStatus, isLogLoading, 'Fetch Log')}
+                      </AccordionTrigger>
+                      <AccordionContent className="px-4 pb-2 pt-0">
+                        <ScrollArea className="max-h-[30rem] h-auto w-full rounded-md border bg-muted/30 p-2 mt-1">
+                          <ul className="space-y-1.5 text-xs">
+                            {fetchLogSteps.map((step, index) => (
+                              <li key={index} className="flex items-start gap-2">
+                                {step.status === 'pending' && <Loader2 className="h-4 w-4 mt-0.5 text-blue-500 animate-spin flex-shrink-0" />}
+                                {step.status === 'success' && <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 flex-shrink-0" />}
+                                {step.status === 'error' && <XCircle className="h-4 w-4 mt-0.5 text-destructive flex-shrink-0" />}
+                                {step.status === 'info' && <Info className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />}
+                                <div className="min-w-0">
+                                  <p className={cn("break-words", step.status === 'error' && "text-destructive font-semibold")}>{step.message}</p>
+                                  {step.details && <p className="text-muted-foreground text-[0.7rem] whitespace-pre-wrap break-all">{step.details}</p>}
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </ScrollArea>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                </CardFooter>
+              </Card>
+            )}
+
+          </div>
+
+          {/* Plot Area Column */}
+          <div className="md:col-span-8 lg:col-span-9">
+            <Card className="shadow-lg h-full">
+              <CardHeader className="p-3">
+                 <CardTitle className="text-lg">{dataLocationContext || "Marine Data Plots"}</CardTitle>
+              </CardHeader>
+              <CardContent className="p-2 h-[calc(100%-3rem)]">
+                <MarinePlotsGrid
+                    marineData={marineData}
+                    isLoading={isLoadingData}
+                    error={errorData}
+                    plotVisibility={plotVisibility}
+                />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </main>
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            Data from Environment Agency.
+            Marine data from Open-Meteo.
           </p>
         </div>
       </footer>
     </div>
   );
 }
-
-    

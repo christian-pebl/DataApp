@@ -69,7 +69,7 @@ export default function DataExplorerPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <TooltipProvider>
           <div className="container flex h-full items-center justify-between px-3 md:px-4">
-            <Link href="/data-explorer" passHref>
+            <Link href="/marine-explorer" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
@@ -95,13 +95,13 @@ export default function DataExplorerPage() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Link href="/ea-explorer" passHref>
-                    <Button variant={pathname === '/ea-explorer' ? "secondary": "ghost"} size="icon" aria-label="EA Explorer">
+                  <Link href="/marine-explorer" passHref>
+                    <Button variant={pathname === '/marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="Marine Data Explorer">
                       <Waves className="h-5 w-5" />
                     </Button>
                   </Link>
                 </TooltipTrigger>
-                <TooltipContent><p>EA Data Explorer</p></TooltipContent>
+                <TooltipContent><p>Marine Data Explorer</p></TooltipContent>
               </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip>
