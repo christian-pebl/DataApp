@@ -69,14 +69,14 @@ export default function DataExplorerPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <TooltipProvider>
           <div className="container flex h-full items-center justify-between px-3 md:px-4">
-            <Link href="/marine-explorer" passHref>
+            <Link href="/ea-explorer" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link href="/data-explorer" passHref>
-                    <Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer">
+                    <Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (CSV)">
                       <LayoutGrid className="h-5 w-5" />
                     </Button>
                   </Link>
@@ -95,13 +95,13 @@ export default function DataExplorerPage() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Link href="/marine-explorer" passHref>
-                    <Button variant={pathname === '/marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="Marine Data Explorer">
+                  <Link href="/ea-explorer" passHref>
+                    <Button variant={pathname === '/ea-explorer' ? "secondary": "ghost"} size="icon" aria-label="Open Access Data Explorer">
                       <Waves className="h-5 w-5" />
                     </Button>
                   </Link>
                 </TooltipTrigger>
-                <TooltipContent><p>Marine Data Explorer</p></TooltipContent>
+                <TooltipContent><p>Open Access Data Explorer</p></TooltipContent>
               </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip>
@@ -153,3 +153,4 @@ export default function DataExplorerPage() {
     </div>
   );
 }
+
