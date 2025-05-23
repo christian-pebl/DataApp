@@ -3,8 +3,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush, Label as RechartsLabel } from 'recharts';
-import type { MarineDataPoint, MarinePlotVisibilityKeys } from '@/app/ea-explorer/shared'; // Adjusted path
-import { Info, Waves, Sailboat, Compass, Timer, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import type { MarineDataPoint, MarinePlotVisibilityKeys } from '@/app/ea-explorer/om-marine-shared'; // Adjusted path
+import { Info, Waves, Sailboat, Compass, Timer, CheckCircle2, XCircle, Loader2, AlertCircle } from 'lucide-react'; // Added AlertCircle
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface PlotConfig {
