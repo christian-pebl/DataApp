@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
@@ -59,17 +59,17 @@ export default function DataExplorerPage() {
 
   useEffect(() => {
     if (!plotsInitialized.current && plots.length === 0) {
-      addPlot(); // Add one plot instance by default
+      addPlot(); 
       plotsInitialized.current = true;
     }
   }, [addPlot, plots.length]);
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <TooltipProvider>
-          <div className="container flex h-14 items-center justify-between px-3 md:px-4">
-            <Link href="/tide" passHref> 
+          <div className="container flex h-full items-center justify-between px-3 md:px-4">
+            <Link href="/data-explorer" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
@@ -95,13 +95,13 @@ export default function DataExplorerPage() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Link href="/tide" passHref>
-                    <Button variant={pathname === '/tide' ? "secondary": "ghost"} size="icon" aria-label="Tide Page">
+                  <Link href="/ea-explorer" passHref>
+                    <Button variant={pathname === '/ea-explorer' ? "secondary": "ghost"} size="icon" aria-label="EA Explorer">
                       <Waves className="h-5 w-5" />
                     </Button>
                   </Link>
                 </TooltipTrigger>
-                <TooltipContent><p>Marine Data Page</p></TooltipContent>
+                <TooltipContent><p>EA Data Explorer</p></TooltipContent>
               </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip>
@@ -119,15 +119,15 @@ export default function DataExplorerPage() {
 
       <main className="flex-grow container mx-auto p-3 md:p-4">
         <div className="flex justify-center mb-3">
-          <Button onClick={addPlot} size="sm">
+          <Button onClick={addPlot} size="sm" className="h-8 text-xs">
             <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot
           </Button>
         </div>
         {plots.length === 0 ? (
-          <div className="flex flex-col items-center justify-center text-muted-foreground h-64">
-            <LayoutGrid className="w-12 h-12 mb-4" />
-            <p className="text-lg">No plots to display.</p>
-            <p className="text-sm">Click "Add New Plot" to get started.</p>
+          <div className="flex flex-col items-center justify-center text-muted-foreground h-64 p-3">
+            <LayoutGrid className="w-10 h-10 mb-3 text-muted" />
+            <p className="text-sm">No plots to display.</p>
+            <p className="text-xs">Click "Add New Plot" to get started.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -144,7 +144,7 @@ export default function DataExplorerPage() {
       </main>
 
       <footer className="py-3 md:px-4 md:py-0 border-t">
-        <div className="container flex flex-col items-center justify-center gap-2 md:h-16 md:flex-row">
+        <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
             PEBL data app - CSV Data Explorer.
           </p>

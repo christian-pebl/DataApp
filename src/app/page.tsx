@@ -5,17 +5,17 @@ import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 
-export default function RedirectToTidePage() {
+export default function RedirectToHomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace('/tide'); // Changed from /weather to /tide
+    router.replace('/data-explorer'); // Changed to redirect to data-explorer
   }, [router]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
       <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-      <p className="text-lg text-muted-foreground">Redirecting to Marine Data Page...</p>
+      <p className="text-lg text-muted-foreground">Redirecting to Data Explorer...</p>
     </div>
   );
 }
