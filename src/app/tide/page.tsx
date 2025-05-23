@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Search, MapPin, LayoutGrid, CloudSun, Waves, SunMoon, Info, CheckCircle2, XCircle } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls"; 
 import { fetchMarineDataAction } from "./actions"; 
-import type { MarineDataPoint } from "./shared"; 
+import type { MarineDataPoint, FetchMarineDataInput } from "./shared"; 
 import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay";
 import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
@@ -25,10 +25,11 @@ const knownLocations: { [key: string]: { lat: number; lon: number; name: string,
   "milfordhaven": { lat: 51.710, lon: -5.042, name: "Milford Haven", eaStationId: "0401" },
   "newlyn": { lat: 50.102, lon: -5.549, name: "Newlyn", eaStationId: "0001" },
   "dover": { lat: 51.124, lon: 1.323, name: "Dover", eaStationId: "0023" },
-  "holyhead": { lat: 53.3075, lon: -4.6281, name: "Holyhead", eaStationId: "E71525" },
-  "liverpool": { lat: 53.410, lon: -3.017, name: "Liverpool (Gladstone Dock)", eaStationId: "E71896" },
+  "holyhead": { lat: 53.3075, lon: -4.6281, name: "Holyhead", eaStationId: "E71525" }, // Example complex ID
+  "liverpool": { lat: 53.410, lon: -3.017, name: "Liverpool (Gladstone Dock)", eaStationId: "E71896" }, // Example complex ID
   "portsmouth": { lat: 50.81, lon: -1.08, name: "Portsmouth", eaStationId: "E72614"},
   "southampton_docks": { lat: 50.90, lon: -1.40, name: "Southampton Docks"}, // No EA ID, will use Open-Meteo
+  // Add more verified EA station locations if needed
 };
 
 const defaultLocationKey = "milfordhaven";
@@ -109,13 +110,12 @@ export default function TidePage() {
         key: defaultLocationKey 
       };
       setCurrentLocationDetails(defaultDetails);
-      // Trigger initial fetch for default location
       if (dateRange?.from && dateRange?.to && !initialFetchDone.current) {
-         handleFetchMarineData(defaultDetails, dateRange, true); // Pass true for initialFetch
+         handleFetchMarineData(defaultDetails, dateRange, true); 
          initialFetchDone.current = true;
       }
     }
-  }, []); // Removed dateRange from deps to avoid re-triggering initial fetch on date change
+  }, []); 
 
   useEffect(() => {
     if (theme === "dark") document.documentElement.classList.add("dark");
@@ -128,8 +128,9 @@ export default function TidePage() {
   const handleFetchMarineData = useCallback(async (locationDetails?: SearchedCoords, datesToUse?: DateRange, isInitialFetch = false) => {
     const currentLoc = locationDetails || currentLocationDetails;
     const currentDates = datesToUse || dateRange;
+    const currentLocKey = currentLoc?.key || null;
 
-    if (!isInitialFetch) { // Only show these toasts for user-initiated fetches
+    if (!isInitialFetch) {
         if (!currentLoc) {
           toast({ variant: "destructive", title: "Missing Location", description: "Please search and select a location." });
           return;
@@ -149,7 +150,6 @@ export default function TidePage() {
         }
     }
     
-    // Guard against fetch if essential info is missing (especially for initial)
     if (!currentLoc || !currentDates?.from || !currentDates?.to) return;
 
 
@@ -157,9 +157,9 @@ export default function TidePage() {
     setError(null);
     setDataLocationContext(undefined);
     setMarineData(null);
-    setFetchLogSteps([]); // Clear previous logs
+    setFetchLogSteps([]); 
     addLogStep(`Initiating data fetch for ${currentLoc.key ? knownLocations[currentLoc.key]?.name : `Lat: ${currentLoc.latitude.toFixed(2)}, Lon: ${currentLoc.longitude.toFixed(2)}`}...`, 'pending');
-    setLogAccordionValue("fetch-log-details"); // Open accordion
+    setLogAccordionValue("fetch-log-details"); 
     setLogOverallStatus('pending');
 
 
@@ -175,7 +175,6 @@ export default function TidePage() {
     if (result.log) {
       setFetchLogSteps(prev => {
         const newLogs = result.log!.map((l, index) => ({ id: `server-log-${Date.now()}-${index}`, ...l }));
-        // Replace the initial 'pending' client log with the server logs
         return prev.length > 0 && prev[0].status === 'pending' ? newLogs : [...prev, ...newLogs];
       });
     }
@@ -225,7 +224,6 @@ export default function TidePage() {
         eaStationId: location.eaStationId,
         key: locationKey
       };
-      // Update currentLocationDetails only if it's different, to avoid unnecessary state updates
       if (locDetailsToFetch.key !== currentLocationDetails?.key || 
           locDetailsToFetch.latitude !== currentLocationDetails?.latitude ||
           locDetailsToFetch.longitude !== currentLocationDetails?.longitude) {
@@ -233,7 +231,6 @@ export default function TidePage() {
       }
        if (knownLocations[locationKey].name !== searchTerm) setSearchTerm(knownLocations[locationKey].name);
     } else if (currentLocationDetails && searchTerm.toLowerCase() === knownLocations[currentLocationDetails.key as string]?.name.toLowerCase()) {
-      // If search term matches the current location's name, use current location details
       locDetailsToFetch = currentLocationDetails;
     } else {
       toast({ variant: "destructive", title: "Location Not Found", description: "Please select a known marine location from suggestions or search for coordinates." });
@@ -283,7 +280,6 @@ export default function TidePage() {
       };
       setCurrentLocationDetails(newDetails); 
       setShowSuggestions(false);
-      // Automatically fetch after suggestion click if date range is valid
       if (dateRange?.from && dateRange?.to) {
         handleFetchMarineData(newDetails, dateRange);
       } else {
@@ -438,8 +434,8 @@ export default function TidePage() {
                     >
                       {getLogTriggerContent()}
                     </AccordionTrigger>
-                    <AccordionContent className="pt-1 pb-1 max-h-48">
-                      <ScrollArea className="w-full rounded-md border p-1.5 bg-muted/20 h-full">
+                    <AccordionContent className="pt-1 pb-1 max-h-[30rem]"> {/* Increased max-height */}
+                      <ScrollArea className="w-full rounded-md border p-1.5 bg-muted/20 h-full"> {/* Set ScrollArea to h-full */}
                         {fetchLogSteps.map((step) => (
                           <li key={step.id} className="flex items-start list-none py-0.5">
                             <div className="flex-shrink-0 w-3 h-3 mr-1.5 mt-0.5">
@@ -496,3 +492,6 @@ export default function TidePage() {
     </div>
   );
 }
+
+
+    
