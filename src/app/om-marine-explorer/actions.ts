@@ -74,7 +74,8 @@ export async function fetchOpenMeteoMarineDataAction(
   }
   log.push({ message: `Requesting API parameters: ${apiParametersString}`, status: 'info' });
 
-  const apiUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${latitude}&longitude=${longitude}&start_date=${formattedStartDate}&end_date=${formattedEndDate}&hourly=${apiParametersString}&timezone=auto`;
+  // Removed &timezone=auto from the URL
+  const apiUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${latitude}&longitude=${longitude}&start_date=${formattedStartDate}&end_date=${formattedEndDate}&hourly=${apiParametersString}`;
 
   log.push({ message: `Constructed API URL: ${apiUrl}`, status: 'info' });
   log.push({ message: "Attempting to fetch data from Open-Meteo Marine API...", status: 'pending' });
@@ -84,9 +85,19 @@ export async function fetchOpenMeteoMarineDataAction(
     log.push({ message: `API Response Status: ${response.status}`, status: response.ok ? 'success' : 'error' });
 
     if (!response.ok) {
-      const errorBody = await response.text();
-      log.push({ message: `API Error: ${response.statusText}`, status: 'error', details: errorBody.substring(0, 200) });
-      return { success: false, error: `Failed to fetch marine data. Status: ${response.status}. ${errorBody.substring(0,100)}`, log };
+      const errorBodyText = await response.text(); // Use text() to get raw error body
+      let reason = `Status: ${response.status}. Response: ${errorBodyText.substring(0, 200)}`;
+      try {
+        // Try to parse as JSON in case the error body is structured
+        const errorJson = JSON.parse(errorBodyText);
+        if (errorJson && errorJson.reason) {
+          reason = errorJson.reason;
+        }
+      } catch (e) {
+        // If JSON parsing fails, stick with the text body
+      }
+      log.push({ message: `API Error: ${reason}`, status: 'error', details: errorBodyText });
+      return { success: false, error: `Failed to fetch marine data. ${reason}`, log };
     }
 
     const apiData: OpenMeteoMarineApiResponse = await response.json();
