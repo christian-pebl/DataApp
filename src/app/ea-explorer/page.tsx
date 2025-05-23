@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
-import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, ListChecks, AlertCircle, Target, Activity, CalendarDays, Search, TrendingUp, Info, CheckCircle2, XCircle, ChevronDown } from "lucide-react";
+import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, ListChecks, AlertCircle, Target, Activity, CalendarDays, Search, TrendingUp, Info, CheckCircle2, XCircle, ChevronDown, Edit } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -32,6 +32,7 @@ export default function EAExplorerPage() {
   const [stations, setStations] = useState<EAStationInfo[]>([]);
   const [isLoadingStations, setIsLoadingStations] = useState(false);
   const [errorStations, setErrorStations] = useState<string | null>(null);
+  const [showStationList, setShowStationList] = useState(true);
 
   // Measures state
   const [selectedStation, setSelectedStation] = useState<EAStationInfo | null>(null);
@@ -42,7 +43,7 @@ export default function EAExplorerPage() {
   
   // Measure fetch log state
   const [measureFetchLogSteps, setMeasureFetchLogSteps] = useState<LogStep[]>([]);
-  const [showMeasureFetchLog, setShowMeasureFetchLog] = useState<string>(""); // Accordion value
+  const [showMeasureFetchLogAccordion, setShowMeasureFetchLogAccordion] = useState<string>(""); 
   const [isMeasureLogLoading, setIsMeasureLogLoading] = useState(false);
   const [measureLogOverallStatus, setMeasureLogOverallStatus] = useState<LogOverallStatus>('idle');
 
@@ -59,7 +60,7 @@ export default function EAExplorerPage() {
   
   // Time series fetch log state
   const [timeSeriesFetchLogSteps, setTimeSeriesFetchLogSteps] = useState<LogStep[]>([]);
-  const [showTimeSeriesFetchLog, setShowTimeSeriesFetchLog] = useState<string>("");
+  const [showTimeSeriesFetchLogAccordion, setShowTimeSeriesFetchLogAccordion] = useState<string>("");
   const [isTimeSeriesLogLoading, setIsTimeSeriesLogLoading] = useState(false);
   const [timeSeriesLogOverallStatus, setTimeSeriesLogOverallStatus] = useState<LogOverallStatus>('idle');
 
@@ -80,10 +81,6 @@ export default function EAExplorerPage() {
   }, [theme]);
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
-
-  const addMeasureLogStep = useCallback((message: string, status: LogStep['status'], details?: string) => {
-    setMeasureFetchLogSteps(prev => [...prev, { message, status, details }]);
-  }, []);
   
   const addTimeSeriesLogStep = useCallback((message: string, status: LogStep['status'], details?: string) => {
     setTimeSeriesFetchLogSteps(prev => [...prev, { message, status, details }]);
@@ -100,10 +97,11 @@ export default function EAExplorerPage() {
     setStations([]);
     setMeasureFetchLogSteps([]);
     setMeasureLogOverallStatus('idle');
-    setShowMeasureFetchLog("");
+    setShowMeasureFetchLogAccordion("");
     setTimeSeriesFetchLogSteps([]);
     setTimeSeriesLogOverallStatus('idle');
-    setShowTimeSeriesFetchLog("");
+    setShowTimeSeriesFetchLogAccordion("");
+    setShowStationList(true);
 
 
     const result = await fetchMonitoringStationsAction();
@@ -119,6 +117,7 @@ export default function EAExplorerPage() {
 
   const handleSelectStation = useCallback(async (station: EAStationInfo) => {
     setSelectedStation(station);
+    setShowStationList(false); // Hide station list
     setIsLoadingMeasures(true);
     setErrorMeasures(null);
     setStationMeasures([]);
@@ -128,15 +127,15 @@ export default function EAExplorerPage() {
 
     // Reset and prepare logs for measure fetching
     setMeasureFetchLogSteps([]);
-    addMeasureLogStep(`Initiating measure fetch for ${station.name} (ID: ${station.id})...`, 'pending');
+    // addMeasureLogStep(`Initiating measure fetch for ${station.name} (ID: ${station.id})...`, 'pending'); // This will be the first step from action
     setIsMeasureLogLoading(true);
     setMeasureLogOverallStatus('pending');
-    setShowMeasureFetchLog("measure-log-accordion-item"); // Open accordion
+    setShowMeasureFetchLogAccordion("measure-log-accordion-item"); // Open accordion
 
     toast({ title: "Fetching Measures", description: `Loading measures for ${station.name}...`});
     const result = await fetchStationMeasuresAction(station.id, station.name);
     
-    setMeasureFetchLogSteps(result.log || []); // Overwrite with detailed logs from action
+    setMeasureFetchLogSteps(result.log || []); 
 
     setIsLoadingMeasures(false);
     setIsMeasureLogLoading(false);
@@ -146,20 +145,35 @@ export default function EAExplorerPage() {
       if (result.stationName) setCurrentStationNameForMeasures(result.stationName);
       if (result.measures.length === 0) {
         toast({ variant: "default", title: "No Measures", description: `No specific measures found for ${result.stationName || station.name}.`, duration: 3000 });
-        addMeasureLogStep(`No measures found for ${result.stationName || station.name}.`, 'info');
-        setMeasureLogOverallStatus('success'); // Success in fetching, but no measures
+        setMeasureLogOverallStatus('success'); 
+        setShowMeasureFetchLogAccordion(""); // Close on success if no measures
       } else {
         toast({ title: "Measures Loaded", description: `Found ${result.measures.length} measures for ${result.stationName || station.name}.` });
-        addMeasureLogStep(`Successfully loaded ${result.measures.length} measures.`, 'success');
         setMeasureLogOverallStatus('success');
+        setShowMeasureFetchLogAccordion(""); // Close on success
       }
     } else {
       setErrorMeasures(result.error || `Failed to load measures for ${station.name}.`);
       toast({ variant: "destructive", title: "Error Loading Measures", description: result.error || `Failed to load measures for ${station.name}.` });
-      addMeasureLogStep(`Failed to load measures: ${result.error || 'Unknown error'}.`, 'error');
       setMeasureLogOverallStatus('error');
+      // Keep accordion open on error
     }
-  }, [addMeasureLogStep, toast]);
+  }, [toast]);
+
+  const handleChangeStation = () => {
+    setSelectedStation(null);
+    setStationMeasures([]);
+    setSelectedMeasure(null);
+    setTimeSeriesData(null);
+    setErrorMeasures(null);
+    setMeasureFetchLogSteps([]);
+    setShowMeasureFetchLogAccordion("");
+    setMeasureLogOverallStatus('idle');
+    setTimeSeriesFetchLogSteps([]);
+    setShowTimeSeriesFetchLogAccordion("");
+    setTimeSeriesLogOverallStatus('idle');
+    setShowStationList(true); // Show station list again
+  };
 
   const handleSelectMeasure = (measure: EAMeasureInfo) => {
     setSelectedMeasure(measure);
@@ -167,7 +181,7 @@ export default function EAExplorerPage() {
     setErrorTimeSeries(null);
     setTimeSeriesFetchLogSteps([]);
     setTimeSeriesLogOverallStatus('idle');
-    setShowTimeSeriesFetchLog("");
+    setShowTimeSeriesFetchLogAccordion("");
   };
 
   const handleFetchTimeSeries = async () => {
@@ -188,12 +202,10 @@ export default function EAExplorerPage() {
     setErrorTimeSeries(null);
     setTimeSeriesData(null);
 
-    // Reset and prepare logs for time series fetching
     setTimeSeriesFetchLogSteps([]);
-    addTimeSeriesLogStep(`Initiating time series data fetch for measure '${selectedMeasure.parameterName}' at station '${currentStationNameForMeasures || selectedStation.name}'...`, 'pending');
     setIsTimeSeriesLogLoading(true);
     setTimeSeriesLogOverallStatus('pending');
-    setShowTimeSeriesFetchLog("timeseries-log-accordion-item");
+    setShowTimeSeriesFetchLogAccordion("timeseries-log-accordion-item"); // Open accordion
 
 
     const input: FetchEATimeSeriesInput = {
@@ -216,18 +228,18 @@ export default function EAExplorerPage() {
       setTimeSeriesData(result.data);
       if (result.data.length === 0) {
         toast({ variant: "default", title: "No Data", description: `No data points found for '${selectedMeasure.parameterName}' in the selected range.`, duration: 4000 });
-         addTimeSeriesLogStep(`No data points found.`, 'info');
         setTimeSeriesLogOverallStatus('success');
+        setShowTimeSeriesFetchLogAccordion(""); // Close on success if no data
       } else {
         toast({ title: "Data Loaded", description: `Successfully loaded ${result.data.length} data points for '${selectedMeasure.parameterName}'.` });
-        addTimeSeriesLogStep(`Successfully loaded ${result.data.length} data points.`, 'success');
         setTimeSeriesLogOverallStatus('success');
+        setShowTimeSeriesFetchLogAccordion(""); // Close on success
       }
     } else {
       setErrorTimeSeries(result.error || `Failed to load time series data for '${selectedMeasure.parameterName}'.`);
       toast({ variant: "destructive", title: "Error Loading Data", description: result.error || `Failed to load data for '${selectedMeasure.parameterName}'.` });
-      addTimeSeriesLogStep(`Failed to load time series data: ${result.error || 'Unknown error'}.`, 'error');
       setTimeSeriesLogOverallStatus('error');
+      // Keep accordion open on error
     }
   };
 
@@ -313,20 +325,29 @@ export default function EAExplorerPage() {
           <CardHeader>
             <CardTitle>Environment Agency Data Explorer</CardTitle>
             <CardDescription>
-              Load EA stations, select a measure, set a date range, and plot the data.
+              Load EA stations, select a station, then a measure, set a date range, and plot the data.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button onClick={handleLoadStations} disabled={isLoadingStations}>
-              {isLoadingStations ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListChecks className="mr-2 h-4 w-4" />}
-              Load Monitoring Stations
-            </Button>
+            <div className="flex items-center gap-2">
+                <Button onClick={handleLoadStations} disabled={isLoadingStations}>
+                {isLoadingStations ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListChecks className="mr-2 h-4 w-4" />}
+                {stations.length > 0 ? "Reload Stations" : "Load Monitoring Stations"}
+                </Button>
+                {stations.length > 0 && (
+                    <Button variant="outline" onClick={() => setShowStationList(!showStationList)} size="sm" className="h-9">
+                        <ChevronDown className={cn("h-4 w-4 transition-transform", showStationList && "rotate-180")} />
+                        {showStationList ? "Hide Stations" : `Show Stations (${stations.length})`}
+                    </Button>
+                )}
+            </div>
             {isLoadingStations && <div className="flex items-center justify-center p-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Loading stations...</p></div>}
             {errorStations && !isLoadingStations && <div className="text-destructive p-2 bg-destructive/10 rounded-md"><AlertCircle className="inline mr-2"/>{errorStations}</div>}
-            {stations.length > 0 && !isLoadingStations && (
+            
+            {stations.length > 0 && !isLoadingStations && showStationList && (
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold">Available Stations ({stations.length})</h3>
-                <ScrollArea className="h-96 w-full rounded-md border p-2"> {/* Increased height */}
+                <ScrollArea className="h-96 w-full rounded-md border p-2">
                   <ul className="space-y-1">
                     {stations.map((station) => (
                       <li key={station.id}>
@@ -346,10 +367,15 @@ export default function EAExplorerPage() {
           </CardContent>
         </Card>
 
-        {selectedStation && (
+        {selectedStation && !showStationList && (
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Target className="h-5 w-5 text-primary"/> Measures for: {currentStationNameForMeasures || selectedStation.name}</CardTitle>
+              <div className="flex justify-between items-center">
+                <CardTitle className="flex items-center gap-2"><Target className="h-5 w-5 text-primary"/>Measures for: {currentStationNameForMeasures || selectedStation.name}</CardTitle>
+                <Button variant="outline" size="sm" onClick={handleChangeStation} className="h-8 text-xs">
+                    <Edit className="mr-2 h-3 w-3" /> Change Station
+                </Button>
+              </div>
               <CardDescription>Station ID: {selectedStation.id}. Click a measure to select it for plotting.</CardDescription>
             </CardHeader>
             <CardContent>
@@ -373,10 +399,9 @@ export default function EAExplorerPage() {
               )}
               {!isLoadingMeasures && stationMeasures.length === 0 && !errorMeasures && <p className="text-sm text-muted-foreground">No measures found for this station.</p>}
             </CardContent>
-             {/* Measure Fetch Log Accordion */}
             {(isMeasureLogLoading || measureFetchLogSteps.length > 0 || measureLogOverallStatus !== 'idle') && (
               <CardFooter className="pt-4">
-                <Accordion type="single" collapsible value={showMeasureFetchLog} onValueChange={setShowMeasureFetchLog} className="w-full">
+                <Accordion type="single" collapsible value={showMeasureFetchLogAccordion} onValueChange={setShowMeasureFetchLogAccordion} className="w-full">
                   <AccordionItem value="measure-log-accordion-item" className={cn("border rounded-md", getLogAccordionItemClass(measureLogOverallStatus))}>
                     <AccordionTrigger className="px-4 py-2 text-sm hover:no-underline">
                       {getLogTriggerContent(measureLogOverallStatus, isMeasureLogLoading, 'Measure Fetch Log')}
@@ -406,7 +431,7 @@ export default function EAExplorerPage() {
           </Card>
         )}
 
-        {selectedMeasure && (
+        {selectedMeasure && !showStationList && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5 text-primary"/> Plot: {selectedMeasure.parameterName}</CardTitle>
@@ -444,10 +469,9 @@ export default function EAExplorerPage() {
                 </div>
               )}
             </CardContent>
-             {/* Time Series Fetch Log Accordion */}
             {(isTimeSeriesLogLoading || timeSeriesFetchLogSteps.length > 0 || timeSeriesLogOverallStatus !== 'idle') && (
               <CardFooter className="pt-4">
-                 <Accordion type="single" collapsible value={showTimeSeriesFetchLog} onValueChange={setShowTimeSeriesFetchLog} className="w-full">
+                 <Accordion type="single" collapsible value={showTimeSeriesFetchLogAccordion} onValueChange={setShowTimeSeriesFetchLogAccordion} className="w-full">
                   <AccordionItem value="timeseries-log-accordion-item" className={cn("border rounded-md", getLogAccordionItemClass(timeSeriesLogOverallStatus))}>
                     <AccordionTrigger className="px-4 py-2 text-sm hover:no-underline">
                       {getLogTriggerContent(timeSeriesLogOverallStatus, isTimeSeriesLogLoading, 'Time Series Fetch Log')}
