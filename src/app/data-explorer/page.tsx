@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
-import { PlusCircle, SunMoon, LayoutGrid, CloudSun, Waves } from "lucide-react";
+import { PlusCircle, SunMoon, LayoutGrid, CloudSun, Waves, Anchor } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 
@@ -69,7 +69,7 @@ export default function DataExplorerPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <TooltipProvider>
           <div className="container flex h-full items-center justify-between px-3 md:px-4">
-            <Link href="/weather" passHref>
+            <Link href="/om-marine-explorer" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
@@ -102,6 +102,16 @@ export default function DataExplorerPage() {
                   </Link>
                 </TooltipTrigger>
                 <TooltipContent><p>OM Marine Explorer</p></TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link href="/tide-explorer" passHref>
+                    <Button variant={pathname === '/tide-explorer' ? "secondary": "ghost"} size="icon" aria-label="Tide Explorer">
+                      <Anchor className="h-5 w-5" />
+                    </Button>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent><p>Tide Explorer</p></TooltipContent>
               </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip>
@@ -146,7 +156,7 @@ export default function DataExplorerPage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            PEBL data app - CSV Data Explorer. Weather. OM Marine Explorer.
+            PEBL data app - CSV Data Explorer. Weather. OM Marine Explorer. Tide Explorer.
           </p>
         </div>
       </footer>
