@@ -1,6 +1,7 @@
 
 import { z } from 'zod';
 import { isValidDateString } from '@/lib/utils';
+import type { LucideIcon } from 'lucide-react';
 
 export interface MarineDataPoint {
   time: string; // ISO timestamp
@@ -8,6 +9,8 @@ export interface MarineDataPoint {
   waveHeight?: number;
   waveDirection?: number;
   wavePeriod?: number;
+  seaSurfaceTemperature?: number;
+  windSpeed10m?: number;
 }
 export const MarineDataPointSchema = z.object({
   time: z.string(),
@@ -15,6 +18,8 @@ export const MarineDataPointSchema = z.object({
   waveHeight: z.number().optional(),
   waveDirection: z.number().optional(),
   wavePeriod: z.number().optional(),
+  seaSurfaceTemperature: z.number().optional(),
+  windSpeed10m: z.number().optional(),
 });
 
 
@@ -40,13 +45,28 @@ export interface LogStep {
 }
 
 // Used by the page to manage visibility of plots and parameter selection
-export type MarineParameterKey = 'seaLevel' | 'waveHeight' | 'waveDirection' | 'wavePeriod';
+export type MarineParameterKey = 
+  | 'seaLevel' 
+  | 'waveHeight' 
+  | 'waveDirection' 
+  | 'wavePeriod'
+  | 'seaSurfaceTemperature'
+  | 'windSpeed10m';
 
-export const ALL_MARINE_PARAMETERS: MarineParameterKey[] = ['seaLevel', 'waveHeight', 'waveDirection', 'wavePeriod'];
+export const ALL_MARINE_PARAMETERS: MarineParameterKey[] = [
+  'seaLevel', 
+  'waveHeight', 
+  'waveDirection', 
+  'wavePeriod',
+  'seaSurfaceTemperature',
+  'windSpeed10m'
+];
 
-export const MARINE_PARAMETER_CONFIG: Record<MarineParameterKey, { name: string; apiParam: string; unit: string; icon?: React.ElementType }> = {
+export const MARINE_PARAMETER_CONFIG: Record<MarineParameterKey, { name: string; apiParam: string; unit: string; icon?: LucideIcon }> = {
   seaLevel: { name: "Sea Level (Tide)", apiParam: "sea_level", unit: "m" },
   waveHeight: { name: "Wave Height", apiParam: "wave_height", unit: "m" },
   waveDirection: { name: "Wave Direction", apiParam: "wave_direction", unit: "°" },
   wavePeriod: { name: "Wave Period", apiParam: "wave_period", unit: "s" },
+  seaSurfaceTemperature: { name: "Sea Surface Temp", apiParam: "sea_surface_temperature", unit: "°C"},
+  windSpeed10m: { name: "Wind Speed (10m)", apiParam: "wind_speed_10m", unit: "m/s"},
 };

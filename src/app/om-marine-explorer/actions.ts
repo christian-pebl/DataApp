@@ -11,6 +11,8 @@ interface OpenMeteoMarineHourlyResponse {
   wave_height?: (number | null)[];
   wave_direction?: (number | null)[];
   wave_period?: (number | null)[];
+  sea_surface_temperature?: (number | null)[];
+  wind_speed_10m?: (number | null)[];
   // Add other potential parameters if needed
 }
 
@@ -118,6 +120,12 @@ export async function fetchOpenMeteoMarineDataAction(
       }
       if (selectedParamKeys.includes('wavePeriod') && apiData.hourly.wave_period && apiData.hourly.wave_period[i] !== null) {
         point.wavePeriod = apiData.hourly.wave_period[i];
+      }
+      if (selectedParamKeys.includes('seaSurfaceTemperature') && apiData.hourly.sea_surface_temperature && apiData.hourly.sea_surface_temperature[i] !== null) {
+        point.seaSurfaceTemperature = apiData.hourly.sea_surface_temperature[i];
+      }
+      if (selectedParamKeys.includes('windSpeed10m') && apiData.hourly.wind_speed_10m && apiData.hourly.wind_speed_10m[i] !== null) {
+        point.windSpeed10m = apiData.hourly.wind_speed_10m[i];
       }
       marineData.push(point);
     }

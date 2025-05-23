@@ -3,12 +3,14 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush, Label as RechartsLabel } from 'recharts';
-import type { MarineDataPoint, MarinePlotVisibilityKeys } from '@/app/ea-explorer/om-marine-shared'; // Adjusted path
-import { Info, Waves, Sailboat, Compass, Timer, CheckCircle2, XCircle, Loader2, AlertCircle } from 'lucide-react'; // Added AlertCircle
+import type { MarineParameterKey, MarineDataPoint } from '@/app/om-marine-explorer/shared'; // Updated path
+import { Info, Waves, Sailboat, Compass, Timer, CheckCircle2, XCircle, Loader2, AlertCircle, Thermometer, Wind } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label as UiLabel } from "@/components/ui/label";
 
 interface PlotConfig {
-  dataKey: MarinePlotVisibilityKeys;
+  dataKey: MarineParameterKey;
   title: string;
   unit: string;
   color: string;
@@ -21,7 +23,7 @@ export interface MarinePlotsGridProps {
   marineData: MarineDataPoint[] | null;
   isLoading: boolean;
   error: string | null;
-  plotVisibility: Record<MarinePlotVisibilityKeys, boolean>;
+  plotVisibility: Record<MarineParameterKey, boolean>;
 }
 
 type SeriesAvailabilityStatus = 'pending' | 'available' | 'unavailable';
@@ -57,16 +59,18 @@ export function MarinePlotsGrid({
     { dataKey: 'waveHeight', title: 'Wave Height', unit: 'm', color: '--chart-2', Icon: Sailboat },
     { dataKey: 'waveDirection', title: 'Wave Direction', unit: '°', color: '--chart-4', Icon: Compass },
     { dataKey: 'wavePeriod', title: 'Wave Period', unit: 's', color: '--chart-3', Icon: Timer },
+    { dataKey: 'seaSurfaceTemperature', title: 'Sea Surface Temp', unit: '°C', color: '--chart-5', Icon: Thermometer },
+    { dataKey: 'windSpeed10m', title: 'Wind Speed (10m)', unit: 'm/s', color: '--primary', Icon: Wind },
   ], []);
 
   const initialAvailability = useMemo(() => 
     Object.fromEntries(
       plotConfigs.map(pc => [pc.dataKey, 'pending'])
-    ) as Record<MarinePlotVisibilityKeys, SeriesAvailabilityStatus>,
+    ) as Record<MarineParameterKey, SeriesAvailabilityStatus>,
     [plotConfigs]
   );
   
-  const [seriesDataAvailability, setSeriesDataAvailability] = useState<Record<MarinePlotVisibilityKeys, SeriesAvailabilityStatus>>(initialAvailability);
+  const [seriesDataAvailability, setSeriesDataAvailability] = useState<Record<MarineParameterKey, SeriesAvailabilityStatus>>(initialAvailability);
 
   useEffect(() => {
     if (marineData && marineData.length > 0 && brushEndIndex === undefined) {
@@ -84,7 +88,7 @@ export function MarinePlotsGrid({
       return;
     }
 
-    const newAvailability: Partial<Record<MarinePlotVisibilityKeys, SeriesAvailabilityStatus>> = {};
+    const newAvailability: Partial<Record<MarineParameterKey, SeriesAvailabilityStatus>> = {};
     if (!marineData || marineData.length === 0) {
       plotConfigs.forEach(pc => {
         newAvailability[pc.dataKey] = 'unavailable';
@@ -100,7 +104,7 @@ export function MarinePlotsGrid({
         newAvailability[pc.dataKey] = hasData ? 'available' : 'unavailable';
       });
     }
-    setSeriesDataAvailability(newAvailability as Record<MarinePlotVisibilityKeys, SeriesAvailabilityStatus>);
+    setSeriesDataAvailability(newAvailability as Record<MarineParameterKey, SeriesAvailabilityStatus>);
   }, [marineData, isLoading, plotConfigs, initialAvailability]);
 
   const handleBrushChangeLocal = (newIndex: { startIndex?: number; endIndex?: number }) => {

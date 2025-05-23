@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter }
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label as UiLabel } from "@/components/ui/label";
-import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Sailboat, Compass, Timer } from "lucide-react";
+import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Wind } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -30,18 +30,25 @@ type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle' | 'warning';
 // Known locations for Open-Meteo Marine data
 const knownLocations: { [key: string]: { lat: number; lon: number; name: string } } = {
   "milfordhaven": { lat: 51.71, lon: -5.04, name: "Milford Haven" },
+  "stdavidshead": { lat: 52.0, lon: -5.3, name: "St David's Head" },
   "newlyn": { lat: 50.10, lon: -5.55, name: "Newlyn" },
   "dover": { lat: 51.12, lon: 1.32, name: "Dover" },
   "liverpool": { lat: 53.40, lon: -2.99, name: "Liverpool" },
   "portsmouth": { lat: 50.81, lon: -1.08, name: "Portsmouth" },
 };
-const defaultLocationKey = "milfordhaven";
+const defaultLocationKey = "stdavidshead";
 
 // Assign icons to marine parameters
 MARINE_PARAMETER_CONFIG.seaLevel.icon = Waves;
 MARINE_PARAMETER_CONFIG.waveHeight.icon = Sailboat;
 MARINE_PARAMETER_CONFIG.waveDirection.icon = Compass;
 MARINE_PARAMETER_CONFIG.wavePeriod.icon = Timer;
+if (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature) {
+  MARINE_PARAMETER_CONFIG.seaSurfaceTemperature.icon = Thermometer;
+}
+if (MARINE_PARAMETER_CONFIG.windSpeed10m) {
+  MARINE_PARAMETER_CONFIG.windSpeed10m.icon = Wind;
+}
 
 
 export default function OMMarineExplorerPage() {
@@ -295,7 +302,7 @@ export default function OMMarineExplorerPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <TooltipProvider>
           <div className="container flex h-full items-center justify-between px-3 md:px-4">
-            <Link href="/weather" passHref>
+            <Link href="/data-explorer" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
