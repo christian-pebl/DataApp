@@ -45,10 +45,7 @@ const defaultLocationKey = "stdavidshead";
 if (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature) {
   (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature as { icon?: LucideIcon }).icon = Thermometer;
 }
-if (MARINE_PARAMETER_CONFIG.windSpeed10m) {
-  (MARINE_PARAMETER_CONFIG.windSpeed10m as { icon?: LucideIcon }).icon = Wind;
-}
-
+// WindSpeed10m is no longer a parameter
 
 export default function OMMarineExplorerPage() {
   const [theme, setTheme] = useState("light");
@@ -59,11 +56,14 @@ export default function OMMarineExplorerPage() {
     from: subDays(new Date(), 7), to: new Date(),
   }));
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [initialCoords, setInitialCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [searchTerm, setSearchTerm] = useState(() => knownLocations[defaultLocationKey]?.name || "");
+  const [initialCoords, setInitialCoords] = useState<{ latitude: number; longitude: number } | null>(() => {
+    const loc = knownLocations[defaultLocationKey];
+    return loc ? { latitude: loc.lat, longitude: loc.lon } : null;
+  });
   const [suggestions, setSuggestions] = useState<Array<{ key: string; name: string }>>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [currentLocationName, setCurrentLocationName] = useState<string | null>(null);
+  const [currentLocationName, setCurrentLocationName] = useState<string | null>(() => knownLocations[defaultLocationKey]?.name || null);
 
   const [marineData, setMarineData] = useState<MarineDataPoint[] | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -94,32 +94,42 @@ export default function OMMarineExplorerPage() {
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
 
+  const handlePlotVisibilityChange = useCallback((key: MarineParameterKey, checked: boolean) => {
+    setPlotVisibility(prev => ({ ...prev, [key]: checked }));
+  }, []);
+
   const handleLocationSearchAndFetch = useCallback(async (
     coordsOverride?: { latitude: number; longitude: number },
     nameOverride?: string,
-    isAutoFetch: boolean = false
+    isAutoFetch: boolean = false 
   ) => {
-    const term = searchTerm.trim().toLowerCase();
+    const currentSearchTermValue = isAutoFetch && nameOverride ? nameOverride : searchTerm.trim().toLowerCase();
+    
     setShowSuggestions(false);
     
     let coordsToUse: { latitude: number; longitude: number } | null = coordsOverride || initialCoords;
     let locationNameToUse: string | null = nameOverride || currentLocationName;
 
     if (!isAutoFetch && !coordsOverride) { 
-      if (!term) {
+      if (!currentSearchTermValue) {
         toast({ variant: "destructive", title: "Search Error", description: "Please enter a location." });
         return;
       }
       const locationKey = Object.keys(knownLocations).find(
-        key => key.toLowerCase() === term || knownLocations[key].name.toLowerCase() === term
+        key => key.toLowerCase() === currentSearchTermValue || knownLocations[key].name.toLowerCase() === currentSearchTermValue
       );
 
       if (locationKey) {
         const location = knownLocations[locationKey];
         coordsToUse = { latitude: location.lat, longitude: location.lon };
         locationNameToUse = location.name;
-        setInitialCoords(coordsToUse); 
-        setCurrentLocationName(locationNameToUse);
+        
+        if (initialCoords?.latitude !== coordsToUse.latitude || initialCoords?.longitude !== coordsToUse.longitude) {
+            setInitialCoords(coordsToUse); 
+        }
+        if (currentLocationName !== locationNameToUse) {
+            setCurrentLocationName(locationNameToUse);
+        }
         if (location.name !== searchTerm) setSearchTerm(location.name);
       } else {
          toast({ variant: "destructive", title: "Location Not Found", description: "Please select a known coastal location." });
@@ -128,20 +138,30 @@ export default function OMMarineExplorerPage() {
     }
 
     if (!coordsToUse || !locationNameToUse) {
-      toast({ variant: "destructive", title: "Missing Location", description: "Could not determine coordinates for fetching."});
+      if (!isAutoFetch) { 
+          toast({ variant: "destructive", title: "Missing Location", description: "Could not determine coordinates for fetching."});
+      }
       return;
     }
     if (!dateRange || !dateRange.from || !dateRange.to) {
-      toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range."});
+      if (!isAutoFetch) {
+          toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range."});
+      }
       return;
     }
     if (dateRange.from > dateRange.to) {
-      toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
+      if (!isAutoFetch) {
+          toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
+      }
       return;
     }
-    const selectedParams = ALL_MARINE_PARAMETERS.filter(key => plotVisibility[key]);
+    
+    const currentPlotVisibility = plotVisibility; // Use current state value
+    const selectedParams = ALL_MARINE_PARAMETERS.filter(key => currentPlotVisibility[key]);
     if (selectedParams.length === 0) {
-      toast({ variant: "destructive", title: "No Parameters Selected", description: "Please select at least one marine parameter to fetch." });
+      if (!isAutoFetch) {
+          toast({ variant: "destructive", title: "No Parameters Selected", description: "Please select at least one marine parameter to fetch." });
+      }
       return;
     }
 
@@ -149,7 +169,10 @@ export default function OMMarineExplorerPage() {
     setFetchLogSteps([{message: `Fetching marine data for ${locationNameToUse}...`, status: 'pending'}]); 
     setIsLogLoading(true); setLogOverallStatus('pending'); setShowFetchLogAccordion("om-fetch-log-item");
     
-    const loadingToastId = toast({ title: "Fetching Data", description: `Fetching marine data for ${locationNameToUse}...`}).id;
+    let loadingToastId: string | undefined;
+    if (!isAutoFetch) {
+        loadingToastId = toast({ title: "Fetching Data", description: `Fetching marine data for ${locationNameToUse}...`}).id;
+    }
     
     const result = await fetchOpenMeteoMarineDataAction({
       latitude: coordsToUse.latitude,
@@ -167,18 +190,18 @@ export default function OMMarineExplorerPage() {
       setMarineData(result.data);
       setDataLocationContext(result.dataLocationContext || `Marine data for ${locationNameToUse}`);
       if (result.data.length === 0 && !result.error) { 
-        toast({ variant: "default", title: "No Data", description: "No marine data points found for the selected criteria.", duration: 4000 });
+        if (!isAutoFetch) toast({ variant: "default", title: "No Data", description: "No marine data points found for the selected criteria.", duration: 4000 });
         setLogOverallStatus('warning');
       } else if (result.data.length === 0 && result.error) { 
-         toast({ variant: "default", title: "No Data", description: result.error, duration: 4000 });
+         if (!isAutoFetch) toast({ variant: "default", title: "No Data", description: result.error, duration: 4000 });
          setLogOverallStatus('warning');
       } else {
-        toast({ title: "Data Loaded", description: `Loaded ${result.data.length} marine data points for ${locationNameToUse}.` });
+        if (!isAutoFetch) toast({ title: "Data Loaded", description: `Loaded ${result.data.length} marine data points for ${locationNameToUse}.` });
         setLogOverallStatus('success'); setShowFetchLogAccordion("");
       }
     } else {
       setErrorData(result.error || `Failed to load marine data for ${locationNameToUse}.`);
-      toast({ variant: "destructive", title: "Error Loading Data", description: result.error || `Failed to load data for ${locationNameToUse}.` });
+      if (!isAutoFetch) toast({ variant: "destructive", title: "Error Loading Data", description: result.error || `Failed to load data for ${locationNameToUse}.` });
       setLogOverallStatus('error');
     }
   }, [searchTerm, initialCoords, currentLocationName, dateRange, plotVisibility, toast, dismiss]);
@@ -191,33 +214,41 @@ export default function OMMarineExplorerPage() {
       setInitialCoords({ latitude: location.lat, longitude: location.lon }); 
       setCurrentLocationName(location.name);
       setShowSuggestions(false);
-      // Auto-fetch on suggestion click
+      
       if (dateRange?.from && dateRange?.to) {
-        handleLocationSearchAndFetch({ latitude: location.lat, longitude: location.lon }, location.name);
+        handleLocationSearchAndFetch({ latitude: location.lat, longitude: location.lon }, location.name, false);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateRange, handleLocationSearchAndFetch]); // handleLocationSearchAndFetch is now defined before this
+  }, [dateRange, handleLocationSearchAndFetch]); 
 
+  // Initial fetch for default location - Runs only ONCE on mount
   useEffect(() => {
-    const defaultLoc = knownLocations[defaultLocationKey];
-    if (defaultLoc) {
-      setSearchTerm(defaultLoc.name);
-      const coords = { latitude: defaultLoc.lat, longitude: defaultLoc.lon };
-      setInitialCoords(coords);
-      setCurrentLocationName(defaultLoc.name);
-      if (!initialFetchDone.current && coords && dateRange?.from && dateRange?.to) {
-        handleLocationSearchAndFetch(coords, defaultLoc.name, true);
-        initialFetchDone.current = true;
-      }
+    if (initialFetchDone.current) {
+      return; 
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleLocationSearchAndFetch]); // Added handleLocationSearchAndFetch as dependency
+    initialFetchDone.current = true; 
+
+    const defaultLoc = knownLocations[defaultLocationKey];
+    // Use the initially set state values for coords, name, and dateRange for the very first fetch
+    const currentInitialCoords = initialCoords; // Value from useState initializer
+    const currentLocName = currentLocationName; // Value from useState initializer
+    const currentDR = dateRange; // Value from useState initializer
+    
+    if (defaultLoc && currentInitialCoords && currentLocName && currentDR?.from && currentDR?.to) {
+      // Call handleLocationSearchAndFetch using the initial state values
+      // The plotVisibility for the first fetch will also be the initial state value.
+      handleLocationSearchAndFetch(currentInitialCoords, currentLocName, true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, []); // Empty dependency array ensures this runs only once on mount
+
 
   useEffect(() => {
     const currentSearchTerm = searchTerm.trim();
     const inputElement = document.activeElement as HTMLInputElement;
-    const isFocused = inputElement && inputElement.placeholder === "Search UK coastal location...";
+    // Ensure the ID matches the Input component's ID for location search
+    const isFocused = inputElement && inputElement.id === "om-location-search";
+
 
     if (currentSearchTerm === "" && isFocused) {
        setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
@@ -232,10 +263,6 @@ export default function OMMarineExplorerPage() {
     setSuggestions(filtered.slice(0, 5));
     setShowSuggestions(filtered.length > 0 && isFocused);
   }, [searchTerm]);
-
-  const handlePlotVisibilityChange = useCallback((key: MarineParameterKey, checked: boolean) => {
-    setPlotVisibility(prev => ({ ...prev, [key]: checked }));
-  }, []);
 
   const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string) => {
     if (isLoading) return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Fetching log...</>;
@@ -312,9 +339,11 @@ export default function OMMarineExplorerPage() {
           </AccordionItem>
         </Accordion>
         {logSteps.length > 0 && !isLoading && (
-          <Button variant="outline" size="sm" onClick={handleCopyLog} className="mt-2 h-7 text-xs self-end">
-            <Copy className="mr-1.5 h-3 w-3" /> Copy Log
-          </Button>
+          <div className="w-full flex justify-end mt-2">
+            <Button variant="outline" size="sm" onClick={handleCopyLog} className="h-7 text-xs">
+              <Copy className="mr-1.5 h-3 w-3" /> Copy Log
+            </Button>
+          </div>
         )}
       </CardFooter>
     )
@@ -384,7 +413,7 @@ export default function OMMarineExplorerPage() {
                          onChange={(e) => setSearchTerm(e.target.value)}
                          onFocus={() => setShowSuggestions(true)}
                          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)} 
-                         onKeyDown={(e) => { if (e.key === 'Enter') { handleLocationSearchAndFetch(); setShowSuggestions(false); } }}
+                         onKeyDown={(e) => { if (e.key === 'Enter') { handleLocationSearchAndFetch(undefined, undefined, false); setShowSuggestions(false); } }}
                          className="h-9 text-xs" />
                   {showSuggestions && suggestions.length > 0 && (
                     <div className="absolute z-20 w-full mt-0 bg-card border rounded-md shadow-lg max-h-60 overflow-y-auto">
@@ -398,7 +427,7 @@ export default function OMMarineExplorerPage() {
                   <DatePickerWithRange id="om-date-range" date={dateRange} onDateChange={setDateRange} disabled={isLoadingData} />
                   {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && <p className="text-xs text-destructive px-1 pt-1">Start date error.</p>}
                 </div>
-                <Button onClick={() => handleLocationSearchAndFetch()} disabled={isLoadingData || !searchTerm || !dateRange?.from || !dateRange?.to || ALL_MARINE_PARAMETERS.filter(key => plotVisibility[key]).length === 0} className="w-full h-9 text-xs">
+                <Button onClick={() => handleLocationSearchAndFetch(undefined, undefined, false)} disabled={isLoadingData || !searchTerm || !dateRange?.from || !dateRange?.to || ALL_MARINE_PARAMETERS.filter(key => plotVisibility[key]).length === 0} className="w-full h-9 text-xs">
                   {isLoadingData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
                   {isLoadingData ? "Fetching..." : "Fetch Marine Data"}
                 </Button>
@@ -431,5 +460,3 @@ export default function OMMarineExplorerPage() {
     </div>
   );
 }
-
-    
