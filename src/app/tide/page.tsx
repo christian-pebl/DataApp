@@ -225,11 +225,15 @@ export default function TidePage() {
         eaStationId: location.eaStationId,
         key: locationKey
       };
-      if (locDetailsToFetch.key !== currentLocationDetails?.key) {
+      // Update currentLocationDetails only if it's different, to avoid unnecessary state updates
+      if (locDetailsToFetch.key !== currentLocationDetails?.key || 
+          locDetailsToFetch.latitude !== currentLocationDetails?.latitude ||
+          locDetailsToFetch.longitude !== currentLocationDetails?.longitude) {
           setCurrentLocationDetails(locDetailsToFetch);
       }
        if (knownLocations[locationKey].name !== searchTerm) setSearchTerm(knownLocations[locationKey].name);
     } else if (currentLocationDetails && searchTerm.toLowerCase() === knownLocations[currentLocationDetails.key as string]?.name.toLowerCase()) {
+      // If search term matches the current location's name, use current location details
       locDetailsToFetch = currentLocationDetails;
     } else {
       toast({ variant: "destructive", title: "Location Not Found", description: "Please select a known marine location from suggestions or search for coordinates." });
@@ -279,8 +283,14 @@ export default function TidePage() {
       };
       setCurrentLocationDetails(newDetails); 
       setShowSuggestions(false);
+      // Automatically fetch after suggestion click if date range is valid
+      if (dateRange?.from && dateRange?.to) {
+        handleFetchMarineData(newDetails, dateRange);
+      } else {
+        toast({ variant: "destructive", title: "Date Error", description: "Please select a valid date range before fetching." });
+      }
     }
-  }, []); 
+  }, [dateRange, handleFetchMarineData, toast]); 
 
   const handleInputFocus = () => {
     const currentSearchTerm = searchTerm.trim();
@@ -486,5 +496,3 @@ export default function TidePage() {
     </div>
   );
 }
-
-    

@@ -73,11 +73,12 @@ async function fetchTideDataFromEA(
     
     let stationName = `EA Station ${stationId}`;
     try {
+      log.push({ message: `Attempting to fetch EA station details for ID: ${stationId}...`, status: 'info' });
       const stationDetailsResponse = await fetch(`https://environment.data.gov.uk/flood-monitoring/id/stations/${stationId}`);
       if (stationDetailsResponse.ok) {
           const stationDetails = await stationDetailsResponse.json();
           stationName = stationDetails?.items?.label || stationName;
-          log.push({ message: `Fetched EA station name: ${stationName}`, status: 'info' });
+          log.push({ message: `Fetched EA station name: ${stationName}`, status: 'success' });
       } else {
           log.push({ message: `Could not fetch EA station details, using default name. Status: ${stationDetailsResponse.status}`, status: 'info' });
       }
@@ -135,7 +136,7 @@ async function fetchMarineDataFromOpenMeteo(
 
     if (!data.hourly || !Array.isArray(data.hourly.time) || data.hourly.time.length === 0) {
       log.push({ message: "Open-Meteo Marine API returned incomplete or empty hourly time data.", status: 'info' });
-      return { data: [] };
+      return { data: [], error: "Open-Meteo: No time data." };
     }
     
     const numTimestamps = data.hourly.time.length;
@@ -207,7 +208,7 @@ export async function fetchMarineDataAction(
         sourceMessage = `Data sourced from Environment Agency (${eaResult.stationName || eaStationId}).`;
         log.push({ message: `Successfully fetched data from EA: ${eaResult.data.length} points. Station: ${eaResult.stationName || eaStationId}`, status: 'success' });
       } else {
-        const fallbackReason = eaResult?.error ? ` (${eaResult.error})` : (eaResult?.data.length === 0 ? ' (No data returned)' : ' (Unknown EA issue)');
+        const fallbackReason = eaResult?.error ? ` (${eaResult.error})` : (eaResult?.data.length === 0 ? ' (No data returned from EA)' : ' (Unknown EA issue)');
         sourceMessage = `Could not fetch data from Environment Agency for station ${eaStationId}${fallbackReason}. Falling back to Open-Meteo.`;
         log.push({ message: sourceMessage, status: 'info' });
         const omResult = await fetchMarineDataFromOpenMeteo(latitude, longitude, startDate, endDate, log);
@@ -256,5 +257,3 @@ export async function fetchMarineDataAction(
     return { success: false, error: errorMessage, log };
   }
 }
-
-    
