@@ -9,9 +9,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label as UiLabel } from "@/components/ui/label";
 import { Loader2, Search, MapPin, LayoutGrid, CloudSun, Waves, SunMoon, Sailboat, Compass, Timer } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls"; // Reusing for date range
-import { fetchMarineDataAction } from "./actions"; // Renamed action
+import { fetchMarineDataAction } from "./actions"; 
 import type { MarineDataPoint } from "./shared"; 
-import type { MarinePlotVisibilityKeys } from "@/components/tide/MarinePlotsGrid"; // Import from new component
+import type { MarinePlotVisibilityKeys } from "@/components/tide/MarinePlotsGrid"; 
 import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
 import { formatISO, subDays, addDays } from "date-fns";
@@ -38,18 +38,14 @@ const MarinePlotsGrid = dynamic<{
 );
 
 const knownLocations: { [key: string]: { lat: number; lon: number; name: string } } = {
-  "london": { lat: 51.5074, lon: -0.1278, name: "London" },
-  "manchester": { lat: 53.4808, lon: -2.2426, name: "Manchester" },
-  "edinburgh": { lat: 55.9533, lon: -3.1883, name: "Edinburgh" },
-  "eh1 1aa": { lat: 55.9522, lon: -3.1900, name: "Edinburgh (EH1 1AA)" },
-  "birmingham": { lat: 52.4862, lon: -1.8904, name: "Birmingham" },
-  "glasgow": { lat: 55.8642, lon: -4.2518, name: "Glasgow" },
-  "liverpool": { lat: 53.4084, lon: -2.9916, name: "Liverpool" },
-  "bristol": { lat: 51.4545, lon: -2.5879, name: "Bristol" },
-  "leeds": { lat: 53.8008, lon: -1.5491, name: "Leeds" },
-  "sheffield": { lat: 53.3811, lon: -1.4701, name: "Sheffield" },
-  "stdavids": { lat: 51.8818, lon: -5.2661, name: "Saint David's" },
-  "milfordhaven": { lat: 51.7150, lon: -5.0400, name: "Milford Haven" },
+  "milfordhaven": { lat: 51.7150, lon: -5.0400, name: "Milford Haven" }, // Pembrokeshire, Wales (Good default)
+  "stdavids": { lat: 51.8818, lon: -5.2661, name: "St. David's" },     // Pembrokeshire, Wales
+  "newlyn": { lat: 50.1028, lon: -5.5486, name: "Newlyn" },           // Cornwall, England (Primary tide gauge)
+  "dover": { lat: 51.1297, lon: 1.3111, name: "Dover" },              // Kent, England
+  "southampton": { lat: 50.9097, lon: -1.4044, name: "Southampton" },  // Hampshire, England
+  "liverpool_coast": { lat: 53.45, lon: -3.05, name: "Liverpool (Coastal)" }, // Adjusted for better marine data
+  "aberdeen": { lat: 57.1496, lon: -2.0991, name: "Aberdeen" },        // Scotland
+  "holyhead": { lat: 53.3075, lon: -4.6281, name: "Holyhead" }         // Anglesey, Wales
 };
 
 const defaultLocationKey = "milfordhaven";
@@ -434,3 +430,6 @@ export default function TidePage() {
     </div>
   );
 }
+
+
+    
