@@ -4,29 +4,20 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label as UiLabel } from "@/components/ui/label"; 
-import { Loader2, Search, MapPin, SunMoon, LayoutGrid, CloudSun, Waves, Thermometer, Wind, Cloud as CloudIconLucide, Compass, ListChecks } from "lucide-react";
+import { Loader2, Search, MapPin, SunMoon, LayoutGrid, CloudSun, Waves, Thermometer, Wind, Cloud as CloudIconLucide, Compass, Droplets } from "lucide-react";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
+import { WeatherPlotsGrid } from "@/components/weather/WeatherPlotsGrid";
+import type { WeatherDataPoint, PlotVisibilityKeys as WeatherPlotVisibilityKeys } from "./shared"; // Renamed import
 import { fetchWeatherDataAction } from "./actions";
-import type { WeatherDataPoint, PlotVisibilityKeys } from "./shared";
 import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
 import { formatISO, subDays } from "date-fns";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-
-const WeatherPlotsGrid = dynamic(
-  () => import('@/components/weather/WeatherPlotsGrid').then(mod => mod.WeatherPlotsGrid),
-  {
-    ssr: false,
-    loading: () => <div className="flex items-center justify-center h-full text-muted-foreground"><Loader2 className="animate-spin h-8 w-8 text-primary mr-2" />Loading plots...</div>
-  }
-);
 
 const knownLocations: { [key: string]: { lat: number; lon: number; name: string } } = {
   "london": { lat: 51.5074, lon: -0.1278, name: "London" },
@@ -38,6 +29,7 @@ const knownLocations: { [key: string]: { lat: number; lon: number; name: string 
 };
 const defaultLocationKey = "stdavids";
 
+
 interface SearchedCoords {
   latitude: number;
   longitude: number;
@@ -48,16 +40,12 @@ interface Suggestion {
   name: string;
 }
 
-const plotConfigIcons: Record<PlotVisibilityKeys, React.ElementType> = {
+const plotConfigIcons: Record<WeatherPlotVisibilityKeys, React.ElementType> = {
   temperature: Thermometer,
   windSpeed: Wind,
   cloudCover: CloudIconLucide,
   windDirection: Compass,
 };
-const plotDisplayTitles: Record<PlotVisibilityKeys, string> = {
-  temperature: "Temperature", windSpeed: "Wind Speed", cloudCover: "Cloud Cover", windDirection: "Wind Direction",
-};
-
 
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
@@ -78,38 +66,34 @@ export default function WeatherPage() {
     to: new Date(),
   }));
 
-  const [plotVisibility, setPlotVisibility] = useState<Record<PlotVisibilityKeys, boolean>>({
+  const [plotVisibility, setPlotVisibility] = useState<Record<WeatherPlotVisibilityKeys, boolean>>({
     temperature: true,
     windSpeed: true,
     cloudCover: true,
     windDirection: true,
   });
 
-  const initialFetchDone = useRef(false);
+  const initialFetchDone = useRef(false); // To prevent auto-fetch on subsequent interactions
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
     if (storedTheme) setTheme(storedTheme);
     else if (window.matchMedia("(prefers-color-scheme: dark)").matches) setTheme("dark");
-    
-    const defaultLoc = knownLocations[defaultLocationKey];
-    if (defaultLoc) {
-      setSearchTerm(defaultLoc.name); 
-      const coords = { latitude: defaultLoc.lat, longitude: defaultLoc.lon };
-      setInitialCoords(coords);
-      setCurrentLocationName(defaultLoc.name);
-      if (dateRange?.from && dateRange?.to && !initialFetchDone.current && !isLoading && !error) {
-         handleLocationSearchAndFetch(coords, defaultLoc.name, true); // Auto fetch for default
-         initialFetchDone.current = true;
-      }
-    }
-  }, []); 
+  }, []);
 
-  const handlePlotVisibilityChange = useCallback((key: PlotVisibilityKeys, checked: boolean) => {
+  useEffect(() => {
+    if (theme === "dark") document.documentElement.classList.add("dark");
+    else document.documentElement.classList.remove("dark");
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
+
+  const handlePlotVisibilityChange = useCallback((key: WeatherPlotVisibilityKeys, checked: boolean) => {
     setPlotVisibility(prev => ({ ...prev, [key]: checked }));
   }, []);
 
-  const handleFetchWeatherData = async (coordsToUse: SearchedCoords, locationNameToUse: string) => {
+  const handleFetchWeather = async (coordsToUse: SearchedCoords, locationNameToUse: string) => {
     if (!dateRange || !dateRange.from || !dateRange.to) {
       toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range."});
       return;
@@ -121,8 +105,6 @@ export default function WeatherPage() {
 
     setIsLoading(true);
     setError(null);
-    // setWeatherData(null); // Keep old data while new is fetching for smoother UX unless explicitly cleared
-
     const loadingToastId = toast({ title: "Fetching Data", description: `Fetching weather data for ${locationNameToUse}...` }).id;
 
     const result = await fetchWeatherDataAction({
@@ -137,7 +119,7 @@ export default function WeatherPage() {
 
     if (result.success && result.data) {
       setWeatherData(result.data);
-      setCurrentLocationName(locationNameToUse); // Update current location name on successful fetch
+      setCurrentLocationName(locationNameToUse);
       if (result.message) { 
         toast({ title: "Info", description: result.message, duration: 3000 });
       } else if (result.data.length === 0) {
@@ -147,7 +129,7 @@ export default function WeatherPage() {
       }
     } else {
       setError(result.error || "Failed to fetch weather data.");
-      setWeatherData(null); // Clear data on error
+      setWeatherData(null); 
       toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch weather data." });
     }
   };
@@ -155,7 +137,7 @@ export default function WeatherPage() {
   const handleLocationSearchAndFetch = useCallback(async (
     coordsOverride?: SearchedCoords, 
     nameOverride?: string,
-    isAutoFetch: boolean = false
+    isAutoFetch: boolean = false // Flag to indicate if it's an automatic fetch
   ) => {
     const term = searchTerm.trim().toLowerCase();
     setShowSuggestions(false); 
@@ -163,7 +145,7 @@ export default function WeatherPage() {
     let coordsForFetch: SearchedCoords | null = coordsOverride || initialCoords;
     let nameForFetch: string | null = nameOverride || currentLocationName;
 
-    if (!isAutoFetch && !coordsOverride) { // Standard search button click
+    if (!isAutoFetch && !coordsOverride) { 
       if (!term) {
         toast({ variant: "destructive", title: "Search Error", description: "Please enter a location." });
         return;
@@ -182,20 +164,36 @@ export default function WeatherPage() {
           setSearchTerm(knownLocations[locationKey].name);
         }
       } else {
-         toast({ variant: "destructive", title: "Location Not Found", description: "Please select a known UK location from suggestions or enter a valid one." });
+         toast({ variant: "destructive", title: "Location Not Found", description: "Please select a known UK location." });
          return;
       }
     }
     
     if (coordsForFetch && nameForFetch && dateRange?.from && dateRange?.to) {
-      await handleFetchWeatherData(coordsForFetch, nameForFetch);
+      await handleFetchWeather(coordsForFetch, nameForFetch);
     } else if (!coordsForFetch || !nameForFetch) {
-       toast({ variant: "destructive", title: "Missing Location", description: "Could not determine coordinates for fetching." });
+       if (!isAutoFetch) { // Only show toast if it's a manual attempt
+         toast({ variant: "destructive", title: "Missing Location", description: "Could not determine coordinates for fetching." });
+       }
     }
-  }, [searchTerm, initialCoords, currentLocationName, dateRange, toast]);
+  }, [searchTerm, initialCoords, currentLocationName, dateRange, toast, dismiss]); // Added dismiss
 
+  // Effect for initial load and auto-fetch
+  useEffect(() => {
+    const defaultLoc = knownLocations[defaultLocationKey];
+    if (defaultLoc && !initialFetchDone.current) {
+      setSearchTerm(defaultLoc.name); 
+      const coords = { latitude: defaultLoc.lat, longitude: defaultLoc.lon };
+      setInitialCoords(coords);
+      setCurrentLocationName(defaultLoc.name);
+      if (dateRange?.from && dateRange?.to && !isLoading && !error) { // Check !isLoading and !error
+         handleLocationSearchAndFetch(coords, defaultLoc.name, true); 
+         initialFetchDone.current = true;
+      }
+    }
+  }, [dateRange, isLoading, error, handleLocationSearchAndFetch]); // Dependencies for initial fetch
 
-  useEffect(() => { // For suggestions
+  useEffect(() => { 
     const currentSearchTerm = searchTerm.trim();
     const inputElement = document.activeElement as HTMLInputElement;
     const isFocused = inputElement && inputElement.placeholder === "Search UK place or postcode...";
@@ -222,9 +220,12 @@ export default function WeatherPage() {
       setInitialCoords(newCoords); 
       setCurrentLocationName(location.name);
       setShowSuggestions(false);
-      // Do not auto-fetch here; user will click "Search & Fetch Weather"
+      // Trigger fetch after suggestion click for immediate feedback
+      if (dateRange?.from && dateRange?.to) {
+        handleFetchWeather(newCoords, location.name);
+      }
     }
-  }, []); 
+  }, [dateRange, handleFetchWeather]); // Added handleFetchWeather dependency
 
   const handleInputFocus = () => {
     const currentSearchTerm = searchTerm.trim();
@@ -236,15 +237,7 @@ export default function WeatherPage() {
     }
   };
   
-  const handleInputBlur = () => { setTimeout(() => { setShowSuggestions(false); }, 150); }; // Delay to allow click on suggestion
-
-  useEffect(() => {
-    if (theme === "dark") document.documentElement.classList.add("dark");
-    else document.documentElement.classList.remove("dark");
-    localStorage.setItem("theme", theme);
-  }, [theme]);
-
-  const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
+  const handleInputBlur = () => { setTimeout(() => { setShowSuggestions(false); }, 150); };
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -257,7 +250,8 @@ export default function WeatherPage() {
             <div className="flex items-center gap-1">
               <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (CSV)"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer (CSV)</p></TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger asChild><Link href="/weather" passHref><Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Weather Page"><CloudSun className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Weather Page</p></TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><Link href="/ea-explorer" passHref><Button variant={pathname === '/ea-explorer' ? "secondary": "ghost"} size="icon" aria-label="Open Access Data Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Open Access Data Explorer</p></TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Link href="/ea-water-explorer" passHref><Button variant={pathname === '/ea-water-explorer' ? "secondary": "ghost"} size="icon" aria-label="EA Water Explorer"><Droplets className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>EA Water Explorer</p></TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Link href="/om-marine-explorer" passHref><Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="OM Marine Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>OM Marine Explorer</p></TooltipContent></Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
@@ -266,6 +260,16 @@ export default function WeatherPage() {
       </header>
 
       <main className="flex-grow container mx-auto p-3 md:p-4">
+         <Card className="mb-4">
+          <CardHeader className="pb-3 pt-4">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <CloudSun className="h-5 w-5 text-primary" />Weather Data Explorer
+            </CardTitle>
+             <CardDescription className="text-xs">
+                Search for a UK location, select a date range, and choose parameters to visualize historical weather data.
+            </CardDescription>
+          </CardHeader>
+        </Card>
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
           <div className="md:col-span-4 lg:col-span-3 space-y-3">
             <Card>
@@ -300,15 +304,15 @@ export default function WeatherPage() {
             <Card>
                 <CardHeader className="pb-2 pt-3"><CardTitle className="text-base flex items-center gap-1.5"><ListChecks className="h-4 w-4 text-primary" />Display Plots</CardTitle></CardHeader>
                 <CardContent className="space-y-1">
-                    {(Object.keys(plotVisibility) as PlotVisibilityKeys[]).map((key) => {
-                    const IconComp = plotConfigIcons[key];
-                    const title = plotDisplayTitles[key];
-                    return (
-                        <div key={key} className="flex items-center space-x-1.5">
-                        <Checkbox id={`visibility-${key}`} checked={plotVisibility[key]} onCheckedChange={(c) => handlePlotVisibilityChange(key, !!c)} className="h-3.5 w-3.5"/>
-                        <UiLabel htmlFor={`visibility-${key}`} className="text-xs font-medium flex items-center gap-1 cursor-pointer"><IconComp className="h-3.5 w-3.5 text-muted-foreground"/>{title}</UiLabel>
-                        </div>
-                    );
+                    {(Object.keys(plotVisibility) as WeatherPlotVisibilityKeys[]).map((key) => {
+                        const IconComp = plotConfigIcons[key];
+                        const title = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1'); // Add space for camelCase
+                        return (
+                            <div key={key} className="flex items-center space-x-1.5">
+                            <Checkbox id={`visibility-${key}`} checked={plotVisibility[key]} onCheckedChange={(c) => handlePlotVisibilityChange(key, !!c)} className="h-3.5 w-3.5"/>
+                            <UiLabel htmlFor={`visibility-${key}`} className="text-xs font-medium flex items-center gap-1 cursor-pointer"><IconComp className="h-3.5 w-3.5 text-muted-foreground"/>{title}</UiLabel>
+                            </div>
+                        );
                     })}
                 </CardContent>
             </Card>
@@ -318,9 +322,8 @@ export default function WeatherPage() {
             <Card className="shadow-sm h-full">
               <CardHeader className="p-2 pt-3">
                  <CardTitle className="text-base">Data <span className="text-muted-foreground font-normal text-sm">{currentLocationName ? `- ${currentLocationName}` : ""}</span></CardTitle>
-                 {/* <CardDescription className="text-xs">Weather data for the selected location and period.</CardDescription> */}
               </CardHeader>
-              <CardContent className="p-1.5 h-[calc(100%-2.5rem)]"> {/* Adjusted height */}
+              <CardContent className="p-1.5 h-[calc(100%-2.5rem)]"> 
                 <WeatherPlotsGrid
                     weatherData={weatherData}
                     isLoading={isLoading}
@@ -335,7 +338,7 @@ export default function WeatherPage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            Weather data by Open-Meteo. PEBL data app.
+            Weather data by Open-Meteo. CSV Explorer. EA Water. Marine Data.
           </p>
         </div>
       </footer>
