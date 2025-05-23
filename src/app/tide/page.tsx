@@ -4,26 +4,36 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Search, MapPin, LayoutGrid, CloudSun, Waves, SunMoon } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label as UiLabel } from "@/components/ui/label";
+import { Loader2, Search, MapPin, LayoutGrid, CloudSun, Waves, SunMoon, Sailboat, Compass, Timer } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls"; // Reusing for date range
-import { fetchTideDataAction } from "./actions";
-import type { TideDataPoint } from "./shared"; 
+import { fetchMarineDataAction } from "./actions"; // Renamed action
+import type { MarineDataPoint } from "./shared"; 
+import type { MarinePlotVisibilityKeys } from "@/components/tide/MarinePlotsGrid"; // Import from new component
 import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
-import { formatISO, subDays } from "date-fns";
+import { formatISO, subDays, addDays } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ChartDisplayProps } from "@/components/dataflow/ChartDisplay"; // Using ChartDisplay
 
-const ChartDisplay = dynamic<ChartDisplayProps>(
-  () => import('@/components/dataflow/ChartDisplay').then(mod => mod.ChartDisplay),
+// Dynamically import MarinePlotsGrid
+const MarinePlotsGrid = dynamic<{
+  marineData: MarineDataPoint[] | null;
+  isLoading: boolean;
+  error: string | null;
+  plotVisibility: Record<MarinePlotVisibilityKeys, boolean>;
+  handlePlotVisibilityChange: (key: MarinePlotVisibilityKeys, checked: boolean) => void;
+  dataLocationContext?: string;
+}>(
+  () => import('@/components/tide/MarinePlotsGrid').then(mod => mod.MarinePlotsGrid),
   {
     ssr: false,
-    loading: () => <div className="flex items-center justify-center h-full text-muted-foreground"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mr-2"></div>Loading plot...</div>
+    loading: () => <div className="flex items-center justify-center h-full text-muted-foreground"><Loader2 className="animate-spin h-8 w-8 text-primary mr-2" />Loading plots...</div>
   }
 );
 
@@ -39,8 +49,10 @@ const knownLocations: { [key: string]: { lat: number; lon: number; name: string 
   "leeds": { lat: 53.8008, lon: -1.5491, name: "Leeds" },
   "sheffield": { lat: 53.3811, lon: -1.4701, name: "Sheffield" },
   "stdavids": { lat: 51.8818, lon: -5.2661, name: "Saint David's" },
-  "milfordhaven": { lat: 51.7150, lon: -5.0400, name: "Milford Haven" }, // Added Milford Haven
+  "milfordhaven": { lat: 51.7150, lon: -5.0400, name: "Milford Haven" },
 };
+
+const defaultLocationKey = "milfordhaven";
 
 interface SearchedCoords {
   latitude: number;
@@ -52,11 +64,24 @@ interface Suggestion {
   name: string;
 }
 
-const defaultLocationKey = "milfordhaven"; // Changed default location
+const plotConfigIcons: Record<MarinePlotVisibilityKeys, React.ElementType> = {
+  tideHeight: Waves,
+  waveHeight: Sailboat,
+  waveDirection: Compass,
+  wavePeriod: Timer,
+};
+
+const plotDisplayTitles: Record<MarinePlotVisibilityKeys, string> = {
+  tideHeight: "Tide Height",
+  waveHeight: "Wave Height",
+  waveDirection: "Wave Direction",
+  wavePeriod: "Wave Period",
+};
+
 
 export default function TidePage() {
   const [theme, setTheme] = useState("light");
-  const [tideData, setTideData] = useState<TideDataPoint[]>([]);
+  const [marineData, setMarineData] = useState<MarineDataPoint[] | null>(null);
   const [dataLocationContext, setDataLocationContext] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +97,13 @@ export default function TidePage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 7),
     to: new Date(),
+  });
+  
+  const [plotVisibility, setPlotVisibility] = useState<Record<MarinePlotVisibilityKeys, boolean>>({
+    tideHeight: true,
+    waveHeight: true,
+    waveDirection: true,
+    wavePeriod: true,
   });
 
   const initialFetchDone = useRef(false);
@@ -99,7 +131,7 @@ export default function TidePage() {
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
 
-  const handleFetchTideData = useCallback(async (coordsToUse?: SearchedCoords, datesToUse?: DateRange) => {
+  const handleFetchMarineData = useCallback(async (coordsToUse?: SearchedCoords, datesToUse?: DateRange) => {
     const currentCoords = coordsToUse || initialCoords;
     const currentDates = datesToUse || dateRange;
 
@@ -115,12 +147,18 @@ export default function TidePage() {
       toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
       return;
     }
+    const maxDays = 90; 
+    if (addDays(currentDates.from, maxDays) < currentDates.to) {
+        toast({ variant: "destructive", title: "Date Range Too Large", description: `Please select a range within ${maxDays} days.` });
+        return;
+    }
 
     setIsLoading(true);
     setError(null);
     setDataLocationContext(undefined);
+    setMarineData(null); // Clear previous data
 
-    const result = await fetchTideDataAction({
+    const result = await fetchMarineDataAction({
       latitude: currentCoords.latitude,
       longitude: currentCoords.longitude,
       startDate: formatISO(currentDates.from, { representation: 'date' }),
@@ -129,19 +167,19 @@ export default function TidePage() {
 
     setIsLoading(false);
     if (result.success && result.data) {
-      setTideData(result.data as TideDataPoint[]);
-      setDataLocationContext(result.dataLocationContext); // This will be "Tide at selected location"
+      setMarineData(result.data as MarineDataPoint[]);
+      setDataLocationContext(result.dataLocationContext);
       if (result.message) {
         toast({ title: "Info", description: result.message, duration: 3000 });
       } else if (result.data.length === 0) {
-        toast({ title: "No Data", description: "No tide data found for the selected criteria.", duration: 3000 });
+        toast({ title: "No Data", description: "No marine data found for the selected criteria.", duration: 3000 });
       } else {
-        const successToast = toast({ title: "Success", description: "Tide data fetched." });
+        const successToast = toast({ title: "Success", description: "Marine data fetched." });
         setTimeout(() => { if (successToast && successToast.id) toast().dismiss(successToast.id); }, 2000);
       }
     } else {
-      setError(result.error || "Failed to fetch tide data.");
-      toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch tide data." });
+      setError(result.error || "Failed to fetch marine data.");
+      toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch marine data." });
     }
   }, [initialCoords, dateRange, toast]);
   
@@ -151,7 +189,7 @@ export default function TidePage() {
     if (!term) {
       toast({ variant: "destructive", title: "Search Error", description: "Please enter a location." });
       setInitialCoords(null); 
-      setTideData([]); 
+      setMarineData(null); 
       return;
     }
     const locationKey = Object.keys(knownLocations).find(
@@ -168,7 +206,7 @@ export default function TidePage() {
     } else {
       const currentKnownNameForInitialCoords = Object.values(knownLocations).find(loc => loc.lat === initialCoords?.latitude && loc.lon === initialCoords?.longitude)?.name;
       if (searchTerm.toLowerCase() !== currentKnownNameForInitialCoords?.toLowerCase()) {
-         setTideData([]); 
+         setMarineData(null); 
          setInitialCoords(null); 
          toast({ variant: "destructive", title: "Location Not Found", description: "Please select a location from suggestions or a known UK city/postcode." });
          return;
@@ -177,20 +215,20 @@ export default function TidePage() {
     }
     
     if (coordsForFetch && dateRange?.from && dateRange?.to) {
-      await handleFetchTideData(coordsForFetch, dateRange);
+      await handleFetchMarineData(coordsForFetch, dateRange);
     } else if (!coordsForFetch) {
         toast({ variant: "destructive", title: "Location Error", description: "Could not determine coordinates." });
     } else {
         toast({ variant: "destructive", title: "Date Error", description: "Select a valid date range." });
     }
-  }, [searchTerm, toast, handleFetchTideData, dateRange, initialCoords]);
+  }, [searchTerm, toast, handleFetchMarineData, dateRange, initialCoords]);
 
   useEffect(() => {
     if (initialCoords && dateRange?.from && dateRange?.to && !initialFetchDone.current && !isLoading && !error) {
-      handleFetchTideData(initialCoords, dateRange);
+      handleFetchMarineData(initialCoords, dateRange);
       initialFetchDone.current = true;
     }
-  }, [initialCoords, dateRange, isLoading, error, handleFetchTideData]);
+  }, [initialCoords, dateRange, isLoading, error, handleFetchMarineData]);
 
   useEffect(() => {
     const currentSearchTerm = searchTerm.trim();
@@ -233,16 +271,17 @@ export default function TidePage() {
   
   const handleInputBlur = () => { setTimeout(() => { setShowSuggestions(false); }, 150); };
 
-  const tideYAxisConfig: ChartDisplayProps['yAxisConfigs'] = [
-    { id: 'tide', orientation: 'left', label: 'Tide Height (m)', color: '--chart-1', dataKey: 'tideHeight', unit: 'm' }
-  ];
+  const handlePlotVisibilityChange = useCallback((key: MarinePlotVisibilityKeys, checked: boolean) => {
+    setPlotVisibility(prev => ({ ...prev, [key]: checked }));
+  }, []);
+
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <TooltipProvider>
           <div className="container flex h-14 items-center justify-between px-3 md:px-4">
-            <Link href="/weather" passHref>
+            <Link href="/tide" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
@@ -274,7 +313,7 @@ export default function TidePage() {
                     </Button>
                   </Link>
                 </TooltipTrigger>
-                <TooltipContent><p>Tide Page</p></TooltipContent>
+                <TooltipContent><p>Marine Data Page</p></TooltipContent>
               </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip>
@@ -336,29 +375,50 @@ export default function TidePage() {
                   className="w-full h-9 text-sm mt-3"
                 >
                   {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
-                  {isLoading ? "Fetching..." : "Search & Fetch Tide Data"}
+                  {isLoading ? "Fetching..." : "Search & Fetch Marine Data"}
               </Button>
+            </Card>
+
+            <Card className="p-4 border rounded-lg shadow-sm bg-card">
+                <CardHeader className="p-0 pb-2">
+                    <CardTitle className="text-sm font-semibold text-center">Display Plots</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0 space-y-1.5">
+                    {(Object.keys(plotVisibility) as MarinePlotVisibilityKeys[]).map((key) => {
+                        const IconComponent = plotConfigIcons[key];
+                        return (
+                            <div key={key} className="flex items-center space-x-2">
+                                <Checkbox
+                                    id={`visibility-${key}`}
+                                    checked={plotVisibility[key]}
+                                    onCheckedChange={(checked) => handlePlotVisibilityChange(key, !!checked)}
+                                    className="h-4 w-4"
+                                />
+                                <UiLabel htmlFor={`visibility-${key}`} className="text-xs font-medium flex items-center gap-1.5">
+                                    <IconComponent className="h-4 w-4 text-muted-foreground" />
+                                    {plotDisplayTitles[key]}
+                                </UiLabel>
+                            </div>
+                        );
+                    })}
+                </CardContent>
             </Card>
           </div>
 
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-lg h-full">
               <CardHeader className="p-3">
-                 <CardTitle className="text-md">Tide Data {dataLocationContext ? `- ${dataLocationContext}` : ''}</CardTitle>
+                 <CardTitle className="text-md">Marine Data {dataLocationContext ? `- ${dataLocationContext}` : ''}</CardTitle>
               </CardHeader>
-              <CardContent className="p-2 h-[calc(100%-3.5rem)]"> 
-                 {isLoading && <div className="flex items-center justify-center h-full text-muted-foreground"><Loader2 className="h-8 w-8 animate-spin text-primary mr-2" /> Fetching data...</div>}
-                 {!isLoading && error && <div className="flex flex-col items-center justify-center h-full text-destructive p-4 text-center"><Waves className="h-10 w-10 mb-2" /><p className="font-semibold">Error Fetching Data</p><p className="text-sm">{error}</p></div>}
-                 {!isLoading && !error && tideData.length === 0 && <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center"><Waves className="h-10 w-10 mb-2" /><p>No tide data to display.</p><p className="text-sm">Search for a location and select a date range.</p></div>}
-                 {!isLoading && !error && tideData.length > 0 && (
-                    <ChartDisplay
-                        data={tideData}
-                        plottableSeries={['tideHeight']}
-                        timeAxisLabel="Time"
-                        yAxisConfigs={tideYAxisConfig}
-                        chartRenderHeight={500} 
-                    />
-                 )}
+              <CardContent className="p-2 h-[calc(100%-3rem)]"> 
+                <MarinePlotsGrid
+                    marineData={marineData}
+                    isLoading={isLoading}
+                    error={error}
+                    plotVisibility={plotVisibility}
+                    handlePlotVisibilityChange={handlePlotVisibilityChange}
+                    dataLocationContext={dataLocationContext}
+                />
               </CardContent>
             </Card>
           </div>
@@ -367,12 +427,10 @@ export default function TidePage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-16 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            Tide data provided by Open-Meteo. Built with Next.js and ShadCN/UI.
+            Marine data provided by Open-Meteo. Built with Next.js and ShadCN/UI.
           </p>
         </div>
       </footer>
     </div>
   );
 }
-
-    

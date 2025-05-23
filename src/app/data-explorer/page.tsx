@@ -69,7 +69,7 @@ export default function DataExplorerPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <TooltipProvider>
           <div className="container flex h-14 items-center justify-between px-3 md:px-4">
-            <Link href="/weather" passHref>
+            <Link href="/tide" passHref> 
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
@@ -101,7 +101,7 @@ export default function DataExplorerPage() {
                     </Button>
                   </Link>
                 </TooltipTrigger>
-                <TooltipContent><p>Tide Page</p></TooltipContent>
+                <TooltipContent><p>Marine Data Page</p></TooltipContent>
               </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip>

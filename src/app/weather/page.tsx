@@ -5,10 +5,12 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, Search, MapPin, SunMoon, LayoutGrid, CloudSun, Waves, Thermometer, Wind, Compass, Cloud as CloudIconLucide } from "lucide-react"; // Renamed Cloud to CloudIconLucide
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label as UiLabel } from "@/components/ui/label";
+import { Loader2, Search, MapPin, SunMoon, LayoutGrid, CloudSun, Waves, Thermometer, Wind, Compass, Cloud as CloudIconLucide } from "lucide-react";
 import { WeatherControls } from "@/components/weather/WeatherControls";
 import { fetchWeatherDataAction } from "./actions";
-import type { WeatherDataPoint, PlotVisibilityKeys as WeatherPlotVisibilityKeys } from "./shared"; // Import PlotVisibilityKeys
+import type { WeatherDataPoint, PlotVisibilityKeys as WeatherPlotVisibilityKeys } from "./shared";
 import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
 import { formatISO, subDays, addDays } from "date-fns";
@@ -18,15 +20,12 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { WeatherPlotsGridProps } from "@/components/weather/WeatherPlotsGrid";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label as UiLabel } from "@/components/ui/label";
-
 
 const WeatherPlotsGrid = dynamic<WeatherPlotsGridProps>(
   () => import('@/components/weather/WeatherPlotsGrid').then(mod => mod.WeatherPlotsGrid),
   {
     ssr: false,
-    loading: () => <div className="flex items-center justify-center h-full text-muted-foreground"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mr-2"></div>Loading plots...</div>
+    loading: () => <div className="flex items-center justify-center h-full text-muted-foreground"><Loader2 className="animate-spin h-8 w-8 text-primary mr-2" />Loading plots...</div>
   }
 );
 
@@ -56,11 +55,10 @@ interface Suggestion {
   name: string;
 }
 
-// Re-define plotConfigIcons here if they were removed or ensure they are sourced correctly
 const plotConfigIcons: Record<WeatherPlotVisibilityKeys, React.ElementType> = {
   temperature: Thermometer,
   windSpeed: Wind,
-  cloudCover: CloudIconLucide, // Use the aliased import
+  cloudCover: CloudIconLucide,
   windDirection: Compass,
 };
 
@@ -74,7 +72,7 @@ const plotDisplayTitles: Record<WeatherPlotVisibilityKeys, string> = {
 
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
-  const [weatherData, setWeatherData] = useState<WeatherDataPoint[]>([]);
+  const [weatherData, setWeatherData] = useState<WeatherDataPoint[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -91,15 +89,15 @@ export default function WeatherPage() {
     to: new Date(),
   });
 
-  const initialFetchDone = useRef(false);
-
-  // Reinstate plotVisibility state
   const [plotVisibility, setPlotVisibility] = useState<Record<WeatherPlotVisibilityKeys, boolean>>({
     temperature: true,
     windSpeed: true,
     cloudCover: true,
     windDirection: true,
   });
+
+  const initialFetchDone = useRef(false);
+
 
   const handlePlotVisibilityChange = useCallback((key: WeatherPlotVisibilityKeys, checked: boolean) => {
     setPlotVisibility(prev => ({ ...prev, [key]: checked }));
@@ -121,7 +119,8 @@ export default function WeatherPage() {
       setSearchTerm(defaultLoc.name); 
       setInitialCoords({ latitude: defaultLoc.lat, longitude: defaultLoc.lon });
     } else {
-      setSearchTerm(""); // Initialize search term if default location is not found
+      setSearchTerm("Saint David's"); // Fallback if key is mistyped
+      setInitialCoords({ latitude: 51.8818, longitude: -5.2661 });
     }
   }, []);
 
@@ -154,16 +153,15 @@ export default function WeatherPage() {
         toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
         return;
     }
-    // Prevent fetching data too far in the past or future if API has limits
-    const maxDays = 90; // Example limit
+    const maxDays = 90; 
     if (addDays(currentDates.from, maxDays) < currentDates.to) {
         toast({ variant: "destructive", title: "Date Range Too Large", description: `Please select a range within ${maxDays} days.` });
         return;
     }
 
-
     setIsLoading(true);
     setError(null);
+    setWeatherData(null); // Clear previous data
 
     const result = await fetchWeatherDataAction({
       latitude: currentCoords.latitude,
@@ -199,7 +197,7 @@ export default function WeatherPage() {
     if (!term) {
       toast({ variant: "destructive", title: "Search Error", description: "Please enter a location." });
       setInitialCoords(null); 
-      setWeatherData([]); 
+      setWeatherData(null); 
       return;
     }
     const locationKey = Object.keys(knownLocations).find(
@@ -218,7 +216,7 @@ export default function WeatherPage() {
     } else {
       const currentKnownNameForInitialCoords = Object.values(knownLocations).find(loc => loc.lat === initialCoords?.latitude && loc.lon === initialCoords?.longitude)?.name;
       if (searchTerm.toLowerCase() !== currentKnownNameForInitialCoords?.toLowerCase()) {
-         setWeatherData([]); 
+         setWeatherData(null); 
          setInitialCoords(null); 
          toast({ variant: "destructive", title: "Location Not Found", description: "Please select a location from suggestions or a known UK city/postcode." });
          return;
@@ -275,7 +273,6 @@ export default function WeatherPage() {
       const newCoords = { latitude: location.lat, longitude: location.lon };
       setInitialCoords(newCoords); 
       setShowSuggestions(false);
-      // Do not auto-fetch here, user will click main "Search & Fetch" button
     }
   }, []); 
 
@@ -300,7 +297,7 @@ export default function WeatherPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <TooltipProvider>
           <div className="container flex h-14 items-center justify-between px-3 md:px-4">
-            <Link href="/weather" passHref>
+            <Link href="/tide" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
@@ -332,7 +329,7 @@ export default function WeatherPage() {
                     </Button>
                   </Link>
                 </TooltipTrigger>
-                <TooltipContent><p>Tide Page</p></TooltipContent>
+                <TooltipContent><p>Marine Data Page</p></TooltipContent>
               </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip>
@@ -402,22 +399,39 @@ export default function WeatherPage() {
                   {isLoading ? "Fetching..." : "Search & Fetch Weather"}
               </Button>
             </Card>
-            {/* Removed plot visibility controls from here */}
           </div>
 
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-lg h-full">
               <CardHeader className="p-3 flex flex-col items-start space-y-1.5">
                 <CardTitle className="text-md">Data</CardTitle>
-                 {/* Checkboxes are now inside WeatherPlotsGrid */}
+                <div className="grid grid-cols-2 sm:grid-cols-2 gap-x-3 gap-y-1.5 pt-1">
+                    {(Object.keys(plotVisibility) as WeatherPlotVisibilityKeys[]).map((key) => {
+                        const IconComponent = plotConfigIcons[key];
+                        return (
+                            <div key={key} className="flex items-center space-x-1.5">
+                                <Checkbox
+                                    id={`visibility-${key}`}
+                                    checked={plotVisibility[key]}
+                                    onCheckedChange={(checked) => handlePlotVisibilityChange(key, !!checked)}
+                                    className="h-3.5 w-3.5"
+                                />
+                                <UiLabel htmlFor={`visibility-${key}`} className="text-xs font-medium flex items-center gap-1">
+                                    <IconComponent className="h-3.5 w-3.5 text-muted-foreground" />
+                                    {plotDisplayTitles[key]}
+                                </UiLabel>
+                            </div>
+                        );
+                    })}
+                </div>
               </CardHeader>
-              <CardContent className="p-2 h-[calc(100%-2.5rem)]">
+              <CardContent className="p-2 h-[calc(100%-5.5rem)]"> {/* Adjusted height for new checkboxes */}
                 <WeatherPlotsGrid
                     weatherData={weatherData}
                     isLoading={isLoading}
                     error={error}
-                    plotVisibility={plotVisibility} // Pass visibility state
-                    handlePlotVisibilityChange={handlePlotVisibilityChange} // Pass handler
+                    plotVisibility={plotVisibility} 
+                    handlePlotVisibilityChange={handlePlotVisibilityChange} 
                 />
               </CardContent>
             </Card>
@@ -434,4 +448,3 @@ export default function WeatherPage() {
     </div>
   );
 }
-

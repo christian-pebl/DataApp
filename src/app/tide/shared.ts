@@ -12,16 +12,19 @@ const isValidDateString = (val: string): boolean => {
   }
 };
 
-export const TideDataPointSchema = z.object({
+export const MarineDataPointSchema = z.object({
   time: z.string().describe("ISO timestamp for the data point"),
   tideHeight: z.number().optional().describe("Tide height in meters relative to mean sea level"),
+  waveHeight: z.number().optional().describe("Significant wave height in meters"),
+  waveDirection: z.number().optional().describe("Mean wave direction in degrees"),
+  wavePeriod: z.number().optional().describe("Mean wave period in seconds"),
 });
-export type TideDataPoint = z.infer<typeof TideDataPointSchema>;
+export type MarineDataPoint = z.infer<typeof MarineDataPointSchema>;
 
-export const FetchTideInputSchema = z.object({
+export const FetchMarineDataInputSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   startDate: z.string().refine(isValidDateString, { message: "Invalid start date format or value. Ensure YYYY-MM-DD format." }),
   endDate: z.string().refine(isValidDateString, { message: "Invalid end date format or value. Ensure YYYY-MM-DD format." }),
 });
-export type FetchTideInput = z.infer<typeof FetchTideInputSchema>;
+export type FetchMarineDataInput = z.infer<typeof FetchMarineDataInputSchema>;
