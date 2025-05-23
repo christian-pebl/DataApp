@@ -2,32 +2,33 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, Search, MapPin, LayoutGrid, CloudSun, Waves, SunMoon } from "lucide-react";
-import { WeatherControls } from "@/components/weather/WeatherControls"; // Reusing for date range
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, Search, MapPin, LayoutGrid, CloudSun, Waves, SunMoon, Info, CheckCircle2, XCircle } from "lucide-react";
+import { WeatherControls } from "@/components/weather/WeatherControls"; 
 import { fetchMarineDataAction } from "./actions"; 
 import type { MarineDataPoint } from "./shared"; 
-import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay"; // Reusing ChartDisplay
+import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay";
 import { useToast } from "@/hooks/use-toast";
 import type { DateRange } from "react-day-picker";
-import { formatISO, subDays, addDays, parseISO } from "date-fns";
+import { formatISO, subDays, addDays } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
-// Verified EA Station IDs (or common examples)
 const knownLocations: { [key: string]: { lat: number; lon: number; name: string, eaStationId?: string } } = {
-  "milfordhaven": { lat: 51.710, lon: -5.042, name: "Milford Haven", eaStationId: "0401" }, // EA ID might be like E72534 for specific gauge. Using short ref.
-  "newlyn": { lat: 50.102, lon: -5.549, name: "Newlyn", eaStationId: "0001" }, // Primary Tide Gauge, common EA ref
+  "milfordhaven": { lat: 51.710, lon: -5.042, name: "Milford Haven", eaStationId: "0401" },
+  "newlyn": { lat: 50.102, lon: -5.549, name: "Newlyn", eaStationId: "0001" },
   "dover": { lat: 51.124, lon: 1.323, name: "Dover", eaStationId: "0023" },
-  "holyhead": { lat: 53.3075, lon: -4.6281, name: "Holyhead", eaStationId: "E71525" }, // Example of a more specific EA ID
+  "holyhead": { lat: 53.3075, lon: -4.6281, name: "Holyhead", eaStationId: "E71525" },
   "liverpool": { lat: 53.410, lon: -3.017, name: "Liverpool (Gladstone Dock)", eaStationId: "E71896" },
+  "portsmouth": { lat: 50.81, lon: -1.08, name: "Portsmouth", eaStationId: "E72614"},
   "southampton_docks": { lat: 50.90, lon: -1.40, name: "Southampton Docks"}, // No EA ID, will use Open-Meteo
-  "portsmouth": { lat: 50.81, lon: -1.08, name: "Portsmouth", eaStationId: "E72614"}
 };
 
 const defaultLocationKey = "milfordhaven";
@@ -36,13 +37,20 @@ interface SearchedCoords {
   latitude: number;
   longitude: number;
   eaStationId?: string;
-  key?: string; // to store the original key like "milfordhaven"
+  key?: string; 
 }
 
 interface Suggestion {
   key: string;
   name: string;
 }
+
+interface FetchLogStep {
+  id: string; // Unique ID for React key
+  message: string;
+  status: 'pending' | 'success' | 'error' | 'info';
+}
+
 
 export default function TidePage() {
   const [theme, setTheme] = useState("light");
@@ -60,11 +68,28 @@ export default function TidePage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: subDays(new Date(), 3), // Default to 3 days for potentially faster API responses
+    from: subDays(new Date(), 3), 
     to: new Date(),
   });
   
   const initialFetchDone = useRef(false);
+  const [fetchLogSteps, setFetchLogSteps] = useState<FetchLogStep[]>([]);
+  const [logAccordionValue, setLogAccordionValue] = useState<string>(""); // To control accordion open/close
+  const [logOverallStatus, setLogOverallStatus] = useState<'pending' | 'success' | 'error' | 'idle'>('idle');
+
+
+  const addLogStep = useCallback((message: string, status: FetchLogStep['status'], replaceLast = false) => {
+    setFetchLogSteps(prevSteps => {
+      const newStep = { id: `log-${Date.now()}-${Math.random()}`, message, status };
+      if (replaceLast && prevSteps.length > 0) {
+        const updatedSteps = [...prevSteps];
+        updatedSteps[prevSteps.length -1] = newStep;
+        return updatedSteps;
+      }
+      return [...prevSteps, newStep];
+    });
+  }, []);
+
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
@@ -77,14 +102,20 @@ export default function TidePage() {
     const defaultLoc = knownLocations[defaultLocationKey];
     if (defaultLoc) {
       setSearchTerm(defaultLoc.name);
-      setCurrentLocationDetails({ 
+      const defaultDetails = { 
         latitude: defaultLoc.lat, 
         longitude: defaultLoc.lon, 
         eaStationId: defaultLoc.eaStationId,
         key: defaultLocationKey 
-      });
+      };
+      setCurrentLocationDetails(defaultDetails);
+      // Trigger initial fetch for default location
+      if (dateRange?.from && dateRange?.to && !initialFetchDone.current) {
+         handleFetchMarineData(defaultDetails, dateRange, true); // Pass true for initialFetch
+         initialFetchDone.current = true;
+      }
     }
-  }, []);
+  }, []); // Removed dateRange from deps to avoid re-triggering initial fetch on date change
 
   useEffect(() => {
     if (theme === "dark") document.documentElement.classList.add("dark");
@@ -94,32 +125,43 @@ export default function TidePage() {
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
 
-  const handleFetchMarineData = useCallback(async (locationDetails?: SearchedCoords, datesToUse?: DateRange) => {
+  const handleFetchMarineData = useCallback(async (locationDetails?: SearchedCoords, datesToUse?: DateRange, isInitialFetch = false) => {
     const currentLoc = locationDetails || currentLocationDetails;
     const currentDates = datesToUse || dateRange;
 
-    if (!currentLoc) {
-      toast({ variant: "destructive", title: "Missing Location", description: "Please search and select a location." });
-      return;
+    if (!isInitialFetch) { // Only show these toasts for user-initiated fetches
+        if (!currentLoc) {
+          toast({ variant: "destructive", title: "Missing Location", description: "Please search and select a location." });
+          return;
+        }
+        if (!currentDates || !currentDates.from || !currentDates.to) {
+          toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range."});
+          return;
+        }
+        if (currentDates.from > currentDates.to) {
+          toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
+          return;
+        }
+        const maxDays = 90; 
+        if (addDays(currentDates.from, maxDays) < currentDates.to) {
+            toast({ variant: "destructive", title: "Date Range Too Large", description: `Please select a range within ${maxDays} days.` });
+            return;
+        }
     }
-    if (!currentDates || !currentDates.from || !currentDates.to) {
-      toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range."});
-      return;
-    }
-    if (currentDates.from > currentDates.to) {
-      toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
-      return;
-    }
-    const maxDays = 90; 
-    if (addDays(currentDates.from, maxDays) < currentDates.to) {
-        toast({ variant: "destructive", title: "Date Range Too Large", description: `Please select a range within ${maxDays} days.` });
-        return;
-    }
+    
+    // Guard against fetch if essential info is missing (especially for initial)
+    if (!currentLoc || !currentDates?.from || !currentDates?.to) return;
+
 
     setIsLoading(true);
     setError(null);
     setDataLocationContext(undefined);
     setMarineData(null);
+    setFetchLogSteps([]); // Clear previous logs
+    addLogStep(`Initiating data fetch for ${currentLoc.key ? knownLocations[currentLoc.key]?.name : `Lat: ${currentLoc.latitude.toFixed(2)}, Lon: ${currentLoc.longitude.toFixed(2)}`}...`, 'pending');
+    setLogAccordionValue("fetch-log-details"); // Open accordion
+    setLogOverallStatus('pending');
+
 
     const result = await fetchMarineDataAction({
       latitude: currentLoc.latitude,
@@ -130,20 +172,34 @@ export default function TidePage() {
     });
 
     setIsLoading(false);
+    if (result.log) {
+      setFetchLogSteps(prev => {
+        const newLogs = result.log!.map((l, index) => ({ id: `server-log-${Date.now()}-${index}`, ...l }));
+        // Replace the initial 'pending' client log with the server logs
+        return prev.length > 0 && prev[0].status === 'pending' ? newLogs : [...prev, ...newLogs];
+      });
+    }
+
     if (result.success && result.data) {
       setMarineData(result.data as MarineDataPoint[]);
       setDataLocationContext(result.dataLocationContext);
-      if (result.message) { // Display source or error message from action
+      setLogOverallStatus('success');
+      addLogStep("Data fetch successful.", 'success', true);
+      if (result.message && !isInitialFetch) { 
         toast({ title: "Info", description: result.message, duration: 5000 });
       }
-      if (result.data.length === 0 && !result.error) {
+      if (result.data.length === 0 && !result.error && !isInitialFetch) {
         toast({ title: "No Data", description: "No tide data found for the selected criteria.", duration: 3000 });
       }
     } else {
       setError(result.error || "Failed to fetch marine data.");
-      toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch marine data." });
+      setLogOverallStatus('error');
+      addLogStep(`Fetch failed: ${result.error || "Unknown error"}`, 'error', true);
+      if (!isInitialFetch) {
+        toast({ variant: "destructive", title: "Error", description: result.error || "Failed to fetch marine data." });
+      }
     }
-  }, [currentLocationDetails, dateRange, toast]);
+  }, [currentLocationDetails, dateRange, toast, addLogStep]);
   
   const handleLocationSearchAndFetch = useCallback(async () => {
     const term = searchTerm.trim().toLowerCase();
@@ -157,7 +213,6 @@ export default function TidePage() {
 
     let locDetailsToFetch: SearchedCoords | null = null;
     
-    // Prioritize selection from `knownLocations` if the search term matches
     const locationKey = Object.keys(knownLocations).find(
       key => knownLocations[key].name.toLowerCase() === term
     );
@@ -170,20 +225,14 @@ export default function TidePage() {
         eaStationId: location.eaStationId,
         key: locationKey
       };
-      // Update current location details if different from what was set by suggestion click
       if (locDetailsToFetch.key !== currentLocationDetails?.key) {
           setCurrentLocationDetails(locDetailsToFetch);
       }
        if (knownLocations[locationKey].name !== searchTerm) setSearchTerm(knownLocations[locationKey].name);
     } else if (currentLocationDetails && searchTerm.toLowerCase() === knownLocations[currentLocationDetails.key as string]?.name.toLowerCase()) {
-      // If search term matches the name of the currently selected details (e.g., after a suggestion click)
       locDetailsToFetch = currentLocationDetails;
     } else {
-      // This is for a general search term not matching a predefined name.
-      // For this page, we are focusing on predefined locations or those with similar names.
-      // If a geocoding API were integrated, this is where it would be called for searchTerm.
-      // For now, if it's not a known name, we'll treat it as an error for the tide page's focus.
-      toast({ variant: "destructive", title: "Location Not Found", description: "Please select a known marine location from suggestions." });
+      toast({ variant: "destructive", title: "Location Not Found", description: "Please select a known marine location from suggestions or search for coordinates." });
       setMarineData(null); 
       setCurrentLocationDetails(null);
       return;
@@ -198,12 +247,6 @@ export default function TidePage() {
     }
   }, [searchTerm, toast, handleFetchMarineData, dateRange, currentLocationDetails]);
 
-  useEffect(() => {
-    if (currentLocationDetails && dateRange?.from && dateRange?.to && !initialFetchDone.current && !isLoading && !error) {
-      handleFetchMarineData(currentLocationDetails, dateRange);
-      initialFetchDone.current = true;
-    }
-  }, [currentLocationDetails, dateRange, isLoading, error, handleFetchMarineData]);
 
   useEffect(() => {
     const currentSearchTerm = searchTerm.trim();
@@ -236,16 +279,11 @@ export default function TidePage() {
       };
       setCurrentLocationDetails(newDetails); 
       setShowSuggestions(false);
-      // Optionally trigger fetch on suggestion click:
-      // if (dateRange?.from && dateRange?.to) {
-      //   handleFetchMarineData(newDetails, dateRange);
-      // }
     }
-  }, [dateRange, handleFetchMarineData]); 
+  }, []); 
 
   const handleInputFocus = () => {
     const currentSearchTerm = searchTerm.trim();
-    // Show all known locations if input is empty or matches a known location name
     if (currentSearchTerm === "" || Object.values(knownLocations).some(loc => loc.name.toLowerCase() === currentSearchTerm.toLowerCase())) {
       setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
       setShowSuggestions(true);
@@ -259,6 +297,20 @@ export default function TidePage() {
   const yAxisTideConfig: YAxisConfig[] = [
     { id: 'tide', orientation: 'left', label: 'Tide Height (m)', color: '--chart-1', dataKey: 'tideHeight', unit: 'm' }
   ];
+
+  const getLogTriggerContent = () => {
+    if (logOverallStatus === 'pending') {
+      return <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Fetching data...</>;
+    }
+    if (logOverallStatus === 'success') {
+      return <><CheckCircle2 className="mr-2 h-4 w-4 text-green-500" /> Fetch Log: Success</>;
+    }
+    if (logOverallStatus === 'error') {
+      const lastErrorStep = [...fetchLogSteps].reverse().find(s => s.status === 'error');
+      return <><XCircle className="mr-2 h-4 w-4 text-destructive" /> Fetch Log: Failed {lastErrorStep ? `- ${lastErrorStep.message.substring(0,30)}...` : ''}</>;
+    }
+    return "Show Fetch Log";
+  };
 
 
   return (
@@ -363,6 +415,46 @@ export default function TidePage() {
                   {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
                   {isLoading ? "Fetching..." : "Search & Fetch Tide Data"}
               </Button>
+              {logOverallStatus !== 'idle' && (
+                <Accordion type="single" collapsible value={logAccordionValue} onValueChange={setLogAccordionValue} className="w-full mt-2">
+                  <AccordionItem value="fetch-log-details" className="border rounded-md">
+                    <AccordionTrigger
+                      className={cn(
+                        "flex items-center justify-between text-xs p-2 rounded-md hover:no-underline hover:bg-muted/50 text-left w-full",
+                        logOverallStatus === 'error' && 'bg-destructive/10 text-destructive hover:bg-destructive/20',
+                        logOverallStatus === 'success' && 'bg-green-500/10 text-green-700 hover:bg-green-500/20',
+                        logOverallStatus === 'pending' && 'bg-blue-500/10 text-blue-700 hover:bg-blue-500/20'
+                      )}
+                    >
+                      {getLogTriggerContent()}
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-1 pb-1 max-h-48">
+                      <ScrollArea className="w-full rounded-md border p-1.5 bg-muted/20 h-full">
+                        {fetchLogSteps.map((step) => (
+                          <li key={step.id} className="flex items-start list-none py-0.5">
+                            <div className="flex-shrink-0 w-3 h-3 mr-1.5 mt-0.5">
+                              {step.status === 'pending' && <Loader2 className="h-full w-full text-blue-500 animate-spin" />}
+                              {step.status === 'success' && <CheckCircle2 className="h-full w-full text-green-500" />}
+                              {step.status === 'error' && <XCircle className="h-full w-full text-red-500" />}
+                              {step.status === 'info' && <Info className="h-full w-full text-muted-foreground" />}
+                            </div>
+                            <div className="flex-grow min-w-0">
+                              <span className={cn(
+                                'block text-xs leading-tight',
+                                step.status === 'error' && 'text-destructive font-medium',
+                                step.status === 'success' && 'text-green-600',
+                                step.status === 'info' && 'text-muted-foreground'
+                              )}>
+                                {step.message}
+                              </span>
+                            </div>
+                          </li>
+                        ))}
+                      </ScrollArea>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              )}
             </Card>
           </div>
 
@@ -394,3 +486,5 @@ export default function TidePage() {
     </div>
   );
 }
+
+    
