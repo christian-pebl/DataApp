@@ -13,7 +13,6 @@ interface OpenMeteoMarineHourlyResponse {
   wave_period?: (number | null)[];
   sea_surface_temperature?: (number | null)[];
   wind_speed_10m?: (number | null)[];
-  // Add other potential parameters if needed
 }
 
 interface OpenMeteoMarineApiResponse {
@@ -23,7 +22,7 @@ interface OpenMeteoMarineApiResponse {
   utc_offset_seconds: number;
   timezone: string;
   timezone_abbreviation: string;
-  hourly_units?: Record<string, string>; // e.g., { time: "iso8601", sea_level: "m" }
+  hourly_units?: Record<string, string>;
   hourly?: OpenMeteoMarineHourlyResponse;
   error?: boolean;
   reason?: string;
@@ -39,6 +38,8 @@ export async function fetchOpenMeteoMarineDataAction(
   dataLocationContext?: string;
 }> {
   const log: LogStep[] = [];
+  log.push({ message: 'Marine data fetch initiated.', status: 'info' });
+  log.push({ message: `Input received: Lat: ${input.latitude}, Lon: ${input.longitude}, Start: ${input.startDate}, End: ${input.endDate}, Params: ${input.parameters.join(', ')}`, status: 'info' });
 
   const validationResult = FetchMarineDataInputSchema.safeParse(input);
   if (!validationResult.success) {
@@ -46,66 +47,75 @@ export async function fetchOpenMeteoMarineDataAction(
     log.push({ message: `Input validation failed: ${errorMessages}`, status: 'error' });
     return { success: false, error: `Invalid input: ${errorMessages}`, log };
   }
+  log.push({ message: 'Input validation successful.', status: 'success' });
 
   const { latitude, longitude, startDate, endDate, parameters: selectedParamKeys } = validationResult.data;
-
-  log.push({ message: `Initiating Open-Meteo Marine data fetch for Lat: ${latitude}, Lon: ${longitude}`, status: 'info' });
-  log.push({ message: `Date range: ${startDate} to ${endDate}`, status: 'info' });
-  log.push({ message: `Selected parameters: ${selectedParamKeys.join(', ')}`, status: 'info' });
-
 
   if (parseISO(startDate) > parseISO(endDate)) {
     log.push({ message: "Start date cannot be after end date.", status: "error"});
     return { success: false, error: "Start date cannot be after end date.", log };
   }
+  log.push({ message: `Date range validated: ${startDate} to ${endDate}.`, status: 'success' });
 
   const formattedStartDate = format(parseISO(startDate), 'yyyy-MM-dd');
   const formattedEndDate = format(parseISO(endDate), 'yyyy-MM-dd');
+  log.push({ message: `Dates formatted for API: Start: ${formattedStartDate}, End: ${formattedEndDate}`, status: 'info' });
   
-  // Convert selectedParamKeys (like 'seaLevel') to API parameter names (like 'sea_level')
   const apiParametersString = selectedParamKeys
     .map(key => MARINE_PARAMETER_CONFIG[key as MarineParameterKey]?.apiParam)
-    .filter(Boolean) // Remove undefined if a key is invalid
+    .filter(Boolean)
     .join(',');
 
   if (!apiParametersString) {
     log.push({ message: "No valid API parameters derived from selection.", status: 'error' });
     return { success: false, error: "No valid marine parameters selected for API request.", log };
   }
-  log.push({ message: `Requesting API parameters: ${apiParametersString}`, status: 'info' });
+  log.push({ message: `Requesting API hourly parameters: '${apiParametersString}'`, status: 'info' });
 
-  // Removed &timezone=auto from the URL
   const apiUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${latitude}&longitude=${longitude}&start_date=${formattedStartDate}&end_date=${formattedEndDate}&hourly=${apiParametersString}`;
-
   log.push({ message: `Constructed API URL: ${apiUrl}`, status: 'info' });
+
   log.push({ message: "Attempting to fetch data from Open-Meteo Marine API...", status: 'pending' });
 
   try {
     const response = await fetch(apiUrl, { cache: 'no-store' });
     log.push({ message: `API Response Status: ${response.status}`, status: response.ok ? 'success' : 'error' });
 
+    const rawResponseBody = await response.text();
+    log.push({ message: `Raw API Response Body (first 500 chars): ${rawResponseBody.substring(0,500)}`, status: response.ok ? 'info' : 'error' });
+
+
     if (!response.ok) {
-      const errorBodyText = await response.text(); // Use text() to get raw error body
-      let reason = `Status: ${response.status}. Response: ${errorBodyText.substring(0, 200)}`;
+      let reason = `Status: ${response.status}.`;
       try {
-        // Try to parse as JSON in case the error body is structured
-        const errorJson = JSON.parse(errorBodyText);
+        const errorJson = JSON.parse(rawResponseBody);
         if (errorJson && errorJson.reason) {
           reason = errorJson.reason;
+        } else {
+            reason += ` Response: ${rawResponseBody.substring(0,200)}`;
         }
       } catch (e) {
-        // If JSON parsing fails, stick with the text body
+         reason += ` Non-JSON Response: ${rawResponseBody.substring(0,200)}`;
       }
-      log.push({ message: `API Error: ${reason}`, status: 'error', details: errorBodyText });
+      log.push({ message: `API Error: ${reason}`, status: 'error', details: rawResponseBody });
       return { success: false, error: `Failed to fetch marine data. ${reason}`, log };
     }
 
-    const apiData: OpenMeteoMarineApiResponse = await response.json();
+    let apiData: OpenMeteoMarineApiResponse;
+    try {
+      apiData = JSON.parse(rawResponseBody);
+      log.push({ message: "Successfully parsed API JSON response.", status: 'success' });
+    } catch (jsonError) {
+      log.push({ message: `Failed to parse API JSON response: ${jsonError instanceof Error ? jsonError.message : String(jsonError)}`, status: 'error', details: rawResponseBody });
+      return { success: false, error: "Failed to parse API response.", log };
+    }
+
 
     if (apiData.error) {
-      log.push({ message: `Open-Meteo API returned an error: ${apiData.reason}`, status: 'error' });
+      log.push({ message: `Open-Meteo API reported an error: ${apiData.reason}`, status: 'error' });
       return { success: false, error: `Open-Meteo API Error: ${apiData.reason}`, log };
     }
+    log.push({ message: "API response indicates no explicit error.", status: 'success' });
 
     if (!apiData.hourly || !apiData.hourly.time || apiData.hourly.time.length === 0) {
       log.push({ message: "No hourly data or timestamps returned from Open-Meteo Marine API.", status: 'warning' });
@@ -145,14 +155,18 @@ export async function fetchOpenMeteoMarineDataAction(
         log.push({ message: "Timestamps were received, but no valid marine data points could be constructed (all values might be null for selected parameters).", status: 'warning' });
     } else if (marineData.length === 0) {
         log.push({ message: "No marine data points constructed.", status: 'info' });
+    } else {
+        log.push({ message: `Successfully processed ${marineData.length} marine data points.`, status: 'success' });
     }
 
-    log.push({ message: `Successfully processed ${marineData.length} marine data points from Open-Meteo.`, status: 'success' });
+
     return { success: true, data: marineData, log, dataLocationContext: `Marine data for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)} (Open-Meteo)` };
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-    log.push({ message: `Error during Open-Meteo fetch or processing: ${errorMessage}`, status: 'error', details: error instanceof Error ? error.stack : undefined });
+    log.push({ message: `Critical error during Open-Meteo fetch or processing: ${errorMessage}`, status: 'error', details: error instanceof Error ? error.stack : undefined });
     return { success: false, error: `Error fetching Open-Meteo marine data: ${errorMessage}`, log };
   }
 }
+
+    

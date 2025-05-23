@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter }
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label as UiLabel } from "@/components/ui/label";
-import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Wind } from "lucide-react";
+import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Wind, Copy } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -27,7 +27,6 @@ import { fetchOpenMeteoMarineDataAction } from './actions';
 
 type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle' | 'warning';
 
-// Known locations for Open-Meteo Marine data
 const knownLocations: { [key: string]: { lat: number; lon: number; name: string } } = {
   "milfordhaven": { lat: 51.71, lon: -5.04, name: "Milford Haven" },
   "stdavidshead": { lat: 52.0, lon: -5.3, name: "St David's Head" },
@@ -38,7 +37,6 @@ const knownLocations: { [key: string]: { lat: number; lon: number; name: string 
 };
 const defaultLocationKey = "stdavidshead";
 
-// Assign icons to marine parameters
 MARINE_PARAMETER_CONFIG.seaLevel.icon = Waves;
 MARINE_PARAMETER_CONFIG.waveHeight.icon = Sailboat;
 MARINE_PARAMETER_CONFIG.waveDirection.icon = Compass;
@@ -49,7 +47,6 @@ if (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature) {
 if (MARINE_PARAMETER_CONFIG.windSpeed10m) {
   MARINE_PARAMETER_CONFIG.windSpeed10m.icon = Wind;
 }
-
 
 export default function OMMarineExplorerPage() {
   const [theme, setTheme] = useState("light");
@@ -75,13 +72,12 @@ export default function OMMarineExplorerPage() {
   const [plotVisibility, setPlotVisibility] = useState<Record<MarineParameterKey, boolean>>(initialVisibility);
   
   const [fetchLogSteps, setFetchLogSteps] = useState<LogStep[]>([]);
-  const [showFetchLogAccordion, setShowFetchLogAccordion] = useState<string>("");
+  const [showFetchLogAccordion, setShowFetchLogAccordion] = useState<string>(""); // Accordion value, e.g., "item-1"
   const [isLogLoading, setIsLogLoading] = useState(false);
   const [logOverallStatus, setLogOverallStatus] = useState<LogOverallStatus>('idle');
   
   const initialFetchDone = React.useRef(false);
 
-  // Theme management
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
     if (storedTheme) setTheme(storedTheme);
@@ -96,7 +92,6 @@ export default function OMMarineExplorerPage() {
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
 
-  // Log Accordion Helper functions
   const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string) => {
     if (isLoading) return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Fetching log...</>;
     if (status === 'success') return <><CheckCircle2 className="mr-2 h-3 w-3 text-green-500" />{defaultTitle}: Success</>;
@@ -114,6 +109,25 @@ export default function OMMarineExplorerPage() {
     return "";
   };
 
+  const handleCopyLog = useCallback(() => {
+    if (fetchLogSteps.length === 0) {
+      toast({ title: "Log Empty", description: "There are no log messages to copy.", duration: 3000 });
+      return;
+    }
+    const logText = fetchLogSteps
+      .map(step => `[${step.status.toUpperCase()}] ${step.message}${step.details ? `\n  Details: ${step.details}` : ''}`)
+      .join('\n\n');
+    
+    navigator.clipboard.writeText(logText)
+      .then(() => {
+        toast({ title: "Log Copied", description: "Fetch log copied to clipboard.", duration: 3000 });
+      })
+      .catch(err => {
+        console.error('Failed to copy log: ', err);
+        toast({ variant: "destructive", title: "Copy Failed", description: "Could not copy log to clipboard.", duration: 3000 });
+      });
+  }, [fetchLogSteps, toast]);
+
   const renderLogAccordion = (
     logSteps: LogStep[], 
     accordionValue: string, 
@@ -124,14 +138,14 @@ export default function OMMarineExplorerPage() {
     errorDetails?: string | null
   ) => (
     (isLoading || logSteps.length > 0 || overallStatus === 'error' || overallStatus === 'warning') && (
-      <CardFooter className="p-0 pt-2">
+      <CardFooter className="p-0 pt-2 flex flex-col items-stretch">
         <Accordion type="single" collapsible value={accordionValue} onValueChange={onValueChange} className="w-full">
           <AccordionItem value={title.toLowerCase().replace(/\s+/g, '-') + "-log-item"} className={cn("border rounded-md", getLogAccordionItemClass(overallStatus))}>
             <AccordionTrigger className="px-3 py-1.5 text-xs hover:no-underline [&_svg.lucide-chevron-down]:h-3 [&_svg.lucide-chevron-down]:w-3">
               {getLogTriggerContent(overallStatus, isLoading, title, errorDetails || undefined)}
             </AccordionTrigger>
             <AccordionContent className="px-2 pb-1 pt-0">
-              <ScrollArea className="max-h-[30rem] h-auto w-full rounded-md border bg-muted/30 dark:bg-muted/10 p-1.5 mt-1">
+              <ScrollArea className="max-h-[35rem] h-auto w-full rounded-md border bg-muted/30 dark:bg-muted/10 p-1.5 mt-1">
                 <ul className="space-y-1 text-[0.7rem]">
                   {logSteps.map((step, index) => (
                     <li key={index} className="flex items-start gap-1.5">
@@ -152,11 +166,15 @@ export default function OMMarineExplorerPage() {
             </AccordionContent>
           </AccordionItem>
         </Accordion>
+        {logSteps.length > 0 && !isLoading && (
+          <Button variant="outline" size="sm" onClick={handleCopyLog} className="mt-2 h-7 text-xs self-end">
+            <Copy className="mr-1.5 h-3 w-3" /> Copy Log
+          </Button>
+        )}
       </CardFooter>
     )
   );
 
-  // Initialize default location
   useEffect(() => {
     const defaultLoc = knownLocations[defaultLocationKey];
     if (defaultLoc) {
@@ -164,16 +182,14 @@ export default function OMMarineExplorerPage() {
       const coords = { latitude: defaultLoc.lat, longitude: defaultLoc.lon };
       setInitialCoords(coords);
       setCurrentLocationName(defaultLoc.name);
-      // Auto-fetch on initial load if conditions are met
       if (!initialFetchDone.current && coords && dateRange?.from && dateRange?.to) {
         handleLocationSearchAndFetch(coords, defaultLoc.name, true);
         initialFetchDone.current = true;
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateRange]); // Rerun if dateRange changes and initial fetch hasn't happened
+  }, [dateRange]); 
 
-  // Location Search Suggestions
   useEffect(() => {
     const currentSearchTerm = searchTerm.trim();
     const inputElement = document.activeElement as HTMLInputElement;
@@ -207,7 +223,6 @@ export default function OMMarineExplorerPage() {
     setPlotVisibility(prev => ({ ...prev, [key]: checked }));
   }, []);
 
-  // Main data fetching logic
   const handleLocationSearchAndFetch = useCallback(async (
     coordsOverride?: { latitude: number; longitude: number },
     nameOverride?: string,
@@ -219,7 +234,7 @@ export default function OMMarineExplorerPage() {
     let coordsToUse: { latitude: number; longitude: number } | null = coordsOverride || initialCoords;
     let locationNameToUse: string | null = nameOverride || currentLocationName;
 
-    if (!isAutoFetch && !coordsOverride) { // Standard search button click
+    if (!isAutoFetch && !coordsOverride) { 
       if (!term) {
         toast({ variant: "destructive", title: "Search Error", description: "Please enter a location." });
         return;
@@ -302,7 +317,7 @@ export default function OMMarineExplorerPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <TooltipProvider>
           <div className="container flex h-full items-center justify-between px-3 md:px-4">
-            <Link href="/data-explorer" passHref>
+            <Link href="/om-marine-explorer" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
@@ -402,3 +417,5 @@ export default function OMMarineExplorerPage() {
     </div>
   );
 }
+
+    
