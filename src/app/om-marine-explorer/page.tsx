@@ -45,6 +45,9 @@ const defaultLocationKey = "stdavidshead";
 if (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature) {
   (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature as { icon?: LucideIcon }).icon = Thermometer;
 }
+if (MARINE_PARAMETER_CONFIG.windSpeed10m) {
+  (MARINE_PARAMETER_CONFIG.windSpeed10m as { icon?: LucideIcon }).icon = Wind;
+}
 
 
 export default function OMMarineExplorerPage() {
@@ -90,142 +93,6 @@ export default function OMMarineExplorerPage() {
   }, [theme]);
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
-
-  const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string) => {
-    if (isLoading) return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Fetching log...</>;
-    if (status === 'success') return <><CheckCircle2 className="mr-2 h-3 w-3 text-green-500" />{defaultTitle}: Success</>;
-    if (status === 'error') return <><XCircle className="mr-2 h-3 w-3 text-destructive" />{defaultTitle}: Failed {lastError ? `(${lastError.substring(0,30)}...)` : ''}</>;
-    if (status === 'pending') return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />{defaultTitle}: In Progress</>;
-    if (status === 'warning') return <><Info className="mr-2 h-3 w-3 text-yellow-500" />{defaultTitle}: Warning</>;
-    return <><Info className="mr-2 h-3 w-3 text-muted-foreground" />{defaultTitle}</>;
-  };
-  
-  const getLogAccordionItemClass = (status: LogOverallStatus) => {
-    if (status === 'pending') return "bg-blue-500/5 dark:bg-blue-500/10";
-    if (status === 'success') return "bg-green-500/5 dark:bg-green-500/10";
-    if (status === 'error') return "bg-destructive/10 dark:bg-destructive/20";
-    if (status === 'warning') return "bg-yellow-500/5 dark:bg-yellow-500/10";
-    return "";
-  };
-
-  const handleCopyLog = useCallback(() => {
-    if (fetchLogSteps.length === 0) {
-      toast({ title: "Log Empty", description: "There are no log messages to copy.", duration: 3000 });
-      return;
-    }
-    const logText = fetchLogSteps
-      .map(step => `[${step.status.toUpperCase()}] ${step.message}${step.details ? `\n  Details: ${step.details}` : ''}`)
-      .join('\n\n');
-    
-    navigator.clipboard.writeText(logText)
-      .then(() => {
-        toast({ title: "Log Copied", description: "Fetch log copied to clipboard.", duration: 3000 });
-      })
-      .catch(err => {
-        console.error('Failed to copy log: ', err);
-        toast({ variant: "destructive", title: "Copy Failed", description: "Could not copy log to clipboard.", duration: 3000 });
-      });
-  }, [fetchLogSteps, toast]);
-
-  const renderLogAccordion = (
-    logSteps: LogStep[], 
-    accordionValue: string, 
-    onValueChange: (value: string) => void, 
-    isLoading: boolean, 
-    overallStatus: LogOverallStatus, 
-    title: string, 
-    errorDetails?: string | null
-  ) => (
-    (isLoading || logSteps.length > 0 || overallStatus === 'error' || overallStatus === 'warning') && (
-      <CardFooter className="p-0 pt-2 flex flex-col items-stretch">
-        <Accordion type="single" collapsible value={accordionValue} onValueChange={onValueChange} className="w-full">
-          <AccordionItem value={title.toLowerCase().replace(/\s+/g, '-') + "-log-item"} className={cn("border rounded-md", getLogAccordionItemClass(overallStatus))}>
-            <AccordionTrigger className="px-3 py-1.5 text-xs hover:no-underline [&_svg.lucide-chevron-down]:h-3 [&_svg.lucide-chevron-down]:w-3">
-              {getLogTriggerContent(overallStatus, isLoading, title, errorDetails || undefined)}
-            </AccordionTrigger>
-            <AccordionContent className="px-2 pb-1 pt-0">
-              <ScrollArea className="max-h-[35rem] h-auto w-full rounded-md border bg-muted/30 dark:bg-muted/10 p-1.5 mt-1">
-                <ul className="space-y-1 text-[0.7rem]">
-                  {logSteps.map((step, index) => (
-                    <li key={index} className="flex items-start gap-1.5">
-                      {step.status === 'pending' && <Loader2 className="h-3 w-3 mt-0.5 text-blue-500 animate-spin flex-shrink-0" />}
-                      {step.status === 'success' && <CheckCircle2 className="h-3 w-3 mt-0.5 text-green-500 flex-shrink-0" />}
-                      {step.status === 'error' && <XCircle className="h-3 w-3 mt-0.5 text-destructive flex-shrink-0" />}
-                      {step.status === 'info' && <Info className="h-3 w-3 mt-0.5 text-muted-foreground flex-shrink-0" />}
-                      {step.status === 'warning' && <Info className="h-3 w-3 mt-0.5 text-yellow-500 flex-shrink-0" />}
-                      <div className="min-w-0">
-                        <p className={cn("break-words", step.status === 'error' && "text-destructive font-semibold", step.status === 'warning' && "text-yellow-600 dark:text-yellow-400")}>{step.message}</p>
-                        {step.details && <p className="text-muted-foreground text-[0.6rem] whitespace-pre-wrap break-all">{step.details}</p>}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-                {logSteps.length === 0 && !isLoading && <p className="text-center text-muted-foreground text-[0.65rem] py-2">No log details for this operation.</p>}
-              </ScrollArea>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-        {logSteps.length > 0 && !isLoading && (
-          <Button variant="outline" size="sm" onClick={handleCopyLog} className="mt-2 h-7 text-xs self-end">
-            <Copy className="mr-1.5 h-3 w-3" /> Copy Log
-          </Button>
-        )}
-      </CardFooter>
-    )
-  );
-
-  useEffect(() => {
-    const defaultLoc = knownLocations[defaultLocationKey];
-    if (defaultLoc) {
-      setSearchTerm(defaultLoc.name);
-      const coords = { latitude: defaultLoc.lat, longitude: defaultLoc.lon };
-      setInitialCoords(coords);
-      setCurrentLocationName(defaultLoc.name);
-      if (!initialFetchDone.current && coords && dateRange?.from && dateRange?.to) {
-        handleLocationSearchAndFetch(coords, defaultLoc.name, true);
-        initialFetchDone.current = true;
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Auto-fetch on mount
-
-  useEffect(() => {
-    const currentSearchTerm = searchTerm.trim();
-    const inputElement = document.activeElement as HTMLInputElement;
-    const isFocused = inputElement && inputElement.placeholder === "Search UK coastal location...";
-
-    if (currentSearchTerm === "" && isFocused) {
-       setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
-       setShowSuggestions(true); return;
-    }
-    if (currentSearchTerm === "") { setSuggestions([]); setShowSuggestions(false); return; }
-
-    const termLower = currentSearchTerm.toLowerCase();
-    const filtered = Object.entries(knownLocations)
-      .filter(([key, locObj]) => key.toLowerCase().includes(termLower) || locObj.name.toLowerCase().includes(termLower))
-      .map(([key, locObj]) => ({ key, name: locObj.name }));
-    setSuggestions(filtered.slice(0, 5));
-    setShowSuggestions(filtered.length > 0 && isFocused);
-  }, [searchTerm]);
-
-  const handleSuggestionClick = useCallback((suggestionKey: string) => {
-    const location = knownLocations[suggestionKey];
-    if (location) {
-      setSearchTerm(location.name); 
-      setInitialCoords({ latitude: location.lat, longitude: location.lon }); 
-      setCurrentLocationName(location.name);
-      setShowSuggestions(false);
-      // Auto-fetch on suggestion click
-      if (dateRange?.from && dateRange?.to) {
-        handleLocationSearchAndFetch({ latitude: location.lat, longitude: location.lon }, location.name);
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateRange, handleLocationSearchAndFetch]); 
-
-  const handlePlotVisibilityChange = useCallback((key: MarineParameterKey, checked: boolean) => {
-    setPlotVisibility(prev => ({ ...prev, [key]: checked }));
-  }, []);
 
   const handleLocationSearchAndFetch = useCallback(async (
     coordsOverride?: { latitude: number; longitude: number },
@@ -315,6 +182,143 @@ export default function OMMarineExplorerPage() {
       setLogOverallStatus('error');
     }
   }, [searchTerm, initialCoords, currentLocationName, dateRange, plotVisibility, toast, dismiss]);
+
+
+  const handleSuggestionClick = useCallback((suggestionKey: string) => {
+    const location = knownLocations[suggestionKey];
+    if (location) {
+      setSearchTerm(location.name); 
+      setInitialCoords({ latitude: location.lat, longitude: location.lon }); 
+      setCurrentLocationName(location.name);
+      setShowSuggestions(false);
+      // Auto-fetch on suggestion click
+      if (dateRange?.from && dateRange?.to) {
+        handleLocationSearchAndFetch({ latitude: location.lat, longitude: location.lon }, location.name);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange, handleLocationSearchAndFetch]); // handleLocationSearchAndFetch is now defined before this
+
+  useEffect(() => {
+    const defaultLoc = knownLocations[defaultLocationKey];
+    if (defaultLoc) {
+      setSearchTerm(defaultLoc.name);
+      const coords = { latitude: defaultLoc.lat, longitude: defaultLoc.lon };
+      setInitialCoords(coords);
+      setCurrentLocationName(defaultLoc.name);
+      if (!initialFetchDone.current && coords && dateRange?.from && dateRange?.to) {
+        handleLocationSearchAndFetch(coords, defaultLoc.name, true);
+        initialFetchDone.current = true;
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleLocationSearchAndFetch]); // Added handleLocationSearchAndFetch as dependency
+
+  useEffect(() => {
+    const currentSearchTerm = searchTerm.trim();
+    const inputElement = document.activeElement as HTMLInputElement;
+    const isFocused = inputElement && inputElement.placeholder === "Search UK coastal location...";
+
+    if (currentSearchTerm === "" && isFocused) {
+       setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
+       setShowSuggestions(true); return;
+    }
+    if (currentSearchTerm === "") { setSuggestions([]); setShowSuggestions(false); return; }
+
+    const termLower = currentSearchTerm.toLowerCase();
+    const filtered = Object.entries(knownLocations)
+      .filter(([key, locObj]) => key.toLowerCase().includes(termLower) || locObj.name.toLowerCase().includes(termLower))
+      .map(([key, locObj]) => ({ key, name: locObj.name }));
+    setSuggestions(filtered.slice(0, 5));
+    setShowSuggestions(filtered.length > 0 && isFocused);
+  }, [searchTerm]);
+
+  const handlePlotVisibilityChange = useCallback((key: MarineParameterKey, checked: boolean) => {
+    setPlotVisibility(prev => ({ ...prev, [key]: checked }));
+  }, []);
+
+  const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string) => {
+    if (isLoading) return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Fetching log...</>;
+    if (status === 'success') return <><CheckCircle2 className="mr-2 h-3 w-3 text-green-500" />{defaultTitle}: Success</>;
+    if (status === 'error') return <><XCircle className="mr-2 h-3 w-3 text-destructive" />{defaultTitle}: Failed {lastError ? `(${lastError.substring(0,30)}...)` : ''}</>;
+    if (status === 'pending') return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />{defaultTitle}: In Progress</>;
+    if (status === 'warning') return <><Info className="mr-2 h-3 w-3 text-yellow-500" />{defaultTitle}: Warning</>;
+    return <><Info className="mr-2 h-3 w-3 text-muted-foreground" />{defaultTitle}</>;
+  };
+  
+  const getLogAccordionItemClass = (status: LogOverallStatus) => {
+    if (status === 'pending') return "bg-blue-500/5 dark:bg-blue-500/10";
+    if (status === 'success') return "bg-green-500/5 dark:bg-green-500/10";
+    if (status === 'error') return "bg-destructive/10 dark:bg-destructive/20";
+    if (status === 'warning') return "bg-yellow-500/5 dark:bg-yellow-500/10";
+    return "";
+  };
+
+  const handleCopyLog = useCallback(() => {
+    if (fetchLogSteps.length === 0) {
+      toast({ title: "Log Empty", description: "There are no log messages to copy.", duration: 3000 });
+      return;
+    }
+    const logText = fetchLogSteps
+      .map(step => `[${step.status.toUpperCase()}] ${step.message}${step.details ? `\n  Details: ${step.details}` : ''}`)
+      .join('\n\n');
+    
+    navigator.clipboard.writeText(logText)
+      .then(() => {
+        toast({ title: "Log Copied", description: "Fetch log copied to clipboard.", duration: 3000 });
+      })
+      .catch(err => {
+        console.error('Failed to copy log: ', err);
+        toast({ variant: "destructive", title: "Copy Failed", description: "Could not copy log to clipboard.", duration: 3000 });
+      });
+  }, [fetchLogSteps, toast]);
+
+  const renderLogAccordion = (
+    logSteps: LogStep[], 
+    accordionValue: string, 
+    onValueChange: (value: string) => void, 
+    isLoading: boolean, 
+    overallStatus: LogOverallStatus, 
+    title: string, 
+    errorDetails?: string | null
+  ) => (
+    (isLoading || logSteps.length > 0 || overallStatus === 'error' || overallStatus === 'warning') && (
+      <CardFooter className="p-0 pt-2 flex flex-col items-stretch">
+        <Accordion type="single" collapsible value={accordionValue} onValueChange={onValueChange} className="w-full">
+          <AccordionItem value={title.toLowerCase().replace(/\s+/g, '-') + "-log-item"} className={cn("border rounded-md", getLogAccordionItemClass(overallStatus))}>
+            <AccordionTrigger className="px-3 py-1.5 text-xs hover:no-underline [&_svg.lucide-chevron-down]:h-3 [&_svg.lucide-chevron-down]:w-3">
+              {getLogTriggerContent(overallStatus, isLoading, title, errorDetails || undefined)}
+            </AccordionTrigger>
+            <AccordionContent className="px-2 pb-1 pt-0">
+              <ScrollArea className="max-h-[35rem] h-auto w-full rounded-md border bg-muted/30 dark:bg-muted/10 p-1.5 mt-1">
+                <ul className="space-y-1 text-[0.7rem]">
+                  {logSteps.map((step, index) => (
+                    <li key={index} className="flex items-start gap-1.5">
+                      {step.status === 'pending' && <Loader2 className="h-3 w-3 mt-0.5 text-blue-500 animate-spin flex-shrink-0" />}
+                      {step.status === 'success' && <CheckCircle2 className="h-3 w-3 mt-0.5 text-green-500 flex-shrink-0" />}
+                      {step.status === 'error' && <XCircle className="h-3 w-3 mt-0.5 text-destructive flex-shrink-0" />}
+                      {step.status === 'info' && <Info className="h-3 w-3 mt-0.5 text-muted-foreground flex-shrink-0" />}
+                      {step.status === 'warning' && <Info className="h-3 w-3 mt-0.5 text-yellow-500 flex-shrink-0" />}
+                      <div className="min-w-0">
+                        <p className={cn("break-words", step.status === 'error' && "text-destructive font-semibold", step.status === 'warning' && "text-yellow-600 dark:text-yellow-400")}>{step.message}</p>
+                        {step.details && <p className="text-muted-foreground text-[0.6rem] whitespace-pre-wrap break-all">{step.details}</p>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {logSteps.length === 0 && !isLoading && <p className="text-center text-muted-foreground text-[0.65rem] py-2">No log details for this operation.</p>}
+              </ScrollArea>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+        {logSteps.length > 0 && !isLoading && (
+          <Button variant="outline" size="sm" onClick={handleCopyLog} className="mt-2 h-7 text-xs self-end">
+            <Copy className="mr-1.5 h-3 w-3" /> Copy Log
+          </Button>
+        )}
+      </CardFooter>
+    )
+  );
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -427,3 +431,5 @@ export default function OMMarineExplorerPage() {
     </div>
   );
 }
+
+    
