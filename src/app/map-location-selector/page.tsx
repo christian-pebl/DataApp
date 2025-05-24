@@ -7,16 +7,15 @@ import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { SunMoon, LayoutGrid, Waves, MapPin as MapPinIcon } from "lucide-react"; // Keep MapPinIcon
+import { SunMoon, LayoutGrid, Waves, MapPin as MapPinIcon, Droplets, Anchor } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import type { LatLngExpression } from 'leaflet';
 
-// Dynamically import the map component to ensure it's client-side only
-const InteractiveMap = dynamic(
-  () => import('@/components/map/InteractivePinMap').then((mod) => mod.InteractivePinMap),
+// Dynamically import the OpenLayers map component
+const OpenLayersMap = dynamic(
+  () => import('@/components/map/OpenLayersMap'),
   { 
-    ssr: false,
+    ssr: false, // Ensure it's client-side only
     loading: () => <p className="text-center p-4">Loading map...</p> 
   }
 );
@@ -24,9 +23,9 @@ const InteractiveMap = dynamic(
 export default function MapLocationSelectorPage() {
   const [theme, setTheme] = useState("light");
   const pathname = usePathname();
-  const [mapCenter, setMapCenter] = useState<LatLngExpression>([54.5, -3.5]); // Approx center of UK
-  const [mapZoom, setMapZoom] = useState<number>(6);
-
+  // OpenLayers uses [longitude, latitude]
+  const [mapCenter] = useState<[number, number]>([-3.5, 54.5]); // Approx center of UK
+  const [mapZoom] = useState<number>(6);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
@@ -58,7 +57,7 @@ export default function MapLocationSelectorPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <TooltipProvider>
           <div className="container flex h-full items-center justify-between px-3 md:px-4">
-            <Link href="/om-marine-explorer" passHref>
+            <Link href="/map-location-selector" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
@@ -111,7 +110,7 @@ export default function MapLocationSelectorPage() {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <MapPinIcon className="h-5 w-5 text-primary" />
-              Interactive Map
+              Interactive Map (OpenLayers)
             </CardTitle>
             <CardDescription className="text-xs">
               Explore the map by zooming and panning.
@@ -122,7 +121,7 @@ export default function MapLocationSelectorPage() {
         <Card className="flex-grow flex flex-col shadow-sm">
             <CardContent className="p-1.5 flex-grow">
                  <div className="h-[500px] md:h-full w-full rounded-md overflow-hidden border">
-                    <InteractiveMap 
+                    <OpenLayersMap 
                         initialCenter={mapCenter}
                         initialZoom={mapZoom}
                     />

@@ -3,7 +3,6 @@ import type {Metadata} from 'next';
 import { Inter, Roboto_Mono } from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
-import 'leaflet/dist/leaflet.css';
 
 
 const inter = Inter({
