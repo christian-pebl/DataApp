@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label as UiLabel } from "@/components/ui/label";
-import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Copy, Anchor } from "lucide-react";
+import { Label as UiLabel } from "@/components/ui/label"; // Renamed to avoid conflict
+import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Copy, Anchor, Wind } from "lucide-react"; // Added Wind
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -383,10 +383,10 @@ export default function WeatherAndMarineExplorerPage() {
         <Card className="mb-4">
           <CardHeader className="pb-3 pt-4">
             <CardTitle className="text-lg flex items-center gap-2">
-              <Waves className="h-5 w-5 text-primary" />Open-Meteo Weather & Marine Explorer
+              <Waves className="h-5 w-5 text-primary" />Weather & Marine Data Explorer
             </CardTitle>
              <CardDescription className="text-xs">
-                Select parameters, a coastal location, and a date range to fetch and visualize weather and marine data.
+                Select parameters, a coastal location, and a date range to fetch and visualize weather and marine data from Open-Meteo.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -397,7 +397,7 @@ export default function WeatherAndMarineExplorerPage() {
               <CardHeader className="pb-2 pt-3"><CardTitle className="text-base flex items-center gap-1.5"><ListChecks className="h-4 w-4 text-primary" />Select Parameters</CardTitle></CardHeader>
               <CardContent className="space-y-1">
                 {ALL_PARAMETERS.map((key) => {
-                  const paramConfig = PARAMETER_CONFIG[key];
+                  const paramConfig = PARAMETER_CONFIG[key as CombinedParameterKey]; // Type assertion
                   const IconComp = (paramConfig as { icon?: LucideIcon }).icon || Info; 
                   return (
                     <div key={key} className="flex items-center space-x-1.5">
@@ -447,7 +447,7 @@ export default function WeatherAndMarineExplorerPage() {
           </div>
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-sm h-full">
-              <CardHeader className="p-2 pt-3"><CardTitle className="text-base">{dataLocationContext || "Open-Meteo Weather & Marine Data Plots"}</CardTitle></CardHeader>
+              <CardHeader className="p-2 pt-3"><CardTitle className="text-base">{dataLocationContext || "Weather & Marine Data Plots"}</CardTitle></CardHeader>
               <CardContent className="p-1.5 h-[calc(100%-2.5rem)]"> 
                 <MarinePlotsGrid // Re-using MarinePlotsGrid, might need renaming or adaptation
                     marineData={combinedData} // Prop name expects 'marineData'
@@ -470,3 +470,5 @@ export default function WeatherAndMarineExplorerPage() {
     </div>
   );
 }
+
+    
