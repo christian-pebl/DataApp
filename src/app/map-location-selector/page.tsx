@@ -1,22 +1,22 @@
 
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { SunMoon, LayoutGrid, Waves, MapPin as MapPinIcon, Droplets, Anchor } from "lucide-react";
+import { SunMoon, LayoutGrid, Waves, MapPin as MapPinIcon, CloudSun, Anchor } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 
 // Dynamically import the OpenLayers map component
-const OpenLayersMap = dynamic(
+const OpenLayersMapWithNoSSR = dynamic(
   () => import('@/components/map/OpenLayersMap'),
   { 
-    ssr: false, // Ensure it's client-side only
-    loading: () => <p className="text-center p-4">Loading map...</p> 
+    ssr: false,
+    loading: () => <p className="text-center p-4 text-muted-foreground">Loading map...</p> 
   }
 );
 
@@ -24,8 +24,9 @@ export default function MapLocationSelectorPage() {
   const [theme, setTheme] = useState("light");
   const pathname = usePathname();
   // OpenLayers uses [longitude, latitude]
-  const [mapCenter] = useState<[number, number]>([-3.5, 54.5]); // Approx center of UK
-  const [mapZoom] = useState<number>(6);
+  const [initialMapCenter] = useState<[number, number]>([-3.5, 54.5]); // Approx center of UK
+  const [initialMapZoom] = useState<number>(6);
+  const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lon: number } | null>(null);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
@@ -52,6 +53,10 @@ export default function MapLocationSelectorPage() {
     setTheme(theme === "light" ? "dark" : "light");
   };
 
+  const handleLocationSelect = useCallback((coords: { lat: number; lon: number }) => {
+    setSelectedCoords(coords);
+  }, []);
+
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
@@ -61,7 +66,7 @@ export default function MapLocationSelectorPage() {
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
-              <Tooltip>
+               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link href="/data-explorer" passHref>
                     <Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (CSV)">
@@ -110,20 +115,32 @@ export default function MapLocationSelectorPage() {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <MapPinIcon className="h-5 w-5 text-primary" />
-              Interactive Map (OpenLayers)
+              Map Location Selector
             </CardTitle>
             <CardDescription className="text-xs">
-              Explore the map by zooming and panning.
+              Click on the map to select a location. The coordinates will be displayed below.
             </CardDescription>
           </CardHeader>
+          {selectedCoords && (
+            <CardContent className="pb-3 pt-0">
+              <p className="text-sm font-medium text-primary">
+                Selected Coordinates:
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Latitude: {selectedCoords.lat.toFixed(5)}, Longitude: {selectedCoords.lon.toFixed(5)}
+              </p>
+            </CardContent>
+          )}
         </Card>
         
         <Card className="flex-grow flex flex-col shadow-sm">
             <CardContent className="p-1.5 flex-grow">
                  <div className="h-[500px] md:h-full w-full rounded-md overflow-hidden border">
-                    <OpenLayersMap 
-                        initialCenter={mapCenter}
-                        initialZoom={mapZoom}
+                    <OpenLayersMapWithNoSSR 
+                        initialCenter={initialMapCenter}
+                        initialZoom={initialMapZoom}
+                        onLocationSelect={handleLocationSelect}
+                        selectedCoords={selectedCoords}
                     />
                 </div>
             </CardContent>
@@ -133,7 +150,7 @@ export default function MapLocationSelectorPage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            PEBL data app - Interactive Map
+            PEBL data app - Interactive Map Location Selector
           </p>
         </div>
       </footer>
