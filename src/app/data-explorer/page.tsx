@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
-import { PlusCircle, SunMoon, LayoutGrid, Waves, CloudSun, Anchor, MapPin as MapPinIcon } from "lucide-react";
+import { PlusCircle, SunMoon, LayoutGrid, Waves, CloudSun, Anchor, Sun as SunIcon } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 
@@ -69,7 +69,7 @@ export default function DataExplorerPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <TooltipProvider>
           <div className="container flex h-full items-center justify-between px-3 md:px-4">
-            <Link href="/data-explorer" passHref>
+            <Link href="/om-marine-explorer" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
@@ -85,23 +85,23 @@ export default function DataExplorerPage() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Link href="/weather" passHref>
-                    <Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Weather Page">
-                      <CloudSun className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>Weather Page</p></TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
                   <Link href="/om-marine-explorer" passHref>
-                    <Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="OM Marine Explorer">
+                    <Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="Weather & Marine Explorer">
                       <Waves className="h-5 w-5" />
                     </Button>
                   </Link>
                 </TooltipTrigger>
-                <TooltipContent><p>OM Marine Explorer</p></TooltipContent>
+                <TooltipContent><p>Weather &amp; Marine Explorer</p></TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link href="/irradiance-explorer" passHref>
+                    <Button variant={pathname === '/irradiance-explorer' ? "secondary": "ghost"} size="icon" aria-label="Irradiance Explorer">
+                      <SunIcon className="h-5 w-5" />
+                    </Button>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent><p>Irradiance Explorer</p></TooltipContent>
               </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip>
