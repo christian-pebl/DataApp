@@ -7,11 +7,12 @@ import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { SunMoon, LayoutGrid, Waves, MapPin as MapPinIcon } from "lucide-react";
+import { SunMoon, LayoutGrid, Waves, MapPin as MapPinIcon } from "lucide-react"; // Keep MapPinIcon
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import type { LatLngExpression } from 'leaflet';
 
+// Dynamically import the map component to ensure it's client-side only
 const InteractiveMap = dynamic(
   () => import('@/components/map/InteractivePinMap').then((mod) => mod.InteractivePinMap),
   { 
