@@ -30,7 +30,7 @@ export const FetchIrradianceInputSchema = z.object({
 });
 export type FetchIrradianceInput = z.infer<typeof FetchIrradianceInputSchema>;
 
-// Log step interface (can be shared if it's identical across explorers)
+// Log step interface
 export interface LogStep {
   message: string;
   status: 'info' | 'success' | 'error' | 'pending' | 'warning';
@@ -47,6 +47,6 @@ export const ALL_IRRADIANCE_PARAMETERS: IrradianceParameterKey[] = [
 
 // Configuration for each irradiance parameter
 export const IRRADIANCE_PARAMETER_CONFIG: Record<IrradianceParameterKey, { name: string; apiParam: string; unit: string; apiSource: 'weather'; icon?: LucideIcon; color: string }> = {
-  ghi: { name: "Global Horizontal Irradiance", apiParam: "ghi", unit: "W/m²", apiSource: 'weather', color: '--chart-1' },
-  dhi: { name: "Diffuse Horizontal Irradiance", apiParam: "dhi", unit: "W/m²", apiSource: 'weather', color: '--chart-2' },
+  ghi: { name: "Global Horizontal Irradiance (GHI)", apiParam: "shortwave_radiation", unit: "W/m²", apiSource: 'weather', color: '--chart-1' },
+  dhi: { name: "Diffuse Horizontal Irradiance (DHI)", apiParam: "diffuse_radiation", unit: "W/m²", apiSource: 'weather', color: '--chart-2' },
 };

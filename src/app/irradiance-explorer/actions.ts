@@ -2,7 +2,7 @@
 'use server';
 
 import type { IrradianceDataPoint, FetchIrradianceInput, LogStep } from './shared';
-import { FetchIrradianceInputSchema } from './shared';
+import { FetchIrradianceInputSchema, IRRADIANCE_PARAMETER_CONFIG } from './shared';
 import { format, parseISO } from 'date-fns';
 
 interface OpenMeteoWeatherApiResponse {
@@ -15,8 +15,8 @@ interface OpenMeteoWeatherApiResponse {
   hourly_units?: Record<string, string>;
   hourly?: {
     time: string[];
-    ghi?: (number | null)[];
-    dhi?: (number | null)[];
+    shortwave_radiation?: (number | null)[]; // GHI
+    diffuse_radiation?: (number | null)[]; // DHI
   };
   error?: boolean;
   reason?: string;
@@ -43,7 +43,7 @@ export async function fetchIrradianceDataAction(
   }
   log.push({ message: 'Input validation successful.', status: 'success' });
 
-  const { latitude, longitude, startDate, endDate, parameters: selectedParams } = validationResult.data;
+  const { latitude, longitude, startDate, endDate, parameters: selectedParamKeys } = validationResult.data;
 
   if (parseISO(startDate) > parseISO(endDate)) {
     log.push({ message: "Start date cannot be after end date.", status: "error" });
@@ -55,7 +55,12 @@ export async function fetchIrradianceDataAction(
   const formattedEndDate = format(parseISO(endDate), 'yyyy-MM-dd');
   log.push({ message: `Dates formatted for API: Start: ${formattedStartDate}, End: ${formattedEndDate}`, status: 'info' });
 
-  const hourlyParamsToFetch = selectedParams.join(',');
+  // Get the correct API parameter names from the config
+  const hourlyParamsToFetch = selectedParamKeys
+    .map(key => IRRADIANCE_PARAMETER_CONFIG[key as keyof typeof IRRADIANCE_PARAMETER_CONFIG]?.apiParam)
+    .filter(Boolean) // Remove any undefined if a key isn't in config
+    .join(',');
+    
   log.push({ message: `Requesting Open-Meteo Weather API hourly parameters: '${hourlyParamsToFetch}'`, status: 'info' });
 
   const apiUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${latitude}&longitude=${longitude}&start_date=${formattedStartDate}&end_date=${formattedEndDate}&hourly=${hourlyParamsToFetch}`;
@@ -111,19 +116,22 @@ export async function fetchIrradianceDataAction(
 
   const irradianceData: IrradianceDataPoint[] = [];
   const times = apiData.hourly.time;
-  const ghiValues = apiData.hourly.ghi;
-  const dhiValues = apiData.hourly.dhi;
+  // Use the correct API response keys
+  const ghiValues = apiData.hourly.shortwave_radiation; 
+  const dhiValues = apiData.hourly.diffuse_radiation;
 
   let dataPointsProcessed = 0;
   for (let i = 0; i < times.length; i++) {
     const point: IrradianceDataPoint = { time: times[i] };
     let hasValue = false;
 
-    if (selectedParams.includes('ghi') && ghiValues && ghiValues[i] !== null) {
+    // Check if 'ghi' was requested by the user via selectedParamKeys
+    if (selectedParamKeys.includes('ghi') && ghiValues && ghiValues[i] !== null) {
       point.ghi = ghiValues[i] as number;
       hasValue = true;
     }
-    if (selectedParams.includes('dhi') && dhiValues && dhiValues[i] !== null) {
+    // Check if 'dhi' was requested by the user
+    if (selectedParamKeys.includes('dhi') && dhiValues && dhiValues[i] !== null) {
       point.dhi = dhiValues[i] as number;
       hasValue = true;
     }
@@ -136,10 +144,18 @@ export async function fetchIrradianceDataAction(
   
   log.push({ message: `Processed ${dataPointsProcessed} irradiance data points.`, status: 'success' });
 
-  if (irradianceData.length === 0) {
-    log.push({ message: 'No irradiance data points constructed after processing API response.', status: 'warning' });
-    return { success: true, data: [], log, dataLocationContext: `No irradiance data found for selected period at Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)}`, error: "No data found for the selected parameters." };
+  if (irradianceData.length === 0 && dataPointsProcessed === 0) {
+      const noDataMsg = "No irradiance data points constructed. This could be due to the API not returning data for the selected parameters and date range, or all values being null.";
+      log.push({ message: noDataMsg, status: 'warning' });
+      return { 
+        success: true, // Action succeeded, but no data found
+        data: [], 
+        log, 
+        dataLocationContext: `No irradiance data found for selected period at Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)}`,
+        error: "No data available for the selected parameters and time range." // User-facing error
+      };
   }
+
 
   return {
     success: true,
