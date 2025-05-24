@@ -12,6 +12,7 @@ import Point from 'ol/geom/Point';
 import { fromLonLat, toLonLat } from 'ol/proj';
 import { Style, Icon } from 'ol/style';
 import 'ol/ol.css'; // Import OpenLayers CSS
+import OSM from 'ol/source/OSM'; // Import OSM source
 
 // Default OpenLayers marker icon (often needs a publicly accessible path or to be bundled)
 // For simplicity, we'll use a basic style or ensure the default icon has a chance to load.
