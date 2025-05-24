@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter }
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label as UiLabel } from "@/components/ui/label";
-import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Wind, Copy, Anchor } from "lucide-react";
+import { Loader2, SunMoon, LayoutGrid, CloudSun, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Copy, Anchor } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -17,7 +17,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
 import { MarinePlotsGrid } from "@/components/marine/MarinePlotsGrid";
 import { useToast } from "@/hooks/use-toast";
-import { formatISO, subDays } from 'date-fns';
+import { formatISO } from 'date-fns';
 import type { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
@@ -29,14 +29,14 @@ import { fetchOpenMeteoMarineDataAction } from './actions';
 type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle' | 'warning';
 
 const knownLocations: { [key: string]: { lat: number; lon: number; name: string } } = {
+  "milfordhaven": { lat: 51.7128, lon: -5.0341, name: "Milford Haven" },
   "stdavidshead": { lat: 52.0, lon: -5.3, name: "St David's Head" },
-  "milfordhaven": { lat: 51.71, lon: -5.04, name: "Milford Haven" },
   "newlyn": { lat: 50.10, lon: -5.55, name: "Newlyn" },
   "dover": { lat: 51.12, lon: 1.32, name: "Dover" },
   "liverpool": { lat: 53.40, lon: -2.99, name: "Liverpool" },
   "portsmouth": { lat: 50.81, lon: -1.08, name: "Portsmouth" },
 };
-const defaultLocationKey = "stdavidshead";
+const defaultLocationKey = "milfordhaven";
 
 // Assign icons to parameter configs
 (MARINE_PARAMETER_CONFIG.waveHeight as { icon?: LucideIcon }).icon = Sailboat;
@@ -45,7 +45,7 @@ const defaultLocationKey = "stdavidshead";
 if (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature) {
   (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature as { icon?: LucideIcon }).icon = Thermometer;
 }
-// WindSpeed10m is no longer a parameter
+
 
 export default function OMMarineExplorerPage() {
   const [theme, setTheme] = useState("light");
@@ -53,7 +53,8 @@ export default function OMMarineExplorerPage() {
   const { toast, dismiss } = useToast();
   
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
-    from: subDays(new Date(), 7), to: new Date(),
+    from: new Date("2025-05-17"), 
+    to: new Date("2025-05-20"),
   }));
 
   const [searchTerm, setSearchTerm] = useState(() => knownLocations[defaultLocationKey]?.name || "");
@@ -156,7 +157,7 @@ export default function OMMarineExplorerPage() {
       return;
     }
     
-    const currentPlotVisibility = plotVisibility; // Use current state value
+    const currentPlotVisibility = plotVisibility; 
     const selectedParams = ALL_MARINE_PARAMETERS.filter(key => currentPlotVisibility[key]);
     if (selectedParams.length === 0) {
       if (!isAutoFetch) {
@@ -216,12 +217,12 @@ export default function OMMarineExplorerPage() {
       setShowSuggestions(false);
       
       if (dateRange?.from && dateRange?.to) {
+        // Automatically fetch when a suggestion is clicked
         handleLocationSearchAndFetch({ latitude: location.lat, longitude: location.lon }, location.name, false);
       }
     }
   }, [dateRange, handleLocationSearchAndFetch]); 
 
-  // Initial fetch for default location - Runs only ONCE on mount
   useEffect(() => {
     if (initialFetchDone.current) {
       return; 
@@ -229,24 +230,20 @@ export default function OMMarineExplorerPage() {
     initialFetchDone.current = true; 
 
     const defaultLoc = knownLocations[defaultLocationKey];
-    // Use the initially set state values for coords, name, and dateRange for the very first fetch
-    const currentInitialCoords = initialCoords; // Value from useState initializer
-    const currentLocName = currentLocationName; // Value from useState initializer
-    const currentDR = dateRange; // Value from useState initializer
+    const currentInitialCoords = initialCoords; 
+    const currentLocName = currentLocationName; 
+    const currentDR = dateRange; 
     
     if (defaultLoc && currentInitialCoords && currentLocName && currentDR?.from && currentDR?.to) {
-      // Call handleLocationSearchAndFetch using the initial state values
-      // The plotVisibility for the first fetch will also be the initial state value.
       handleLocationSearchAndFetch(currentInitialCoords, currentLocName, true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps 
-  }, []); // Empty dependency array ensures this runs only once on mount
+  }, []);
 
 
   useEffect(() => {
     const currentSearchTerm = searchTerm.trim();
     const inputElement = document.activeElement as HTMLInputElement;
-    // Ensure the ID matches the Input component's ID for location search
     const isFocused = inputElement && inputElement.id === "om-location-search";
 
 
@@ -460,3 +457,6 @@ export default function OMMarineExplorerPage() {
     </div>
   );
 }
+
+
+    
