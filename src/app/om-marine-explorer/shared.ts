@@ -9,6 +9,7 @@ export interface MarineDataPoint {
   waveDirection?: number;
   wavePeriod?: number;
   seaSurfaceTemperature?: number;
+  seaLevelHeightMsl?: number; // Added for sea level/tide
 }
 export const MarineDataPointSchema = z.object({
   time: z.string(),
@@ -16,6 +17,7 @@ export const MarineDataPointSchema = z.object({
   waveDirection: z.number().optional(),
   wavePeriod: z.number().optional(),
   seaSurfaceTemperature: z.number().optional(),
+  seaLevelHeightMsl: z.number().optional(), // Added
 });
 
 
@@ -32,26 +34,26 @@ export const FetchMarineDataInputSchema = z.object({
 });
 export type FetchMarineDataInput = z.infer<typeof FetchMarineDataInputSchema>;
 
-// Shared LogStep interface for consistency
 export interface LogStep {
   message: string;
   status: 'info' | 'success' | 'error' | 'pending' | 'warning';
   details?: string;
-  isLastAttempt?: boolean; // For retry logic if implemented
+  isLastAttempt?: boolean;
 }
 
-// Used by the page to manage visibility of plots and parameter selection
 export type MarineParameterKey = 
   | 'waveHeight' 
   | 'waveDirection' 
   | 'wavePeriod'
-  | 'seaSurfaceTemperature';
+  | 'seaSurfaceTemperature'
+  | 'seaLevelHeightMsl'; // Added
 
 export const ALL_MARINE_PARAMETERS: MarineParameterKey[] = [
   'waveHeight', 
   'waveDirection', 
   'wavePeriod',
-  'seaSurfaceTemperature'
+  'seaSurfaceTemperature',
+  'seaLevelHeightMsl', // Added
 ];
 
 export const MARINE_PARAMETER_CONFIG: Record<MarineParameterKey, { name: string; apiParam: string; unit: string; icon?: LucideIcon }> = {
@@ -59,4 +61,5 @@ export const MARINE_PARAMETER_CONFIG: Record<MarineParameterKey, { name: string;
   waveDirection: { name: "Wave Direction", apiParam: "wave_direction", unit: "°" },
   wavePeriod: { name: "Wave Period", apiParam: "wave_period", unit: "s" },
   seaSurfaceTemperature: { name: "Sea Surface Temp", apiParam: "sea_surface_temperature", unit: "°C"},
+  seaLevelHeightMsl: { name: "Sea Level (MSL)", apiParam: "sea_level_height_msl", unit: "m" }, // Added
 };

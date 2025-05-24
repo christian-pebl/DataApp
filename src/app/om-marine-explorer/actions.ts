@@ -11,6 +11,7 @@ interface OpenMeteoMarineHourlyResponse {
   wave_direction?: (number | null)[];
   wave_period?: (number | null)[];
   sea_surface_temperature?: (number | null)[];
+  sea_level_height_msl?: (number | null)[]; // Added
 }
 
 interface OpenMeteoMarineApiResponse {
@@ -140,6 +141,9 @@ export async function fetchOpenMeteoMarineDataAction(
       if (selectedParamKeys.includes('seaSurfaceTemperature') && apiData.hourly.sea_surface_temperature && apiData.hourly.sea_surface_temperature[i] !== null) {
         point.seaSurfaceTemperature = apiData.hourly.sea_surface_temperature[i];
       }
+      if (selectedParamKeys.includes('seaLevelHeightMsl') && apiData.hourly.sea_level_height_msl && apiData.hourly.sea_level_height_msl[i] !== null) {
+        point.seaLevelHeightMsl = apiData.hourly.sea_level_height_msl[i]; // Added
+      }
       marineData.push(point);
     }
     
@@ -151,7 +155,6 @@ export async function fetchOpenMeteoMarineDataAction(
         log.push({ message: `Successfully processed ${marineData.length} marine data points.`, status: 'success' });
     }
 
-
     return { success: true, data: marineData, log, dataLocationContext: `Marine data for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)} (Open-Meteo)` };
 
   } catch (error) {
@@ -160,6 +163,3 @@ export async function fetchOpenMeteoMarineDataAction(
     return { success: false, error: `Error fetching Open-Meteo marine data: ${errorMessage}`, log };
   }
 }
-
-
-    

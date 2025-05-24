@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
-import { PlusCircle, SunMoon, LayoutGrid, CloudSun, Waves, Anchor } from "lucide-react";
+import { PlusCircle, SunMoon, LayoutGrid, CloudSun, Waves } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 
@@ -103,16 +103,6 @@ export default function DataExplorerPage() {
                 </TooltipTrigger>
                 <TooltipContent><p>OM Marine Explorer</p></TooltipContent>
               </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/tide-explorer" passHref>
-                    <Button variant={pathname === '/tide-explorer' ? "secondary": "ghost"} size="icon" aria-label="Tide Explorer">
-                      <Anchor className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>Tide Explorer</p></TooltipContent>
-              </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -156,7 +146,7 @@ export default function DataExplorerPage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            PEBL data app - CSV Data Explorer. Weather. OM Marine Explorer. Tide Explorer.
+            PEBL data app - CSV Data Explorer. Weather. OM Marine Explorer.
           </p>
         </div>
       </footer>

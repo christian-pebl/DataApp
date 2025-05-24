@@ -45,6 +45,9 @@ const defaultLocationKey = "milfordhaven";
 if (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature) {
   (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature as { icon?: LucideIcon }).icon = Thermometer;
 }
+if (MARINE_PARAMETER_CONFIG.seaLevelHeightMsl) {
+  (MARINE_PARAMETER_CONFIG.seaLevelHeightMsl as { icon?: LucideIcon }).icon = Waves; // Using Waves for Sea Level
+}
 
 
 export default function OMMarineExplorerPage() {
@@ -358,7 +361,6 @@ export default function OMMarineExplorerPage() {
               <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (CSV)"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer (CSV)</p></TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger asChild><Link href="/weather" passHref><Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Weather Page"><CloudSun className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Weather Page</p></TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger asChild><Link href="/om-marine-explorer" passHref><Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="OM Marine Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>OM Marine Explorer</p></TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><Link href="/tide-explorer" passHref><Button variant={pathname === '/tide-explorer' ? "secondary": "ghost"} size="icon" aria-label="Tide Explorer"><Anchor className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Tide Explorer</p></TooltipContent></Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
@@ -457,6 +459,3 @@ export default function OMMarineExplorerPage() {
     </div>
   );
 }
-
-
-    

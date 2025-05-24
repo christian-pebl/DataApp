@@ -1,10 +1,10 @@
 
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts';
-import type { MarineParameterKey, MarineDataPoint } from '@/app/om-marine-explorer/shared'; // Updated path
-import { Info, Waves, Sailboat, Compass, Timer, CheckCircle2, XCircle, Loader2, AlertCircle, Thermometer } from "lucide-react"; // Removed Wind as it's no longer a parameter
+import type { MarineParameterKey, MarineDataPoint } from '@/app/om-marine-explorer/shared';
+import { Info, Waves, Sailboat, Compass, Timer, CheckCircle2, XCircle, Loader2, AlertCircle, Thermometer } from "lucide-react";
 
 interface PlotConfig {
   dataKey: MarineParameterKey;
@@ -52,6 +52,7 @@ export function MarinePlotsGrid({
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
   
   const plotConfigs = useMemo((): PlotConfig[] => [
+    { dataKey: 'seaLevelHeightMsl', title: 'Sea Level (MSL)', unit: 'm', color: '--chart-1', Icon: Waves },
     { dataKey: 'waveHeight', title: 'Wave Height', unit: 'm', color: '--chart-2', Icon: Sailboat },
     { dataKey: 'waveDirection', title: 'Wave Direction', unit: '°', color: '--chart-4', Icon: Compass },
     { dataKey: 'wavePeriod', title: 'Wave Period', unit: 's', color: '--chart-3', Icon: Timer },
