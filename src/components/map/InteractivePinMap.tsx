@@ -3,7 +3,8 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents, Popup } from 'react-leaflet';
-import L, { LatLngExpression, Map as LeafletMap } from 'leaflet';
+import type { LatLngExpression, Map as LeafletMap } from 'leaflet';
+import L from 'leaflet';
 
 interface InteractiveMapProps {
   initialCenter?: LatLngExpression;
@@ -27,7 +28,6 @@ export function InteractivePinMap({
   onLocationSelect,
   selectedCoords,
 }: InteractiveMapProps) {
-  // Fix for default Leaflet icon paths in Next.js - MOVED INSIDE THE COMPONENT
   useEffect(() => {
     // @ts-ignore
     delete L.Icon.Default.prototype._getIconUrl;
@@ -38,7 +38,7 @@ export function InteractivePinMap({
     });
   }, []);
 
-  const mapRef = useRef<LeafletMap | null>(null);
+  const [map, setMap] = useState<LeafletMap | null>(null); // State to hold the map instance
   const [markerPosition, setMarkerPosition] = useState<LatLngExpression | null>(null);
   const [renderMap, setRenderMap] = useState(false);
 
@@ -46,66 +46,55 @@ export function InteractivePinMap({
     setRenderMap(true); // Enable map rendering only on the client-side
   }, []);
 
-  // Effect for updating map view and marker when selectedCoords prop changes
+  // Effect for view and marker updates based on selectedCoords
   useEffect(() => {
-    if (mapRef.current && selectedCoords) {
-      const currentMapCenter = mapRef.current.getCenter();
-      // Check if map needs to be moved significantly, to avoid re-centering on minor float differences
-      // or if the marker is not yet at the selectedCoords
-      if (
-        Math.abs(currentMapCenter.lat - selectedCoords.lat) > 0.00001 ||
-        Math.abs(currentMapCenter.lng - selectedCoords.lng) > 0.00001 ||
-        !markerPosition || // If no marker, definitely update
-        (markerPosition && (Array.isArray(markerPosition) ? markerPosition[0] : markerPosition.lat) !== selectedCoords.lat) ||
-        (markerPosition && (Array.isArray(markerPosition) ? markerPosition[1] : markerPosition.lng) !== selectedCoords.lng)
-      ) {
-        mapRef.current.setView([selectedCoords.lat, selectedCoords.lng], mapRef.current.getZoom());
+    if (map) { // Only proceed if map instance exists
+      if (selectedCoords) {
+        const currentMapCenter = map.getCenter();
+        // Only call setView if coords have meaningfully changed
+        if (
+          Math.abs(currentMapCenter.lat - selectedCoords.lat) > 0.00001 ||
+          Math.abs(currentMapCenter.lng - selectedCoords.lng) > 0.00001
+        ) {
+          map.setView([selectedCoords.lat, selectedCoords.lng], map.getZoom()); // Preserve current zoom
+        }
+        setMarkerPosition([selectedCoords.lat, selectedCoords.lng]);
+      } else {
+        setMarkerPosition(null);
+        // Optional: if selectedCoords are cleared, reset map to initialCenterProp
+        // map.setView(initialCenterProp, initialZoom);
       }
-      setMarkerPosition([selectedCoords.lat, selectedCoords.lng]);
-    } else if (mapRef.current && !selectedCoords) {
-      // If selectedCoords is cleared, remove the marker
-      setMarkerPosition(null);
     }
-  }, [selectedCoords, markerPosition]); // Added markerPosition to dependency to ensure marker updates correctly with coords
+  }, [map, selectedCoords, initialCenterProp, initialZoom]); // initialCenterProp/initialZoom for potential reset logic
 
-  // Callback for when the map instance is created
-  const handleWhenCreated = useCallback((mapInstance: LeafletMap) => {
-    mapRef.current = mapInstance;
-    // Set the initial view of the map based on props
-    // If selectedCoords are provided, they take precedence for the initial view.
-    // Otherwise, use initialCenterProp and initialZoom.
-    if (selectedCoords) {
-      mapInstance.setView([selectedCoords.lat, selectedCoords.lng], initialZoom);
-      setMarkerPosition([selectedCoords.lat, selectedCoords.lng]); // Also set initial marker
-    } else {
-      mapInstance.setView(initialCenterProp, initialZoom);
-    }
-  }, [initialCenterProp, initialZoom, selectedCoords]);
-
-  // Cleanup map instance on component unmount
+  // Cleanup map instance when component unmounts or map state changes
   useEffect(() => {
     return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
+      if (map) {
+        map.remove();
       }
     };
+  }, [map]); // This effect runs if the `map` state variable itself changes (e.g., on unmount)
+
+  const mapContainerRef = useCallback((node: HTMLDivElement | null) => {
+    // This callback ref is not strictly necessary with whenCreated, but can be useful for direct DOM access if needed.
+    // For now, we'll rely on whenCreated.
   }, []);
 
+
   if (!renderMap) {
-    return <p className="text-center p-4">Initializing map...</p>;
+    return <p className="text-center p-4">Loading map...</p>;
   }
 
   return (
     <MapContainer
-        // Pass STABLE initial center and zoom to MapContainer.
-        // These props should not change due to component's internal state or other props
-        // and cause re-initialization.
-        center={initialCenterProp}
-        zoom={initialZoom}
+        center={initialCenterProp} // Stable initial center for MapContainer
+        zoom={initialZoom}         // Stable initial zoom for MapContainer
         scrollWheelZoom={true}
         style={{ height: '100%', width: '100%' }}
-        whenCreated={handleWhenCreated} // This callback sets the actual initial view
+        whenCreated={setMap} // Set the map instance to state when it's created
+        // The 'ref' prop on MapContainer can also be used with a callback for the map instance,
+        // but whenCreated is specific to react-leaflet for this purpose.
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
