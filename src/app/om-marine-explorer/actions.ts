@@ -17,7 +17,7 @@ interface OpenMeteoHourlyResponse {
   temperature_2m?: (number | null)[];
   windspeed_10m?: (number | null)[];
   winddirection_10m?: (number | null)[];
-  // cloudcover?: (number | null)[]; // Removed
+  shortwave_radiation?: (number | null)[]; // For GHI
 }
 
 interface OpenMeteoApiResponse {
@@ -84,7 +84,7 @@ async function fetchFromOpenMeteo(
 
     if (!apiData.hourly || !apiData.hourly.time || apiData.hourly.time.length === 0) {
       log.push({ message: `No hourly data or timestamps returned from Open-Meteo ${apiName} API.`, status: 'warning' });
-      return apiData; // Return the apiData even if hourly.time is empty, so we can check for apiData.error
+      return apiData; 
     }
     log.push({ message: `Received ${apiData.hourly.time.length} timestamps from ${apiName} API.`, status: 'info' });
     return apiData;
@@ -142,6 +142,8 @@ export async function fetchCombinedDataAction(
 
   log.push({ message: `Selected marine params for API: ${marineParamsToFetch.join(',') || 'None'}`, status: 'info'});
   log.push({ message: `Selected weather params for API: ${weatherParamsToFetch.join(',') || 'None'}`, status: 'info'});
+  log.push({ message: `Selected parameters: ${selectedParamKeys.join(', ')}`, status: 'info' });
+
 
   let marineApiData: OpenMeteoApiResponse | null = null;
   let weatherApiData: OpenMeteoApiResponse | null = null;
@@ -217,7 +219,7 @@ export async function fetchCombinedDataAction(
       paramKeys.forEach(key => {
         const config = PARAMETER_CONFIG[key];
         if (config.apiSource === apiSource) {
-          const apiHourly = apiData.hourly as any; // Type assertion for dynamic access
+          const apiHourly = apiData.hourly as any; 
           if (apiHourly[config.apiParam] && Array.isArray(apiHourly[config.apiParam]) && index < apiHourly[config.apiParam].length && apiHourly[config.apiParam][index] !== null) {
             (entry as any)[key] = apiHourly[config.apiParam][index];
             dataPointHasValue = true;
@@ -245,7 +247,13 @@ export async function fetchCombinedDataAction(
 
   if (finalCombinedData.length === 0 && selectedParamKeys.length > 0) {
     log.push({ message: "No data points constructed after merging API responses. All requested parameters might have been null or APIs returned no data.", status: 'warning' });
-    return { success: true, data: [], log, dataLocationContext: `No data found for selected period at Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)}`, error: "No data found for the selected parameters, location, and date range." };
+    return { 
+      success: true, 
+      data: [], 
+      log, 
+      dataLocationContext: `No data found for selected period at Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)}`, 
+      error: "No data found for the selected parameters, location, and date range." 
+    };
   } else if (finalCombinedData.length === 0) {
      log.push({ message: "No data points to return.", status: 'info' });
   } else {

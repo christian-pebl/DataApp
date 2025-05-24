@@ -9,14 +9,14 @@ export default function RedirectToDefaultPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // The redirect path is now /irradiance-explorer
-    router.replace('/irradiance-explorer');
+    // The redirect path is now /om-marine-explorer
+    router.replace('/om-marine-explorer');
   }, [router]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
       <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-      <p className="text-lg text-muted-foreground">Redirecting to Irradiance Data Explorer...</p>
+      <p className="text-lg text-muted-foreground">Redirecting to Weather & Marine Data Explorer...</p>
     </div>
   );
 }

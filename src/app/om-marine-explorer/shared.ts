@@ -18,7 +18,7 @@ export interface CombinedDataPoint {
   temperature2m?: number;
   windSpeed10m?: number;
   windDirection10m?: number;
-  // cloudCover?: number; // Removed
+  ghi?: number; // Added GHI
 }
 
 export const CombinedDataPointSchema = z.object({
@@ -33,7 +33,7 @@ export const CombinedDataPointSchema = z.object({
   temperature2m: z.number().optional(),
   windSpeed10m: z.number().optional(),
   windDirection10m: z.number().optional(),
-  // cloudCover: z.number().optional(), // Removed
+  ghi: z.number().optional(), // Added GHI
 });
 
 
@@ -57,15 +57,15 @@ export interface LogStep {
 }
 
 export type CombinedParameterKey =
+  | 'seaLevelHeightMsl'
   | 'waveHeight'
   | 'waveDirection'
   | 'wavePeriod'
   | 'seaSurfaceTemperature'
-  | 'seaLevelHeightMsl'
   | 'temperature2m'
   | 'windSpeed10m'
-  | 'windDirection10m';
-  // | 'cloudCover'; // Removed
+  | 'windDirection10m'
+  | 'ghi'; // Added GHI
 
 export const ALL_PARAMETERS: CombinedParameterKey[] = [
   'seaLevelHeightMsl',
@@ -76,7 +76,7 @@ export const ALL_PARAMETERS: CombinedParameterKey[] = [
   'temperature2m',
   'windSpeed10m',
   'windDirection10m',
-  // 'cloudCover', // Removed
+  'ghi', // Added GHI
 ];
 
 export const PARAMETER_CONFIG: Record<CombinedParameterKey, { name: string; apiParam: string; unit: string; apiSource: 'marine' | 'weather'; icon?: LucideIcon; color: string }> = {
@@ -88,7 +88,7 @@ export const PARAMETER_CONFIG: Record<CombinedParameterKey, { name: string; apiP
   seaSurfaceTemperature: { name: "Sea Surface Temp", apiParam: "sea_surface_temperature", unit: "°C", apiSource: 'marine', color: '--chart-5'},
   // Weather Parameters
   temperature2m: { name: "Temperature (2m)", apiParam: "temperature_2m", unit: "°C", apiSource: 'weather', color: '--chart-1' },
-  windSpeed10m: { name: "Wind Speed (10m)", apiParam: "windspeed_10m", unit: "km/h", apiSource: 'weather', color: '--chart-2' }, // Note: displayed as mph after conversion in grid
+  windSpeed10m: { name: "Wind Speed (10m)", apiParam: "windspeed_10m", unit: "km/h", apiSource: 'weather', color: '--chart-2' },
   windDirection10m: { name: "Wind Direction (10m)", apiParam: "winddirection_10m", unit: "°", apiSource: 'weather', color: '--chart-3' },
-  // cloudCover: { name: "Cloud Cover", apiParam: "cloudcover", unit: "%", apiSource: 'weather', color: '--chart-4' }, // Removed
+  ghi: { name: "Global Horizontal Irradiance (GHI)", apiParam: "shortwave_radiation", unit: "W/m²", apiSource: 'weather', color: '--chart-4' }, // Added GHI
 };

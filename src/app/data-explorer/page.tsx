@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
-import { PlusCircle, SunMoon, LayoutGrid, Waves, CloudSun, Anchor, Sun as SunIcon } from "lucide-react";
+import { PlusCircle, SunMoon, LayoutGrid, Waves } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 
@@ -92,16 +92,6 @@ export default function DataExplorerPage() {
                   </Link>
                 </TooltipTrigger>
                 <TooltipContent><p>Weather &amp; Marine Explorer</p></TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/irradiance-explorer" passHref>
-                    <Button variant={pathname === '/irradiance-explorer' ? "secondary": "ghost"} size="icon" aria-label="Irradiance Explorer">
-                      <SunIcon className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>Irradiance Explorer</p></TooltipContent>
               </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip>
