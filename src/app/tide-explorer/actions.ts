@@ -7,7 +7,7 @@ import { format, parseISO } from 'date-fns';
 
 interface OpenMeteoMarineHourlyResponse {
   time?: string[];
-  sea_level_height?: (number | null)[]; // Corrected parameter based on documentation
+  sea_level_height_msl?: (number | null)[]; // Corrected parameter based on documentation
 }
 
 interface OpenMeteoMarineApiResponse {
@@ -19,7 +19,7 @@ interface OpenMeteoMarineApiResponse {
   timezone_abbreviation: string;
   hourly_units?: {
     time?: string;
-    sea_level_height?: string; // Corrected parameter
+    sea_level_height_msl?: string; // Corrected parameter
   };
   hourly?: OpenMeteoMarineHourlyResponse;
   error?: boolean;
@@ -59,11 +59,11 @@ export async function fetchTideExplorerDataAction(
   const formattedEndDate = format(parseISO(endDate), 'yyyy-MM-dd');
   log.push({ message: `Dates formatted for API: Start: ${formattedStartDate}, End: ${formattedEndDate}`, status: 'info' });
   
-  const apiParametersString = "sea_level_height"; // Confirmed correct parameter as per documentation
+  const apiParametersString = "sea_level_height_msl"; // UPDATED PARAMETER NAME
   log.push({ message: `Requesting Open-Meteo Marine API hourly parameter: '${apiParametersString}'`, status: 'info' });
   log.push({ message: `Parameters for API: latitude=${latitude}, longitude=${longitude}, start_date=${formattedStartDate}, end_date=${formattedEndDate}, hourly=${apiParametersString}`, status: 'info'});
 
-  const baseUrl = "https://marine-api.open-meteo.com/v1/marine"; // Explicit base URL
+  const baseUrl = "https://marine-api.open-meteo.com/v1/marine";
   const apiUrl = `${baseUrl}?latitude=${latitude}&longitude=${longitude}&start_date=${formattedStartDate}&end_date=${formattedEndDate}&hourly=${apiParametersString}`;
   log.push({ message: `Constructed API URL: ${apiUrl}`, status: 'info', details: apiUrl });
 
@@ -71,7 +71,6 @@ export async function fetchTideExplorerDataAction(
 
   try {
     const response = await fetch(apiUrl, { cache: 'no-store' });
-    // Get raw body early for logging in all cases
     const rawResponseBody = await response.text(); 
 
     log.push({ message: `API Response Status: ${response.status}`, status: response.ok ? 'success' : 'error' });
@@ -126,7 +125,7 @@ export async function fetchTideExplorerDataAction(
         return { success: true, data: [], log, dataLocationContext: `No tide data found for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)} (Open-Meteo)`, error: "No tide data found for the selected location and date range at Open-Meteo." };
     }
 
-    const seaLevelsKey: keyof OpenMeteoMarineHourlyResponse = 'sea_level_height';
+    const seaLevelsKey: keyof OpenMeteoMarineHourlyResponse = 'sea_level_height_msl'; // UPDATED KEY TO PARSE
     if (!apiData.hourly[seaLevelsKey] || !Array.isArray(apiData.hourly[seaLevelsKey])) {
       log.push({ message: `API response 'hourly.${seaLevelsKey}' is missing or not an array.`, status: 'error', details: JSON.stringify(apiData.hourly) });
       return { success: false, error: `Incomplete data from API: missing 'hourly.${seaLevelsKey}' array.`, log };
@@ -135,7 +134,7 @@ export async function fetchTideExplorerDataAction(
 
 
     const times = apiData.hourly.time;
-    const seaLevels = apiData.hourly[seaLevelsKey]!; // Assert not null as we checked above
+    const seaLevels = apiData.hourly[seaLevelsKey]!;
 
     if (seaLevels.length !== times.length) {
       log.push({ message: `Sea level height data array length (${seaLevels.length}) does not match time array length (${times.length}).`, status: 'error', details: JSON.stringify(apiData.hourly) });
@@ -149,7 +148,6 @@ export async function fetchTideExplorerDataAction(
       if (seaLevels[i] !== null && seaLevels[i] !== undefined) {
         point.seaLevel = seaLevels[i] as number;
       }
-      // Only add if seaLevel has a valid value
       if (point.seaLevel !== undefined) {
           tideData.push(point);
       }
@@ -163,7 +161,7 @@ export async function fetchTideExplorerDataAction(
         log.push({ message: `Successfully processed ${tideData.length} sea level height data points.`, status: 'success' });
     }
 
-    return { success: true, data: tideData, log, dataLocationContext: `Tide Data (Sea Level Height) for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)} (Open-Meteo)` };
+    return { success: true, data: tideData, log, dataLocationContext: `Tide Data (Sea Level Height MSL) for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)} (Open-Meteo)` };
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "An unknown error occurred during fetch.";
@@ -171,5 +169,4 @@ export async function fetchTideExplorerDataAction(
     return { success: false, error: `Error fetching Open-Meteo tide data: ${errorMessage}`, log };
   }
 }
-
     
