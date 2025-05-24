@@ -2,11 +2,11 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush, Label as RechartsLabel } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts'; // Removed Label as RechartsLabel
 import type { CombinedParameterKey, CombinedDataPoint } from '@/app/om-marine-explorer/shared';
-import { PARAMETER_CONFIG } from '@/app/om-marine-explorer/shared';
+import { PARAMETER_CONFIG, ALL_PARAMETERS } from '@/app/om-marine-explorer/shared';
 import { Info, CheckCircle2, XCircle, Loader2, AlertCircle } from "lucide-react";
-import type { LucideIcon } from 'lucide-react';
+import type { LucideIcon } from "lucide-react";
 
 interface PlotConfigInternal {
   dataKey: CombinedParameterKey;
@@ -25,7 +25,7 @@ export interface MarinePlotsGridProps {
 }
 
 type SeriesAvailabilityStatus = 'pending' | 'available' | 'unavailable';
-const MPH_CONVERSION_FACTOR = 2.23694; // For wind speed (m/s to mph)
+const MPH_CONVERSION_FACTOR = 2.23694; // For wind speed (km/h to mph)
 
 const formatXAxisTickBrush = (timeValue: string | number): string => {
   try {
@@ -43,27 +43,27 @@ const formatXAxisTickBrush = (timeValue: string | number): string => {
   }
 };
 
-export function MarinePlotsGrid({ 
-  marineData: combinedData, 
-  isLoading, 
+export function MarinePlotsGrid({
+  marineData: combinedData,
+  isLoading,
   error,
   plotVisibility,
 }: MarinePlotsGridProps) {
-  
+
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
-  
+
   const plotConfigs = useMemo((): PlotConfigInternal[] => {
-    return (Object.keys(PARAMETER_CONFIG) as CombinedParameterKey[]).map(key => {
-      const config = PARAMETER_CONFIG[key];
+    return (ALL_PARAMETERS).map(key => { // Use ALL_PARAMETERS directly from import
+      const config = PARAMETER_CONFIG[key as CombinedParameterKey];
       let dataTransformFunc: ((value: number) => number) | undefined = undefined;
       let displayUnit = config.unit;
 
-      if (key === 'windSpeed10m' && config.apiParam === 'windspeed_10m') { // API gives km/h, display as mph
-        displayUnit = 'mph'; 
-        dataTransformFunc = (value: number) => parseFloat(((value / 3.6) * MPH_CONVERSION_FACTOR).toFixed(1)); // km/h from API -> m/s -> mph
+      if (key === 'windSpeed10m' && config.apiParam === 'windspeed_10m') {
+        displayUnit = 'mph';
+        dataTransformFunc = (value: number) => parseFloat(((value / 3.6) * MPH_CONVERSION_FACTOR).toFixed(1));
       }
-      
+
       return {
         dataKey: key,
         title: config.name,
@@ -73,15 +73,15 @@ export function MarinePlotsGrid({
         dataTransform: dataTransformFunc,
       };
     });
-  }, []);
+  }, []); // Dependency array is empty as PARAMETER_CONFIG and ALL_PARAMETERS are stable imports
 
-  const initialAvailability = useMemo(() => 
+  const initialAvailability = useMemo(() =>
     Object.fromEntries(
       plotConfigs.map(pc => [pc.dataKey, 'pending'])
     ) as Record<CombinedParameterKey, SeriesAvailabilityStatus>,
     [plotConfigs]
   );
-  
+
   const [seriesDataAvailability, setSeriesDataAvailability] = useState<Record<CombinedParameterKey, SeriesAvailabilityStatus>>(initialAvailability);
 
   useEffect(() => {
@@ -162,7 +162,7 @@ export function MarinePlotsGrid({
           </div>
         );
   }
-  
+
   return (
     <div className="w-full h-full flex flex-col">
       <div className="flex-grow flex flex-col space-y-1 overflow-y-auto pr-1">
@@ -183,14 +183,14 @@ export function MarinePlotsGrid({
 
           const lastDataPoint = transformedDisplayData[transformedDisplayData.length - 1];
           const currentValue = lastDataPoint ? lastDataPoint[config.dataKey as keyof CombinedDataPoint] as number | undefined : undefined;
-          
+
           let displayValue = "";
           if (plotVisibility[config.dataKey] && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue)) {
             displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits: 1})}${config.unit}`;
           } else if (plotVisibility[config.dataKey] && availabilityStatus === 'unavailable') {
             displayValue = "(N/A)";
           }
-          
+
           return (
             <div key={config.dataKey as string} className="h-auto w-full border rounded-md p-1 shadow-sm bg-card flex-shrink-0 flex flex-col">
               <div className="flex items-center justify-between px-2 pt-0.5 pb-0.5 text-xs">
@@ -205,8 +205,8 @@ export function MarinePlotsGrid({
                 )}
               </div>
 
-              {plotVisibility[config.dataKey] ? ( 
-                <div className="flex-grow h-[80px]"> 
+              {plotVisibility[config.dataKey] ? (
+                <div className="flex-grow h-[80px]">
                   {availabilityStatus === 'available' ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
@@ -256,7 +256,7 @@ export function MarinePlotsGrid({
                 height={30}
                 dy={5}
               />
-               <Line dataKey={(Object.keys(PARAMETER_CONFIG) as CombinedParameterKey[]).find(p => plotVisibility[p] && seriesDataAvailability[p] === 'available') || plotConfigs[0]?.dataKey} stroke="transparent" dot={false} /> 
+               <Line dataKey={(ALL_PARAMETERS).find(p => plotVisibility[p] && seriesDataAvailability[p] === 'available') || plotConfigs[0]?.dataKey} stroke="transparent" dot={false} />
               <Brush
                 dataKey="time"
                 height={20}
@@ -268,7 +268,7 @@ export function MarinePlotsGrid({
                 startIndex={brushStartIndex}
                 endIndex={brushEndIndex}
                 onChange={handleBrushChangeLocal}
-                y={10} 
+                y={10}
               />
             </LineChart>
           </ResponsiveContainer>

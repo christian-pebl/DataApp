@@ -16,11 +16,9 @@ export interface CombinedDataPoint {
 
   // Weather Parameters
   temperature2m?: number;
-  windSpeed10m?: number; 
+  windSpeed10m?: number;
   windDirection10m?: number;
   cloudCover?: number;
-  dhi?: number; // Diffuse Horizontal Irradiance
-  ghi?: number; // Global Horizontal Irradiance
 }
 
 export const CombinedDataPointSchema = z.object({
@@ -36,8 +34,6 @@ export const CombinedDataPointSchema = z.object({
   windSpeed10m: z.number().optional(),
   windDirection10m: z.number().optional(),
   cloudCover: z.number().optional(),
-  dhi: z.number().optional(),
-  ghi: z.number().optional(),
 });
 
 
@@ -69,9 +65,7 @@ export type CombinedParameterKey =
   | 'temperature2m'
   | 'windSpeed10m'
   | 'windDirection10m'
-  | 'cloudCover'
-  | 'dhi'
-  | 'ghi';
+  | 'cloudCover';
 
 export const ALL_PARAMETERS: CombinedParameterKey[] = [
   'seaLevelHeightMsl',
@@ -83,8 +77,6 @@ export const ALL_PARAMETERS: CombinedParameterKey[] = [
   'windSpeed10m',
   'windDirection10m',
   'cloudCover',
-  'dhi',
-  'ghi',
 ];
 
 export const PARAMETER_CONFIG: Record<CombinedParameterKey, { name: string; apiParam: string; unit: string; apiSource: 'marine' | 'weather'; icon?: LucideIcon; color: string }> = {
@@ -99,6 +91,4 @@ export const PARAMETER_CONFIG: Record<CombinedParameterKey, { name: string; apiP
   windSpeed10m: { name: "Wind Speed (10m)", apiParam: "windspeed_10m", unit: "km/h", apiSource: 'weather', color: '--chart-2' },
   windDirection10m: { name: "Wind Direction (10m)", apiParam: "winddirection_10m", unit: "°", apiSource: 'weather', color: '--chart-3' },
   cloudCover: { name: "Cloud Cover", apiParam: "cloudcover", unit: "%", apiSource: 'weather', color: '--chart-4' },
-  dhi: { name: "DHI", apiParam: "dhi", unit: "W/m²", apiSource: 'weather', color: '--chart-5' },
-  ghi: { name: "GHI", apiParam: "ghi", unit: "W/m²", apiSource: 'weather', color: '--chart-1' }, // Re-use chart-1 or add more
 };

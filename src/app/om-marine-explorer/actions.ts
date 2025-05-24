@@ -18,8 +18,6 @@ interface OpenMeteoHourlyResponse {
   windspeed_10m?: (number | null)[];
   winddirection_10m?: (number | null)[];
   cloudcover?: (number | null)[];
-  dhi?: (number | null)[];
-  ghi?: (number | null)[];
 }
 
 interface OpenMeteoApiResponse {
@@ -49,7 +47,6 @@ async function fetchFromOpenMeteo(
     log.push({ message: `${apiName} API Response Status: ${response.status}`, status: response.ok ? 'success' : 'error' });
 
     const rawResponseBody = await response.text();
-    // Log only first 500 chars to avoid overly long logs for successful large responses
     const logDetails = response.ok && rawResponseBody.length > 500 ? rawResponseBody.substring(0,500) + "..." : rawResponseBody;
     log.push({ message: `Raw ${apiName} API Response Body (first 500 chars): ${logDetails}`, status: response.ok ? 'info' : 'error', details: rawResponseBody });
 
@@ -87,7 +84,7 @@ async function fetchFromOpenMeteo(
 
     if (!apiData.hourly || !apiData.hourly.time || apiData.hourly.time.length === 0) {
       log.push({ message: `No hourly data or timestamps returned from Open-Meteo ${apiName} API.`, status: 'warning' });
-      return apiData; 
+      return apiData;
     }
     log.push({ message: `Received ${apiData.hourly.time.length} timestamps from ${apiName} API.`, status: 'info' });
     return apiData;
@@ -220,7 +217,7 @@ export async function fetchCombinedDataAction(
       paramKeys.forEach(key => {
         const config = PARAMETER_CONFIG[key];
         if (config.apiSource === apiSource) {
-          const apiHourly = apiData.hourly as any; 
+          const apiHourly = apiData.hourly as any;
           if (apiHourly[config.apiParam] && Array.isArray(apiHourly[config.apiParam]) && index < apiHourly[config.apiParam].length && apiHourly[config.apiParam][index] !== null) {
             (entry as any)[key] = apiHourly[config.apiParam][index];
             dataPointHasValue = true;
@@ -234,7 +231,7 @@ export async function fetchCombinedDataAction(
     });
      log.push({ message: `Processed ${processedCount} timestamps with data from ${apiSource} API out of ${times.length} total timestamps.`, status: 'success' });
   };
-  
+
   if (marineApiData) {
     processApiHourlyData(marineApiData, selectedParamKeys.filter(k => PARAMETER_CONFIG[k as CombinedParameterKey].apiSource === 'marine') as CombinedParameterKey[], 'marine');
   }
@@ -254,12 +251,11 @@ export async function fetchCombinedDataAction(
   } else {
     log.push({ message: `Successfully processed and merged ${finalCombinedData.length} data points.`, status: 'success' });
   }
-  
-  return { 
-    success: true, 
-    data: finalCombinedData, 
-    log, 
-    dataLocationContext: `Data for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)} (Open-Meteo)` 
+
+  return {
+    success: true,
+    data: finalCombinedData,
+    log,
+    dataLocationContext: `Data for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)} (Open-Meteo)`
   };
 }
-
