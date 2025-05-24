@@ -7,7 +7,7 @@ import { format, parseISO } from 'date-fns';
 
 interface OpenMeteoMarineHourlyResponse {
   time?: string[];
-  sea_level_height?: (number | null)[]; // Corrected parameter
+  sea_level_height?: (number | null)[]; // Corrected parameter based on documentation
 }
 
 interface OpenMeteoMarineApiResponse {
@@ -59,21 +59,22 @@ export async function fetchTideExplorerDataAction(
   const formattedEndDate = format(parseISO(endDate), 'yyyy-MM-dd');
   log.push({ message: `Dates formatted for API: Start: ${formattedStartDate}, End: ${formattedEndDate}`, status: 'info' });
   
-  const apiParametersString = "sea_level_height"; // Confirmed correct parameter
+  const apiParametersString = "sea_level_height"; // Confirmed correct parameter as per documentation
   log.push({ message: `Requesting Open-Meteo Marine API hourly parameter: '${apiParametersString}'`, status: 'info' });
   log.push({ message: `Parameters for API: latitude=${latitude}, longitude=${longitude}, start_date=${formattedStartDate}, end_date=${formattedEndDate}, hourly=${apiParametersString}`, status: 'info'});
 
-
-  const apiUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${latitude}&longitude=${longitude}&start_date=${formattedStartDate}&end_date=${formattedEndDate}&hourly=${apiParametersString}`;
+  const baseUrl = "https://marine-api.open-meteo.com/v1/marine"; // Explicit base URL
+  const apiUrl = `${baseUrl}?latitude=${latitude}&longitude=${longitude}&start_date=${formattedStartDate}&end_date=${formattedEndDate}&hourly=${apiParametersString}`;
   log.push({ message: `Constructed API URL: ${apiUrl}`, status: 'info', details: apiUrl });
 
   log.push({ message: "Attempting to fetch data from Open-Meteo Marine API...", status: 'pending' });
 
   try {
     const response = await fetch(apiUrl, { cache: 'no-store' });
-    log.push({ message: `API Response Status: ${response.status}`, status: response.ok ? 'success' : 'error' });
-
+    // Get raw body early for logging in all cases
     const rawResponseBody = await response.text(); 
+
+    log.push({ message: `API Response Status: ${response.status}`, status: response.ok ? 'success' : 'error' });
     log.push({ message: `Raw API Response Body (first 500 chars): ${rawResponseBody.substring(0,500)}`, status: response.ok ? 'info' : 'error', details: rawResponseBody });
 
     if (!response.ok) {
@@ -103,8 +104,8 @@ export async function fetchTideExplorerDataAction(
     }
 
     if (apiData.error) {
-      log.push({ message: `Open-Meteo API reported an error: ${apiData.reason}`, status: 'error', details: JSON.stringify(apiData) });
-      return { success: false, error: `Open-Meteo API Error: ${apiData.reason}`, log };
+      log.push({ message: `Open-Meteo API reported an error: ${apiData.reason || 'Unknown error from API'}`, status: 'error', details: JSON.stringify(apiData) });
+      return { success: false, error: `Open-Meteo API Error: ${apiData.reason || 'Unknown error'}`, log };
     }
     log.push({ message: "API response indicates no explicit error flag.", status: 'success' });
 
@@ -125,15 +126,16 @@ export async function fetchTideExplorerDataAction(
         return { success: true, data: [], log, dataLocationContext: `No tide data found for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)} (Open-Meteo)`, error: "No tide data found for the selected location and date range at Open-Meteo." };
     }
 
-    if (!apiData.hourly.sea_level_height || !Array.isArray(apiData.hourly.sea_level_height)) {
-      log.push({ message: "API response 'hourly.sea_level_height' is missing or not an array.", status: 'error', details: JSON.stringify(apiData.hourly) });
-      return { success: false, error: "Incomplete data from API: missing 'hourly.sea_level_height' array.", log };
+    const seaLevelsKey: keyof OpenMeteoMarineHourlyResponse = 'sea_level_height';
+    if (!apiData.hourly[seaLevelsKey] || !Array.isArray(apiData.hourly[seaLevelsKey])) {
+      log.push({ message: `API response 'hourly.${seaLevelsKey}' is missing or not an array.`, status: 'error', details: JSON.stringify(apiData.hourly) });
+      return { success: false, error: `Incomplete data from API: missing 'hourly.${seaLevelsKey}' array.`, log };
     }
-    log.push({ message: `'hourly.sea_level_height' array present with ${apiData.hourly.sea_level_height.length} entries.`, status: 'info' });
+    log.push({ message: `'hourly.${seaLevelsKey}' array present with ${apiData.hourly[seaLevelsKey]!.length} entries.`, status: 'info' });
 
 
     const times = apiData.hourly.time;
-    const seaLevels = apiData.hourly.sea_level_height;
+    const seaLevels = apiData.hourly[seaLevelsKey]!; // Assert not null as we checked above
 
     if (seaLevels.length !== times.length) {
       log.push({ message: `Sea level height data array length (${seaLevels.length}) does not match time array length (${times.length}).`, status: 'error', details: JSON.stringify(apiData.hourly) });
@@ -145,9 +147,9 @@ export async function fetchTideExplorerDataAction(
     for (let i = 0; i < times.length; i++) {
       const point: TideExplorerDataPoint = { time: times[i] };
       if (seaLevels[i] !== null && seaLevels[i] !== undefined) {
-        point.seaLevel = seaLevels[i];
+        point.seaLevel = seaLevels[i] as number;
       }
-      // Only add if seaLevel has a valid value, or always add if you want to show gaps for nulls
+      // Only add if seaLevel has a valid value
       if (point.seaLevel !== undefined) {
           tideData.push(point);
       }
@@ -169,3 +171,5 @@ export async function fetchTideExplorerDataAction(
     return { success: false, error: `Error fetching Open-Meteo tide data: ${errorMessage}`, log };
   }
 }
+
+    
