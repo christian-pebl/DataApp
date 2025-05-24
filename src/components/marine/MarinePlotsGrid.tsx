@@ -1,31 +1,31 @@
 
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts';
-import type { CombinedParameterKey, CombinedDataPoint } from '@/app/om-marine-explorer/shared'; // Use combined types
-import { PARAMETER_CONFIG } from '@/app/om-marine-explorer/shared'; // Use combined config
-import { Info, Waves, Sailboat, Compass, Timer, Thermometer, Wind, CloudSun as CloudIcon, CheckCircle2, XCircle, Loader2, AlertCircle } from "lucide-react"; // Added Wind, CloudIcon
+import React, { useState, useEffect, useMemo } from 'react';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush, Label as RechartsLabel } from 'recharts';
+import type { CombinedParameterKey, CombinedDataPoint } from '@/app/om-marine-explorer/shared';
+import { PARAMETER_CONFIG } from '@/app/om-marine-explorer/shared';
+import { Info, CheckCircle2, XCircle, Loader2, AlertCircle } from "lucide-react";
+import type { LucideIcon } from 'lucide-react';
 
-interface PlotConfig {
+interface PlotConfigInternal {
   dataKey: CombinedParameterKey;
   title: string;
   unit: string;
   color: string;
-  Icon: React.ElementType;
+  Icon: LucideIcon;
   dataTransform?: (value: number) => number;
 }
 
-// This interface now uses CombinedDataPoint and CombinedParameterKey
-export interface CombinedPlotsGridProps {
-  marineData: CombinedDataPoint[] | null; // Rename prop to combinedData or genericData for clarity if used elsewhere
+export interface MarinePlotsGridProps {
+  marineData: CombinedDataPoint[] | null;
   isLoading: boolean;
   error: string | null;
   plotVisibility: Record<CombinedParameterKey, boolean>;
 }
 
 type SeriesAvailabilityStatus = 'pending' | 'available' | 'unavailable';
-const MPH_CONVERSION_FACTOR = 2.23694; // For wind speed
+const MPH_CONVERSION_FACTOR = 2.23694; // For wind speed (m/s to mph)
 
 const formatXAxisTickBrush = (timeValue: string | number): string => {
   try {
@@ -43,43 +43,33 @@ const formatXAxisTickBrush = (timeValue: string | number): string => {
   }
 };
 
-// Renamed component to reflect its new combined nature
 export function MarinePlotsGrid({ 
-  marineData: combinedData, // Destructure with rename for clarity inside component
+  marineData: combinedData, 
   isLoading, 
   error,
   plotVisibility,
-}: CombinedPlotsGridProps) {
+}: MarinePlotsGridProps) {
   
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
   
-  // Plot configs now derived from the global PARAMETER_CONFIG
-  const plotConfigs = useMemo((): PlotConfig[] => {
+  const plotConfigs = useMemo((): PlotConfigInternal[] => {
     return (Object.keys(PARAMETER_CONFIG) as CombinedParameterKey[]).map(key => {
       const config = PARAMETER_CONFIG[key];
       let dataTransformFunc: ((value: number) => number) | undefined = undefined;
       let displayUnit = config.unit;
 
-      if (key === 'windSpeed10m') { // API gives km/h, display as mph
-        displayUnit = 'mph'; // Corrected unit display
-        dataTransformFunc = (value: number) => parseFloat(((value / 3.6) * MPH_CONVERSION_FACTOR).toFixed(1)); // km/h to m/s then to mph
+      if (key === 'windSpeed10m' && config.apiParam === 'windspeed_10m') { // API gives km/h, display as mph
+        displayUnit = 'mph'; 
+        dataTransformFunc = (value: number) => parseFloat(((value / 3.6) * MPH_CONVERSION_FACTOR).toFixed(1)); // km/h from API -> m/s -> mph
       }
       
       return {
         dataKey: key,
         title: config.name,
         unit: displayUnit,
-        color: key === 'seaLevelHeightMsl' ? '--chart-1' :
-               key === 'waveHeight' ? '--chart-2' :
-               key === 'waveDirection' ? '--chart-4' :
-               key === 'wavePeriod' ? '--chart-3' :
-               key === 'seaSurfaceTemperature' ? '--chart-5' :
-               key === 'temperature2m' ? '--chart-1' : // Re-use colors for weather
-               key === 'windSpeed10m' ? '--chart-2' :
-               key === 'windDirection10m' ? '--chart-4' :
-               key === 'cloudCover' ? '--chart-3' : '--chart-5', // Default color
-        Icon: (config as { icon?: React.ElementType }).icon || Info,
+        color: config.color,
+        Icon: (config as { icon?: LucideIcon }).icon || Info,
         dataTransform: dataTransformFunc,
       };
     });
@@ -97,7 +87,7 @@ export function MarinePlotsGrid({
   useEffect(() => {
     if (combinedData && combinedData.length > 0 && brushEndIndex === undefined) {
       setBrushEndIndex(combinedData.length -1);
-    } else if ((!combinedData || combinedData.length === 0) && brushEndIndex !== undefined) {
+    } else if ((!combinedData || combinedData.length === 0)) {
       setBrushStartIndex(0);
       setBrushEndIndex(undefined);
     }
@@ -266,7 +256,7 @@ export function MarinePlotsGrid({
                 height={30}
                 dy={5}
               />
-               <Line dataKey={plotConfigs.find(p => plotVisibility[p.dataKey] && seriesDataAvailability[p.dataKey] === 'available')?.dataKey || plotConfigs[0]?.dataKey} stroke="transparent" dot={false} /> 
+               <Line dataKey={(Object.keys(PARAMETER_CONFIG) as CombinedParameterKey[]).find(p => plotVisibility[p] && seriesDataAvailability[p] === 'available') || plotConfigs[0]?.dataKey} stroke="transparent" dot={false} /> 
               <Brush
                 dataKey="time"
                 height={20}
@@ -287,3 +277,4 @@ export function MarinePlotsGrid({
     </div>
   );
 }
+

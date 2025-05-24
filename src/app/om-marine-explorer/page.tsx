@@ -8,8 +8,8 @@ import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label as UiLabel } from "@/components/ui/label"; // Renamed to avoid conflict
-import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Wind as WindIcon, Copy, Anchor, CloudSun } from "lucide-react";
+import { Label as UiLabel } from "@/components/ui/label";
+import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Wind as WindIcon, Copy, CloudSun, Sun, Sunrise } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -36,10 +36,9 @@ const OpenLayersMapWithNoSSR = dynamic(
 
 type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle' | 'warning';
 
-// Default coordinates (e.g., Milford Haven, consistent with screenshot)
 const DEFAULT_LATITUDE = 51.7128;
-const DEFAULT_LONGITUDE = -5.0341;
-const DEFAULT_MAP_CENTER: [number, number] = [DEFAULT_LONGITUDE, DEFAULT_LATITUDE]; // OpenLayers: [lon, lat]
+const DEFAULT_LONGITUDE = -5.0341; // Milford Haven
+const DEFAULT_MAP_CENTER: [number, number] = [DEFAULT_LONGITUDE, DEFAULT_LATITUDE];
 const DEFAULT_MAP_ZOOM = 10;
 
 
@@ -83,6 +82,8 @@ export default function OMMarineExplorerPage() {
   if (PARAMETER_CONFIG.windSpeed10m) (PARAMETER_CONFIG.windSpeed10m as { icon?: LucideIcon }).icon = WindIcon;
   if (PARAMETER_CONFIG.windDirection10m) (PARAMETER_CONFIG.windDirection10m as { icon?: LucideIcon }).icon = Compass;
   if (PARAMETER_CONFIG.cloudCover) (PARAMETER_CONFIG.cloudCover as { icon?: LucideIcon }).icon = CloudSun;
+  if (PARAMETER_CONFIG.dhi) (PARAMETER_CONFIG.dhi as { icon?: LucideIcon }).icon = Sunrise; // Sunrise as a proxy for diffuse light
+  if (PARAMETER_CONFIG.ghi) (PARAMETER_CONFIG.ghi as { icon?: LucideIcon }).icon = Sun;
 
 
   const handleMapLocationSelect = useCallback((coords: { lat: number; lon: number }) => {
@@ -115,7 +116,7 @@ export default function OMMarineExplorerPage() {
     setIsLogLoading(true); setLogOverallStatus('pending'); setShowFetchLogAccordion("om-combined-fetch-log-item"); 
     
     let loadingToastId: string | undefined;
-    loadingToastId = toast({ title: "Fetching Data", description: `Fetching data...`}).id;
+    loadingToastId = toast({ title: "Fetching Data", description: `Fetching data for ${selectedParams.length} parameter(s)...`}).id;
     
     const result = await fetchCombinedDataAction({ 
       latitude: mapSelectedCoords.lat,
@@ -140,7 +141,9 @@ export default function OMMarineExplorerPage() {
          setLogOverallStatus('warning');
       } else {
         toast({ title: "Data Loaded", description: `Loaded ${result.data.length} data points.` });
-        setLogOverallStatus('success'); setShowFetchLogAccordion("");
+        setLogOverallStatus('success'); 
+        // Only hide log if successfully got some data.
+        if (result.data.length > 0) setShowFetchLogAccordion("");
       }
     } else {
       setErrorData(result.error || `Failed to load data.`);
@@ -178,7 +181,7 @@ export default function OMMarineExplorerPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapSelectedCoords, dateRange]);
 
-  const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string) => {
+  const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string | null) => {
     if (isLoading) return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Fetching log...</>;
     if (status === 'success') return <><CheckCircle2 className="mr-2 h-3 w-3 text-green-500" />{defaultTitle}: Success</>;
     if (status === 'error') return <><XCircle className="mr-2 h-3 w-3 text-destructive" />{defaultTitle}: Failed {lastError ? `(${lastError.substring(0,30)}...)` : ''}</>;
@@ -228,7 +231,7 @@ export default function OMMarineExplorerPage() {
         <Accordion type="single" collapsible value={accordionValue} onValueChange={onValueChange} className="w-full">
           <AccordionItem value={title.toLowerCase().replace(/\s+/g, '-') + "-log-item"} className={cn("border rounded-md", getLogAccordionItemClass(overallStatus))}>
             <AccordionTrigger className="px-3 py-1.5 text-xs hover:no-underline [&_svg.lucide-chevron-down]:h-3 [&_svg.lucide-chevron-down]:w-3">
-              {getLogTriggerContent(overallStatus, isLoading, title, errorDetails || undefined)}
+              {getLogTriggerContent(overallStatus, isLoading, title, errorDetails)}
             </AccordionTrigger>
             <AccordionContent className="px-2 pb-1 pt-0">
               <ScrollArea className="max-h-[35rem] h-auto w-full rounded-md border bg-muted/30 dark:bg-muted/10 p-1.5 mt-1">
@@ -273,8 +276,7 @@ export default function OMMarineExplorerPage() {
             </Link>
             <div className="flex items-center gap-1">
               <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (CSV)"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer (CSV)</p></TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><Link href="/weather" passHref><Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Weather Page"><CloudSun className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Weather Page</p></TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><Link href="/om-marine-explorer" passHref><Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="OM Marine Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>OM Marine Explorer</p></TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Link href="/om-marine-explorer" passHref><Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="Weather & Marine Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Weather &amp; Marine Explorer</p></TooltipContent></Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
@@ -286,7 +288,7 @@ export default function OMMarineExplorerPage() {
         <Card className="mb-4">
           <CardHeader className="pb-3 pt-4">
             <CardTitle className="text-lg flex items-center gap-2">
-              <Waves className="h-5 w-5 text-primary" />Weather & Marine Data Explorer
+              <Waves className="h-5 w-5 text-primary" />Weather &amp; Marine Data Explorer
             </CardTitle>
              <CardDescription className="text-xs">
                 Select parameters, a location on the map, and a date range to fetch and visualize data from Open-Meteo.
@@ -301,7 +303,7 @@ export default function OMMarineExplorerPage() {
               <CardContent className="space-y-1">
                 {ALL_PARAMETERS.map((key) => { 
                   const paramConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
-                  const IconComp = (paramConfig as unknown as { icon?: LucideIcon }).icon || Info; 
+                  const IconComp = (paramConfig as { icon?: LucideIcon }).icon || Info; 
                   return (
                     <div key={key} className="flex items-center space-x-1.5">
                       <Checkbox id={`om-combined-visibility-${key}`} checked={plotVisibility[key]} onCheckedChange={(c) => handlePlotVisibilityChange(key, !!c)} className="h-3.5 w-3.5"/>
@@ -313,7 +315,7 @@ export default function OMMarineExplorerPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2 pt-3">
-                <CardTitle className="text-base flex items-center gap-1.5"><MapPin className="h-4 w-4 text-primary"/>Location & Date</CardTitle>
+                <CardTitle className="text-base flex items-center gap-1.5"><MapPin className="h-4 w-4 text-primary"/>Location &amp; Date</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <UiLabel htmlFor="om-map-container" className="text-xs font-medium mb-0.5 block">Click Map to Select Location</UiLabel>
@@ -345,7 +347,7 @@ export default function OMMarineExplorerPage() {
           </div>
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-sm h-full">
-              <CardHeader className="p-2 pt-3"><CardTitle className="text-base">{dataLocationContext || "Weather & Marine Data Plots"}</CardTitle></CardHeader>
+              <CardHeader className="p-2 pt-3"><CardTitle className="text-base">{dataLocationContext || "Weather &amp; Marine Data Plots"}</CardTitle></CardHeader>
               <CardContent className="p-1.5 h-[calc(100%-2.5rem)]"> 
                 <MarinePlotsGrid 
                     marineData={combinedData} 
@@ -361,10 +363,11 @@ export default function OMMarineExplorerPage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            Weather & Marine data from Open-Meteo.
+            Weather &amp; Marine data from Open-Meteo.
           </p>
         </div>
       </footer>
     </div>
   );
 }
+
