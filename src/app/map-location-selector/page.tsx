@@ -1,25 +1,33 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
-import { PlotInstance } from "@/components/dataflow/PlotInstance";
-import { PlusCircle, SunMoon, LayoutGrid, Waves, MapPin as MapPinIcon, CloudSun, Anchor } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { SunMoon, LayoutGrid, Waves, CloudSun, MapPin as MapPinIcon, Anchor } from "lucide-react"; // Added MapPinIcon for header
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
+import type { LatLngExpression } from 'leaflet';
 
-interface PlotConfig {
-  id: string;
-  title: string;
-}
+// Dynamically import the map component to avoid SSR issues
+const InteractivePinMap = dynamic(
+  () => import('@/components/map/InteractivePinMap').then((mod) => mod.InteractivePinMap),
+  { 
+    ssr: false,
+    loading: () => <p className="text-center p-4">Loading map...</p> 
+  }
+);
 
-export default function DataExplorerPage() {
+export default function MapLocationSelectorPage() {
   const [theme, setTheme] = useState("light");
-  const [plots, setPlots] = useState<PlotConfig[]>([]);
-  const plotsInitialized = useRef(false);
   const pathname = usePathname();
+  const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [mapCenter, setMapCenter] = useState<LatLngExpression>([54.5, -3.5]); // Approx center of UK
+  const [mapZoom, setMapZoom] = useState<number>(6);
+
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
@@ -46,23 +54,9 @@ export default function DataExplorerPage() {
     setTheme(theme === "light" ? "dark" : "light");
   };
 
-  const addPlot = useCallback(() => {
-    setPlots((prevPlots) => [
-      ...prevPlots,
-      { id: `plot-${Date.now()}-${prevPlots.length}`, title: `Plot ${prevPlots.length + 1}` },
-    ]);
-  }, []);
-
-  const removePlot = useCallback((idToRemove: string) => {
-    setPlots((prevPlots) => prevPlots.filter((plot) => plot.id !== idToRemove));
-  }, []);
-
-  useEffect(() => {
-    if (!plotsInitialized.current && plots.length === 0) {
-      addPlot(); 
-      plotsInitialized.current = true;
-    }
-  }, [addPlot, plots.length]);
+  const handleLocationSelect = (coords: { lat: number; lng: number }) => {
+    setSelectedCoords(coords);
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -93,7 +87,7 @@ export default function DataExplorerPage() {
                 </TooltipTrigger>
                 <TooltipContent><p>OM Marine Explorer</p></TooltipContent>
               </Tooltip>
-              <Tooltip>
+               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link href="/map-location-selector" passHref>
                     <Button variant={pathname === '/map-location-selector' ? "secondary" : "ghost"} size="icon" aria-label="Map Location Selector">
@@ -117,36 +111,47 @@ export default function DataExplorerPage() {
         </TooltipProvider>
       </header>
 
-      <main className="flex-grow container mx-auto p-3 md:p-4">
-        <div className="flex justify-center mb-3">
-          <Button onClick={addPlot} size="sm" className="h-8 text-xs">
-            <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot
-          </Button>
-        </div>
-        {plots.length === 0 ? (
-          <div className="flex flex-col items-center justify-center text-muted-foreground h-64 p-3">
-            <LayoutGrid className="w-10 h-10 mb-3 text-muted" />
-            <p className="text-sm">No plots to display.</p>
-            <p className="text-xs">Click "Add New Plot" to get started.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {plots.map((plot) => (
-              <PlotInstance
-                key={plot.id}
-                instanceId={plot.id}
-                initialPlotTitle={plot.title}
-                onRemovePlot={removePlot}
-              />
-            ))}
-          </div>
-        )}
+      <main className="flex-grow container mx-auto p-3 md:p-4 flex flex-col">
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <MapPinIcon className="h-5 w-5 text-primary" />
+              Map Location Selector
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Click on the map to select a location and get its coordinates.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {selectedCoords ? (
+              <div className="mb-3 p-3 border rounded-md bg-muted/50 text-sm">
+                <p><span className="font-semibold">Selected Latitude:</span> {selectedCoords.lat.toFixed(5)}</p>
+                <p><span className="font-semibold">Selected Longitude:</span> {selectedCoords.lng.toFixed(5)}</p>
+              </div>
+            ) : (
+              <p className="mb-3 text-sm text-muted-foreground">No location selected yet. Click on the map.</p>
+            )}
+          </CardContent>
+        </Card>
+        
+        <Card className="flex-grow flex flex-col shadow-sm">
+            <CardContent className="p-1.5 flex-grow">
+                 <div className="h-[500px] md:h-full w-full rounded-md overflow-hidden border">
+                    <InteractivePinMap 
+                        initialCenter={mapCenter}
+                        initialZoom={mapZoom}
+                        onLocationSelect={handleLocationSelect}
+                        selectedCoords={selectedCoords}
+                    />
+                </div>
+            </CardContent>
+        </Card>
       </main>
 
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            PEBL data app - CSV Data Explorer.
+            PEBL data app - Map Location Selector
           </p>
         </div>
       </footer>

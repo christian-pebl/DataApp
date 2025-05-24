@@ -3,6 +3,7 @@ import type {Metadata} from 'next';
 import { Inter, Roboto_Mono } from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
+import 'leaflet/dist/leaflet.css';
 
 
 const inter = Inter({
@@ -28,7 +29,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${robotoMono.variable} antialiased`}>
+      <body className={`${inter.variable} ${robotoMono.variable} font-sans antialiased`}>
         {children}
         <Toaster />
       </body>
