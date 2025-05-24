@@ -1,5 +1,4 @@
 
-'use client';
 import type { LucideIcon } from 'lucide-react';
 import { z } from 'zod';
 import { isValidDateString } from '@/lib/utils';
