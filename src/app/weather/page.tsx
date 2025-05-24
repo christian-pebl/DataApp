@@ -6,10 +6,11 @@ import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label as UiLabel } from "@/components/ui/label";
-import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, CloudSun, Thermometer, Wind, Compass, Cloud, Anchor, MapPin as MapPinIcon } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, CloudSun, Thermometer, Wind as WindIcon, Compass, Cloud, Anchor, Copy } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -17,7 +18,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
 import { WeatherPlotsGrid } from "@/components/weather/WeatherPlotsGrid";
 import { useToast } from "@/hooks/use-toast";
-import { formatISO, subDays } from 'date-fns';
+import { formatISO, subDays, addDays } from 'date-fns';
 import type { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
@@ -41,6 +42,7 @@ const DEFAULT_LATITUDE = 53.4808;
 const DEFAULT_LONGITUDE = -2.2426;
 const DEFAULT_MAP_CENTER: [number, number] = [DEFAULT_LONGITUDE, DEFAULT_LATITUDE]; // OpenLayers: [lon, lat]
 const DEFAULT_MAP_ZOOM = 10;
+
 
 export default function WeatherPage() {
   const [theme, setTheme] = useState("light");
@@ -76,7 +78,7 @@ export default function WeatherPage() {
 
   const plotConfigIcons: Record<WeatherPlotVisibilityKeys, LucideIcon> = {
     temperature: Thermometer,
-    windSpeed: WindIcon, // Ensure WindIcon is imported as Wind to avoid conflict
+    windSpeed: WindIcon,
     cloudCover: Cloud,
     windDirection: Compass,
   };
@@ -153,7 +155,7 @@ export default function WeatherPage() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapSelectedCoords, dateRange]); // Removed handleFetchWeather from deps
+  }, []); // Removed dependencies to ensure it runs only once on initial mount
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
@@ -173,8 +175,8 @@ export default function WeatherPage() {
     setPlotVisibility(prev => ({ ...prev, [key]: checked }));
   }, []);
 
-  const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string) => {
-    if (isLoading) return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Fetching log...</>;
+  const getLogTriggerContent = (status: LogOverallStatus, isLoadingFlag: boolean, defaultTitle: string, lastError?: string) => {
+    if (isLoadingFlag) return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Fetching log...</>;
     if (status === 'success') return <><CheckCircle2 className="mr-2 h-3 w-3 text-green-500" />{defaultTitle}: Success</>;
     if (status === 'error') return <><XCircle className="mr-2 h-3 w-3 text-destructive" />{defaultTitle}: Failed {lastError ? `(${lastError.substring(0,30)}...)` : ''}</>;
     if (status === 'pending') return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />{defaultTitle}: In Progress</>;
@@ -213,7 +215,7 @@ export default function WeatherPage() {
     logSteps: LogStep[], 
     accordionValue: string, 
     onValueChange: (value: string) => void, 
-    isLoadingFlag: boolean, // Renamed to avoid conflict
+    isLoadingFlag: boolean, 
     overallStatus: LogOverallStatus, 
     title: string, 
     errorDetails?: string | null
@@ -270,16 +272,6 @@ export default function WeatherPage() {
               <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (CSV)"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer (CSV)</p></TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger asChild><Link href="/weather" passHref><Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Weather Page"><CloudSun className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Weather Page</p></TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger asChild><Link href="/om-marine-explorer" passHref><Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="OM Marine Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>OM Marine Explorer</p></TooltipContent></Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/map-location-selector" passHref>
-                    <Button variant={pathname === '/map-location-selector' ? "secondary" : "ghost"} size="icon" aria-label="Map Location Selector">
-                      <MapPinIcon className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>Map Location Selector</p></TooltipContent>
-              </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>

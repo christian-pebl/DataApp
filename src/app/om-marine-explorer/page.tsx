@@ -8,8 +8,8 @@ import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label as UiLabel } from "@/components/ui/label";
-import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Wind as WindIcon, Copy, Anchor, CloudSun, MapPin as MapPinIcon } from "lucide-react";
+import { Label as UiLabel } from "@/components/ui/label"; // Renamed to avoid conflict
+import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, FileText, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Wind as WindIcon, Copy, Anchor, CloudSun } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -42,6 +42,7 @@ const DEFAULT_LONGITUDE = -5.0341;
 const DEFAULT_MAP_CENTER: [number, number] = [DEFAULT_LONGITUDE, DEFAULT_LATITUDE]; // OpenLayers: [lon, lat]
 const DEFAULT_MAP_ZOOM = 10;
 
+
 export default function OMMarineExplorerPage() { 
   const [theme, setTheme] = useState("light");
   const pathname = usePathname();
@@ -72,12 +73,24 @@ export default function OMMarineExplorerPage() {
   
   const initialFetchDone = React.useRef(false);
 
+  // Assign icons dynamically
+  if (PARAMETER_CONFIG.seaLevelHeightMsl) (PARAMETER_CONFIG.seaLevelHeightMsl as { icon?: LucideIcon }).icon = Waves;
+  if (PARAMETER_CONFIG.waveHeight) (PARAMETER_CONFIG.waveHeight as { icon?: LucideIcon }).icon = Sailboat;
+  if (PARAMETER_CONFIG.waveDirection) (PARAMETER_CONFIG.waveDirection as { icon?: LucideIcon }).icon = Compass;
+  if (PARAMETER_CONFIG.wavePeriod) (PARAMETER_CONFIG.wavePeriod as { icon?: LucideIcon }).icon = Timer;
+  if (PARAMETER_CONFIG.seaSurfaceTemperature) (PARAMETER_CONFIG.seaSurfaceTemperature as { icon?: LucideIcon }).icon = Thermometer;
+  if (PARAMETER_CONFIG.temperature2m) (PARAMETER_CONFIG.temperature2m as { icon?: LucideIcon }).icon = Thermometer;
+  if (PARAMETER_CONFIG.windSpeed10m) (PARAMETER_CONFIG.windSpeed10m as { icon?: LucideIcon }).icon = WindIcon;
+  if (PARAMETER_CONFIG.windDirection10m) (PARAMETER_CONFIG.windDirection10m as { icon?: LucideIcon }).icon = Compass;
+  if (PARAMETER_CONFIG.cloudCover) (PARAMETER_CONFIG.cloudCover as { icon?: LucideIcon }).icon = CloudSun;
+
+
   const handleMapLocationSelect = useCallback((coords: { lat: number; lon: number }) => {
     setMapSelectedCoords(coords);
     toast({ title: "Location Selected", description: `Lat: ${coords.lat.toFixed(4)}, Lon: ${coords.lon.toFixed(4)}` });
   }, [toast]);
 
-  const handleFetchMarineData = useCallback(async () => {
+  const handleFetchCombinedData = useCallback(async () => {
     if (!mapSelectedCoords) {
         toast({ variant: "destructive", title: "Missing Location", description: "Please select a location on the map."});
         return;
@@ -158,12 +171,12 @@ export default function OMMarineExplorerPage() {
     if (initialFetchDone.current) return;
     if (mapSelectedCoords && dateRange?.from && dateRange?.to) {
          if (!(dateRange.from > dateRange.to)) {
-           handleFetchMarineData();
+           handleFetchCombinedData();
            initialFetchDone.current = true; 
          }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapSelectedCoords, dateRange]); // Removed handleFetchMarineData from deps to avoid loop on initial load
+  }, [mapSelectedCoords, dateRange]);
 
   const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string) => {
     if (isLoading) return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Fetching log...</>;
@@ -260,17 +273,8 @@ export default function OMMarineExplorerPage() {
             </Link>
             <div className="flex items-center gap-1">
               <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (CSV)"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer (CSV)</p></TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Link href="/weather" passHref><Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Weather Page"><CloudSun className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Weather Page</p></TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger asChild><Link href="/om-marine-explorer" passHref><Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="OM Marine Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>OM Marine Explorer</p></TooltipContent></Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/map-location-selector" passHref>
-                    <Button variant={pathname === '/map-location-selector' ? "secondary" : "ghost"} size="icon" aria-label="Map Location Selector">
-                      <MapPinIcon className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>Map Location Selector</p></TooltipContent>
-              </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
@@ -331,7 +335,7 @@ export default function OMMarineExplorerPage() {
                   <DatePickerWithRange id="om-combined-date-range" date={dateRange} onDateChange={setDateRange} disabled={isLoadingData} /> 
                   {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && <p className="text-xs text-destructive px-1 pt-1">Start date error.</p>}
                 </div>
-                <Button onClick={handleFetchMarineData} disabled={isLoadingData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => plotVisibility[key]).length === 0} className="w-full h-9 text-xs"> 
+                <Button onClick={handleFetchCombinedData} disabled={isLoadingData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => plotVisibility[key]).length === 0} className="w-full h-9 text-xs"> 
                   {isLoadingData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
                   {isLoadingData ? "Fetching..." : "Fetch Data"}
                 </Button>
