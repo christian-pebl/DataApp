@@ -26,21 +26,20 @@ import { fetchTideExplorerDataAction } from './actions';
 type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle' | 'warning';
 
 const knownLocations: { [key: string]: { lat: number; lon: number; name: string } } = {
-  "newlyn": { lat: 50.10, lon: -5.55, name: "Newlyn" }, // Primary tidal observatory
+  "milfordhaven": { lat: 51.7128, lon: -5.0341, name: "Milford Haven" }, // Updated coordinates
+  "newlyn": { lat: 50.10, lon: -5.55, name: "Newlyn" }, 
   "stdavidshead": { lat: 52.0, lon: -5.3, name: "St David's Head" },
-  "milfordhaven": { lat: 51.71, lon: -5.04, name: "Milford Haven" },
   "dover": { lat: 51.12, lon: 1.32, name: "Dover" },
   "liverpool": { lat: 53.40, lon: -2.99, name: "Liverpool" },
   "portsmouth": { lat: 50.81, lon: -1.08, name: "Portsmouth" },
 };
-const defaultLocationKey = "newlyn"; // Changed default to Newlyn
+const defaultLocationKey = "milfordhaven"; // Default to Milford Haven
 
 export default function TideExplorerPage() {
   const [theme, setTheme] = useState("light");
   const pathname = usePathname();
   const { toast, dismiss } = useToast();
   
-  // Default to a historical date range
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
     from: subDays(new Date(), 37), 
     to: subDays(new Date(), 30),
@@ -293,7 +292,6 @@ export default function TideExplorerPage() {
       setInitialCoords(newCoords); 
       setCurrentLocationName(location.name);
       setShowSuggestions(false);
-      // Auto-fetch on suggestion click if date range is valid
       if (dateRange?.from && dateRange?.to) {
         handleLocationSearchAndFetch(newCoords, location.name, false);
       }
@@ -311,7 +309,7 @@ export default function TideExplorerPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <TooltipProvider>
           <div className="container flex h-full items-center justify-between px-3 md:px-4">
-            <Link href="/om-marine-explorer" passHref>
+            <Link href="/tide-explorer" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
