@@ -7,13 +7,12 @@ import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { SunMoon, LayoutGrid, Waves, CloudSun, MapPin as MapPinIcon, Anchor } from "lucide-react"; // Added MapPinIcon for header
+import { SunMoon, LayoutGrid, Waves, MapPin as MapPinIcon } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import type { LatLngExpression } from 'leaflet';
 
-// Dynamically import the map component to avoid SSR issues
-const InteractivePinMap = dynamic(
+const InteractiveMap = dynamic(
   () => import('@/components/map/InteractivePinMap').then((mod) => mod.InteractivePinMap),
   { 
     ssr: false,
@@ -24,7 +23,6 @@ const InteractivePinMap = dynamic(
 export default function MapLocationSelectorPage() {
   const [theme, setTheme] = useState("light");
   const pathname = usePathname();
-  const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [mapCenter, setMapCenter] = useState<LatLngExpression>([54.5, -3.5]); // Approx center of UK
   const [mapZoom, setMapZoom] = useState<number>(6);
 
@@ -52,10 +50,6 @@ export default function MapLocationSelectorPage() {
 
   const toggleTheme = () => {
     setTheme(theme === "light" ? "dark" : "light");
-  };
-
-  const handleLocationSelect = (coords: { lat: number; lng: number }) => {
-    setSelectedCoords(coords);
   };
 
   return (
@@ -116,32 +110,20 @@ export default function MapLocationSelectorPage() {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <MapPinIcon className="h-5 w-5 text-primary" />
-              Map Location Selector
+              Interactive Map
             </CardTitle>
             <CardDescription className="text-xs">
-              Click on the map to select a location and get its coordinates.
+              Explore the map by zooming and panning.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            {selectedCoords ? (
-              <div className="mb-3 p-3 border rounded-md bg-muted/50 text-sm">
-                <p><span className="font-semibold">Selected Latitude:</span> {selectedCoords.lat.toFixed(5)}</p>
-                <p><span className="font-semibold">Selected Longitude:</span> {selectedCoords.lng.toFixed(5)}</p>
-              </div>
-            ) : (
-              <p className="mb-3 text-sm text-muted-foreground">No location selected yet. Click on the map.</p>
-            )}
-          </CardContent>
         </Card>
         
         <Card className="flex-grow flex flex-col shadow-sm">
             <CardContent className="p-1.5 flex-grow">
                  <div className="h-[500px] md:h-full w-full rounded-md overflow-hidden border">
-                    <InteractivePinMap 
+                    <InteractiveMap 
                         initialCenter={mapCenter}
                         initialZoom={mapZoom}
-                        onLocationSelect={handleLocationSelect}
-                        selectedCoords={selectedCoords}
                     />
                 </div>
             </CardContent>
@@ -151,11 +133,10 @@ export default function MapLocationSelectorPage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            PEBL data app - Map Location Selector
+            PEBL data app - Interactive Map
           </p>
         </div>
       </footer>
     </div>
   );
 }
-
