@@ -2,17 +2,15 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts';
-import type { CombinedParameterKey, CombinedDataPoint } from '@/app/om-marine-explorer/shared';
-import { PARAMETER_CONFIG, ALL_PARAMETERS } from '@/app/om-marine-explorer/shared';
-import { Info, CheckCircle2, XCircle, Loader2, AlertCircle, Waves, Sailboat, Compass, Timer, Thermometer, Wind as WindIcon, Sun as SunIcon } from "lucide-react"; // Removed CloudSun
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush } from 'recharts';
+import type { CombinedParameterKey, CombinedDataPoint, ParameterConfig } from '@/app/om-marine-explorer/shared';
+import { ALL_PARAMETERS, PARAMETER_CONFIG } from '@/app/om-marine-explorer/shared';
+import { Info, CheckCircle2, XCircle, Loader2, Waves, Sailboat, Compass, Timer, Thermometer, Wind as WindIcon, CloudSun, Sun as SunIcon } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { format, parseISO, isValid } from 'date-fns';
 
-interface PlotConfigInternal {
+interface PlotConfigInternal extends ParameterConfig {
   dataKey: CombinedParameterKey;
-  title: string;
-  unit: string;
-  color: string;
   Icon: LucideIcon;
   dataTransform?: (value: number) => number;
 }
@@ -27,17 +25,17 @@ export interface MarinePlotsGridProps {
 type SeriesAvailabilityStatus = 'pending' | 'available' | 'unavailable';
 const MPH_CONVERSION_FACTOR = 2.23694; // For wind speed (km/h to mph)
 
-const formatXAxisTickBrush = (timeValue: string | number): string => {
+const formatDateTickBrush = (timeValue: string | number): string => {
   try {
     const date = new Date(timeValue);
-    if (isNaN(date.getTime())) return String(timeValue);
-    if (date.getHours() === 0 && date.getMinutes() === 0) {
-      const year = date.getFullYear().toString().slice(-2);
-      const month = ('0' + (date.getMonth() + 1)).slice(-2);
-      const day = ('0' + date.getDate()).slice(-2);
-      return `${day}-${month}-${year}`;
+    if (!isValid(date)) {
+       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(timeValue)) {
+        const parsed = parseISO(timeValue);
+        if (isValid(parsed)) return format(parsed, 'dd-MM-yy');
+      }
+      return String(timeValue);
     }
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return format(date, 'dd-MM-yy');
   } catch (e) {
     return String(timeValue);
   }
@@ -60,20 +58,26 @@ export function MarinePlotsGrid({
       let displayUnit = config.unit;
 
       if (key === 'windSpeed10m' && config.apiParam === 'windspeed_10m') {
-        displayUnit = 'mph';
-        dataTransformFunc = (value: number) => parseFloat(((value / 3.6) * MPH_CONVERSION_FACTOR).toFixed(1));
+        displayUnit = 'mph'; // Display in mph
+        // Open-Meteo returns windspeed_10m in km/h. Convert to m/s (for internal consistency if needed) then to mph.
+        // 1 km/h = 0.277778 m/s
+        // 1 m/s = 2.23694 mph
+        dataTransformFunc = (value: number /* km/h */) => parseFloat(((value * 0.277778) * MPH_CONVERSION_FACTOR).toFixed(1));
       }
-
+      
       return {
+        ...config,
         dataKey: key,
-        title: config.name,
-        unit: displayUnit,
-        color: config.color,
+        unit: displayUnit, // ensure this unit is used for display
         Icon: (config as { icon?: LucideIcon }).icon || Info,
         dataTransform: dataTransformFunc,
       };
+    }).sort((a, b) => { // Ensure a consistent order
+      const order: CombinedParameterKey[] = ['temperature2m', 'windSpeed10m', 'windDirection10m', 'ghi', 'seaLevelHeightMsl', 'waveHeight', 'waveDirection', 'wavePeriod', 'seaSurfaceTemperature'];
+      return order.indexOf(a.dataKey) - order.indexOf(b.dataKey);
     });
   }, []);
+  
 
   const initialAvailability = useMemo(() =>
     Object.fromEntries(
@@ -146,15 +150,17 @@ export function MarinePlotsGrid({
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-destructive p-4 text-center">
-        <AlertCircle className="h-10 w-10 mb-2" />
+        <Info className="h-10 w-10 mb-2" /> {/* Changed from AlertCircle to Info for consistency */}
         <p className="font-semibold">Error Fetching Data</p>
         <p className="text-sm">{error}</p>
       </div>
     );
   }
+  
+  const visiblePlots = plotConfigs.filter(config => plotVisibility[config.dataKey]);
 
-  if (!combinedData && !isLoading && !error) {
-      return (
+  if (visiblePlots.length === 0 && (!combinedData || combinedData.length === 0)) {
+     return (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
             <Info className="h-10 w-10 mb-2" />
             <p>No data to display.</p>
@@ -162,6 +168,17 @@ export function MarinePlotsGrid({
           </div>
         );
   }
+  
+  if (visiblePlots.length === 0 && combinedData && combinedData.length > 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
+        <Info className="h-10 w-10 mb-2" />
+        <p>No parameters selected for display.</p>
+        <p className="text-sm">Please check at least one parameter to visualize the data.</p>
+      </div>
+    );
+  }
+
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -174,29 +191,31 @@ export function MarinePlotsGrid({
 
           const transformedDisplayData = displayData.map(point => {
             const value = point[config.dataKey as keyof CombinedDataPoint] as number | undefined;
-            if (value === undefined || value === null) return { ...point, [config.dataKey]: undefined };
+            if (value === undefined || value === null || isNaN(Number(value))) return { ...point, [config.dataKey]: undefined };
             if (typeof value === 'number' && config.dataTransform) {
               return { ...point, [config.dataKey]: config.dataTransform(value) };
             }
             return point;
           });
 
-          const lastDataPoint = transformedDisplayData[transformedDisplayData.length - 1];
+          const lastDataPoint = transformedDisplayData.length > 0 ? transformedDisplayData[transformedDisplayData.length - 1] : null;
           const currentValue = lastDataPoint ? lastDataPoint[config.dataKey as keyof CombinedDataPoint] as number | undefined : undefined;
-
+          
           let displayValue = "";
           if (plotVisibility[config.dataKey] && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue)) {
-            displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits: 1})}${config.unit}`;
-          } else if (plotVisibility[config.dataKey] && availabilityStatus === 'unavailable') {
-             // displayValue = "(N/A)"; // Let the chart area handle "Data unavailable"
+            displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits: 1})}${config.unit || ''}`;
           }
+
+          const hasValidDataForSeries = transformedDisplayData.some(p => p[config.dataKey] !== undefined && !isNaN(Number(p[config.dataKey])));
+
 
           return (
             <div key={config.dataKey as string} className="h-auto w-full border rounded-md p-1 shadow-sm bg-card flex-shrink-0 flex flex-col">
               <div className="flex items-center justify-between px-2 pt-0.5 pb-0.5 text-xs">
                 <div className="flex items-center gap-1.5">
                   <IconComponent className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="font-medium text-foreground">{config.title}</span>
+                  <span className="font-medium text-foreground">{config.name}</span>
+                  {availabilityStatus === 'pending' && <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin ml-1" />}
                   {availabilityStatus === 'available' && <CheckCircle2 className="h-3.5 w-3.5 text-green-500 ml-1" />}
                   {availabilityStatus === 'unavailable' && <XCircle className="h-3.5 w-3.5 text-red-500 ml-1" />}
                 </div>
@@ -207,7 +226,7 @@ export function MarinePlotsGrid({
 
               {plotVisibility[config.dataKey] ? (
                 <div className="flex-grow h-[80px]">
-                  {availabilityStatus === 'available' ? (
+                  {availabilityStatus === 'available' && hasValidDataForSeries ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
@@ -228,7 +247,7 @@ export function MarinePlotsGrid({
                           strokeWidth={1.5}
                           dot={false}
                           connectNulls
-                          name={config.title}
+                          name={config.name}
                         />
                       </LineChart>
                     </ResponsiveContainer>
@@ -245,16 +264,18 @@ export function MarinePlotsGrid({
       </div>
 
       {combinedData && combinedData.length > 0 && (
-        <div className="h-[60px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
+        <div className="h-[70px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={combinedData} margin={{ top: 5, right: 25, left: 25, bottom: 5 }}>
               <XAxis
                 dataKey="time"
-                tickFormatter={formatXAxisTickBrush}
+                tickFormatter={formatDateTickBrush}
                 stroke="hsl(var(--muted-foreground))"
                 tick={{ fontSize: '0.6rem' }}
-                height={30}
-                dy={5}
+                height={50}
+                angle={-45}
+                textAnchor="end"
+                dy={5} 
               />
                <Line dataKey={(ALL_PARAMETERS).find(p => plotVisibility[p] && seriesDataAvailability[p] === 'available') || plotConfigs[0]?.dataKey} stroke="transparent" dot={false} />
               <Brush
@@ -263,12 +284,12 @@ export function MarinePlotsGrid({
                 stroke="hsl(var(--primary))"
                 fill="hsl(var(--muted))"
                 fillOpacity={0.3}
-                tickFormatter={formatXAxisTickBrush}
+                tickFormatter={formatDateTickBrush}
                 travellerWidth={8}
                 startIndex={brushStartIndex}
                 endIndex={brushEndIndex}
                 onChange={handleBrushChangeLocal}
-                y={10}
+                y={10} 
               />
             </LineChart>
           </ResponsiveContainer>
