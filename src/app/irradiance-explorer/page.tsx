@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label as UiLabel } from "@/components/ui/label";
-import { Loader2, SunMoon, LayoutGrid, Waves, Sun, Sunrise, Search, Info, CheckCircle2, XCircle, ListChecks, MapPin, CalendarDays, Copy, Anchor } from "lucide-react";
+import { Loader2, SunMoon, LayoutGrid, Waves, Sun, Search, Info, CheckCircle2, XCircle, ListChecks, MapPin, CalendarDays, Copy, Anchor } from "lucide-react"; // Removed CloudSun, Sunrise
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -43,7 +43,6 @@ const IrradiancePlotsGridWithNoSSR = dynamic(
 
 type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle' | 'warning';
 
-// Default coordinates (e.g., Manchester, UK)
 const DEFAULT_LATITUDE = 53.4808;
 const DEFAULT_LONGITUDE = -2.2426;
 const DEFAULT_MAP_CENTER: [number, number] = [DEFAULT_LONGITUDE, DEFAULT_LATITUDE];
@@ -63,7 +62,7 @@ export default function IrradianceExplorerPage() {
   const { toast, dismiss } = useToast();
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
-    from: subDays(new Date(), 7), // Default to last 7 days
+    from: subDays(new Date(), 7),
     to: new Date(),
   }));
 
@@ -91,16 +90,14 @@ export default function IrradianceExplorerPage() {
 
   const initialFetchDone = React.useRef(false);
 
-  // Assign icons to PARAMETER_CONFIG
   useMemo(() => {
     if (IRRADIANCE_PARAMETER_CONFIG.ghi) (IRRADIANCE_PARAMETER_CONFIG.ghi as { icon?: LucideIcon }).icon = Sun;
-    if (IRRADIANCE_PARAMETER_CONFIG.dhi) (IRRADIANCE_PARAMETER_CONFIG.dhi as { icon?: LucideIcon }).icon = Sunrise;
+    // if (IRRADIANCE_PARAMETER_CONFIG.dhi) (IRRADIANCE_PARAMETER_CONFIG.dhi as { icon?: LucideIcon }).icon = Sunrise; // DHI removed
   }, []);
 
 
   const handleMapLocationSelect = useCallback((coords: { lat: number; lon: number }) => {
     setMapSelectedCoords(coords);
-    // Attempt to find a name for the clicked location (simple reverse lookup)
     let foundName = "Selected Location";
     for (const key in knownLocations) {
         if (knownLocations[key].lat.toFixed(3) === coords.lat.toFixed(3) && knownLocations[key].lon.toFixed(3) === coords.lon.toFixed(3)) {

@@ -2,10 +2,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts'; // Removed Label as RechartsLabel
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts';
 import type { CombinedParameterKey, CombinedDataPoint } from '@/app/om-marine-explorer/shared';
 import { PARAMETER_CONFIG, ALL_PARAMETERS } from '@/app/om-marine-explorer/shared';
-import { Info, CheckCircle2, XCircle, Loader2, AlertCircle } from "lucide-react";
+import { Info, CheckCircle2, XCircle, Loader2, AlertCircle, Waves, Sailboat, Compass, Timer, Thermometer, Wind as WindIcon, Sun as SunIcon } from "lucide-react"; // Removed CloudSun
 import type { LucideIcon } from "lucide-react";
 
 interface PlotConfigInternal {
@@ -54,7 +54,7 @@ export function MarinePlotsGrid({
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
 
   const plotConfigs = useMemo((): PlotConfigInternal[] => {
-    return (ALL_PARAMETERS).map(key => { // Use ALL_PARAMETERS directly from import
+    return (ALL_PARAMETERS).map(key => {
       const config = PARAMETER_CONFIG[key as CombinedParameterKey];
       let dataTransformFunc: ((value: number) => number) | undefined = undefined;
       let displayUnit = config.unit;
@@ -73,7 +73,7 @@ export function MarinePlotsGrid({
         dataTransform: dataTransformFunc,
       };
     });
-  }, []); // Dependency array is empty as PARAMETER_CONFIG and ALL_PARAMETERS are stable imports
+  }, []);
 
   const initialAvailability = useMemo(() =>
     Object.fromEntries(
@@ -188,7 +188,7 @@ export function MarinePlotsGrid({
           if (plotVisibility[config.dataKey] && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue)) {
             displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits: 1})}${config.unit}`;
           } else if (plotVisibility[config.dataKey] && availabilityStatus === 'unavailable') {
-            displayValue = "(N/A)";
+             // displayValue = "(N/A)"; // Let the chart area handle "Data unavailable"
           }
 
           return (
@@ -277,4 +277,3 @@ export function MarinePlotsGrid({
     </div>
   );
 }
-

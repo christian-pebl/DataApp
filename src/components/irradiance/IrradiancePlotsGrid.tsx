@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush } from 'recharts';
 import type { IrradianceParameterKey, IrradianceDataPoint } from '@/app/irradiance-explorer/shared';
 import { IRRADIANCE_PARAMETER_CONFIG, ALL_IRRADIANCE_PARAMETERS } from '@/app/irradiance-explorer/shared';
-import { Info, CheckCircle2, XCircle, Loader2, AlertCircle } from "lucide-react";
+import { Info, CheckCircle2, XCircle, Loader2, AlertCircle, Sun, Sunrise } from "lucide-react"; // Added Sun, Sunrise
 import type { LucideIcon } from "lucide-react";
 
 interface PlotConfigInternal {
@@ -163,7 +163,7 @@ export function IrradiancePlotsGrid({
           if (plotVisibility[config.dataKey] && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue)) {
             displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits: 1})}${config.unit}`;
           } else if (plotVisibility[config.dataKey] && availabilityStatus === 'unavailable') {
-             displayValue = ""; // Keep header clean, chart area will show "Data unavailable"
+             // displayValue = ""; // Keep header clean, chart area will show "Data unavailable"
           }
 
           return (

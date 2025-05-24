@@ -17,7 +17,7 @@ interface OpenMeteoHourlyResponse {
   temperature_2m?: (number | null)[];
   windspeed_10m?: (number | null)[];
   winddirection_10m?: (number | null)[];
-  cloudcover?: (number | null)[];
+  // cloudcover?: (number | null)[]; // Removed
 }
 
 interface OpenMeteoApiResponse {
@@ -84,7 +84,7 @@ async function fetchFromOpenMeteo(
 
     if (!apiData.hourly || !apiData.hourly.time || apiData.hourly.time.length === 0) {
       log.push({ message: `No hourly data or timestamps returned from Open-Meteo ${apiName} API.`, status: 'warning' });
-      return apiData;
+      return apiData; // Return the apiData even if hourly.time is empty, so we can check for apiData.error
     }
     log.push({ message: `Received ${apiData.hourly.time.length} timestamps from ${apiName} API.`, status: 'info' });
     return apiData;
@@ -217,7 +217,7 @@ export async function fetchCombinedDataAction(
       paramKeys.forEach(key => {
         const config = PARAMETER_CONFIG[key];
         if (config.apiSource === apiSource) {
-          const apiHourly = apiData.hourly as any;
+          const apiHourly = apiData.hourly as any; // Type assertion for dynamic access
           if (apiHourly[config.apiParam] && Array.isArray(apiHourly[config.apiParam]) && index < apiHourly[config.apiParam].length && apiHourly[config.apiParam][index] !== null) {
             (entry as any)[key] = apiHourly[config.apiParam][index];
             dataPointHasValue = true;
@@ -233,10 +233,10 @@ export async function fetchCombinedDataAction(
   };
 
   if (marineApiData) {
-    processApiHourlyData(marineApiData, selectedParamKeys.filter(k => PARAMETER_CONFIG[k as CombinedParameterKey].apiSource === 'marine') as CombinedParameterKey[], 'marine');
+    processApiHourlyData(marineApiData, selectedParamKeys.filter(k => PARAMETER_CONFIG[k].apiSource === 'marine') as CombinedParameterKey[], 'marine');
   }
   if (weatherApiData) {
-    processApiHourlyData(weatherApiData, selectedParamKeys.filter(k => PARAMETER_CONFIG[k as CombinedParameterKey].apiSource === 'weather') as CombinedParameterKey[], 'weather');
+    processApiHourlyData(weatherApiData, selectedParamKeys.filter(k => PARAMETER_CONFIG[k].apiSource === 'weather') as CombinedParameterKey[], 'weather');
   }
 
   const finalCombinedData: CombinedDataPoint[] = Array.from(combinedDataMap.values()) as CombinedDataPoint[];

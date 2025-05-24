@@ -7,13 +7,13 @@ import { isValidDateString } from '@/lib/utils';
 export interface IrradianceDataPoint {
   time: string;
   ghi?: number;
-  dhi?: number;
+  // dhi?: number; // Removed DHI
 }
 
 export const IrradianceDataPointSchema = z.object({
   time: z.string(),
   ghi: z.number().optional(),
-  dhi: z.number().optional(),
+  // dhi: z.number().optional(), // Removed DHI
 });
 
 // Input schema for fetching irradiance data
@@ -38,15 +38,15 @@ export interface LogStep {
 }
 
 // Parameter keys for irradiance data
-export type IrradianceParameterKey = 'ghi' | 'dhi';
+export type IrradianceParameterKey = 'ghi'; // Removed 'dhi'
 
 export const ALL_IRRADIANCE_PARAMETERS: IrradianceParameterKey[] = [
   'ghi',
-  'dhi',
+  // 'dhi', // Removed DHI
 ];
 
 // Configuration for each irradiance parameter
 export const IRRADIANCE_PARAMETER_CONFIG: Record<IrradianceParameterKey, { name: string; apiParam: string; unit: string; apiSource: 'weather'; icon?: LucideIcon; color: string }> = {
   ghi: { name: "Global Horizontal Irradiance (GHI)", apiParam: "shortwave_radiation", unit: "W/m²", apiSource: 'weather', color: '--chart-1' },
-  dhi: { name: "Diffuse Horizontal Irradiance (DHI)", apiParam: "diffuse_radiation", unit: "W/m²", apiSource: 'weather', color: '--chart-2' },
+  // dhi: { name: "Diffuse Horizontal Irradiance (DHI)", apiParam: "diffuse_radiation", unit: "W/m²", apiSource: 'weather', color: '--chart-2' }, // Removed DHI
 };

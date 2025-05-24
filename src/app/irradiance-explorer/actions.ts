@@ -16,7 +16,7 @@ interface OpenMeteoWeatherApiResponse {
   hourly?: {
     time: string[];
     shortwave_radiation?: (number | null)[]; // GHI
-    diffuse_radiation?: (number | null)[]; // DHI
+    // diffuse_radiation?: (number | null)[]; // DHI - Removed
   };
   error?: boolean;
   reason?: string;
@@ -55,10 +55,9 @@ export async function fetchIrradianceDataAction(
   const formattedEndDate = format(parseISO(endDate), 'yyyy-MM-dd');
   log.push({ message: `Dates formatted for API: Start: ${formattedStartDate}, End: ${formattedEndDate}`, status: 'info' });
 
-  // Get the correct API parameter names from the config
   const hourlyParamsToFetch = selectedParamKeys
     .map(key => IRRADIANCE_PARAMETER_CONFIG[key as keyof typeof IRRADIANCE_PARAMETER_CONFIG]?.apiParam)
-    .filter(Boolean) // Remove any undefined if a key isn't in config
+    .filter(Boolean)
     .join(',');
     
   log.push({ message: `Requesting Open-Meteo Weather API hourly parameters: '${hourlyParamsToFetch}'`, status: 'info' });
@@ -116,25 +115,19 @@ export async function fetchIrradianceDataAction(
 
   const irradianceData: IrradianceDataPoint[] = [];
   const times = apiData.hourly.time;
-  // Use the correct API response keys
   const ghiValues = apiData.hourly.shortwave_radiation; 
-  const dhiValues = apiData.hourly.diffuse_radiation;
+  // const dhiValues = apiData.hourly.diffuse_radiation; // Removed DHI
 
   let dataPointsProcessed = 0;
   for (let i = 0; i < times.length; i++) {
     const point: IrradianceDataPoint = { time: times[i] };
     let hasValue = false;
 
-    // Check if 'ghi' was requested by the user via selectedParamKeys
     if (selectedParamKeys.includes('ghi') && ghiValues && ghiValues[i] !== null) {
       point.ghi = ghiValues[i] as number;
       hasValue = true;
     }
-    // Check if 'dhi' was requested by the user
-    if (selectedParamKeys.includes('dhi') && dhiValues && dhiValues[i] !== null) {
-      point.dhi = dhiValues[i] as number;
-      hasValue = true;
-    }
+    // DHI processing removed
     
     if (hasValue) {
       irradianceData.push(point);
@@ -155,7 +148,6 @@ export async function fetchIrradianceDataAction(
         error: "No data available for the selected parameters and time range." // User-facing error
       };
   }
-
 
   return {
     success: true,

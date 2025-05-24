@@ -8,8 +8,8 @@ import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label as UiLabel } from "@/components/ui/label"; // Renamed to avoid conflict
-import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Wind as WindIcon, Copy, Sun as SunIcon } from "lucide-react";
+import { Label as UiLabel } from "@/components/ui/label";
+import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Wind as WindIcon, Copy, Sun as SunIcon, Droplets } from "lucide-react"; // Removed CloudSun
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -77,7 +77,7 @@ export default function OMMarineExplorerPage() {
 
   const initialVisibility = useMemo(() => 
     Object.fromEntries(ALL_PARAMETERS.map(key => [key, true])) as Record<CombinedParameterKey, boolean>
-  , []);
+  , [ALL_PARAMETERS]); // Added ALL_PARAMETERS to dependency array
 
   const [plotVisibility, setPlotVisibility] = useState<Record<CombinedParameterKey, boolean>>(initialVisibility);
 
@@ -97,14 +97,13 @@ export default function OMMarineExplorerPage() {
     if (PARAMETER_CONFIG.temperature2m) (PARAMETER_CONFIG.temperature2m as { icon?: LucideIcon }).icon = Thermometer;
     if (PARAMETER_CONFIG.windSpeed10m) (PARAMETER_CONFIG.windSpeed10m as { icon?: LucideIcon }).icon = WindIcon;
     if (PARAMETER_CONFIG.windDirection10m) (PARAMETER_CONFIG.windDirection10m as { icon?: LucideIcon }).icon = Compass;
-    // CloudCover icon is CloudSun - already in lucide-react imports
-  }, []); 
+    // CloudCover icon was removed
+  }, []);
 
 
   const handleMapLocationSelect = useCallback((coords: { lat: number; lon: number }) => {
     setMapSelectedCoords(coords);
     let foundName = "Selected Location";
-    // Simple reverse lookup, can be improved
     for (const key in knownLocations) {
         if (knownLocations[key].lat.toFixed(3) === coords.lat.toFixed(3) && knownLocations[key].lon.toFixed(3) === coords.lon.toFixed(3)) {
             foundName = knownLocations[key].name;
@@ -207,25 +206,26 @@ export default function OMMarineExplorerPage() {
   }, []);
   
   useEffect(() => {
-    if (!initialFetchDone.current && !isLoadingData) {
-      if (mapSelectedCoords && dateRange?.from && dateRange?.to && currentLocationName) {
-        if (dateRange.from > dateRange.to) {
-          initialFetchDone.current = true;
-          return;
-        }
-        const paramsForInitialFetch = ALL_PARAMETERS.filter(key =>
-          initialVisibility[key as CombinedParameterKey]
-        );
-        if (paramsForInitialFetch.length === 0) {
-          initialFetchDone.current = true;
-          return;
-        }
-        handleFetchCombinedData();
+    if (initialFetchDone.current || isLoadingData) {
+      return;
+    }
+    if (mapSelectedCoords && dateRange?.from && dateRange?.to && currentLocationName) {
+      if (dateRange.from > dateRange.to) {
         initialFetchDone.current = true;
+        return;
       }
+      const paramsForInitialFetch = ALL_PARAMETERS.filter(key =>
+        initialVisibility[key as CombinedParameterKey]
+      );
+      if (paramsForInitialFetch.length === 0) {
+        initialFetchDone.current = true;
+        return;
+      }
+      handleFetchCombinedData();
+      initialFetchDone.current = true;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapSelectedCoords, currentLocationName, dateRange, isLoadingData, initialVisibility]); // handleFetchCombinedData removed to prevent potential loops on its recreation
+  }, [mapSelectedCoords, currentLocationName, dateRange, isLoadingData, initialVisibility]);
 
 
   const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string | null) => {
@@ -347,24 +347,7 @@ export default function OMMarineExplorerPage() {
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
           <div className="md:col-span-4 lg:col-span-3 space-y-3">
             <Card>
-              <CardHeader className="pb-2 pt-3"><CardTitle className="text-base flex items-center gap-1.5"><ListChecks className="h-4 w-4 text-primary" />Select Parameters</CardTitle></CardHeader>
-              <CardContent className="space-y-1">
-                {ALL_PARAMETERS.map((key) => {
-                  const paramConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
-                  const IconComp = (paramConfig as { icon?: LucideIcon }).icon || Info;
-                  return (
-                    <div key={key} className="flex items-center space-x-1.5">
-                      <Checkbox id={`om-combined-visibility-${key}`} checked={plotVisibility[key as CombinedParameterKey]} onCheckedChange={(c) => handlePlotVisibilityChange(key as CombinedParameterKey, !!c)} className="h-3.5 w-3.5"/>
-                      <UiLabel htmlFor={`om-combined-visibility-${key}`} className="text-xs font-medium flex items-center gap-1 cursor-pointer"><IconComp className="h-3.5 w-3.5 text-muted-foreground"/>{paramConfig.name}</UiLabel>
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2 pt-3">
-                <CardTitle className="text-base flex items-center gap-1.5"><MapPin className="h-4 w-4 text-primary"/>Location & Date</CardTitle>
-              </CardHeader>
+              <CardHeader className="pb-2 pt-3"><CardTitle className="text-base flex items-center gap-1.5"><MapPin className="h-4 w-4 text-primary"/>Location & Date</CardTitle></CardHeader>
               <CardContent className="space-y-2">
                 <UiLabel htmlFor="om-map-container" className="text-xs font-medium mb-0.5 block">Click Map to Select Location</UiLabel>
                 <div id="om-map-container" className="h-[200px] w-full rounded-md overflow-hidden border">
@@ -385,12 +368,29 @@ export default function OMMarineExplorerPage() {
                   <DatePickerWithRange id="om-combined-date-range" date={dateRange} onDateChange={setDateRange} disabled={isLoadingData} />
                   {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && <p className="text-xs text-destructive px-1 pt-1">Start date error.</p>}
                 </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2 pt-3"><CardTitle className="text-base flex items-center gap-1.5"><ListChecks className="h-4 w-4 text-primary" />Select Parameters</CardTitle></CardHeader>
+              <CardContent className="space-y-1">
+                {ALL_PARAMETERS.map((key) => {
+                  const paramConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
+                  const IconComp = (paramConfig as { icon?: LucideIcon }).icon || Info;
+                  return (
+                    <div key={key} className="flex items-center space-x-1.5">
+                      <Checkbox id={`om-combined-visibility-${key}`} checked={plotVisibility[key as CombinedParameterKey]} onCheckedChange={(c) => handlePlotVisibilityChange(key as CombinedParameterKey, !!c)} className="h-3.5 w-3.5"/>
+                      <UiLabel htmlFor={`om-combined-visibility-${key}`} className="text-xs font-medium flex items-center gap-1 cursor-pointer"><IconComp className="h-3.5 w-3.5 text-muted-foreground"/>{paramConfig.name}</UiLabel>
+                    </div>
+                  );
+                })}
+              </CardContent>
+              <CardFooter className="p-2">
                 <Button onClick={handleFetchCombinedData} disabled={isLoadingData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => plotVisibility[key as CombinedParameterKey]).length === 0} className="w-full h-9 text-xs">
                   {isLoadingData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
                   {isLoadingData ? "Fetching..." : "Fetch Data"}
                 </Button>
-                 {renderLogAccordion(fetchLogSteps, showFetchLogAccordion, setShowFetchLogAccordion, isLogLoading, logOverallStatus, "Data Fetch Log", errorData)}
-              </CardContent>
+              </CardFooter>
+               {renderLogAccordion(fetchLogSteps, showFetchLogAccordion, setShowFetchLogAccordion, isLogLoading, logOverallStatus, "Data Fetch Log", errorData)}
             </Card>
           </div>
           <div className="md:col-span-8 lg:col-span-9">
