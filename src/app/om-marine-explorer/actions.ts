@@ -80,7 +80,7 @@ export async function fetchOpenMeteoMarineDataAction(
     log.push({ message: `API Response Status: ${response.status}`, status: response.ok ? 'success' : 'error' });
 
     const rawResponseBody = await response.text();
-    log.push({ message: `Raw API Response Body (first 500 chars): ${rawResponseBody.substring(0,500)}`, status: response.ok ? 'info' : 'error' });
+    log.push({ message: `Raw API Response Body (first 500 chars): ${rawResponseBody.substring(0,500)}`, status: response.ok ? 'info' : 'error', details: rawResponseBody });
 
 
     if (!response.ok) {
@@ -113,7 +113,7 @@ export async function fetchOpenMeteoMarineDataAction(
       log.push({ message: `Open-Meteo API reported an error: ${apiData.reason}`, status: 'error' });
       return { success: false, error: `Open-Meteo API Error: ${apiData.reason}`, log };
     }
-    log.push({ message: "API response indicates no explicit error.", status: 'success' });
+    log.push({ message: "API response indicates no explicit error flag.", status: 'success' });
 
     if (!apiData.hourly || !apiData.hourly.time || apiData.hourly.time.length === 0) {
       log.push({ message: "No hourly data or timestamps returned from Open-Meteo Marine API.", status: 'warning' });
@@ -160,3 +160,6 @@ export async function fetchOpenMeteoMarineDataAction(
     return { success: false, error: `Error fetching Open-Meteo marine data: ${errorMessage}`, log };
   }
 }
+
+
+    
