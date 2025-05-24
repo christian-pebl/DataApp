@@ -3,27 +3,29 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts';
-import type { MarineParameterKey, MarineDataPoint } from '@/app/om-marine-explorer/shared';
-import { Info, Waves, Sailboat, Compass, Timer, CheckCircle2, XCircle, Loader2, AlertCircle, Thermometer } from "lucide-react";
+import type { CombinedParameterKey, CombinedDataPoint } from '@/app/om-marine-explorer/shared'; // Use combined types
+import { PARAMETER_CONFIG } from '@/app/om-marine-explorer/shared'; // Use combined config
+import { Info, Waves, Sailboat, Compass, Timer, Thermometer, Wind, CloudSun as CloudIcon, CheckCircle2, XCircle, Loader2, AlertCircle } from "lucide-react"; // Added Wind, CloudIcon
 
 interface PlotConfig {
-  dataKey: MarineParameterKey;
+  dataKey: CombinedParameterKey;
   title: string;
   unit: string;
   color: string;
   Icon: React.ElementType;
   dataTransform?: (value: number) => number;
-  stationName?: string; 
 }
 
-export interface MarinePlotsGridProps {
-  marineData: MarineDataPoint[] | null;
+// This interface now uses CombinedDataPoint and CombinedParameterKey
+export interface CombinedPlotsGridProps {
+  marineData: CombinedDataPoint[] | null; // Rename prop to combinedData or genericData for clarity if used elsewhere
   isLoading: boolean;
   error: string | null;
-  plotVisibility: Record<MarineParameterKey, boolean>;
+  plotVisibility: Record<CombinedParameterKey, boolean>;
 }
 
 type SeriesAvailabilityStatus = 'pending' | 'available' | 'unavailable';
+const MPH_CONVERSION_FACTOR = 2.23694; // For wind speed
 
 const formatXAxisTickBrush = (timeValue: string | number): string => {
   try {
@@ -41,41 +43,65 @@ const formatXAxisTickBrush = (timeValue: string | number): string => {
   }
 };
 
+// Renamed component to reflect its new combined nature
 export function MarinePlotsGrid({ 
-  marineData, 
+  marineData: combinedData, // Destructure with rename for clarity inside component
   isLoading, 
   error,
   plotVisibility,
-}: MarinePlotsGridProps) {
+}: CombinedPlotsGridProps) {
   
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
   
-  const plotConfigs = useMemo((): PlotConfig[] => [
-    { dataKey: 'seaLevelHeightMsl', title: 'Sea Level (MSL)', unit: 'm', color: '--chart-1', Icon: Waves },
-    { dataKey: 'waveHeight', title: 'Wave Height', unit: 'm', color: '--chart-2', Icon: Sailboat },
-    { dataKey: 'waveDirection', title: 'Wave Direction', unit: '°', color: '--chart-4', Icon: Compass },
-    { dataKey: 'wavePeriod', title: 'Wave Period', unit: 's', color: '--chart-3', Icon: Timer },
-    { dataKey: 'seaSurfaceTemperature', title: 'Sea Surface Temp', unit: '°C', color: '--chart-5', Icon: Thermometer },
-  ], []);
+  // Plot configs now derived from the global PARAMETER_CONFIG
+  const plotConfigs = useMemo((): PlotConfig[] => {
+    return (Object.keys(PARAMETER_CONFIG) as CombinedParameterKey[]).map(key => {
+      const config = PARAMETER_CONFIG[key];
+      let dataTransformFunc: ((value: number) => number) | undefined = undefined;
+      let displayUnit = config.unit;
+
+      if (key === 'windSpeed10m') { // API gives km/h, display as mph
+        displayUnit = 'mph'; // Corrected unit display
+        dataTransformFunc = (value: number) => parseFloat(((value / 3.6) * MPH_CONVERSION_FACTOR).toFixed(1)); // km/h to m/s then to mph
+      }
+      
+      return {
+        dataKey: key,
+        title: config.name,
+        unit: displayUnit,
+        color: key === 'seaLevelHeightMsl' ? '--chart-1' :
+               key === 'waveHeight' ? '--chart-2' :
+               key === 'waveDirection' ? '--chart-4' :
+               key === 'wavePeriod' ? '--chart-3' :
+               key === 'seaSurfaceTemperature' ? '--chart-5' :
+               key === 'temperature2m' ? '--chart-1' : // Re-use colors for weather
+               key === 'windSpeed10m' ? '--chart-2' :
+               key === 'windDirection10m' ? '--chart-4' :
+               key === 'cloudCover' ? '--chart-3' : '--chart-5', // Default color
+        Icon: (config as { icon?: React.ElementType }).icon || Info,
+        dataTransform: dataTransformFunc,
+      };
+    });
+  }, []);
 
   const initialAvailability = useMemo(() => 
     Object.fromEntries(
       plotConfigs.map(pc => [pc.dataKey, 'pending'])
-    ) as Record<MarineParameterKey, SeriesAvailabilityStatus>,
+    ) as Record<CombinedParameterKey, SeriesAvailabilityStatus>,
     [plotConfigs]
   );
   
-  const [seriesDataAvailability, setSeriesDataAvailability] = useState<Record<MarineParameterKey, SeriesAvailabilityStatus>>(initialAvailability);
+  const [seriesDataAvailability, setSeriesDataAvailability] = useState<Record<CombinedParameterKey, SeriesAvailabilityStatus>>(initialAvailability);
 
   useEffect(() => {
-    if (marineData && marineData.length > 0 && brushEndIndex === undefined) {
-      setBrushEndIndex(marineData.length -1);
-    } else if ((!marineData || marineData.length === 0) && brushEndIndex !== undefined) {
+    if (combinedData && combinedData.length > 0 && brushEndIndex === undefined) {
+      setBrushEndIndex(combinedData.length -1);
+    } else if ((!combinedData || combinedData.length === 0) && brushEndIndex !== undefined) {
       setBrushStartIndex(0);
       setBrushEndIndex(undefined);
     }
-  }, [marineData, brushEndIndex]);
+  }, [combinedData, brushEndIndex]);
 
 
   useEffect(() => {
@@ -84,24 +110,24 @@ export function MarinePlotsGrid({
       return;
     }
 
-    const newAvailability: Partial<Record<MarineParameterKey, SeriesAvailabilityStatus>> = {};
-    if (!marineData || marineData.length === 0) {
+    const newAvailability: Partial<Record<CombinedParameterKey, SeriesAvailabilityStatus>> = {};
+    if (!combinedData || combinedData.length === 0) {
       plotConfigs.forEach(pc => {
         newAvailability[pc.dataKey] = 'unavailable';
       });
     } else {
       plotConfigs.forEach(pc => {
-        const hasData = marineData.some(
+        const hasData = combinedData.some(
           point => {
-            const val = point[pc.dataKey as keyof MarineDataPoint];
+            const val = point[pc.dataKey as keyof CombinedDataPoint];
             return val !== undefined && val !== null && !isNaN(Number(val));
           }
         );
         newAvailability[pc.dataKey] = hasData ? 'available' : 'unavailable';
       });
     }
-    setSeriesDataAvailability(newAvailability as Record<MarineParameterKey, SeriesAvailabilityStatus>);
-  }, [marineData, isLoading, plotConfigs, initialAvailability]);
+    setSeriesDataAvailability(newAvailability as Record<CombinedParameterKey, SeriesAvailabilityStatus>);
+  }, [combinedData, isLoading, plotConfigs, initialAvailability]);
 
   const handleBrushChangeLocal = (newIndex: { startIndex?: number; endIndex?: number }) => {
     setBrushStartIndex(newIndex.startIndex);
@@ -109,20 +135,20 @@ export function MarinePlotsGrid({
   };
 
   const displayData = useMemo(() => {
-    if (!marineData || marineData.length === 0 || brushStartIndex === undefined || brushEndIndex === undefined) {
+    if (!combinedData || combinedData.length === 0 || brushStartIndex === undefined || brushEndIndex === undefined) {
       return [];
     }
     const start = Math.max(0, brushStartIndex);
-    const end = Math.min(marineData.length - 1, brushEndIndex);
-    return marineData.slice(start, end + 1);
-  }, [marineData, brushStartIndex, brushEndIndex]);
+    const end = Math.min(combinedData.length - 1, brushEndIndex);
+    return combinedData.slice(start, end + 1);
+  }, [combinedData, brushStartIndex, brushEndIndex]);
 
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground p-4">
         <Loader2 className="animate-spin h-8 w-8 text-primary mr-2" />
-        Fetching marine data...
+        Fetching data...
       </div>
     );
   }
@@ -137,12 +163,12 @@ export function MarinePlotsGrid({
     );
   }
 
-  if (!marineData && !isLoading && !error) {
+  if (!combinedData && !isLoading && !error) {
       return (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
             <Info className="h-10 w-10 mb-2" />
             <p>No data to display.</p>
-            <p className="text-sm">Please select location and date range, then click "Fetch Marine Data".</p>
+            <p className="text-sm">Select parameters, location, and date, then click "Fetch Data".</p>
           </div>
         );
   }
@@ -157,7 +183,7 @@ export function MarinePlotsGrid({
           const availabilityStatus = seriesDataAvailability[config.dataKey];
 
           const transformedDisplayData = displayData.map(point => {
-            const value = point[config.dataKey as keyof MarineDataPoint] as number | undefined;
+            const value = point[config.dataKey as keyof CombinedDataPoint] as number | undefined;
             if (value === undefined || value === null) return { ...point, [config.dataKey]: undefined };
             if (typeof value === 'number' && config.dataTransform) {
               return { ...point, [config.dataKey]: config.dataTransform(value) };
@@ -166,7 +192,7 @@ export function MarinePlotsGrid({
           });
 
           const lastDataPoint = transformedDisplayData[transformedDisplayData.length - 1];
-          const currentValue = lastDataPoint ? lastDataPoint[config.dataKey as keyof MarineDataPoint] as number | undefined : undefined;
+          const currentValue = lastDataPoint ? lastDataPoint[config.dataKey as keyof CombinedDataPoint] as number | undefined : undefined;
           
           let displayValue = "";
           if (plotVisibility[config.dataKey] && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue)) {
@@ -228,10 +254,10 @@ export function MarinePlotsGrid({
         })}
       </div>
 
-      {marineData && marineData.length > 0 && (
+      {combinedData && combinedData.length > 0 && (
         <div className="h-[60px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={marineData} margin={{ top: 5, right: 25, left: 25, bottom: 5 }}>
+            <LineChart data={combinedData} margin={{ top: 5, right: 25, left: 25, bottom: 5 }}>
               <XAxis
                 dataKey="time"
                 tickFormatter={formatXAxisTickBrush}
@@ -240,7 +266,7 @@ export function MarinePlotsGrid({
                 height={30}
                 dy={5}
               />
-               <Line dataKey={plotConfigs.find(p => plotVisibility[p.dataKey] && seriesDataAvailability[p.dataKey] === 'available')?.dataKey || plotConfigs[0].dataKey} stroke="transparent" dot={false} /> 
+               <Line dataKey={plotConfigs.find(p => plotVisibility[p.dataKey] && seriesDataAvailability[p.dataKey] === 'available')?.dataKey || plotConfigs[0]?.dataKey} stroke="transparent" dot={false} /> 
               <Brush
                 dataKey="time"
                 height={20}

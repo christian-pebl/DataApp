@@ -15,16 +15,16 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
-import { MarinePlotsGrid } from "@/components/marine/MarinePlotsGrid";
+import { MarinePlotsGrid } from "@/components/marine/MarinePlotsGrid"; // Will be adapted to CombinedPlotsGrid conceptually
 import { useToast } from "@/hooks/use-toast";
-import { formatISO } from 'date-fns';
+import { formatISO, subDays } from 'date-fns';
 import type { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 
-import type { MarineDataPoint, LogStep, MarineParameterKey } from './shared';
-import { ALL_MARINE_PARAMETERS, MARINE_PARAMETER_CONFIG } from './shared';
-import { fetchOpenMeteoMarineDataAction } from './actions';
+import type { CombinedDataPoint, LogStep, CombinedParameterKey } from './shared';
+import { ALL_PARAMETERS, PARAMETER_CONFIG } from './shared';
+import { fetchCombinedDataAction } from './actions';
 
 type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle' | 'warning';
 
@@ -36,21 +36,34 @@ const knownLocations: { [key: string]: { lat: number; lon: number; name: string 
   "liverpool": { lat: 53.40, lon: -2.99, name: "Liverpool" },
   "portsmouth": { lat: 50.81, lon: -1.08, name: "Portsmouth" },
 };
-const defaultLocationKey = "milfordhaven";
+const defaultLocationKey = "milfordhaven"; // Sticking with Milford Haven
 
 // Assign icons to parameter configs
-(MARINE_PARAMETER_CONFIG.waveHeight as { icon?: LucideIcon }).icon = Sailboat;
-(MARINE_PARAMETER_CONFIG.waveDirection as { icon?: LucideIcon }).icon = Compass;
-(MARINE_PARAMETER_CONFIG.wavePeriod as { icon?: LucideIcon }).icon = Timer;
-if (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature) {
-  (MARINE_PARAMETER_CONFIG.seaSurfaceTemperature as { icon?: LucideIcon }).icon = Thermometer;
+(PARAMETER_CONFIG.waveHeight as { icon?: LucideIcon }).icon = Sailboat;
+(PARAMETER_CONFIG.waveDirection as { icon?: LucideIcon }).icon = Compass;
+(PARAMETER_CONFIG.wavePeriod as { icon?: LucideIcon }).icon = Timer;
+if (PARAMETER_CONFIG.seaSurfaceTemperature) {
+  (PARAMETER_CONFIG.seaSurfaceTemperature as { icon?: LucideIcon }).icon = Thermometer;
 }
-if (MARINE_PARAMETER_CONFIG.seaLevelHeightMsl) {
-  (MARINE_PARAMETER_CONFIG.seaLevelHeightMsl as { icon?: LucideIcon }).icon = Waves; // Using Waves for Sea Level
+if (PARAMETER_CONFIG.seaLevelHeightMsl) {
+  (PARAMETER_CONFIG.seaLevelHeightMsl as { icon?: LucideIcon }).icon = Waves;
+}
+// Weather icons
+if (PARAMETER_CONFIG.temperature2m) {
+  (PARAMETER_CONFIG.temperature2m as { icon?: LucideIcon }).icon = Thermometer;
+}
+if (PARAMETER_CONFIG.windSpeed10m) {
+  (PARAMETER_CONFIG.windSpeed10m as { icon?: LucideIcon }).icon = Wind;
+}
+if (PARAMETER_CONFIG.windDirection10m) {
+  (PARAMETER_CONFIG.windDirection10m as { icon?: LucideIcon }).icon = Compass;
+}
+if (PARAMETER_CONFIG.cloudCover) {
+  (PARAMETER_CONFIG.cloudCover as { icon?: LucideIcon }).icon = CloudSun; // Re-using CloudSun for general cloud cover
 }
 
 
-export default function OMMarineExplorerPage() {
+export default function WeatherAndMarineExplorerPage() {
   const [theme, setTheme] = useState("light");
   const pathname = usePathname();
   const { toast, dismiss } = useToast();
@@ -69,13 +82,13 @@ export default function OMMarineExplorerPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [currentLocationName, setCurrentLocationName] = useState<string | null>(() => knownLocations[defaultLocationKey]?.name || null);
 
-  const [marineData, setMarineData] = useState<MarineDataPoint[] | null>(null);
+  const [combinedData, setCombinedData] = useState<CombinedDataPoint[] | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [errorData, setErrorData] = useState<string | null>(null);
   const [dataLocationContext, setDataLocationContext] = useState<string | null>(null);
   
-  const initialVisibility = Object.fromEntries(ALL_MARINE_PARAMETERS.map(key => [key, true])) as Record<MarineParameterKey, boolean>;
-  const [plotVisibility, setPlotVisibility] = useState<Record<MarineParameterKey, boolean>>(initialVisibility);
+  const initialVisibility = Object.fromEntries(ALL_PARAMETERS.map(key => [key, true])) as Record<CombinedParameterKey, boolean>;
+  const [plotVisibility, setPlotVisibility] = useState<Record<CombinedParameterKey, boolean>>(initialVisibility);
   
   const [fetchLogSteps, setFetchLogSteps] = useState<LogStep[]>([]);
   const [showFetchLogAccordion, setShowFetchLogAccordion] = useState<string>(""); 
@@ -98,7 +111,7 @@ export default function OMMarineExplorerPage() {
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
 
-  const handlePlotVisibilityChange = useCallback((key: MarineParameterKey, checked: boolean) => {
+  const handlePlotVisibilityChange = useCallback((key: CombinedParameterKey, checked: boolean) => {
     setPlotVisibility(prev => ({ ...prev, [key]: checked }));
   }, []);
 
@@ -161,29 +174,29 @@ export default function OMMarineExplorerPage() {
     }
     
     const currentPlotVisibility = plotVisibility; 
-    const selectedParams = ALL_MARINE_PARAMETERS.filter(key => currentPlotVisibility[key]);
+    const selectedParams = ALL_PARAMETERS.filter(key => currentPlotVisibility[key]);
     if (selectedParams.length === 0) {
       if (!isAutoFetch) {
-          toast({ variant: "destructive", title: "No Parameters Selected", description: "Please select at least one marine parameter to fetch." });
+          toast({ variant: "destructive", title: "No Parameters Selected", description: "Please select at least one parameter to fetch." });
       }
       return;
     }
 
-    setIsLoadingData(true); setErrorData(null); setMarineData(null); setDataLocationContext(null);
-    setFetchLogSteps([{message: `Fetching marine data for ${locationNameToUse}...`, status: 'pending'}]); 
-    setIsLogLoading(true); setLogOverallStatus('pending'); setShowFetchLogAccordion("om-fetch-log-item");
+    setIsLoadingData(true); setErrorData(null); setCombinedData(null); setDataLocationContext(null);
+    setFetchLogSteps([{message: `Fetching data for ${locationNameToUse}...`, status: 'pending'}]); 
+    setIsLogLoading(true); setLogOverallStatus('pending'); setShowFetchLogAccordion("combined-fetch-log-item");
     
     let loadingToastId: string | undefined;
     if (!isAutoFetch) {
-        loadingToastId = toast({ title: "Fetching Data", description: `Fetching marine data for ${locationNameToUse}...`}).id;
+        loadingToastId = toast({ title: "Fetching Data", description: `Fetching data for ${locationNameToUse}...`}).id;
     }
     
-    const result = await fetchOpenMeteoMarineDataAction({
+    const result = await fetchCombinedDataAction({
       latitude: coordsToUse.latitude,
       longitude: coordsToUse.longitude,
       startDate: formatISO(dateRange.from, { representation: 'date' }),
       endDate: formatISO(dateRange.to, { representation: 'date' }),
-      parameters: selectedParams,
+      parameters: selectedParams as string[], // Cast as string[]
     });
     
     if(loadingToastId) dismiss(loadingToastId);
@@ -191,20 +204,20 @@ export default function OMMarineExplorerPage() {
     setIsLoadingData(false); setIsLogLoading(false);
 
     if (result.success && result.data) {
-      setMarineData(result.data);
-      setDataLocationContext(result.dataLocationContext || `Marine data for ${locationNameToUse}`);
+      setCombinedData(result.data);
+      setDataLocationContext(result.dataLocationContext || `Data for ${locationNameToUse}`);
       if (result.data.length === 0 && !result.error) { 
-        if (!isAutoFetch) toast({ variant: "default", title: "No Data", description: "No marine data points found for the selected criteria.", duration: 4000 });
+        if (!isAutoFetch) toast({ variant: "default", title: "No Data", description: "No data points found for the selected criteria.", duration: 4000 });
         setLogOverallStatus('warning');
       } else if (result.data.length === 0 && result.error) { 
          if (!isAutoFetch) toast({ variant: "default", title: "No Data", description: result.error, duration: 4000 });
          setLogOverallStatus('warning');
       } else {
-        if (!isAutoFetch) toast({ title: "Data Loaded", description: `Loaded ${result.data.length} marine data points for ${locationNameToUse}.` });
+        if (!isAutoFetch) toast({ title: "Data Loaded", description: `Loaded ${result.data.length} data points for ${locationNameToUse}.` });
         setLogOverallStatus('success'); setShowFetchLogAccordion("");
       }
     } else {
-      setErrorData(result.error || `Failed to load marine data for ${locationNameToUse}.`);
+      setErrorData(result.error || `Failed to load data for ${locationNameToUse}.`);
       if (!isAutoFetch) toast({ variant: "destructive", title: "Error Loading Data", description: result.error || `Failed to load data for ${locationNameToUse}.` });
       setLogOverallStatus('error');
     }
@@ -219,17 +232,15 @@ export default function OMMarineExplorerPage() {
       setCurrentLocationName(location.name);
       setShowSuggestions(false);
       
-      if (dateRange?.from && dateRange?.to) {
-        // Automatically fetch when a suggestion is clicked
+      // Automatically fetch when a suggestion is clicked and date range is valid
+      if (dateRange?.from && dateRange?.to && ! (dateRange.from > dateRange.to)) {
         handleLocationSearchAndFetch({ latitude: location.lat, longitude: location.lon }, location.name, false);
       }
     }
   }, [dateRange, handleLocationSearchAndFetch]); 
 
   useEffect(() => {
-    if (initialFetchDone.current) {
-      return; 
-    }
+    if (initialFetchDone.current) return;
     initialFetchDone.current = true; 
 
     const defaultLoc = knownLocations[defaultLocationKey];
@@ -238,17 +249,18 @@ export default function OMMarineExplorerPage() {
     const currentDR = dateRange; 
     
     if (defaultLoc && currentInitialCoords && currentLocName && currentDR?.from && currentDR?.to) {
-      handleLocationSearchAndFetch(currentInitialCoords, currentLocName, true);
+      if (!(currentDR.from > currentDR.to)) {
+         handleLocationSearchAndFetch(currentInitialCoords, currentLocName, true);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps 
-  }, []);
+  }, []); // Dependencies removed to ensure it truly runs once based on initial derived state
 
 
   useEffect(() => {
     const currentSearchTerm = searchTerm.trim();
     const inputElement = document.activeElement as HTMLInputElement;
-    const isFocused = inputElement && inputElement.id === "om-location-search";
-
+    const isFocused = inputElement && inputElement.id === "combined-location-search";
 
     if (currentSearchTerm === "" && isFocused) {
        setSuggestions(Object.entries(knownLocations).map(([key, locObj]) => ({ key, name: locObj.name })));
@@ -359,8 +371,7 @@ export default function OMMarineExplorerPage() {
             </Link>
             <div className="flex items-center gap-1">
               <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (CSV)"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer (CSV)</p></TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><Link href="/weather" passHref><Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Weather Page"><CloudSun className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Weather Page</p></TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><Link href="/om-marine-explorer" passHref><Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="OM Marine Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>OM Marine Explorer</p></TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Link href="/om-marine-explorer" passHref><Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="Weather & Marine Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Weather & Marine Explorer</p></TooltipContent></Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
@@ -372,10 +383,10 @@ export default function OMMarineExplorerPage() {
         <Card className="mb-4">
           <CardHeader className="pb-3 pt-4">
             <CardTitle className="text-lg flex items-center gap-2">
-              <Waves className="h-5 w-5 text-primary" />Open-Meteo Marine Data Explorer
+              <Waves className="h-5 w-5 text-primary" />Open-Meteo Weather & Marine Explorer
             </CardTitle>
              <CardDescription className="text-xs">
-                Select desired parameters, a coastal location, and a date range to fetch and visualize marine data.
+                Select parameters, a coastal location, and a date range to fetch and visualize weather and marine data.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -385,13 +396,13 @@ export default function OMMarineExplorerPage() {
             <Card>
               <CardHeader className="pb-2 pt-3"><CardTitle className="text-base flex items-center gap-1.5"><ListChecks className="h-4 w-4 text-primary" />Select Parameters</CardTitle></CardHeader>
               <CardContent className="space-y-1">
-                {ALL_MARINE_PARAMETERS.map((key) => {
-                  const paramConfig = MARINE_PARAMETER_CONFIG[key];
+                {ALL_PARAMETERS.map((key) => {
+                  const paramConfig = PARAMETER_CONFIG[key];
                   const IconComp = (paramConfig as { icon?: LucideIcon }).icon || Info; 
                   return (
                     <div key={key} className="flex items-center space-x-1.5">
-                      <Checkbox id={`om-visibility-${key}`} checked={plotVisibility[key]} onCheckedChange={(c) => handlePlotVisibilityChange(key, !!c)} className="h-3.5 w-3.5"/>
-                      <UiLabel htmlFor={`om-visibility-${key}`} className="text-xs font-medium flex items-center gap-1 cursor-pointer"><IconComp className="h-3.5 w-3.5 text-muted-foreground"/>{paramConfig.name}</UiLabel>
+                      <Checkbox id={`combined-visibility-${key}`} checked={plotVisibility[key]} onCheckedChange={(c) => handlePlotVisibilityChange(key, !!c)} className="h-3.5 w-3.5"/>
+                      <UiLabel htmlFor={`combined-visibility-${key}`} className="text-xs font-medium flex items-center gap-1 cursor-pointer"><IconComp className="h-3.5 w-3.5 text-muted-foreground"/>{paramConfig.name}</UiLabel>
                     </div>
                   );
                 })}
@@ -403,9 +414,9 @@ export default function OMMarineExplorerPage() {
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="relative">
-                  <UiLabel htmlFor="om-location-search" className="text-xs font-medium mb-0.5 block">Location Search</UiLabel>
+                  <UiLabel htmlFor="combined-location-search" className="text-xs font-medium mb-0.5 block">Location Search</UiLabel>
                   <Input 
-                         id="om-location-search"
+                         id="combined-location-search"
                          type="text" 
                          placeholder="Search UK coastal location..." 
                          value={searchTerm}
@@ -422,24 +433,24 @@ export default function OMMarineExplorerPage() {
                 </div>
                 {initialCoords && <p className="text-xs text-muted-foreground text-center">Lat: {initialCoords.latitude.toFixed(3)}, Lon: {initialCoords.longitude.toFixed(3)}</p>}
                 <div>
-                  <UiLabel htmlFor="om-date-range" className="text-xs font-medium mb-0.5 block">Date Range</UiLabel>
-                  <DatePickerWithRange id="om-date-range" date={dateRange} onDateChange={setDateRange} disabled={isLoadingData} />
+                  <UiLabel htmlFor="combined-date-range" className="text-xs font-medium mb-0.5 block">Date Range</UiLabel>
+                  <DatePickerWithRange id="combined-date-range" date={dateRange} onDateChange={setDateRange} disabled={isLoadingData} />
                   {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && <p className="text-xs text-destructive px-1 pt-1">Start date error.</p>}
                 </div>
-                <Button onClick={() => handleLocationSearchAndFetch(undefined, undefined, false)} disabled={isLoadingData || !searchTerm || !dateRange?.from || !dateRange?.to || ALL_MARINE_PARAMETERS.filter(key => plotVisibility[key]).length === 0} className="w-full h-9 text-xs">
+                <Button onClick={() => handleLocationSearchAndFetch(undefined, undefined, false)} disabled={isLoadingData || !searchTerm || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => plotVisibility[key]).length === 0} className="w-full h-9 text-xs">
                   {isLoadingData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
-                  {isLoadingData ? "Fetching..." : "Fetch Marine Data"}
+                  {isLoadingData ? "Fetching..." : "Fetch Data"}
                 </Button>
-                 {renderLogAccordion(fetchLogSteps, showFetchLogAccordion, setShowFetchLogAccordion, isLogLoading, logOverallStatus, "OM Marine Fetch Log", errorData)}
+                 {renderLogAccordion(fetchLogSteps, showFetchLogAccordion, setShowFetchLogAccordion, isLogLoading, logOverallStatus, "Data Fetch Log", errorData)}
               </CardContent>
             </Card>
           </div>
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-sm h-full">
-              <CardHeader className="p-2 pt-3"><CardTitle className="text-base">{dataLocationContext || "Open-Meteo Marine Data Plots"}</CardTitle></CardHeader>
+              <CardHeader className="p-2 pt-3"><CardTitle className="text-base">{dataLocationContext || "Open-Meteo Weather & Marine Data Plots"}</CardTitle></CardHeader>
               <CardContent className="p-1.5 h-[calc(100%-2.5rem)]"> 
-                <MarinePlotsGrid 
-                    marineData={marineData} 
+                <MarinePlotsGrid // Re-using MarinePlotsGrid, might need renaming or adaptation
+                    marineData={combinedData} // Prop name expects 'marineData'
                     isLoading={isLoadingData} 
                     error={errorData} 
                     plotVisibility={plotVisibility}
@@ -452,7 +463,7 @@ export default function OMMarineExplorerPage() {
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            Marine data from Open-Meteo.
+            Weather & Marine data from Open-Meteo.
           </p>
         </div>
       </footer>
