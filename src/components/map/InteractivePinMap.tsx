@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents, Popup } from 'react-leaflet';
-import L, { LatLngExpression, Map as LeafletMap } from 'leaflet'; // Renamed Map to LeafletMap to avoid conflict
+import L, { LatLngExpression, Map as LeafletMap } from 'leaflet';
 
 interface InteractiveMapProps {
   initialCenter?: LatLngExpression;
@@ -46,35 +46,41 @@ export function InteractivePinMap({
     setRenderMap(true); // Enable map rendering only on the client-side
   }, []);
 
-  const initialCenter = React.useMemo(() => {
-    return selectedCoords ? [selectedCoords.lat, selectedCoords.lng] : initialCenterProp;
-  }, [selectedCoords, initialCenterProp]);
-
+  // Effect for updating map view and marker when selectedCoords prop changes
   useEffect(() => {
     if (mapRef.current && selectedCoords) {
-      const currentCenter = mapRef.current.getCenter();
-      const currentZoom = mapRef.current.getZoom();
-      // Only call setView if the coordinates actually changed significantly
-      // to avoid potential loops with parent component updates
-      if (currentCenter.lat.toFixed(5) !== selectedCoords.lat.toFixed(5) || 
-          currentCenter.lng.toFixed(5) !== selectedCoords.lng.toFixed(5)) {
-        mapRef.current.setView([selectedCoords.lat, selectedCoords.lng], currentZoom);
+      const currentMapCenter = mapRef.current.getCenter();
+      // Check if map needs to be moved significantly, to avoid re-centering on minor float differences
+      // or if the marker is not yet at the selectedCoords
+      if (
+        Math.abs(currentMapCenter.lat - selectedCoords.lat) > 0.00001 ||
+        Math.abs(currentMapCenter.lng - selectedCoords.lng) > 0.00001 ||
+        !markerPosition || // If no marker, definitely update
+        (markerPosition && (Array.isArray(markerPosition) ? markerPosition[0] : markerPosition.lat) !== selectedCoords.lat) ||
+        (markerPosition && (Array.isArray(markerPosition) ? markerPosition[1] : markerPosition.lng) !== selectedCoords.lng)
+      ) {
+        mapRef.current.setView([selectedCoords.lat, selectedCoords.lng], mapRef.current.getZoom());
       }
       setMarkerPosition([selectedCoords.lat, selectedCoords.lng]);
-    } else if (!selectedCoords) {
-        setMarkerPosition(null);
+    } else if (mapRef.current && !selectedCoords) {
+      // If selectedCoords is cleared, remove the marker
+      setMarkerPosition(null);
     }
-  }, [selectedCoords]);
-  
+  }, [selectedCoords, markerPosition]); // Added markerPosition to dependency to ensure marker updates correctly with coords
+
+  // Callback for when the map instance is created
   const handleWhenCreated = useCallback((mapInstance: LeafletMap) => {
     mapRef.current = mapInstance;
+    // Set the initial view of the map based on props
+    // If selectedCoords are provided, they take precedence for the initial view.
+    // Otherwise, use initialCenterProp and initialZoom.
     if (selectedCoords) {
       mapInstance.setView([selectedCoords.lat, selectedCoords.lng], initialZoom);
+      setMarkerPosition([selectedCoords.lat, selectedCoords.lng]); // Also set initial marker
     } else {
       mapInstance.setView(initialCenterProp, initialZoom);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialZoom, selectedCoords, initialCenterProp]); // Added initialCenterProp
+  }, [initialCenterProp, initialZoom, selectedCoords]);
 
   // Cleanup map instance on component unmount
   useEffect(() => {
@@ -87,16 +93,19 @@ export function InteractivePinMap({
   }, []);
 
   if (!renderMap) {
-    return <p className="text-center p-4">Initializing map...</p>; // Or some placeholder
+    return <p className="text-center p-4">Initializing map...</p>;
   }
 
   return (
     <MapContainer
-        center={initialCenter} // Use the memoized initialCenter
-        zoom={initialZoom} // Use prop initialZoom
-        scrollWheelZoom={true} // Enabled scroll wheel zoom as it's common
+        // Pass STABLE initial center and zoom to MapContainer.
+        // These props should not change due to component's internal state or other props
+        // and cause re-initialization.
+        center={initialCenterProp}
+        zoom={initialZoom}
+        scrollWheelZoom={true}
         style={{ height: '100%', width: '100%' }}
-        whenCreated={handleWhenCreated}
+        whenCreated={handleWhenCreated} // This callback sets the actual initial view
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
