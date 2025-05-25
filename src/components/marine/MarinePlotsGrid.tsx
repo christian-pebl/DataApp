@@ -2,176 +2,130 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, Label as RechartsLabel } from 'recharts';
-import type { CombinedParameterKey, CombinedDataPoint, ParameterConfigItem } from '@/app/om-marine-explorer/shared';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip } from 'recharts';
+import type { CombinedDataPoint, CombinedParameterKey, ParameterConfigItem } from '@/app/om-marine-explorer/shared';
 import { PARAMETER_CONFIG, ALL_PARAMETERS } from '@/app/om-marine-explorer/shared';
-import { Info, CheckCircle2, XCircle, Loader2, ChevronUp, ChevronDown } from "lucide-react";
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label'; // ShadCN UI Label
+import { Button } from '@/components/ui/button';
+import { Loader2, CheckCircle2, XCircle, Info, ChevronUp, ChevronDown } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { format, parseISO, isValid } from 'date-fns';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-interface PlotConfigInternal extends ParameterConfigItem {
-  dataKey: CombinedParameterKey;
-  Icon: LucideIcon;
-  dataTransform?: (value: number) => number;
-  stationName?: string; // For tide plot specifically
-}
-
-export interface MarinePlotsGridProps {
-  marineData: CombinedDataPoint[] | null;
-  isLoading: boolean;
-  error: string | null;
-  // plotVisibility and handlePlotVisibilityChange are managed internally now
-  tideStationName?: string | null; // Used for tide plot header
-}
+const MPH_CONVERSION_FACTOR = 2.23694; // For wind speed (m/s to mph)
 
 type PlotVisibilityKeys = CombinedParameterKey;
 type SeriesAvailabilityStatus = 'pending' | 'available' | 'unavailable';
-const MPH_CONVERSION_FACTOR = 2.23694; // For wind speed (m/s to mph)
 
 const formatDateTickBrush = (timeValue: string | number): string => {
   try {
-    const date = new Date(timeValue);
-    if (!isValid(date)) {
-       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(timeValue)) {
-        const parsed = parseISO(timeValue);
-        if (isValid(parsed)) return format(parsed, 'dd-MM-yy');
-      }
-      return String(timeValue);
-    }
-    return format(date, 'dd-MM-yy');
+    const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
+    if (!isValid(dateObj)) return String(timeValue);
+    return format(dateObj, 'dd-MM-yy');
   } catch (e) {
     return String(timeValue);
   }
 };
 
+export interface MarinePlotsGridProps {
+  marineData: CombinedDataPoint[] | null;
+  isLoading: boolean;
+  error: string | null;
+}
+
 export function MarinePlotsGrid({
-  marineData: combinedData,
+  marineData,
   isLoading,
   error,
-  tideStationName,
 }: MarinePlotsGridProps) {
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
-  
-  const [plotConfigsInternal, setPlotConfigsInternal] = useState<PlotConfigInternal[]>([]);
+
+  const [plotConfigsInternal, setPlotConfigsInternal] = useState<Array<ParameterConfigItem & { dataKey: CombinedParameterKey; Icon: LucideIcon; dataTransform?: (value: number) => number; }>>([]);
+
+  const [plotVisibility, setPlotVisibility] = useState<Record<CombinedParameterKey, boolean>>({});
+  const [seriesDataAvailability, setSeriesDataAvailability] = useState<Record<CombinedParameterKey, SeriesAvailabilityStatus>>({});
 
   useEffect(() => {
-    const initialConfigs: PlotConfigInternal[] = ALL_PARAMETERS.map(key => {
+    const initialConfigs = ALL_PARAMETERS.map(key => {
       const config = PARAMETER_CONFIG[key as CombinedParameterKey];
       let dataTransformFunc: ((value: number) => number) | undefined = undefined;
       let displayUnit = config.unit;
 
-      if (key === 'windSpeed10m') { // Open-Meteo weather gives km/h, we want mph
+      if (key === 'windSpeed10m' && config.apiParam === 'windspeed_10m') { // Ensure this is specific to Open-Meteo wind speed
         displayUnit = 'mph';
-         // Assuming API gives m/s and we want mph
-        dataTransformFunc = (value: number /* m/s */) => parseFloat((value * MPH_CONVERSION_FACTOR).toFixed(1));
+        dataTransformFunc = (value: number /* m/s from Open-Meteo Weather API */) => parseFloat((value * MPH_CONVERSION_FACTOR).toFixed(1));
       }
       
       return {
         ...config,
         dataKey: key,
         unit: displayUnit,
-        Icon: (config as { icon?: LucideIcon }).icon || Info,
+        Icon: (config as { icon?: LucideIcon }).icon || Info, // Fallback to Info icon
         dataTransform: dataTransformFunc,
-        stationName: key === 'seaLevelHeightMsl' ? tideStationName || undefined : undefined,
       };
     }).sort((a, b) => {
-      const order: CombinedParameterKey[] = [
-        'temperature2m',
-        'windSpeed10m',
-        'windDirection10m',
-        'ghi',
-        'seaLevelHeightMsl',
-        'waveHeight',
-        'waveDirection',
-        'wavePeriod',
-        'seaSurfaceTemperature',
-      ];
-      return order.indexOf(a.dataKey) - order.indexOf(b.dataKey);
+      // Maintain a preferred order or the order from ALL_PARAMETERS
+      return ALL_PARAMETERS.indexOf(a.dataKey) - ALL_PARAMETERS.indexOf(b.dataKey);
     });
     setPlotConfigsInternal(initialConfigs);
-  }, [tideStationName]); // Re-run if tideStationName changes for the tide plot header
 
+    // Initialize visibility and availability
+    const initialVisibilityState: Record<CombinedParameterKey, boolean> = {};
+    const initialAvailabilityState: Record<CombinedParameterKey, SeriesAvailabilityStatus> = {};
+    initialConfigs.forEach(pc => {
+      initialVisibilityState[pc.dataKey] = true; // Default to visible
+      initialAvailabilityState[pc.dataKey] = 'pending';
+    });
+    setPlotVisibility(initialVisibilityState);
+    setSeriesDataAvailability(initialAvailabilityState);
 
-  const initialVisibility = useMemo(() =>
-    Object.fromEntries(
-      plotConfigsInternal.map(pc => [pc.dataKey, true])
-    ) as Record<PlotVisibilityKeys, boolean>,
-  [plotConfigsInternal]);
-
-  const [plotVisibility, setPlotVisibility] = useState<Record<PlotVisibilityKeys, boolean>>(initialVisibility);
-  
-  const initialAvailability = useMemo(() =>
-    Object.fromEntries(
-      plotConfigsInternal.map(pc => [pc.dataKey, 'pending'])
-    ) as Record<PlotVisibilityKeys, SeriesAvailabilityStatus>,
-    [plotConfigsInternal]
-  );
-
-  const [seriesDataAvailability, setSeriesDataAvailability] = useState<Record<PlotVisibilityKeys, SeriesAvailabilityStatus>>(initialAvailability);
-
-  useEffect(() => {
-    if (plotConfigsInternal.length > 0) {
-      const newVisibility = Object.fromEntries(
-        plotConfigsInternal.map(pc => [pc.dataKey, plotVisibility[pc.dataKey] ?? true]) // Preserve existing or default to true
-      ) as Record<PlotVisibilityKeys, boolean>;
-      setPlotVisibility(newVisibility);
-
-      const newAvailability = Object.fromEntries(
-         plotConfigsInternal.map(pc => [pc.dataKey, seriesDataAvailability[pc.dataKey] ?? 'pending'])
-      ) as Record<PlotVisibilityKeys, SeriesAvailabilityStatus>;
-      setSeriesDataAvailability(newAvailability);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plotConfigsInternal]); // Rerun when plotConfigsInternal is initialized
+  }, []); // Runs once on mount
 
 
   useEffect(() => {
     if (isLoading) {
-      setSeriesDataAvailability(prev => 
-        Object.fromEntries(plotConfigsInternal.map(pc => [pc.dataKey, 'pending'])) as Record<PlotVisibilityKeys, SeriesAvailabilityStatus>
-      );
+      setSeriesDataAvailability(prev => {
+        const newState = { ...prev };
+        plotConfigsInternal.forEach(pc => {
+          newState[pc.dataKey] = 'pending';
+        });
+        return newState;
+      });
       return;
     }
     
     const newAvailability: Partial<Record<PlotVisibilityKeys, SeriesAvailabilityStatus>> = {};
-    const newVisibilityState: Partial<Record<PlotVisibilityKeys, boolean>> = {};
 
-    if (!combinedData || combinedData.length === 0) {
+    if (!marineData || marineData.length === 0) {
       plotConfigsInternal.forEach(pc => {
         newAvailability[pc.dataKey] = 'unavailable';
-        newVisibilityState[pc.dataKey] = plotVisibility[pc.dataKey] ?? false; 
       });
     } else {
       plotConfigsInternal.forEach(pc => {
-        const hasData = combinedData.some(
+        const hasData = marineData.some(
           point => {
             const val = point[pc.dataKey as keyof CombinedDataPoint];
             return val !== undefined && val !== null && !isNaN(Number(val));
           }
         );
         newAvailability[pc.dataKey] = hasData ? 'available' : 'unavailable';
-        newVisibilityState[pc.dataKey] = plotVisibility[pc.dataKey] === undefined ? hasData : plotVisibility[pc.dataKey];
       });
     }
-    setSeriesDataAvailability(newAvailability as Record<PlotVisibilityKeys, SeriesAvailabilityStatus>);
-    setPlotVisibility(newVisibilityState as Record<PlotVisibilityKeys, boolean>);
+    setSeriesDataAvailability(newAvailability as Record<CombinedParameterKey, SeriesAvailabilityStatus>);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [combinedData, isLoading, plotConfigsInternal]); // plotVisibility removed to avoid loop with its own setter
+  }, [marineData, isLoading]); // Removed plotConfigsInternal to avoid loop as it's stable
 
 
   useEffect(() => {
-    if (combinedData && combinedData.length > 0 && brushEndIndex === undefined) {
-      setBrushEndIndex(combinedData.length -1);
-    } else if ((!combinedData || combinedData.length === 0)) {
+    if (marineData && marineData.length > 0 && brushEndIndex === undefined) {
+      setBrushEndIndex(marineData.length - 1);
+    } else if ((!marineData || marineData.length === 0)) {
       setBrushStartIndex(0);
       setBrushEndIndex(undefined);
     }
-  }, [combinedData, brushEndIndex]);
+  }, [marineData, brushEndIndex]);
 
   const handleBrushChangeLocal = (newIndex: { startIndex?: number; endIndex?: number }) => {
     setBrushStartIndex(newIndex.startIndex);
@@ -179,15 +133,15 @@ export function MarinePlotsGrid({
   };
 
   const displayData = useMemo(() => {
-    if (!combinedData || combinedData.length === 0 || brushStartIndex === undefined || brushEndIndex === undefined) {
+    if (!marineData || marineData.length === 0 || brushStartIndex === undefined || brushEndIndex === undefined) {
       return [];
     }
     const start = Math.max(0, brushStartIndex);
-    const end = Math.min(combinedData.length - 1, brushEndIndex);
-    return combinedData.slice(start, end + 1);
-  }, [combinedData, brushStartIndex, brushEndIndex]);
+    const end = Math.min(marineData.length - 1, brushEndIndex);
+    return marineData.slice(start, end + 1);
+  }, [marineData, brushStartIndex, brushEndIndex]);
 
-  const handlePlotVisibilityChange = useCallback((key: PlotVisibilityKeys, checked: boolean) => {
+  const handlePlotVisibilityChange = useCallback((key: CombinedParameterKey, checked: boolean) => {
     setPlotVisibility(prev => ({ ...prev, [key]: checked }));
   }, []);
 
@@ -216,14 +170,14 @@ export function MarinePlotsGrid({
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-destructive p-4 text-center">
-        <Info className="h-10 w-10 mb-2" />
+        <Info className="h-10 w-10 mb-2" /> {/* Changed from AlertCircle to Info for consistency, or use AlertCircle if preferred */}
         <p className="font-semibold">Error Fetching Data</p>
         <p className="text-sm">{error}</p>
       </div>
     );
   }
   
-  if (!combinedData || combinedData.length === 0) {
+  if (!marineData || marineData.length === 0) {
      return (
         <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
           <Info className="h-10 w-10 mb-2" />
@@ -267,27 +221,26 @@ export function MarinePlotsGrid({
           return (
             <div key={config.dataKey as string} className="border rounded-md p-1.5 shadow-sm bg-card flex-shrink-0 flex flex-col">
               <div className="flex items-center justify-between px-1 pt-0.5 text-xs">
-                <div className="flex items-center gap-1.5">
-                   <Checkbox
-                        id={`visibility-${config.dataKey}-${index}`}
-                        checked={isPlotCurrentlyVisible}
-                        onCheckedChange={(checked) => handlePlotVisibilityChange(config.dataKey, !!checked)}
-                        className="h-3.5 w-3.5"
-                    />
-                    <Label htmlFor={`visibility-${config.dataKey}-${index}`} className="flex items-center gap-1 cursor-pointer">
-                        <IconComponent className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="font-medium text-foreground">
-                          {config.title}
-                          {config.dataKey === 'seaLevelHeightMsl' && config.stationName && ` (${config.stationName})`}
-                        </span>
-                    </Label>
-                  {availabilityStatus === 'pending' && <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin ml-1" />}
-                  {availabilityStatus === 'available' && <CheckCircle2 className="h-3.5 w-3.5 text-green-500 ml-1" />}
-                  {availabilityStatus === 'unavailable' && <XCircle className="h-3.5 w-3.5 text-red-500 ml-1" />}
+                <div className="flex flex-1 items-center gap-1.5 min-w-0"> 
+                  <Checkbox
+                    id={`visibility-${config.dataKey}-${index}`}
+                    checked={isPlotCurrentlyVisible}
+                    onCheckedChange={(checked) => handlePlotVisibilityChange(config.dataKey as CombinedParameterKey, !!checked)}
+                    className="h-3.5 w-3.5 flex-shrink-0"
+                  />
+                  <Label htmlFor={`visibility-${config.dataKey}-${index}`} className="flex items-center gap-1 cursor-pointer min-w-0">
+                    <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    <span className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis">{config.name}</span>
+                  </Label>
+                  <div className="flex-shrink-0"> {/* Group status icons */}
+                    {isLoading && availabilityStatus === 'pending' && <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin ml-1" />}
+                    {!isLoading && availabilityStatus === 'available' && <CheckCircle2 className="h-3.5 w-3.5 text-green-500 ml-1" />}
+                    {!isLoading && availabilityStatus === 'unavailable' && <XCircle className="h-3.5 w-3.5 text-red-500 ml-1" />}
+                  </div>
                 </div>
-                <div className="flex items-center">
+                <div className="flex items-center flex-shrink-0">
                     {isPlotCurrentlyVisible && displayValue && (
-                        <span className="text-muted-foreground text-xs ml-auto pl-2">{displayValue}</span>
+                        <span className="text-muted-foreground text-xs ml-auto pl-2 whitespace-nowrap">{displayValue}</span>
                     )}
                     <Button variant="ghost" size="icon" className="h-5 w-5 ml-1" onClick={() => handleMovePlot(index, 'up')} disabled={index === 0}>
                         <ChevronUp className="h-3.5 w-3.5" />
@@ -309,7 +262,7 @@ export function MarinePlotsGrid({
                           tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
                           tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
                           stroke="hsl(var(--border))"
-                          width={45}
+                          width={35} // Reduced width
                           axisLine={false}
                           tickLine={false}
                         />
@@ -317,8 +270,17 @@ export function MarinePlotsGrid({
                          <RechartsTooltip
                             contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', fontSize: '0.6rem' }}
                             itemStyle={{ color: 'hsl(var(--foreground))' }}
-                            formatter={(value: number, name: string, props) => [`${value.toFixed(1)}${config.unit || ''}`, config.title]}
-                            labelFormatter={(label) => format(parseISO(label), 'MMM dd, HH:mm')}
+                            formatter={(value: number, name: string, props) => {
+                                const currentConfig = plotConfigsInternal.find(pc => pc.dataKey === name);
+                                return [`${value.toFixed(1)}${currentConfig?.unit || ''}`, currentConfig?.name || name];
+                            }}
+                            labelFormatter={(label) => {
+                                try {
+                                    return format(parseISO(label), 'MMM dd, HH:mm');
+                                } catch {
+                                    return label;
+                                }
+                            }}
                         />
                         <Line
                           type="monotone"
@@ -327,13 +289,13 @@ export function MarinePlotsGrid({
                           strokeWidth={1.5}
                           dot={false}
                           connectNulls
-                          name={config.title}
+                          name={config.dataKey as string} // Use dataKey for name in tooltip
                         />
                       </LineChart>
                     </ResponsiveContainer>
                   ) : (
                     <div className="flex items-center justify-center h-full text-xs text-muted-foreground italic">
-                      {availabilityStatus === 'available' ? "No data points for selected time range." : "Data unavailable for this plot."}
+                      {availabilityStatus === 'pending' ? "Loading plot data..." : "Data unavailable for this plot."}
                     </div>
                   )}
                 </div>
@@ -343,16 +305,16 @@ export function MarinePlotsGrid({
         })}
       </div>
 
-      {combinedData && combinedData.length > 0 && (
-        <div className="h-[75px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
+      {marineData && marineData.length > 0 && (
+        <div className="h-[70px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={combinedData} margin={{ top: 5, right: 25, left: 25, bottom: 5 }}>
+            <LineChart data={marineData} margin={{ top: 5, right: 25, left: 25, bottom: 0 }}> {/* Reduced bottom margin from 5 to 0 */}
               <XAxis
                 dataKey="time"
                 tickFormatter={formatDateTickBrush}
                 stroke="hsl(var(--muted-foreground))"
                 tick={{ fontSize: '0.6rem' }}
-                height={60} 
+                height={55} 
                 angle={-45}
                 textAnchor="end"
                 dy={5} 
@@ -369,7 +331,7 @@ export function MarinePlotsGrid({
                 startIndex={brushStartIndex}
                 endIndex={brushEndIndex}
                 onChange={handleBrushChangeLocal}
-                y={5} 
+                y={10} 
               />
             </LineChart>
           </ResponsiveContainer>
@@ -378,3 +340,5 @@ export function MarinePlotsGrid({
     </div>
   );
 }
+
+    
