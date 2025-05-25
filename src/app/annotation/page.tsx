@@ -1,25 +1,66 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
-import { PlotInstance } from "@/components/dataflow/PlotInstance";
-import { PlusCircle, SunMoon, LayoutGrid, Waves, FilePenLine } from "lucide-react"; // Added FilePenLine
+import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay"; // Assuming ChartDisplay is in dataflow
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
+import { LayoutGrid, CloudSun, Waves, SunMoon, FilePenLine, Edit3 } from "lucide-react"; // Added FilePenLine
 
-interface PlotConfig {
-  id: string;
-  title: string;
+interface DummyDataPoint {
+  time: string;
+  temperature: number;
 }
 
-export default function DataExplorerPage() {
+const generateDummyData = (): DummyDataPoint[] => {
+  const data: DummyDataPoint[] = [];
+  const baseDate = new Date();
+  baseDate.setDate(baseDate.getDate() - 7); // Start 7 days ago
+
+  for (let day = 0; day < 7; day++) {
+    for (let hour = 0; hour < 24; hour++) {
+      const currentDate = new Date(baseDate);
+      currentDate.setDate(baseDate.getDate() + day);
+      currentDate.setHours(hour, 0, 0, 0);
+      
+      const time = currentDate.toISOString();
+      
+      // Simple sinusoidal temperature with some randomness
+      // Simulates daily temperature fluctuation and a slight weekly trend
+      const dayProgress = (day * 24 + hour) / (7 * 24); // 0 to 1 over the week
+      const dailyCycle = Math.sin((hour / 24) * 2 * Math.PI - Math.PI / 2); // Peaking mid-day
+      const weeklyTrend = Math.sin(dayProgress * Math.PI); // Gentle rise and fall over the week
+      
+      const baseTemp = 10 + (weeklyTrend * 5); // Base temp varies between 10 and 15
+      const fluctuation = 5 * dailyCycle; // Daily fluctuation of +/- 5 degrees
+      const noise = (Math.random() - 0.5) * 2; // +/- 1 degree noise
+      
+      const temperature = parseFloat((baseTemp + fluctuation + noise).toFixed(1));
+      
+      data.push({ time, temperature });
+    }
+  }
+  return data;
+};
+
+
+export default function AnnotationPage() {
   const [theme, setTheme] = useState("light");
-  const [plots, setPlots] = useState<PlotConfig[]>([]);
-  const plotsInitialized = useRef(false);
   const pathname = usePathname();
+  const [dummyData, setDummyData] = useState<DummyDataPoint[]>([]);
+  const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
+  const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
+
+
+  useEffect(() => {
+    const generatedData = generateDummyData();
+    setDummyData(generatedData);
+    setBrushEndIndex(generatedData.length > 0 ? generatedData.length - 1 : undefined);
+  }, []);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
@@ -46,23 +87,23 @@ export default function DataExplorerPage() {
     setTheme(theme === "light" ? "dark" : "light");
   };
 
-  const addPlot = useCallback(() => {
-    setPlots((prevPlots) => [
-      ...prevPlots,
-      { id: `plot-${Date.now()}-${prevPlots.length}`, title: `Plot ${prevPlots.length + 1}` },
-    ]);
-  }, []);
-
-  const removePlot = useCallback((idToRemove: string) => {
-    setPlots((prevPlots) => prevPlots.filter((plot) => plot.id !== idToRemove));
-  }, []);
-
-  useEffect(() => {
-    if (!plotsInitialized.current && plots.length === 0) {
-      addPlot(); 
-      plotsInitialized.current = true;
+  const yAxisConfigs: YAxisConfig[] = useMemo(() => [
+    {
+      id: 'temp',
+      orientation: 'left',
+      label: 'Temperature (°C)',
+      color: '--chart-1', // Using theme variable for color
+      dataKey: 'temperature',
+      unit: '°C',
     }
-  }, [addPlot, plots.length]);
+  ], []);
+
+  const plottableSeries = useMemo(() => ['temperature'], []);
+
+  const handleBrushChange = (newIndex: { startIndex?: number; endIndex?: number }) => {
+    setBrushStartIndex(newIndex.startIndex);
+    setBrushEndIndex(newIndex.endIndex);
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -118,35 +159,39 @@ export default function DataExplorerPage() {
       </header>
 
       <main className="flex-grow container mx-auto p-3 md:p-4">
-        <div className="flex justify-center mb-3">
-          <Button onClick={addPlot} size="sm" className="h-8 text-xs">
-            <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot
-          </Button>
-        </div>
-        {plots.length === 0 ? (
-          <div className="flex flex-col items-center justify-center text-muted-foreground h-64 p-3">
-            <LayoutGrid className="w-10 h-10 mb-3 text-muted" />
-            <p className="text-sm">No plots to display.</p>
-            <p className="text-xs">Click "Add New Plot" to get started.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {plots.map((plot) => (
-              <PlotInstance
-                key={plot.id}
-                instanceId={plot.id}
-                initialPlotTitle={plot.title}
-                onRemovePlot={removePlot}
-              />
-            ))}
-          </div>
-        )}
+        <Card className="mb-4">
+          <CardHeader className="pb-3 pt-4">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Edit3 className="h-5 w-5 text-primary" />
+              Annotation Page - Dummy Temperature Data
+            </CardTitle>
+            <CardDescription className="text-xs">
+              A 7-day hourly temperature plot for demonstration purposes.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+
+        <Card>
+          <CardContent className="p-2 pt-2"> {/* Adjusted padding for ChartDisplay */}
+            <ChartDisplay
+              data={dummyData}
+              plottableSeries={plottableSeries}
+              yAxisConfigs={yAxisConfigs}
+              timeAxisLabel="Time"
+              plotTitle="Weekly Temperature Trend"
+              chartRenderHeight={350} // Default height, can be adjusted
+              brushStartIndex={brushStartIndex}
+              brushEndIndex={brushEndIndex}
+              onBrushChange={handleBrushChange}
+            />
+          </CardContent>
+        </Card>
       </main>
 
       <footer className="py-3 md:px-4 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
           <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
-            PEBL data app - CSV Data Explorer.
+            Annotation Page - PEBL data app.
           </p>
         </div>
       </footer>

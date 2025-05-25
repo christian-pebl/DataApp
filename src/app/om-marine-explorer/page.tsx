@@ -7,9 +7,10 @@ import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox"; // Keep if needed elsewhere, but not for global plot selection here
-import { Label as UiLabel } from "@/components/ui/label"; // Keep if needed elsewhere
-import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, MapPin, CalendarDays, Sailboat, Compass, Timer, Thermometer, Wind as WindIcon, Sun as SunIcon, Copy } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label as UiLabel } from "@/components/ui/label";
+import { Input } from "@/components/ui/input"; // For search input
+import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, MapPin, CalendarDays, Thermometer, Compass, Timer, Wind as WindIcon, Sun as SunIcon, Sailboat, Copy, FilePenLine } from "lucide-react"; // Added FilePenLine
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -17,13 +18,13 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
 import { MarinePlotsGrid } from "@/components/marine/MarinePlotsGrid";
 import { useToast } from "@/hooks/use-toast";
-import { formatISO, parseISO, subDays, addDays } from 'date-fns';
+import { format, formatISO, parseISO, subDays, addDays } from 'date-fns';
 import type { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 
 import type { CombinedDataPoint, LogStep, CombinedParameterKey } from './shared';
-import { PARAMETER_CONFIG, ALL_PARAMETERS } from './shared'; // ALL_PARAMETERS is now used by action, not directly for UI here
+import { PARAMETER_CONFIG, ALL_PARAMETERS } from './shared';
 import { fetchCombinedDataAction } from './actions';
 
 const OpenLayersMapWithNoSSR = dynamic(
@@ -36,9 +37,8 @@ const OpenLayersMapWithNoSSR = dynamic(
 
 type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle' | 'warning';
 
-const DEFAULT_LATITUDE = 51.7128;
+const DEFAULT_LATITUDE = 51.7128; // Milford Haven default
 const DEFAULT_LONGITUDE = -5.0341;
-const DEFAULT_MAP_CENTER: [number, number] = [DEFAULT_LONGITUDE, DEFAULT_LATITUDE];
 const DEFAULT_MAP_ZOOM = 10;
 
 const defaultLocationKey = "milfordhaven";
@@ -51,7 +51,6 @@ const knownLocations: Record<string, { name: string; lat: number; lon: number }>
   aberdeen: { name: "Aberdeen", lat: 57.149, lon: -2.094 },
   "stDavidsHead": { name: "St David's Head", lat: 52.0, lon: -5.3 },
 };
-
 
 export default function OMMarineExplorerPage() {
   const [theme, setTheme] = useState("light");
@@ -75,8 +74,11 @@ export default function OMMarineExplorerPage() {
   const [errorData, setErrorData] = useState<string | null>(null);
   const [dataLocationContext, setDataLocationContext] = useState<string | null>(null);
 
-  // Removed plotVisibility state and handlePlotVisibilityChange from here
-  // as it's now managed within MarinePlotsGrid
+  const initialVisibility = useMemo(() => 
+    Object.fromEntries(ALL_PARAMETERS.map(key => [key, true])) as Record<CombinedParameterKey, boolean>
+  , []); // ALL_PARAMETERS is stable
+
+  const [plotVisibility, setPlotVisibility] = useState<Record<CombinedParameterKey, boolean>>(initialVisibility);
 
   const [fetchLogSteps, setFetchLogSteps] = useState<LogStep[]>([]);
   const [showFetchLogAccordion, setShowFetchLogAccordion] = useState<string>(""); 
@@ -85,17 +87,16 @@ export default function OMMarineExplorerPage() {
 
   const initialFetchDone = React.useRef(false);
 
-  // Icon assignments remain, MarinePlotsGrid will use this config
-  useMemo(() => {
-    if (PARAMETER_CONFIG.seaLevelHeightMsl) (PARAMETER_CONFIG.seaLevelHeightMsl as { icon?: LucideIcon }).icon = Waves;
-    if (PARAMETER_CONFIG.waveHeight) (PARAMETER_CONFIG.waveHeight as { icon?: LucideIcon }).icon = Sailboat;
-    if (PARAMETER_CONFIG.waveDirection) (PARAMETER_CONFIG.waveDirection as { icon?: LucideIcon }).icon = Compass;
-    if (PARAMETER_CONFIG.wavePeriod) (PARAMETER_CONFIG.wavePeriod as { icon?: LucideIcon }).icon = Timer;
-    if (PARAMETER_CONFIG.seaSurfaceTemperature) (PARAMETER_CONFIG.seaSurfaceTemperature as { icon?: LucideIcon }).icon = Thermometer;
-    if (PARAMETER_CONFIG.temperature2m) (PARAMETER_CONFIG.temperature2m as { icon?: LucideIcon }).icon = Thermometer;
-    if (PARAMETER_CONFIG.windSpeed10m) (PARAMETER_CONFIG.windSpeed10m as { icon?: LucideIcon }).icon = WindIcon;
-    if (PARAMETER_CONFIG.windDirection10m) (PARAMETER_CONFIG.windDirection10m as { icon?: LucideIcon }).icon = Compass;
-    if (PARAMETER_CONFIG.ghi) (PARAMETER_CONFIG.ghi as {icon?: LucideIcon}).icon = SunIcon;
+  useEffect(() => {
+    if (PARAMETER_CONFIG.seaLevelHeightMsl) (PARAMETER_CONFIG.seaLevelHeightMsl as any).icon = Waves;
+    if (PARAMETER_CONFIG.waveHeight) (PARAMETER_CONFIG.waveHeight as any).icon = Sailboat;
+    if (PARAMETER_CONFIG.waveDirection) (PARAMETER_CONFIG.waveDirection as any).icon = Compass;
+    if (PARAMETER_CONFIG.wavePeriod) (PARAMETER_CONFIG.wavePeriod as any).icon = Timer;
+    if (PARAMETER_CONFIG.seaSurfaceTemperature) (PARAMETER_CONFIG.seaSurfaceTemperature as any).icon = Thermometer;
+    if (PARAMETER_CONFIG.temperature2m) (PARAMETER_CONFIG.temperature2m as any).icon = Thermometer;
+    if (PARAMETER_CONFIG.windSpeed10m) (PARAMETER_CONFIG.windSpeed10m as any).icon = WindIcon;
+    if (PARAMETER_CONFIG.windDirection10m) (PARAMETER_CONFIG.windDirection10m as any).icon = Compass;
+    if (PARAMETER_CONFIG.ghi) (PARAMETER_CONFIG.ghi as any).icon = SunIcon;
   }, []);
 
 
@@ -126,10 +127,9 @@ export default function OMMarineExplorerPage() {
         return;
     }
 
-    // All parameters are now fetched by default
-    const selectedParams = ALL_PARAMETERS; 
-    if (selectedParams.length === 0) { // Should not happen if ALL_PARAMETERS is defined
-        toast({ variant: "destructive", title: "No Parameters Defined", description: "No parameters available to fetch." });
+    const selectedParams = ALL_PARAMETERS.filter(key => plotVisibility[key as CombinedParameterKey]);
+    if (selectedParams.length === 0) {
+        toast({ variant: "destructive", title: "No Parameters Selected", description: "Please select at least one parameter to fetch." });
         return;
     }
 
@@ -146,7 +146,7 @@ export default function OMMarineExplorerPage() {
         longitude: mapSelectedCoords.lon,
         startDate: formatISO(dateRange.from, { representation: 'date' }),
         endDate: formatISO(dateRange.to, { representation: 'date' }),
-        parameters: selectedParams, // Pass all parameters
+        parameters: selectedParams,
         });
 
         if(loadingToastId) dismiss(loadingToastId);
@@ -184,7 +184,7 @@ export default function OMMarineExplorerPage() {
         toast({ variant: "destructive", title: "Critical Fetch Error", description: errorMsg });
         setLogOverallStatus('error');
     }
-  }, [mapSelectedCoords, currentLocationName, dateRange, toast, dismiss]); // Removed plotVisibility from deps
+  }, [mapSelectedCoords, currentLocationName, dateRange, plotVisibility, toast, dismiss]);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
@@ -200,7 +200,6 @@ export default function OMMarineExplorerPage() {
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
 
-  // Initial fetch effect
    useEffect(() => {
     if (initialFetchDone.current || isLoadingData) {
       return;
@@ -214,12 +213,13 @@ export default function OMMarineExplorerPage() {
             initialFetchDone.current = true;
             return;
         }
-        // Use the default coordinates directly instead of mapSelectedCoords for initial fetch stability
         const initialCoordsForFetch = { lat: defaultLoc.lat, lon: defaultLoc.lon };
         const initialLocationName = defaultLoc.name;
         const initialDateRange = { from: defaultStartDate, to: defaultEndDate };
+        
+        // Filter parameters based on initial plot visibility for the initial fetch
+        const initialSelectedParams = ALL_PARAMETERS.filter(key => initialVisibility[key as CombinedParameterKey]);
 
-        // Directly call the fetch logic with these stable initial values
         const performInitialFetch = async () => {
             setIsLoadingData(true); setErrorData(null); setCombinedData(null); setDataLocationContext(null);
             setFetchLogSteps([{ message: `Fetching initial data for ${initialLocationName}...`, status: 'pending' }]);
@@ -230,7 +230,7 @@ export default function OMMarineExplorerPage() {
                 longitude: initialCoordsForFetch.lon,
                 startDate: formatISO(initialDateRange.from, { representation: 'date' }),
                 endDate: formatISO(initialDateRange.to, { representation: 'date' }),
-                parameters: ALL_PARAMETERS, // Fetch all parameters
+                parameters: initialSelectedParams, 
             });
             
             setFetchLogSteps(result.log || []);
@@ -253,7 +253,7 @@ export default function OMMarineExplorerPage() {
         initialFetchDone.current = true;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty dependency array: run once on mount
+  }, [initialVisibility]); // Depend on initialVisibility to ensure it's used in the initial fetch
 
 
   const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string | null) => {
@@ -340,6 +340,10 @@ export default function OMMarineExplorerPage() {
       </CardFooter>
     )
   );
+  
+  const handlePlotVisibilityChange = useCallback((key: CombinedParameterKey, checked: boolean) => {
+    setPlotVisibility(prev => ({ ...prev, [key]: checked }));
+  }, []);
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -352,6 +356,16 @@ export default function OMMarineExplorerPage() {
             <div className="flex items-center gap-1">
               <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (CSV)"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer (CSV)</p></TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger asChild><Link href="/om-marine-explorer" passHref><Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="Weather & Marine Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Weather &amp; Marine Explorer</p></TooltipContent></Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link href="/annotation" passHref>
+                    <Button variant={pathname === '/annotation' ? "secondary": "ghost"} size="icon" aria-label="Annotation Page">
+                      <FilePenLine className="h-5 w-5" />
+                    </Button>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent><p>Annotation Page</p></TooltipContent>
+              </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
@@ -366,7 +380,7 @@ export default function OMMarineExplorerPage() {
               <Waves className="h-5 w-5 text-primary" />Weather &amp; Marine Data Explorer
             </CardTitle>
              <CardDescription className="text-xs">
-                Select a location on the map, and a date range to fetch and visualize data from Open-Meteo.
+                Select a location, date range, and parameters to fetch and visualize data from Open-Meteo.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -379,7 +393,7 @@ export default function OMMarineExplorerPage() {
                 <UiLabel htmlFor="om-map-container" className="text-xs font-medium mb-0.5 block">Click Map to Select Location</UiLabel>
                 <div id="om-map-container" className="h-[200px] w-full rounded-md overflow-hidden border">
                   <OpenLayersMapWithNoSSR
-                    initialCenter={mapSelectedCoords ? [mapSelectedCoords.lon, mapSelectedCoords.lat] : DEFAULT_MAP_CENTER}
+                    initialCenter={mapSelectedCoords ? [mapSelectedCoords.lon, mapSelectedCoords.lat] : [DEFAULT_LONGITUDE, DEFAULT_LATITUDE]}
                     initialZoom={DEFAULT_MAP_ZOOM}
                     selectedCoords={mapSelectedCoords}
                     onLocationSelect={handleMapLocationSelect}
@@ -395,14 +409,38 @@ export default function OMMarineExplorerPage() {
                   <DatePickerWithRange id="om-combined-date-range" date={dateRange} onDateChange={setDateRange} disabled={isLoadingData} />
                   {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && <p className="text-xs text-destructive px-1 pt-1">Start date error.</p>}
                 </div>
-                 <Button onClick={handleFetchCombinedData} disabled={isLoadingData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to} className="w-full h-9 text-xs mt-2">
+                 <Button onClick={handleFetchCombinedData} disabled={isLoadingData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => plotVisibility[key as CombinedParameterKey]).length === 0} className="w-full h-9 text-xs mt-2">
                   {isLoadingData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
                   {isLoadingData ? "Fetching..." : "Fetch Data"}
                 </Button>
+                 {renderLogAccordion(fetchLogSteps, showFetchLogAccordion, setShowFetchLogAccordion, isLogLoading, logOverallStatus, "Data Fetch Log", errorData)}
               </CardContent>
-               {renderLogAccordion(fetchLogSteps, showFetchLogAccordion, setShowFetchLogAccordion, isLogLoading, logOverallStatus, "Data Fetch Log", errorData)}
             </Card>
-            {/* Removed the separate "Select Marine Parameters" Card */}
+            
+            <Card>
+                <CardHeader className="pb-2 pt-3"><CardTitle className="text-base flex items-center gap-1.5"><ListChecks className="h-4 w-4 text-primary" />Select Parameters</CardTitle></CardHeader>
+                <CardContent className="space-y-1 max-h-60 overflow-y-auto p-2">
+                    {ALL_PARAMETERS.map((key) => {
+                        const paramConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
+                        const IconComp = (paramConfig as any).icon || Info;
+                        return (
+                            <div key={key} className="flex items-center space-x-1.5 py-0.5">
+                                <Checkbox
+                                    id={`visibility-${key}`}
+                                    checked={plotVisibility[key as CombinedParameterKey]}
+                                    onCheckedChange={(checked) => handlePlotVisibilityChange(key as CombinedParameterKey, !!checked)}
+                                    className="h-3.5 w-3.5"
+                                />
+                                <UiLabel htmlFor={`visibility-${key}`} className="text-xs font-medium flex items-center gap-1 cursor-pointer">
+                                    <IconComp className="h-3.5 w-3.5 text-muted-foreground" />
+                                    {paramConfig.name}
+                                </UiLabel>
+                            </div>
+                        );
+                    })}
+                </CardContent>
+            </Card>
+
           </div>
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-sm h-full">
@@ -412,7 +450,7 @@ export default function OMMarineExplorerPage() {
                     marineData={combinedData}
                     isLoading={isLoadingData}
                     error={errorData}
-                    // plotVisibility is now managed internally by MarinePlotsGrid
+                    plotVisibility={plotVisibility}
                 />
               </CardContent>
             </Card>
@@ -429,4 +467,3 @@ export default function OMMarineExplorerPage() {
     </div>
   );
 }
-
