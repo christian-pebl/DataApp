@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { 
   LayoutGrid, Waves, SunMoon, FilePenLine, Edit, 
-  Trash2, Plus, Copy, RotateCcw, Move as MoveIcon, ArrowUpRight
+  Trash2, Plus, Copy, RotateCcw, Move as MoveIcon, MoveRight // Changed CornerUpRight to MoveRight
 } from "lucide-react"; 
 import {
   DropdownMenu,
@@ -71,6 +71,41 @@ const generateDummyData = (): DummyDataPoint[] => {
 };
 
 const DEFAULT_STROKE_WIDTH = 2;
+
+// Helper components for visual dropdown items
+const LineStyleIcon = ({ style }: { style: 'solid' | 'dashed' | 'dotted' }) => {
+  let strokeDasharray;
+  if (style === 'dashed') strokeDasharray = "3,2";
+  if (style === 'dotted') strokeDasharray = "1,2";
+  return (
+    <svg width="24" height="16" viewBox="0 0 24 16" className="mr-2">
+      <line x1="2" y1="8" x2="22" y2="8" stroke="currentColor" strokeWidth="2" strokeDasharray={strokeDasharray} />
+    </svg>
+  );
+};
+
+const ArrowStyleIcon = ({ style }: { style: 'none' | 'start' | 'end' | 'both' }) => {
+  return (
+    <svg width="24" height="16" viewBox="0 0 24 16" className="mr-2">
+      <defs>
+        <marker id="dropdown-arrowhead" markerWidth="4" markerHeight="3" refX="0" refY="1.5" orient="auto" markerUnits="strokeWidth" fill="currentColor">
+          <polygon points="0 0, 4 1.5, 0 3" />
+        </marker>
+      </defs>
+      <line 
+        x1={style === 'start' || style === 'both' ? "7" : "2"} 
+        y1="8" 
+        x2={style === 'end' || style === 'both' ? "17" : "22"} 
+        y2="8" 
+        stroke="currentColor" 
+        strokeWidth="2" 
+        markerStart={(style === 'start' || style === 'both') ? "url(#dropdown-arrowhead)" : undefined}
+        markerEnd={(style === 'end' || style === 'both') ? "url(#dropdown-arrowhead)" : undefined}
+      />
+    </svg>
+  );
+};
+
 
 export default function AnnotationPage() {
   const [theme, setTheme] = useState("light");
@@ -452,23 +487,31 @@ export default function AnnotationPage() {
                                     disabled={!selectedLineId || isToolbarButtonDisabled}
                                     aria-label="Arrow Style Options"
                                 >
-                                    <ArrowUpRight className="h-4 w-4" />
+                                    <MoveRight className="h-4 w-4" />
                                 </Button>
                             </DropdownMenuTrigger>
                         </TooltipTrigger>
                         <TooltipContent><p>Arrow Style</p></TooltipContent>
                     </Tooltip>
-                    <DropdownMenuContent className="w-48">
+                    <DropdownMenuContent className="w-56"> {/* Increased width for icons */}
                         <DropdownMenuLabel>Arrow Style</DropdownMenuLabel>
                         <DropdownMenuSeparatorShadcn />
                         <DropdownMenuRadioGroup
                             value={selectedLine?.arrowStyle || 'none'}
                             onValueChange={(value) => handleArrowStyleChange(value as 'none' | 'start' | 'end' | 'both')}
                         >
-                            <DropdownMenuRadioItem value="none">No Arrowhead</DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem value="end">Arrow at End</DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem value="start">Arrow at Start</DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem value="both">Arrows at Both Ends</DropdownMenuRadioItem>
+                            <DropdownMenuRadioItem value="none">
+                                <div className="flex items-center"><ArrowStyleIcon style="none" /><span>No Arrowhead</span></div>
+                            </DropdownMenuRadioItem>
+                            <DropdownMenuRadioItem value="end">
+                                <div className="flex items-center"><ArrowStyleIcon style="end" /><span>Arrow at End</span></div>
+                            </DropdownMenuRadioItem>
+                            <DropdownMenuRadioItem value="start">
+                                <div className="flex items-center"><ArrowStyleIcon style="start" /><span>Arrow at Start</span></div>
+                            </DropdownMenuRadioItem>
+                            <DropdownMenuRadioItem value="both">
+                                <div className="flex items-center"><ArrowStyleIcon style="both" /><span>Arrows at Both Ends</span></div>
+                            </DropdownMenuRadioItem>
                         </DropdownMenuRadioGroup>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -486,23 +529,29 @@ export default function AnnotationPage() {
                             aria-label="Line Style Options"
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
-                              <path d="M2 4h12v1H2zM2 7.5h12v2H2zM2 11h12v3H2z"/>
+                                <path d="M2 4h12v1H2zM2 7.5h12v2H2zM2 11h12v3H2z"/>
                             </svg>
                           </Button>
                         </DropdownMenuTrigger>
                       </TooltipTrigger>
                       <TooltipContent><p>Line Style & Thickness</p></TooltipContent>
                     </Tooltip>
-                    <DropdownMenuContent className="w-48">
+                    <DropdownMenuContent className="w-56"> {/* Increased width for icons */}
                       <DropdownMenuLabel>Line Style</DropdownMenuLabel>
                       <DropdownMenuSeparatorShadcn />
                       <DropdownMenuRadioGroup 
                         value={selectedLine?.lineStyle || 'solid'} 
                         onValueChange={(value) => handleLineStyleChange(value as 'solid' | 'dashed' | 'dotted')}
                       >
-                        <DropdownMenuRadioItem value="solid">Solid</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="dashed">Dashed</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="dotted">Dotted</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="solid">
+                            <div className="flex items-center"><LineStyleIcon style="solid" /><span>Solid</span></div>
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="dashed">
+                            <div className="flex items-center"><LineStyleIcon style="dashed" /><span>Dashed</span></div>
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="dotted">
+                            <div className="flex items-center"><LineStyleIcon style="dotted" /><span>Dotted</span></div>
+                        </DropdownMenuRadioItem>
                       </DropdownMenuRadioGroup>
                       <DropdownMenuSeparatorShadcn />
                       <DropdownMenuLabel>Stroke Weight</DropdownMenuLabel>
@@ -690,3 +739,5 @@ export default function AnnotationPage() {
     </div>
   );
 }
+
+    
