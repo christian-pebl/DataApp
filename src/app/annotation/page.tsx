@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
@@ -73,6 +73,15 @@ export default function AnnotationPage() {
   const chartAreaRef = useRef<HTMLDivElement>(null);
   const [draggingPoint, setDraggingPoint] = useState<{ lineId: string; pointType: 'start' | 'end' } | null>(null);
 
+  const getNormalizedCoordinates = (event: React.MouseEvent | React.TouchEvent) => {
+    if ('touches' in event && event.touches.length > 0) {
+      return { clientX: event.touches[0].clientX, clientY: event.touches[0].clientY };
+    }
+    if ('clientX' in event) {
+      return { clientX: event.clientX, clientY: event.clientY };
+    }
+    return { clientX: 0, clientY: 0 }; // Fallback
+  };
 
   useEffect(() => {
     const generatedData = generateDummyData();
@@ -128,12 +137,13 @@ export default function AnnotationPage() {
     setBrushEndIndex(newIndex.endIndex);
   };
 
-  const handleSvgClick = (event: React.MouseEvent<SVGSVGElement>) => {
+  const handleSvgInteractionStart = (event: React.MouseEvent<SVGSVGElement> | React.TouchEvent<SVGSVGElement>) => {
     if (drawingMode !== 'line' || !svgOverlayRef.current || draggingPoint) return;
-
+    
+    const { clientX, clientY } = getNormalizedCoordinates(event);
     const rect = svgOverlayRef.current.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
 
     if (!lineStartPoint) {
       setLineStartPoint({ x, y });
@@ -154,19 +164,22 @@ export default function AnnotationPage() {
     }
   };
 
-  const handleDraggablePointMouseDown = (lineId: string, pointType: 'start' | 'end', event: React.MouseEvent) => {
-    if (drawingMode) return; // Don't allow dragging if in drawing mode
+  const handleDraggablePointInteractionStart = (lineId: string, pointType: 'start' | 'end', event: React.MouseEvent | React.TouchEvent) => {
+    if (drawingMode) return; 
     event.stopPropagation();
+    if ('preventDefault' in event) event.preventDefault(); // Prevent default touch actions
     setDraggingPoint({ lineId, pointType });
-    setSelectedLineId(lineId); // Ensure the line being dragged is selected
+    setSelectedLineId(lineId); 
   };
 
-  const handleSvgMouseMove = (event: React.MouseEvent<SVGSVGElement>) => {
+  const handleSvgInteractionMove = useCallback((event: React.MouseEvent<SVGSVGElement> | React.TouchEvent<SVGSVGElement>) => {
     if (!draggingPoint || !svgOverlayRef.current) return;
+    if ('preventDefault' in event) event.preventDefault(); // Prevent scrolling during drag
 
+    const { clientX, clientY } = getNormalizedCoordinates(event);
     const rect = svgOverlayRef.current.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
 
     setLines(prevLines =>
       prevLines.map(line => {
@@ -180,13 +193,34 @@ export default function AnnotationPage() {
         return line;
       })
     );
-  };
+  }, [draggingPoint]);
 
-  const handleSvgMouseUp = () => {
+  const handleSvgInteractionEnd = useCallback(() => {
     if (draggingPoint) {
       setDraggingPoint(null);
     }
-  };
+  }, [draggingPoint]);
+
+
+  // Attach global move and up listeners for dragging to handle cases where mouse/touch leaves SVG
+  useEffect(() => {
+    const currentSvgRef = svgOverlayRef.current; // Capture ref for cleanup
+
+    if (draggingPoint) {
+      window.addEventListener('mousemove', handleSvgInteractionMove as any);
+      window.addEventListener('touchmove', handleSvgInteractionMove as any, { passive: false });
+      window.addEventListener('mouseup', handleSvgInteractionEnd);
+      window.addEventListener('touchend', handleSvgInteractionEnd);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleSvgInteractionMove as any);
+      window.removeEventListener('touchmove', handleSvgInteractionMove as any);
+      window.removeEventListener('mouseup', handleSvgInteractionEnd);
+      window.removeEventListener('touchend', handleSvgInteractionEnd);
+    };
+  }, [draggingPoint, handleSvgInteractionMove, handleSvgInteractionEnd]);
+
 
 
   const toggleDrawingMode = (mode: 'line' | null) => {
@@ -198,11 +232,11 @@ export default function AnnotationPage() {
       setDrawingMode(mode);
       setLineStartPoint(null); 
       setSelectedLineId(null);
-      setDraggingPoint(null); // Ensure not dragging when switching mode
+      setDraggingPoint(null); 
     }
   };
   
-  const handleSelectLine = (lineId: string, event: React.MouseEvent) => {
+  const handleSelectLine = (lineId: string, event: React.MouseEvent | React.TouchEvent) => {
     event.stopPropagation(); 
     if (drawingMode === null && !draggingPoint) {
       setSelectedLineId(prevId => prevId === lineId ? null : lineId);
@@ -303,7 +337,7 @@ export default function AnnotationPage() {
                 Annotation Demo - Weekly Temperature
               </CardTitle>
               <CardDescription className="text-xs">
-                Toggle overlay to annotate. Click line endpoints to reposition.
+                Toggle overlay to annotate. Select line to edit properties or drag endpoints to reposition.
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
@@ -414,13 +448,13 @@ export default function AnnotationPage() {
               {isOverlayActive && chartAreaRef.current && (
                  <svg
                     ref={svgOverlayRef}
-                    className="absolute top-0 left-0 w-full h-full z-10 cursor-crosshair" 
-                    onClick={handleSvgClick}
-                    onMouseMove={handleSvgMouseMove}
-                    onMouseUp={handleSvgMouseUp}
-                    onMouseLeave={handleSvgMouseUp} // End drag if mouse leaves SVG
+                    className="absolute top-0 left-0 w-full h-full z-10" 
+                    onClick={handleSvgInteractionStart}
+                    onTouchStart={handleSvgInteractionStart}
+                    // MouseMove/TouchMove/MouseUp/TouchEnd are handled globally if draggingPoint is active
                     style={{ 
-                        pointerEvents: (drawingMode === 'line' || draggingPoint) ? 'auto' : 'none',
+                        cursor: drawingMode === 'line' ? 'crosshair' : 'default',
+                        pointerEvents: (drawingMode === 'line' || draggingPoint) ? 'auto' : 'none', // Only capture clicks for drawing or during active drag for move
                         width: chartAreaRef.current.clientWidth, 
                         height: chartAreaRef.current.clientHeight, 
                     }}
@@ -440,39 +474,53 @@ export default function AnnotationPage() {
                     </defs>
                     {lines.map((line) => (
                       <g key={line.id}>
+                        {/* Hitbox for easier selection */}
                         <line
-                          x1={line.x1}
-                          y1={line.y1}
-                          x2={line.x2}
-                          y2={line.y2}
+                          x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
+                          stroke="transparent"
+                          strokeWidth="20" // Larger stroke width for hitbox
+                          className="cursor-pointer"
+                          onClick={(e) => handleSelectLine(line.id, e)}
+                          onTouchStart={(e) => handleSelectLine(line.id, e)}
+                          style={{ pointerEvents: (drawingMode === 'line' || draggingPoint) ? 'none' : 'auto' }}
+                        />
+                        {/* Visible line */}
+                        <line
+                          x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
                           stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
                           strokeWidth={selectedLineId === line.id ? 3 : 2}
-                          onClick={(e) => handleSelectLine(line.id, e)}
-                          className="cursor-pointer"
-                          style={{ pointerEvents: (drawingMode === 'line' || draggingPoint) ? 'none' : 'auto' }} // Allow line clicks only if not drawing/dragging
                           markerEnd={line.hasArrowEnd ? "url(#arrowhead)" : undefined}
                           strokeDasharray={line.isDashed ? "5,5" : undefined}
+                          style={{ pointerEvents: 'none' }} // Visual line doesn't need pointer events
                         />
                         {/* Draggable Handles for selected line */}
                         {selectedLineId === line.id && !drawingMode && (
                           <>
                             <circle
-                              cx={line.x1}
-                              cy={line.y1}
-                              r="5"
-                              fill="hsl(var(--destructive))"
+                              cx={line.x1} cy={line.y1} r="8" // Increased radius for better touch
+                              fill="hsl(var(--destructive))" opacity="0.5" // Semi-transparent
                               className="cursor-move"
-                              onMouseDown={(e) => handleDraggablePointMouseDown(line.id, 'start', e)}
+                              onMouseDown={(e) => handleDraggablePointInteractionStart(line.id, 'start', e)}
+                              onTouchStart={(e) => handleDraggablePointInteractionStart(line.id, 'start', e)}
                               style={{ pointerEvents: 'auto' }} 
                             />
-                            <circle
-                              cx={line.x2}
-                              cy={line.y2}
-                              r="5"
+                             <circle // Inner visible dot
+                              cx={line.x1} cy={line.y1} r="4"
                               fill="hsl(var(--destructive))"
+                              style={{ pointerEvents: 'none' }}
+                            />
+                            <circle
+                              cx={line.x2} cy={line.y2} r="8" // Increased radius for better touch
+                              fill="hsl(var(--destructive))" opacity="0.5" // Semi-transparent
                               className="cursor-move"
-                              onMouseDown={(e) => handleDraggablePointMouseDown(line.id, 'end', e)}
-                               style={{ pointerEvents: 'auto' }} 
+                              onMouseDown={(e) => handleDraggablePointInteractionStart(line.id, 'end', e)}
+                              onTouchStart={(e) => handleDraggablePointInteractionStart(line.id, 'end', e)}
+                              style={{ pointerEvents: 'auto' }} 
+                            />
+                            <circle // Inner visible dot
+                              cx={line.x2} cy={line.y2} r="4"
+                              fill="hsl(var(--destructive))"
+                              style={{ pointerEvents: 'none' }}
                             />
                           </>
                         )}
@@ -488,6 +536,7 @@ export default function AnnotationPage() {
         </Card>
          {isOverlayActive && selectedLineId && !draggingPoint && <CardDescription className="text-center text-xs mt-2">Line selected. Use toolbar to modify or drag endpoints to reposition.</CardDescription>}
          {isOverlayActive && draggingPoint && <CardDescription className="text-center text-xs mt-2">Dragging line endpoint...</CardDescription>}
+         {!isOverlayActive && lines.length > 0 && <CardDescription className="text-center text-xs mt-2">Toggle "Annotation Overlay" to edit annotations.</CardDescription>}
       </main>
 
       <footer className="py-3 md:px-4 md:py-0 border-t">
@@ -500,6 +549,5 @@ export default function AnnotationPage() {
     </div>
   );
 }
-    
 
     
