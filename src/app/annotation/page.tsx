@@ -81,7 +81,7 @@ export default function AnnotationPage() {
     const storedTheme = localStorage.getItem("theme");
     if (storedTheme) {
       setTheme(storedTheme);
-    } else {
+    } else if (typeof window !== 'undefined') {
       const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       if (systemPrefersDark) {
         setTheme("dark");
@@ -90,12 +90,14 @@ export default function AnnotationPage() {
   }, []);
 
   useEffect(() => {
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
+    if (typeof window !== 'undefined') {
+      if (theme === "dark") {
+        document.documentElement.classList.add("dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+      }
+      localStorage.setItem("theme", theme);
     }
-    localStorage.setItem("theme", theme);
   }, [theme]);
 
   const toggleTheme = () => {
@@ -143,6 +145,16 @@ export default function AnnotationPage() {
   };
 
   const isRangeSelectedForAnnotation = brushStartIndex !== undefined && brushEndIndex !== undefined && brushStartIndex < brushEndIndex;
+
+  const chartDescriptionText = useMemo(() => {
+    if (!isAnnotationModeActive) {
+      return "Enable annotation mode to add notes.";
+    }
+    if (isRangeSelectedForAnnotation) {
+      return "Range selected. Enter your annotation in the card below.";
+    }
+    return "Select a range on the chart to annotate.";
+  }, [isAnnotationModeActive, isRangeSelectedForAnnotation]);
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -206,7 +218,7 @@ export default function AnnotationPage() {
                 Annotation Demo - Weekly Temperature
               </CardTitle>
               <CardDescription className="text-xs">
-                {isAnnotationModeActive ? "Select a range on the chart to annotate." : "Enable annotation mode to add notes."}
+                {chartDescriptionText}
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
@@ -224,7 +236,7 @@ export default function AnnotationPage() {
               plottableSeries={plottableSeries}
               yAxisConfigs={yAxisConfigs}
               timeAxisLabel="Time"
-              plotTitle="" // Title is handled by CardHeader now
+              plotTitle="" 
               chartRenderHeight={278} 
               brushStartIndex={brushStartIndex}
               brushEndIndex={brushEndIndex}
@@ -241,9 +253,7 @@ export default function AnnotationPage() {
                   Add Annotation
               </CardTitle>
               <CardDescription className="text-xs">
-                  {isRangeSelectedForAnnotation 
-                      ? `Selected range: ${dummyData[brushStartIndex as number]?.time ? format(parseISO(dummyData[brushStartIndex as number]?.time), 'MMM dd, HH:mm') : ''} to ${dummyData[brushEndIndex as number]?.time ? format(parseISO(dummyData[brushEndIndex as number]?.time), 'MMM dd, HH:mm') : ''}` 
-                      : "Use the slider on the chart above to select a time range."}
+                  {`Selected range: ${dummyData[brushStartIndex as number]?.time ? format(parseISO(dummyData[brushStartIndex as number]?.time), 'MMM dd, HH:mm') : ''} to ${dummyData[brushEndIndex as number]?.time ? format(parseISO(dummyData[brushEndIndex as number]?.time), 'MMM dd, HH:mm') : ''}`}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -316,3 +326,5 @@ export default function AnnotationPage() {
     </div>
   );
 }
+
+    
