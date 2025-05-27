@@ -110,7 +110,7 @@ export default function AnnotationPage() {
   const [theme, setTheme] = useState("light");
   const pathname = usePathname();
   const [dummyData, setDummyData] = useState<DummyDataPoint[]>([]);
-  // const { toast } = useToast(); // Already declared
+  const { toast } = useToast();
   
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(undefined);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
@@ -151,31 +151,27 @@ export default function AnnotationPage() {
       const midX = (line.x1 + line.x2) / 2;
       const midY = (line.y1 + line.y2) / 2;
 
-      const TOOLBAR_CONTENT_HEIGHT = 28; // Height of buttons
-      const DRAG_HANDLE_AREA_HEIGHT = 12; // Space for the drag handle above
-      const TOOLBAR_APPROX_HEIGHT = TOOLBAR_CONTENT_HEIGHT + DRAG_HANDLE_AREA_HEIGHT; // Total effective height
-      const TOOLBAR_APPROX_WIDTH = 100; // For 3 buttons
+      const TOOLBAR_CONTENT_HEIGHT = 28; 
+      const DRAG_HANDLE_AREA_HEIGHT = 12; 
+      const TOOLBAR_APPROX_HEIGHT = TOOLBAR_CONTENT_HEIGHT + DRAG_HANDLE_AREA_HEIGHT;
+      const TOOLBAR_APPROX_WIDTH = 100; 
       const VERTICAL_GAP = 8; 
       const HORIZONTAL_EDGE_BUFFER = 8;
 
       let finalToolbarTopY;
-      // Try to place above (toolbar top edge = midY - gap - content_height - drag_handle_height )
       const spaceToPlaceAbove = midY - VERTICAL_GAP - TOOLBAR_CONTENT_HEIGHT - DRAG_HANDLE_AREA_HEIGHT;
-      // Position to place below (toolbar top edge = midY + gap (drag handle will be above this))
       const spaceToPlaceBelow = midY + VERTICAL_GAP;
       
-      // If there's enough space above, or if the line is low on the chart, place above
       if (spaceToPlaceAbove > DRAG_HANDLE_AREA_HEIGHT && (midY > svg.clientHeight * 0.4 || (svg.clientHeight - (spaceToPlaceBelow + TOOLBAR_CONTENT_HEIGHT)) < (spaceToPlaceAbove - DRAG_HANDLE_AREA_HEIGHT) )) {
         finalToolbarTopY = spaceToPlaceAbove;
       } else {
         finalToolbarTopY = spaceToPlaceBelow;
       }
       
-      // Ensure toolbar (including drag handle) stays within SVG bounds
-      finalToolbarTopY = Math.max(DRAG_HANDLE_AREA_HEIGHT, finalToolbarTopY); // Make sure drag handle top is visible
+      finalToolbarTopY = Math.max(DRAG_HANDLE_AREA_HEIGHT, finalToolbarTopY);
       finalToolbarTopY = Math.min(
         finalToolbarTopY,
-        svg.clientHeight - TOOLBAR_CONTENT_HEIGHT - VERTICAL_GAP // Ensure bottom of toolbar content is visible
+        svg.clientHeight - TOOLBAR_CONTENT_HEIGHT 
       );
 
       let finalToolbarCenterX = midX;
@@ -188,8 +184,6 @@ export default function AnnotationPage() {
         svg.clientWidth - (TOOLBAR_APPROX_WIDTH / 2) - HORIZONTAL_EDGE_BUFFER
       );
       
-      // contextualToolbarPosition x,y refers to the top-left of the button area, so we pass finalToolbarTopY for y.
-      // The transformX(-50%) handles horizontal centering.
       setContextualToolbarPosition({ x: finalToolbarCenterX, y: finalToolbarTopY });
     } else {
       setContextualToolbarPosition(null);
@@ -287,7 +281,7 @@ export default function AnnotationPage() {
 
   const handleToolbarDragStart = (event: React.MouseEvent<Element> | React.TouchEvent<Element>) => {
     event.stopPropagation();
-    if (event.type === 'touchstart' && 'preventDefault' in event) event.preventDefault(); // Prevent default touch actions like scroll
+    if (event.type === 'touchstart' && 'preventDefault' in event) event.preventDefault();
 
     if (contextualToolbarPosition) {
       setIsDraggingToolbar(true);
@@ -302,7 +296,7 @@ export default function AnnotationPage() {
     
     const isTouchEvent = event.type === 'touchmove';
     if (isTouchEvent && (draggingPoint || (movingLineId && dragStartCoords) || isDraggingToolbar)) {
-      event.preventDefault();
+      if ('preventDefault' in event) event.preventDefault();
     }
 
     const { clientX, clientY } = getNormalizedCoordinates(event);
@@ -352,12 +346,17 @@ export default function AnnotationPage() {
         const TOOLBAR_APPROX_WIDTH = 100; 
         const TOOLBAR_CONTENT_HEIGHT = 28;
         const DRAG_HANDLE_AREA_HEIGHT = 12;
+        const HORIZONTAL_EDGE_BUFFER = 8; // Buffer from SVG edges
         const svg = svgOverlayRef.current;
         
-        // Clamp X (center of toolbar)
-        newToolbarX = Math.max(TOOLBAR_APPROX_WIDTH / 2, Math.min(newToolbarX, svg.clientWidth - TOOLBAR_APPROX_WIDTH / 2));
-        // Clamp Y (top of toolbar's button area)
-        newToolbarY = Math.max(DRAG_HANDLE_AREA_HEIGHT, Math.min(newToolbarY, svg.clientHeight - TOOLBAR_CONTENT_HEIGHT));
+        newToolbarX = Math.max(
+          (TOOLBAR_APPROX_WIDTH / 2) + HORIZONTAL_EDGE_BUFFER,
+          Math.min(newToolbarX, svg.clientWidth - (TOOLBAR_APPROX_WIDTH / 2) - HORIZONTAL_EDGE_BUFFER)
+        );
+        newToolbarY = Math.max(
+          DRAG_HANDLE_AREA_HEIGHT,
+          Math.min(newToolbarY, svg.clientHeight - TOOLBAR_CONTENT_HEIGHT)
+        );
         
         setContextualToolbarPosition({ x: newToolbarX, y: newToolbarY });
     }
@@ -380,7 +379,6 @@ export default function AnnotationPage() {
       setIsDraggingToolbar(false);
       setToolbarDragStart(null);
       setToolbarInitialPosition(null);
-      // Re-update toolbar position based on selected line after drag ends
       const currentSelectedLine = lines.find(l => l.id === selectedLineId);
       if (currentSelectedLine) {
         updateContextualToolbarPos(currentSelectedLine);
@@ -414,7 +412,7 @@ export default function AnnotationPage() {
     setSelectedLineId(lineId); 
     setActiveTool(null);
     const line = lines.find(l => l.id === lineId);
-    updateContextualToolbarPos(line);
+    if (!isDraggingToolbar) updateContextualToolbarPos(line);
   };
 
   const handleLineHitboxMouseDown = (lineId: string, event: React.MouseEvent | React.TouchEvent<Element>) => {
@@ -433,6 +431,7 @@ export default function AnnotationPage() {
       setMovingLineId(lineId);
       setDragStartCoords({ x, y });
       setLineBeingMovedOriginalState({ ...line });
+      if (!isDraggingToolbar) setContextualToolbarPosition(null); // Hide toolbar during active move
     } else if (!draggingPoint && !movingLineId) { 
       handleSelectLine(lineId, event as React.MouseEvent); 
     }
@@ -547,7 +546,7 @@ export default function AnnotationPage() {
   };
 
   const svgCursor = useMemo(() => {
-    if (isDraggingToolbar) return 'grabbing'; // This is for the whole SVG if toolbar is dragged, maybe not needed if only handle is draggable
+    if (isDraggingToolbar) return 'grabbing';
     if (movingLineId && dragStartCoords) return 'grabbing';
     if (activeTool === 'move' && selectedLineId) return 'move';
     if (draggingPoint) return 'grabbing';
@@ -617,7 +616,7 @@ export default function AnnotationPage() {
                 Annotation Demo - Weekly Temperature
               </CardTitle>
               <CardDescription className="text-xs">
-                Toggle overlay. Add lines. Select to edit. Drag endpoints or use move tool. Drag toolbar handle to move it.
+                Toggle overlay. Add lines. Select to edit/drag endpoints or use move tool. Drag toolbar handle to move it.
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
@@ -762,16 +761,15 @@ export default function AnnotationPage() {
                   className="absolute z-30 bg-card border shadow-lg rounded-md p-1 flex items-center space-x-1"
                   style={{
                     left: `${contextualToolbarPosition.x}px`,
-                    top: `${contextualToolbarPosition.y}px`, // This top is for the button area
+                    top: `${contextualToolbarPosition.y}px`, 
                     transform: 'translateX(-50%)', 
                     cursor: isDraggingToolbar ? 'grabbing' : 'default',
                   }}
                   
                 >
-                  {/* Drag Handle - positioned above the button area */}
                   <div 
-                    className="absolute -bottom-3 left-1/2 -translate-x-1/2 p-1 cursor-grab active:cursor-grabbing"
-                    style={{ top: '-12px' }} // Position drag handle visually above the button box
+                    className="absolute -top-3 left-1/2 -translate-x-1/2 p-1 cursor-grab active:cursor-grabbing"
+                    style={{ top: '-12px' }} 
                     onMouseDown={(e) => handleToolbarDragStart(e as React.MouseEvent<Element>)}
                     onTouchStart={(e) => handleToolbarDragStart(e as React.TouchEvent<Element>)}
                     aria-label="Drag toolbar"
@@ -950,3 +948,5 @@ export default function AnnotationPage() {
     </div>
   );
 }
+
+    
