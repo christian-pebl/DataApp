@@ -73,7 +73,7 @@ export default function AnnotationPage() {
   const chartAreaRef = useRef<HTMLDivElement>(null);
   const [draggingPoint, setDraggingPoint] = useState<{ lineId: string; pointType: 'start' | 'end' } | null>(null);
 
-  const getNormalizedCoordinates = (event: React.MouseEvent | React.TouchEvent) => {
+  const getNormalizedCoordinates = (event: React.MouseEvent | React.TouchEvent<Element>) => {
     if ('touches' in event && event.touches.length > 0) {
       return { clientX: event.touches[0].clientX, clientY: event.touches[0].clientY };
     }
@@ -140,7 +140,7 @@ export default function AnnotationPage() {
   const handleSvgInteractionStart = (event: React.MouseEvent<SVGSVGElement> | React.TouchEvent<SVGSVGElement>) => {
     if (drawingMode !== 'line' || !svgOverlayRef.current || draggingPoint) return;
     
-    const { clientX, clientY } = getNormalizedCoordinates(event);
+    const { clientX, clientY } = getNormalizedCoordinates(event as React.MouseEvent<Element> | React.TouchEvent<Element>);
     const rect = svgOverlayRef.current.getBoundingClientRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
@@ -172,11 +172,11 @@ export default function AnnotationPage() {
     setSelectedLineId(lineId); 
   };
 
-  const handleSvgInteractionMove = useCallback((event: React.MouseEvent<SVGSVGElement> | React.TouchEvent<SVGSVGElement>) => {
+  const handleSvgInteractionMove = useCallback((event: MouseEvent | TouchEvent) => {
     if (!draggingPoint || !svgOverlayRef.current) return;
     if ('preventDefault' in event) event.preventDefault(); 
 
-    const { clientX, clientY } = getNormalizedCoordinates(event);
+    const { clientX, clientY } = getNormalizedCoordinates(event as React.MouseEvent<Element> | React.TouchEvent<Element>);
     const rect = svgOverlayRef.current.getBoundingClientRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
@@ -204,15 +204,15 @@ export default function AnnotationPage() {
 
   useEffect(() => {
     if (draggingPoint) {
-      window.addEventListener('mousemove', handleSvgInteractionMove as any);
-      window.addEventListener('touchmove', handleSvgInteractionMove as any, { passive: false });
+      window.addEventListener('mousemove', handleSvgInteractionMove);
+      window.addEventListener('touchmove', handleSvgInteractionMove, { passive: false });
       window.addEventListener('mouseup', handleSvgInteractionEnd);
       window.addEventListener('touchend', handleSvgInteractionEnd);
     }
 
     return () => {
-      window.removeEventListener('mousemove', handleSvgInteractionMove as any);
-      window.removeEventListener('touchmove', handleSvgInteractionMove as any);
+      window.removeEventListener('mousemove', handleSvgInteractionMove);
+      window.removeEventListener('touchmove', handleSvgInteractionMove);
       window.removeEventListener('mouseup', handleSvgInteractionEnd);
       window.removeEventListener('touchend', handleSvgInteractionEnd);
     };
@@ -457,14 +457,14 @@ export default function AnnotationPage() {
                     <defs>
                       <marker
                         id="arrowhead"
-                        markerWidth="10"
-                        markerHeight="7"
-                        refX="0"
-                        refY="3.5"
+                        markerWidth="8" 
+                        markerHeight="6"
+                        refX="0" 
+                        refY="3" 
                         orient="auto"
                         markerUnits="strokeWidth"
                       >
-                        <polygon points="0 0, 10 3.5, 0 7" fill="hsl(var(--primary))" />
+                        <polygon points="0 0, 8 3, 0 6" fill="hsl(var(--primary))" /> 
                       </marker>
                     </defs>
                     {lines.map((line) => (
@@ -481,9 +481,9 @@ export default function AnnotationPage() {
                         <line
                           x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
                           stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
-                          strokeWidth={selectedLineId === line.id ? 3 : 2}
+                          strokeWidth={selectedLineId === line.id ? 2.5 : 1.5} 
                           markerEnd={line.hasArrowEnd ? "url(#arrowhead)" : undefined}
-                          strokeDasharray={line.isDashed ? "5,5" : undefined}
+                          strokeDasharray={line.isDashed ? "4,4" : undefined} 
                           style={{ pointerEvents: 'none' }} 
                         />
                         {selectedLineId === line.id && !drawingMode && (
@@ -541,5 +541,7 @@ export default function AnnotationPage() {
     </div>
   );
 }
+
+    
 
     
