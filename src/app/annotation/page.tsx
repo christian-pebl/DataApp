@@ -142,8 +142,13 @@ export default function AnnotationPage() {
     
     const { clientX, clientY } = getNormalizedCoordinates(event as React.MouseEvent<Element> | React.TouchEvent<Element>);
     const rect = svgOverlayRef.current.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    let x = clientX - rect.left;
+    let y = clientY - rect.top;
+
+    // Clamp coordinates to SVG boundaries
+    x = Math.max(0, Math.min(x, svgOverlayRef.current.clientWidth));
+    y = Math.max(0, Math.min(y, svgOverlayRef.current.clientHeight));
+
 
     if (!lineStartPoint) {
       setLineStartPoint({ x, y });
@@ -178,8 +183,12 @@ export default function AnnotationPage() {
 
     const { clientX, clientY } = getNormalizedCoordinates(event as React.MouseEvent<Element> | React.TouchEvent<Element>);
     const rect = svgOverlayRef.current.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    let x = clientX - rect.left;
+    let y = clientY - rect.top;
+
+    // Clamp coordinates to SVG boundaries
+    x = Math.max(0, Math.min(x, svgOverlayRef.current.clientWidth));
+    y = Math.max(0, Math.min(y, svgOverlayRef.current.clientHeight));
 
     setLines(prevLines =>
       prevLines.map(line => {
@@ -333,7 +342,7 @@ export default function AnnotationPage() {
                 Annotation Demo - Weekly Temperature
               </CardTitle>
               <CardDescription className="text-xs">
-                Toggle overlay to annotate. Select line to edit properties or drag endpoints to reposition.
+                Toggle overlay to annotate. Click line to select. Drag endpoints to reposition. Use toolbar to modify.
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
@@ -457,14 +466,14 @@ export default function AnnotationPage() {
                     <defs>
                       <marker
                         id="arrowhead"
-                        markerWidth="8" 
-                        markerHeight="6"
+                        markerWidth="6" 
+                        markerHeight="4"
                         refX="0" 
-                        refY="3" 
+                        refY="2" 
                         orient="auto"
                         markerUnits="strokeWidth"
                       >
-                        <polygon points="0 0, 8 3, 0 6" fill="hsl(var(--primary))" /> 
+                        <polygon points="0 0, 6 2, 0 4" fill="hsl(var(--primary))" /> 
                       </marker>
                     </defs>
                     {lines.map((line) => (
@@ -541,7 +550,3 @@ export default function AnnotationPage() {
     </div>
   );
 }
-
-    
-
-    
