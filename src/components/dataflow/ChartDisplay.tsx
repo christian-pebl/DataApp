@@ -42,10 +42,11 @@ interface ChartDisplayProps {
   brushEndIndex?: number;
   onBrushChange?: (newIndex: { startIndex?: number; endIndex?: number }) => void;
   yAxisConfigs?: YAxisConfig[];
+  activeHighlightRange?: { startIndex: number; endIndex: number } | null; // New prop
 }
 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
-const INTERNAL_DEFAULT_CHART_HEIGHT = 280; // Default render height for chart rendering if prop not provided
+const INTERNAL_DEFAULT_CHART_HEIGHT = 278; 
 
 const formatDateTick = (timeValue: string | number): string => {
   try {
@@ -73,15 +74,15 @@ export function ChartDisplay({
   brushEndIndex,
   onBrushChange,
   yAxisConfigs = [],
+  activeHighlightRange, // New prop
 }: ChartDisplayProps) {
   const chartHeightToUse = chartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
-
-  // This wrapperStyle ensures the chart rendering area is clipped if needed
-  const visibleChartAreaHeight = chartHeightToUse * 0.85; // Apply 15% clip from bottom
+  const visibleChartAreaHeight = chartHeightToUse * 0.85;
+  
   const wrapperStyle: React.CSSProperties = {
-    height: `${visibleChartAreaHeight}px`, // Clipped height
+    height: `${visibleChartAreaHeight}px`,
     width: '100%',
-    overflow: 'hidden', // This will clip the bottom part
+    overflow: 'hidden',
   };
 
   const chartData = React.useMemo(() => {
@@ -148,18 +149,38 @@ export function ChartDisplay({
     return currentAxisIndexOnSide > 0 ? currentAxisIndexOnSide * 40 : 0;
   };
 
+  const highlightedData = React.useMemo(() => {
+    if (activeHighlightRange && chartData.length > 0) {
+      const { startIndex, endIndex } = activeHighlightRange;
+      // Ensure indices are within bounds
+      const validStartIndex = Math.max(0, Math.min(startIndex, chartData.length - 1));
+      const validEndIndex = Math.max(0, Math.min(endIndex, chartData.length - 1));
+      if (validStartIndex <= validEndIndex) {
+         // Create a full array with nulls outside the range to keep x-axis consistent
+        return chartData.map((point, index) => {
+          if (index >= validStartIndex && index <= validEndIndex) {
+            return point;
+          }
+          // Return a point with only 'time' for non-highlighted sections to maintain line shape
+          return { ...point, [plottableSeries[0]]: null }; // Assuming single series for highlight for now
+        });
+      }
+    }
+    return null; // No highlight or invalid range
+  }, [activeHighlightRange, chartData, plottableSeries]);
+
+
   return (
-    // This outer div takes the full chartHeightToUse, the inner one applies clipping
     <div style={{ height: `${chartHeightToUse}px`, width: '100%' }} className="flex-1 min-h-0">
-      <div style={wrapperStyle}> {/* This div clips the bottom */}
-        <ResponsiveContainer width="100%" height={chartHeightToUse}> {/* Chart renders at full intended height */}
+      <div style={wrapperStyle}> 
+        <ResponsiveContainer width="100%" height={chartHeightToUse}>
           <LineChart
             data={chartData}
             margin={{
               top: 5,
               right: yAxisConfigs.filter(c => c.orientation === 'right').length > 0 ? yAxisConfigs.filter(c => c.orientation === 'right').length * 40 + 5 : 20,
               left: yAxisConfigs.filter(c => c.orientation === 'left').length > 0 ? yAxisConfigs.filter(c => c.orientation === 'left').length * 40 -15 : 5,
-              bottom: 75, // Increased margin for X-axis elements
+              bottom: 75, 
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -168,7 +189,7 @@ export function ChartDisplay({
               stroke="hsl(var(--foreground))"
               angle={-45}
               textAnchor="end"
-              height={70} // Increased height for angled labels and title
+              height={70} 
               interval="preserveStartEnd"
               tickFormatter={formatDateTick}
               tick={{ fontSize: '0.6rem' }}
@@ -178,7 +199,7 @@ export function ChartDisplay({
                 offset={15} 
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={25} // Increased dy to move title further down
+                dy={28} 
                 style={{ fontSize: '0.6rem', textAnchor: 'middle' }}
               />
             </XAxis>
@@ -196,7 +217,7 @@ export function ChartDisplay({
                   value: config.label,
                   angle: -90,
                   position: config.orientation === 'left' ? 'insideLeft' : 'insideRight',
-                  style: { textAnchor: 'middle', fontSize: '0.6rem', fill: `hsl(var(${config.color}))` },
+                  style: { textAnchor: 'middle', fontSize: '0.75em', fill: `hsl(var(${config.color}))` },
                   dx: config.orientation === 'left' ? -5 - yAxisOffset(index, 'left') : 5 + yAxisOffset(index, 'right'),
                   dy: 0,
                 }}
@@ -208,7 +229,7 @@ export function ChartDisplay({
                   value={yAxisLabelText}
                   angle={-90}
                   position="insideLeft"
-                  style={{ textAnchor: 'middle', fontSize: '0.6rem' }}
+                  style={{ textAnchor: 'middle', fontSize: '0.75em' }}
                   fill="hsl(var(--foreground))"
                   dx={-5}
                 />
@@ -227,27 +248,62 @@ export function ChartDisplay({
             />
             <Legend
               verticalAlign="bottom"
-              wrapperStyle={{ paddingTop: '8px', fontSize: '0.6rem' }}
+              wrapperStyle={{ paddingTop: '25px', fontSize: '0.6rem' }} // Increased padding
             />
+            
             {plottableSeries.map((seriesName, index) => {
               const yAxisConfigForSeries = yAxisConfigs.find(c => c.dataKey === seriesName);
+              const mainLineColor = `hsl(var(${yAxisConfigForSeries ? yAxisConfigForSeries.color : chartColors[index % chartColors.length]}))`;
+
               return (
-                <Line
-                  key={seriesName}
-                  type="monotone"
-                  dataKey={seriesName}
-                  stroke={`hsl(var(${yAxisConfigForSeries ? yAxisConfigForSeries.color : chartColors[index % chartColors.length]}))`}
-                  strokeWidth={1.5}
-                  dot={false}
-                  name={yAxisConfigForSeries ? yAxisConfigForSeries.label : seriesName.charAt(0).toUpperCase() + seriesName.slice(1)}
-                  connectNulls={true}
-                  yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
-                />
+                <React.Fragment key={seriesName}>
+                  {activeHighlightRange && highlightedData ? (
+                    <>
+                      {/* Background greyed-out line */}
+                      <Line
+                        type="monotone"
+                        dataKey={seriesName}
+                        stroke="hsl(var(--muted-foreground))"
+                        strokeOpacity={0.3}
+                        strokeWidth={1.5}
+                        dot={false}
+                        name={yAxisConfigForSeries ? yAxisConfigForSeries.label : seriesName.charAt(0).toUpperCase() + seriesName.slice(1)}
+                        connectNulls={true}
+                        yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
+                        legendType="none" // Hide from legend
+                      />
+                      {/* Highlighted segment */}
+                      <Line
+                        data={highlightedData} // Use the sliced and potentially null-padded data
+                        type="monotone"
+                        dataKey={seriesName}
+                        stroke={mainLineColor}
+                        strokeWidth={2} // Slightly thicker for emphasis
+                        dot={false}
+                        name={`${yAxisConfigForSeries ? yAxisConfigForSeries.label : seriesName.charAt(0).toUpperCase() + seriesName.slice(1)} (Highlighted)`}
+                        connectNulls={true} // Important for drawing segments correctly
+                        yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
+                      />
+                    </>
+                  ) : (
+                    // Default line when no highlight is active
+                    <Line
+                      type="monotone"
+                      dataKey={seriesName}
+                      stroke={mainLineColor}
+                      strokeWidth={1.5}
+                      dot={false}
+                      name={yAxisConfigForSeries ? yAxisConfigForSeries.label : seriesName.charAt(0).toUpperCase() + seriesName.slice(1)}
+                      connectNulls={true}
+                      yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
+                    />
+                  )}
+                </React.Fragment>
               );
             })}
             <Brush
               dataKey="time"
-              height={11} // Kept Brush height slim
+              height={14} 
               stroke="hsl(var(--primary))"
               fill="transparent"
               tickFormatter={formatDateTick}
@@ -255,6 +311,7 @@ export function ChartDisplay({
               startIndex={brushStartIndex}
               endIndex={brushEndIndex}
               onChange={onBrushChange}
+              y={30} // Adjusted Y position
             />
           </LineChart>
         </ResponsiveContainer>
@@ -262,3 +319,6 @@ export function ChartDisplay({
     </div>
   );
 }
+
+
+    

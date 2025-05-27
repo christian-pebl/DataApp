@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { 
   LayoutGrid, Waves, SunMoon, FilePenLine, Edit, 
   Trash2, Plus, Copy, Move as MoveIcon, Spline, Palette,
-  RotateCcw, GripVertical, MoveRight
+  RotateCcw, GripVertical, MoveRight, Highlighter // Added Highlighter
 } from "lucide-react"; 
 import {
   DropdownMenu,
@@ -41,7 +41,7 @@ interface LineAnnotation {
   y1: number;
   x2: number;
   y2: number;
-  arrowStyle?: 'none' | 'end' | 'both'; // 'start' option removed
+  arrowStyle?: 'none' | 'end' | 'both';
   lineStyle?: 'solid' | 'dashed' | 'dotted';
   strokeWidth?: number;
   color?: string;
@@ -74,9 +74,9 @@ const generateDummyData = (): DummyDataPoint[] => {
 
 const DEFAULT_STROKE_WIDTH = 1.5;
 const SELECTED_STROKE_WIDTH_OFFSET = 1;
-const CHART_RENDERING_BASE_HEIGHT = 278 * 0.85; 
+const CHART_RENDERING_BASE_HEIGHT = 278; 
 const DEFAULT_LINE_COLOR = 'hsl(var(--primary))';
-const TOOLBAR_APPROX_HEIGHT = 40; 
+const TOOLBAR_APPROX_HEIGHT = 36; 
 const TOOLBAR_APPROX_WIDTH = 100; 
 const VERTICAL_GAP_TOOLBAR = 10;
 const HORIZONTAL_EDGE_BUFFER_TOOLBAR = 8;
@@ -94,7 +94,7 @@ const LineStyleIcon = ({ style }: { style: 'solid' | 'dashed' | 'dotted' }) => {
 };
 
 const ArrowStyleIcon = ({ style }: { style: 'none' | 'end' | 'both' }) => {
-  const markerWidth = 3; // Adjusted for the new arrowhead shape
+  const markerWidth = 3;
   const padding = 2;
   let x1 = padding;
   let x2 = 24 - padding;
@@ -144,11 +144,12 @@ export default function AnnotationPage() {
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
 
   const [isOverlayActive, setIsOverlayActive] = useState(false);
+  const [isHighlighterToolActive, setIsHighlighterToolActive] = useState(false); // New state
 
   const [lines, setLines] = useState<LineAnnotation[]>([]);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const svgOverlayRef = useRef<SVGSVGElement>(null);
-  const chartAreaRef = useRef<HTMLDivElement>(null); // Ref for the chart's bounding box
+  const chartAreaRef = useRef<HTMLDivElement>(null);
   
   const [draggingPoint, setDraggingPoint] = useState<{ lineId: string; pointType: 'start' | 'end' } | null>(null);
   
@@ -181,12 +182,13 @@ export default function AnnotationPage() {
     const midY = (line.y1 + line.y2) / 2;
 
     let toolbarX = midX;
-    let toolbarY = midY - TOOLBAR_APPROX_HEIGHT / 2 - TOOLBAR_OFFSET_FROM_LINE_Y; // Try above first
+    let toolbarY = midY - TOOLBAR_APPROX_HEIGHT / 2 - TOOLBAR_OFFSET_FROM_LINE_Y; 
 
-    // Clamp Y to stay within SVG overlay
-    toolbarY = Math.max(0, Math.min(toolbarY, svgRect.height - TOOLBAR_APPROX_HEIGHT));
+    toolbarY = Math.max(
+      TOOLBAR_APPROX_HEIGHT / 2 + VERTICAL_GAP_TOOLBAR, // Ensure toolbar doesn't go above its own height + gap
+      Math.min(toolbarY, svgRect.height - TOOLBAR_APPROX_HEIGHT / 2 - VERTICAL_GAP_TOOLBAR) // Ensure toolbar doesn't go below its own height + gap
+    );
     
-    // Clamp X to stay within SVG overlay
     toolbarX = Math.max(
       TOOLBAR_APPROX_WIDTH / 2 + HORIZONTAL_EDGE_BUFFER_TOOLBAR,
       Math.min(toolbarX, svgRect.width - TOOLBAR_APPROX_WIDTH / 2 - HORIZONTAL_EDGE_BUFFER_TOOLBAR)
@@ -258,8 +260,8 @@ export default function AnnotationPage() {
   const handleDraggablePointInteractionStart = (lineId: string, pointType: 'start' | 'end', event: React.MouseEvent | React.TouchEvent) => {
     event.stopPropagation();
     if ('preventDefault' in event) event.preventDefault(); 
+    setSelectedLineId(lineId); // Ensure the line is selected
     setDraggingPoint({ lineId, pointType });
-    setSelectedLineId(lineId);
     // Toolbar position will be updated in handleInteractionMove
   };
 
@@ -311,39 +313,47 @@ export default function AnnotationPage() {
       );
       if (movedLine) updateContextualToolbarPos(movedLine);
     } else if (isDraggingToolbar && toolbarDragStart && toolbarInitialPosition) {
-        const dx = clientX - toolbarDragStart.x; // Use clientX/Y for toolbar as it's positioned absolutely to viewport initially
-        const dy = clientY - toolbarDragStart.y;
+        const dxGlobal = clientX - toolbarDragStart.x;
+        const dyGlobal = clientY - toolbarDragStart.y;
         
-        let newX = toolbarInitialPosition.x + dx;
-        let newY = toolbarInitialPosition.y + dy;
+        let newToolbarX = toolbarInitialPosition.x + dxGlobal;
+        let newToolbarY = toolbarInitialPosition.y + dyGlobal;
 
-        // Clamp toolbar position to SVG bounds (approximate)
-        newX = Math.max(TOOLBAR_APPROX_WIDTH / 2 + HORIZONTAL_EDGE_BUFFER_TOOLBAR, Math.min(newX, rect.width - TOOLBAR_APPROX_WIDTH / 2 - HORIZONTAL_EDGE_BUFFER_TOOLBAR));
-        newY = Math.max(0, Math.min(newY, rect.height - TOOLBAR_APPROX_HEIGHT));
+        newToolbarY = Math.max(
+            TOOLBAR_APPROX_HEIGHT / 2 + VERTICAL_GAP_TOOLBAR,
+            Math.min(newToolbarY, rect.height - TOOLBAR_APPROX_HEIGHT / 2 - VERTICAL_GAP_TOOLBAR)
+        );
+        newToolbarX = Math.max(
+            TOOLBAR_APPROX_WIDTH / 2 + HORIZONTAL_EDGE_BUFFER_TOOLBAR,
+            Math.min(newToolbarX, rect.width - TOOLBAR_APPROX_WIDTH / 2 - HORIZONTAL_EDGE_BUFFER_TOOLBAR)
+        );
         
-        setContextualToolbarPosition({ x: newX, y: newY });
+        setContextualToolbarPosition({ x: newToolbarX, y: newToolbarY });
     }
   }, [draggingPoint, movingLineId, dragStartCoords, lineBeingMovedOriginalState, getNormalizedCoordinates, updateContextualToolbarPos, isDraggingToolbar, toolbarDragStart, toolbarInitialPosition]);
 
   const handleInteractionEnd = useCallback(() => {
+    let finalLine: LineAnnotation | null = null;
     if (draggingPoint) {
+      finalLine = lines.find(l => l.id === draggingPoint.lineId) || null;
       setDraggingPoint(null);
-      const finalLine = lines.find(l => l.id === selectedLineId);
-      if (finalLine) updateContextualToolbarPos(finalLine);
     }
     if (movingLineId) {
+      finalLine = lines.find(l => l.id === movingLineId) || null;
       setMovingLineId(null);
       setDragStartCoords(null);
       setLineBeingMovedOriginalState(null);
-      const finalLine = lines.find(l => l.id === selectedLineId);
-      if (finalLine) updateContextualToolbarPos(finalLine);
     }
     if (isDraggingToolbar) {
         setIsDraggingToolbar(false);
         setToolbarDragStart(null);
         setToolbarInitialPosition(null);
+        // Toolbar position is already set by move, no need to update from line here
+        return; 
     }
-  }, [draggingPoint, movingLineId, lines, selectedLineId, updateContextualToolbarPos, isDraggingToolbar]);
+    if (finalLine) updateContextualToolbarPos(finalLine);
+
+  }, [draggingPoint, movingLineId, lines, updateContextualToolbarPos, isDraggingToolbar]);
 
   useEffect(() => {
     if (draggingPoint || movingLineId || isDraggingToolbar) {
@@ -363,30 +373,27 @@ export default function AnnotationPage() {
   
   const handleLineHitboxInteractionStart = (lineId: string, event: React.MouseEvent | React.TouchEvent<Element>) => {
     event.stopPropagation();
-    if (draggingPoint || isDraggingToolbar) return;
+    if (draggingPoint || isDraggingToolbar) return; // Prevent starting a move if already dragging a point or toolbar
 
-    const line = lines.find(l => l.id === lineId);
-    if (!line) return;
+    const lineToInteract = lines.find(l => l.id === lineId);
+    if (!lineToInteract) return;
     
-    if (selectedLineId === lineId) { // If line is already selected, start moving it
-        if (!svgOverlayRef.current) return;
-        const { clientX, clientY } = getNormalizedCoordinates(event);
-        const rect = svgOverlayRef.current.getBoundingClientRect();
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
-        
-        setMovingLineId(lineId);
-        setDragStartCoords({ x, y });
-        setLineBeingMovedOriginalState({ ...line });
-        // Toolbar position is updated during move by handleInteractionMove
-    } else { // If line is not selected, select it
-        setSelectedLineId(lineId);
-        updateContextualToolbarPos(line);
-    }
+    setSelectedLineId(lineId); 
+    updateContextualToolbarPos(lineToInteract); 
+
+    if (!svgOverlayRef.current) return;
+    const { clientX, clientY } = getNormalizedCoordinates(event);
+    const rect = svgOverlayRef.current.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    
+    setMovingLineId(lineId);
+    setDragStartCoords({ x, y });
+    setLineBeingMovedOriginalState({ ...lineToInteract });
   };
 
   const handleToolbarDragStart = (event: React.MouseEvent | React.TouchEvent) => {
-    event.stopPropagation();
+    event.stopPropagation(); // Prevent other interactions
     if (!contextualToolbarPosition) return;
     setIsDraggingToolbar(true);
     const { clientX, clientY } = getNormalizedCoordinates(event);
@@ -514,6 +521,15 @@ export default function AnnotationPage() {
     return 'default';
   }, [selectedLineId, draggingPoint, movingLineId, isDraggingToolbar]);
 
+  const currentActiveHighlightRange = useMemo(() => 
+    isHighlighterToolActive &&
+    brushStartIndex !== undefined &&
+    brushEndIndex !== undefined &&
+    brushStartIndex <= brushEndIndex // Ensure start isn't after end
+      ? { startIndex: brushStartIndex, endIndex: brushEndIndex }
+      : null, 
+  [isHighlighterToolActive, brushStartIndex, brushEndIndex]);
+
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -577,7 +593,7 @@ export default function AnnotationPage() {
                 Annotation Demo - Weekly Temperature
               </CardTitle>
               <CardDescription className="text-xs">
-                Toggle overlay. Add lines. Click line to move or drag endpoints. Use toolbars to style or delete.
+                Toggle overlay to draw lines or highlight series. Click line to move/edit. Use toolbars to style.
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
@@ -592,28 +608,45 @@ export default function AnnotationPage() {
                     setMovingLineId(null);
                     setContextualToolbarPosition(null);
                     setIsDraggingToolbar(false);
+                    setIsHighlighterToolActive(false); // Also turn off highlighter tool
                   }
                 }}
               />
-              <Label htmlFor="annotation-overlay-switch" className="text-sm">Annotation Overlay</Label>
+              <Label htmlFor="annotation-overlay-switch" className="text-sm">Annotation Tools</Label>
             </div>
           </CardHeader>
           <CardContent className="p-2 pt-2">
             {isOverlayActive && (
               <TooltipProvider delayDuration={0}>
-                <div className="absolute top-16 left-5 z-20 bg-card border shadow-lg rounded-md p-1 flex items-center space-x-1"> {/* Main fixed toolbar */}
+                <div className="absolute top-16 left-5 z-20 bg-card border shadow-lg rounded-md p-1 flex items-center space-x-1">
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         variant={"outline"}
                         className="h-8 px-2" 
                         onClick={handleAddLine}
-                        disabled={draggingPoint !== null || movingLineId !== null || isDraggingToolbar}
+                        disabled={isMainToolbarButtonDisabled() || isHighlighterToolActive}
                       >
                         <Plus className="h-4 w-4 mr-1" /> Line
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent><p>Add Straight Line</p></TooltipContent>
+                  </Tooltip>
+
+                   <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant={isHighlighterToolActive ? "secondary" : "outline"}
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => setIsHighlighterToolActive(!isHighlighterToolActive)}
+                            disabled={isMainToolbarButtonDisabled()}
+                            aria-label="Toggle Data Series Highlighter"
+                        >
+                            <Highlighter className="h-4 w-4" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>Toggle Data Highlighter</p></TooltipContent>
                   </Tooltip>
                   
                   <Separator orientation="vertical" className="h-6 mx-1" />
@@ -626,7 +659,7 @@ export default function AnnotationPage() {
                                     variant="outline"
                                     size="icon"
                                     className="h-8 w-8"
-                                    disabled={isMainToolbarButtonDisabled('style')}
+                                    disabled={isMainToolbarButtonDisabled('style') || isHighlighterToolActive}
                                     aria-label="Arrow Style Options"
                                 >
                                     <MoveRight className="h-4 w-4" />
@@ -663,10 +696,9 @@ export default function AnnotationPage() {
                             variant="outline"
                             size="icon"
                             className="h-8 w-8"
-                            disabled={isMainToolbarButtonDisabled('style')}
+                            disabled={isMainToolbarButtonDisabled('style') || isHighlighterToolActive}
                             aria-label="Line Style & Thickness Options"
                           >
-                            {/* Custom SVG Icon for Line Style/Thickness */}
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
                                 <path d="M2 4h12v1H2zM2 7.5h12v2H2zM2 11h12v3H2z"/>
                             </svg>
@@ -683,13 +715,13 @@ export default function AnnotationPage() {
                         onValueChange={(value) => handleLineStyleChange(value as 'solid' | 'dashed' | 'dotted')}
                       >
                         <DropdownMenuRadioItem value="solid">
-                            <LineStyleIcon style="solid" /> {/* No text label */}
+                            <LineStyleIcon style="solid" />
                         </DropdownMenuRadioItem>
                         <DropdownMenuRadioItem value="dashed">
-                            <LineStyleIcon style="dashed" /> {/* No text label */}
+                            <LineStyleIcon style="dashed" />
                         </DropdownMenuRadioItem>
                         <DropdownMenuRadioItem value="dotted">
-                           <LineStyleIcon style="dotted" /> {/* No text label */}
+                           <LineStyleIcon style="dotted" />
                         </DropdownMenuRadioItem>
                       </DropdownMenuRadioGroup>
                       <DropdownMenuSeparatorShadcn />
@@ -702,7 +734,7 @@ export default function AnnotationPage() {
                             min={1}
                             max={10}
                             step={0.5}
-                            disabled={isMainToolbarButtonDisabled('style')}
+                            disabled={isMainToolbarButtonDisabled('style') || isHighlighterToolActive}
                             className="flex-grow"
                           />
                           <span className="text-xs w-10 text-right">{(selectedLine?.strokeWidth || DEFAULT_STROKE_WIDTH).toFixed(1)}px</span>
@@ -718,7 +750,7 @@ export default function AnnotationPage() {
                             variant="outline"
                             size="icon"
                             className="h-8 w-8"
-                            disabled={isMainToolbarButtonDisabled('color')}
+                            disabled={isMainToolbarButtonDisabled('color') || isHighlighterToolActive}
                             aria-label="Line Color Options"
                           >
                             <Palette className="h-4 w-4" />
@@ -753,13 +785,15 @@ export default function AnnotationPage() {
               </TooltipProvider>
             )}
             
-            {/* Chart Area and SVG Overlay */}
             <div 
               ref={chartAreaRef} 
               className="relative" 
-              style={{ height: `${CHART_RENDERING_BASE_HEIGHT}px` }}
+              style={{ height: `${CHART_RENDERING_BASE_HEIGHT * 0.85}px` }}
             >
-              <div className={cn(isOverlayActive && "opacity-30 transition-opacity", (isOverlayActive && (draggingPoint || movingLineId || isDraggingToolbar)) && "pointer-events-none")}>
+              <div className={cn(
+                (isOverlayActive && !isHighlighterToolActive) && "opacity-30 transition-opacity", 
+                (isOverlayActive && (draggingPoint || movingLineId || isDraggingToolbar || isHighlighterToolActive)) && "pointer-events-none"
+              )}>
                 <ChartDisplay
                   data={dummyData}
                   plottableSeries={plottableSeries}
@@ -770,9 +804,10 @@ export default function AnnotationPage() {
                   brushStartIndex={brushStartIndex}
                   brushEndIndex={brushEndIndex}
                   onBrushChange={handleBrushChange}
+                  activeHighlightRange={currentActiveHighlightRange} // Pass highlight range
                 />
               </div>
-              {isOverlayActive && chartAreaRef.current && (
+              {isOverlayActive && !isHighlighterToolActive && chartAreaRef.current && ( // Only render SVG overlay if highlighter is OFF
                  <svg
                     ref={svgOverlayRef}
                     className="absolute top-0 left-0 w-full h-full z-10" 
@@ -799,7 +834,7 @@ export default function AnnotationPage() {
                           strokeWidth="20" 
                           className={cn(
                             "cursor-pointer",
-                            selectedLineId === line.id && !draggingPoint && !isDraggingToolbar && "cursor-move" 
+                            selectedLineId === line.id && !draggingPoint && !movingLineId && !isDraggingToolbar && "cursor-move" 
                           )}
                           onMouseDown={(e) => handleLineHitboxInteractionStart(line.id, e)}
                           onTouchStart={(e) => handleLineHitboxInteractionStart(line.id, e as unknown as React.TouchEvent<SVGLineElement>)}
@@ -849,13 +884,13 @@ export default function AnnotationPage() {
                   </svg>
               )}
               {/* Contextual Toolbar */}
-              {isOverlayActive && selectedLineId && contextualToolbarPosition && (
+              {isOverlayActive && !isHighlighterToolActive && selectedLineId && contextualToolbarPosition && (
                   <div
                       className="absolute bg-card border shadow-lg rounded-md p-1 flex items-center space-x-1 z-30"
                       style={{
                           left: `${contextualToolbarPosition.x}px`,
                           top: `${contextualToolbarPosition.y}px`,
-                          transform: 'translateX(-50%) translateY(-100%)', // Center horizontally, position above
+                          transform: `translateX(-50%) translateY(-${TOOLBAR_APPROX_HEIGHT / 2 + VERTICAL_GAP_TOOLBAR}px)`, // Center horizontally, position above
                           cursor: isDraggingToolbar ? 'grabbing' : 'default',
                       }}
                   >
@@ -885,9 +920,10 @@ export default function AnnotationPage() {
             </div>
           </CardContent>
         </Card>
-         {isOverlayActive && selectedLineId && !draggingPoint && !movingLineId && !isDraggingToolbar && <CardDescription className="text-center text-xs mt-2">Line selected. Click and drag line to move or drag endpoints to resize. Use main toolbar to style.</CardDescription>}
-         {isOverlayActive && (draggingPoint || movingLineId || isDraggingToolbar) && <CardDescription className="text-center text-xs mt-2">{draggingPoint ? 'Dragging line endpoint...' : (movingLineId ? 'Moving line...' : 'Dragging toolbar...')}</CardDescription>}
-         {!isOverlayActive && lines.length > 0 && <CardDescription className="text-center text-xs mt-2">Toggle "Annotation Overlay" to edit annotations.</CardDescription>}
+         {isOverlayActive && !isHighlighterToolActive && selectedLineId && !draggingPoint && !movingLineId && !isDraggingToolbar && <CardDescription className="text-center text-xs mt-2">Line selected. Drag line or endpoints to move/resize. Use main toolbar to style.</CardDescription>}
+         {isOverlayActive && !isHighlighterToolActive && (draggingPoint || movingLineId || isDraggingToolbar) && <CardDescription className="text-center text-xs mt-2">{draggingPoint ? 'Dragging line endpoint...' : (movingLineId ? 'Moving line...' : 'Dragging toolbar...')}</CardDescription>}
+         {isOverlayActive && isHighlighterToolActive && <CardDescription className="text-center text-xs mt-2">Highlighter active. Use the chart slider below to select a range to highlight.</CardDescription>}
+         {!isOverlayActive && (lines.length > 0 || currentActiveHighlightRange) && <CardDescription className="text-center text-xs mt-2">Toggle "Annotation Tools" to edit annotations or highlights.</CardDescription>}
       </main>
 
       <footer className="py-3 md:px-4 md:py-0 border-t">
@@ -900,5 +936,6 @@ export default function AnnotationPage() {
     </div>
   );
 }
+    
 
     
