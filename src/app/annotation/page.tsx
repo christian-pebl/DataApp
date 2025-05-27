@@ -168,19 +168,20 @@ export default function AnnotationPage() {
     if (!lineStartPoint) {
       setLineStartPoint({ x, y });
     } else {
-      setLines(prevLines => [
-        ...prevLines, 
-        { 
-          id: Date.now().toString(), 
-          x1: lineStartPoint.x, 
-          y1: lineStartPoint.y, 
-          x2: x, 
-          y2: y, 
-          hasArrowEnd: false, 
-          lineStyle: 'solid'
-        }
-      ]);
+      const newLine: LineAnnotation = { 
+        id: Date.now().toString(), 
+        x1: lineStartPoint.x, 
+        y1: lineStartPoint.y, 
+        x2: x, 
+        y2: y, 
+        hasArrowEnd: false, 
+        lineStyle: 'solid'
+      };
+      setLines(prevLines => [...prevLines, newLine]);
       setLineStartPoint(null);
+      setDrawingMode(null); // Exit drawing mode
+      setSelectedLineId(newLine.id); // Select the new line
+      setContextualToolbarPosition({ x: (newLine.x1 + newLine.x2) / 2, y: (newLine.y1 + newLine.y2) / 2 - 30 }); // Show contextual toolbar
     }
   };
 
@@ -265,8 +266,7 @@ export default function AnnotationPage() {
   const handleSelectLine = (lineId: string, event: React.MouseEvent | React.TouchEvent) => {
     event.stopPropagation(); 
     if (drawingMode === null && !draggingPoint) {
-      // If a different line is clicked, select it.
-      // If the same line is clicked, it remains selected (no deselection here).
+      // If a different line is clicked, or if the same line is clicked, select it.
       setSelectedLineId(lineId);
       const line = lines.find(l => l.id === lineId);
       if (line) {
@@ -432,7 +432,6 @@ export default function AnnotationPage() {
                     <TooltipTrigger asChild>
                       <Button
                         variant={drawingMode === 'line' ? "secondary" : "outline"}
-                        size="sm" 
                         className="h-8 px-2" 
                         onClick={() => toggleDrawingMode(drawingMode === 'line' ? null : 'line')}
                         disabled={draggingPoint !== null}
@@ -684,5 +683,3 @@ export default function AnnotationPage() {
     </div>
   );
 }
-
-    
