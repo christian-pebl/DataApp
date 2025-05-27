@@ -44,8 +44,7 @@ interface ChartDisplayProps {
   yAxisConfigs?: YAxisConfig[];
 }
 
-const INTERNAL_DEFAULT_CHART_HEIGHT = 400; // Default render height for the chart logic
-const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
+const INTERNAL_DEFAULT_CHART_HEIGHT = 350; 
 
 const formatDateTick = (timeValue: string | number): string => {
   try {
@@ -75,13 +74,7 @@ export function ChartDisplay({
   yAxisConfigs = [],
 }: ChartDisplayProps) {
 
-  // This is the height Recharts will use to render its content (lines, axes, etc.)
-  const internalChartRenderHeight = React.useMemo(() => {
-    return chartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
-  }, [chartRenderHeight]);
-
-  // This is the actual visible height of the chart display area, after any cropping.
-  const visibleChartAreaHeight = internalChartRenderHeight * 0.85; // Crop 15% from bottom
+  const chartHeightToUse = chartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
 
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -116,7 +109,7 @@ export function ChartDisplay({
   }, [yAxisConfigs, plottableSeries]);
 
   const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
-     <div style={{ height: `${visibleChartAreaHeight}px`, width: '100%' }} className="flex flex-col items-center justify-center p-2">
+     <div style={{ height: `${chartHeightToUse}px`, width: '100%' }} className="flex flex-col items-center justify-center p-2">
       <div className="text-center text-muted-foreground">
         {icon}
         <p className="text-sm mt-2">{primaryText}</p>
@@ -126,14 +119,14 @@ export function ChartDisplay({
   );
 
   if (!data || data.length === 0) {
-    return renderNoDataMessage(<LineChartIcon className="h-8 w-8 mx-auto text-muted" />, `No data loaded for ${plotTitle || 'this plot'}.`);
+    return renderNoDataMessage(<LineChartIcon className="h-6 w-6 mx-auto text-muted" />, `No data loaded for ${plotTitle || 'this plot'}.`);
   }
   if (plottableSeries.length === 0) {
-    return renderNoDataMessage(<Info className="h-8 w-8 mx-auto text-muted" />, `Please select at least one variable to plot for ${plotTitle || 'this plot'}.`);
+    return renderNoDataMessage(<Info className="h-6 w-6 mx-auto text-muted" />, `Please select at least one variable to plot for ${plotTitle || 'this plot'}.`);
   }
   if (!hasAnyNumericDataForSelectedSeries) {
     return renderNoDataMessage(
-      <Info className="h-8 w-8 mx-auto text-muted" />,
+      <Info className="h-6 w-6 mx-auto text-muted" />,
       `No valid numeric data for selected series: ${plottableSeries.join(', ')} in ${plotTitle || 'this plot'}.`,
       "Check data source or ensure series contain numeric values."
     );
@@ -146,15 +139,15 @@ export function ChartDisplay({
   };
 
   return (
-    <div style={{ height: `${visibleChartAreaHeight}px`, width: '100%', overflow: 'hidden' }}>
-        <ResponsiveContainer width="100%" height={internalChartRenderHeight}> {/* Render full, then clip */}
+    <div style={{ height: `${chartHeightToUse}px`, width: '100%' }}>
+        <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={chartData}
             margin={{
               top: 5,
               right: yAxisConfigs.filter(c => c.orientation === 'right').length > 0 ? Math.max(20, yAxisConfigs.filter(c => c.orientation === 'right').length * 40 + 5) : 20,
               left: yAxisConfigs.filter(c => c.orientation === 'left').length > 0 ? Math.max(25, yAxisConfigs.filter(c => c.orientation === 'left').length * 40 -15) : 25,
-              bottom: 60,
+              bottom: 45, // Compacted bottom margin
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -163,17 +156,17 @@ export function ChartDisplay({
               stroke="hsl(var(--foreground))"
               angle={-45}
               textAnchor="end"
-              height={60}
+              height={30} // Compacted XAxis height
               interval="preserveStartEnd"
               tickFormatter={formatDateTick}
               tick={{ fontSize: '0.6rem' }}
             >
               <RechartsYAxisLabel
                 value={timeAxisLabel || "Time (Adjust time window with slider)"}
-                offset={15}
+                offset={10} // Adjusted offset
                 position="insideBottom"
                 fill="hsl(var(--muted-foreground))"
-                dy={15}
+                dy={10} // Adjusted dy
                 style={{ fontSize: '0.6rem', textAnchor: 'middle' } as React.CSSProperties}
               />
             </XAxis>
@@ -223,13 +216,13 @@ export function ChartDisplay({
             />
             <Legend
               verticalAlign="bottom"
-              wrapperStyle={{ paddingTop: '10px', fontSize: '0.6rem', position: 'relative', bottom: 0 }}
-              iconSize={10}
+              wrapperStyle={{ paddingTop: '2px', fontSize: '0.6rem', position: 'relative', bottom: 0 }} // Compacted legend
+              iconSize={8}
             />
 
             {plottableSeries.map((seriesName, index) => {
               const yAxisConfigForSeries = yAxisConfigs.find(c => c.dataKey === seriesName);
-              const mainLineColor = `hsl(var(${yAxisConfigForSeries ? yAxisConfigForSeries.color : chartColors[index % chartColors.length]}))`;
+              const mainLineColor = `hsl(var(${yAxisConfigForSeries ? yAxisConfigForSeries.color : `chart-${(index % 5) + 1}`}))`;
               const seriesDisplayName = yAxisConfigForSeries ? yAxisConfigForSeries.label : seriesName.charAt(0).toUpperCase() + seriesName.slice(1);
 
               return (
@@ -250,11 +243,11 @@ export function ChartDisplay({
             })}
             <Brush
               dataKey="time"
-              height={12}
+              height={8} // Compacted Brush height
               stroke="hsl(var(--primary))"
               fill="transparent"
               tickFormatter={formatDateTick}
-              travellerWidth={8}
+              travellerWidth={6} // Slimmer traveller
               startIndex={brushStartIndex}
               endIndex={brushEndIndex}
               onChange={onBrushChange}

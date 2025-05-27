@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay"; // Ensure YAxisConfig is exported
+import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,7 +19,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { LayoutGrid, Waves, SunMoon, FilePenLine, Plus, Ban, PenLine, Spline, MoveRight, Palette, Copy, Trash2, Move as MoveIcon, GripVertical, Highlighter } from "lucide-react";
+import { LayoutGrid, Waves, SunMoon, FilePenLine, Plus, Ban, PenLine, Spline, MoveRight, Palette, Copy, Trash2, Move as MoveIcon, GripVertical, Highlighter, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { format, addHours, subDays } from 'date-fns';
@@ -43,9 +43,9 @@ const DEFAULT_LINE_COLOR = 'hsl(var(--primary))';
 const DEFAULT_STROKE_WIDTH = 1.5;
 const SELECTED_STROKE_WIDTH_OFFSET = 1;
 
-const ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT = 272; // Height for ChartDisplay on this page
+const ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT = 350; // Adjusted to match PlotInstance
 
-const TOOLBAR_APPROX_WIDTH_MIN = 100;
+const TOOLBAR_APPROX_WIDTH_MIN = 100; // Approx width for the Copy/Delete toolbar
 const TOOLBAR_APPROX_HEIGHT = 32;
 const VERTICAL_GAP_TOOLBAR = 8;
 const HORIZONTAL_EDGE_BUFFER = 8;
@@ -162,7 +162,7 @@ export default function AnnotationPage() {
     return "Annotation tools active. Click '+ Line' to add. Click a line to select and move it, or drag its endpoints. Use toolbars to edit styles.";
   }, [isOverlayActive]);
 
-  const getNormalizedCoordinates = useCallback((event: React.MouseEvent | React.TouchEvent<Element> | globalThis.MouseEvent | globalThis.TouchEvent) => {
+  const getNormalizedCoordinates = useCallback((event: ReactMouseEvent | ReactTouchEvent<Element> | globalThis.MouseEvent | globalThis.TouchEvent) => {
     let clientX = 0, clientY = 0;
     if ('touches' in event && event.touches.length > 0) {
       clientX = event.touches[0].clientX;
@@ -267,7 +267,7 @@ export default function AnnotationPage() {
     }
   }, [draggingPoint, movingLineId, isDraggingToolbar]);
 
-  const handleLineHitboxInteractionStart = useCallback((line: LineAnnotation, event: React.MouseEvent<SVGGElement> | React.TouchEvent<SVGGElement>) => {
+  const handleLineHitboxInteractionStart = useCallback((line: LineAnnotation, event: ReactMouseEvent<SVGGElement> | ReactTouchEvent<SVGGElement>) => {
     event.stopPropagation();
     if ('preventDefault' in event && event.type.startsWith('touch')) event.preventDefault();
     if (draggingPoint) return;
@@ -283,7 +283,7 @@ export default function AnnotationPage() {
     setMovingLineId(line.id);
   }, [getNormalizedCoordinates, draggingPoint, updateContextualToolbarPos]);
 
-  const handleDraggablePointInteractionStart = useCallback((lineId: string, pointType: 'start' | 'end', event: React.MouseEvent<SVGCircleElement> | React.TouchEvent<SVGCircleElement>) => {
+  const handleDraggablePointInteractionStart = useCallback((lineId: string, pointType: 'start' | 'end', event: ReactMouseEvent<SVGCircleElement> | ReactTouchEvent<SVGCircleElement>) => {
     event.stopPropagation();
     if ('preventDefault' in event && event.type.startsWith('touch')) event.preventDefault();
     if (movingLineId) return;
@@ -683,8 +683,8 @@ export default function AnnotationPage() {
                     }}
                 >
                     <defs>
-                        <marker id="arrowheadEnd" markerWidth="3" markerHeight="3.5" refX="3" refY="1.75" orient="auto" fill="currentColor"><polygon points="0 0, 3 1.75, 0 3.5" /></marker>
-                        <marker id="arrowheadStart" markerWidth="3" markerHeight="3.5" refX="0" refY="1.75" orient="auto-start-reverse" fill="currentColor"><polygon points="0 0, 3 1.75, 0 3.5" /></marker>
+                        <marker id={`arrowheadEnd-${uniqueComponentId}`} markerWidth="3" markerHeight="3.5" refX="3" refY="1.75" orient="auto" fill="currentColor"><polygon points="0 0, 3 1.75, 0 3.5" /></marker>
+                        <marker id={`arrowheadStart-${uniqueComponentId}`} markerWidth="3" markerHeight="3.5" refX="0" refY="1.75" orient="auto-start-reverse" fill="currentColor"><polygon points="0 0, 3 1.75, 0 3.5" /></marker>
                     </defs>
                     {lines.map(line => (
                         <g key={line.id} >
@@ -702,8 +702,8 @@ export default function AnnotationPage() {
                                 stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : (line.color || DEFAULT_LINE_COLOR)}
                                 strokeWidth={selectedLineId === line.id ? (line.strokeWidth || DEFAULT_STROKE_WIDTH) + SELECTED_STROKE_WIDTH_OFFSET : (line.strokeWidth || DEFAULT_STROKE_WIDTH)}
                                 strokeDasharray={getStrokeDasharray(line.lineStyle)}
-                                markerStart={(line.arrowStyle === 'start' || line.arrowStyle === 'both') ? "url(#arrowheadStart)" : undefined}
-                                markerEnd={(line.arrowStyle === 'end' || line.arrowStyle === 'both') ? "url(#arrowheadEnd)" : undefined}
+                                markerStart={(line.arrowStyle === 'start' || line.arrowStyle === 'both') ? `url(#arrowheadStart-${uniqueComponentId})` : undefined}
+                                markerEnd={(line.arrowStyle === 'end' || line.arrowStyle === 'both') ? `url(#arrowheadEnd-${uniqueComponentId})` : undefined}
                                 style={{ pointerEvents: 'none' }}
                             />
                             {selectedLineId === line.id && !movingLineId && !isDraggingToolbar && (
