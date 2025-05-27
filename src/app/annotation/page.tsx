@@ -145,13 +145,43 @@ export default function AnnotationPage() {
 
   const updateContextualToolbarPos = useCallback((line: LineAnnotation | null | undefined) => {
     if (line && svgOverlayRef.current) {
-      const svgRect = svgOverlayRef.current.getBoundingClientRect();
+      const svg = svgOverlayRef.current;
       const midX = (line.x1 + line.x2) / 2;
       const midY = (line.y1 + line.y2) / 2;
+
+      const TOOLBAR_APPROX_HEIGHT = 36; 
+      const TOOLBAR_APPROX_WIDTH = 110; 
+      const VERTICAL_GAP = 8; 
+      const HORIZONTAL_EDGE_BUFFER = 8;
+
+      let finalToolbarTopY;
+      const spaceToPlaceAbove = midY - TOOLBAR_APPROX_HEIGHT - VERTICAL_GAP;
+      const spaceToPlaceBelow = midY + VERTICAL_GAP;
       
-      const toolbarX = Math.max(30, Math.min(midX, svgRect.width - 30)); 
-      const toolbarY = Math.max(30, Math.min(midY - 50, svgRect.height - 50)); // Adjusted to position toolbar slightly above the line
-      setContextualToolbarPosition({ x: toolbarX, y: toolbarY });
+      // Prefer above if it fits and line isn't too high, or if more space above
+      if (spaceToPlaceAbove > VERTICAL_GAP && (midY > svg.clientHeight * 0.3 || (svg.clientHeight - spaceToPlaceBelow - TOOLBAR_APPROX_HEIGHT) < spaceToPlaceAbove )) {
+        finalToolbarTopY = spaceToPlaceAbove;
+      } else {
+        finalToolbarTopY = spaceToPlaceBelow;
+      }
+
+      finalToolbarTopY = Math.max(VERTICAL_GAP, finalToolbarTopY);
+      finalToolbarTopY = Math.min(
+        finalToolbarTopY,
+        svg.clientHeight - TOOLBAR_APPROX_HEIGHT - VERTICAL_GAP
+      );
+
+      let finalToolbarCenterX = midX;
+      finalToolbarCenterX = Math.max(
+        (TOOLBAR_APPROX_WIDTH / 2) + HORIZONTAL_EDGE_BUFFER, 
+        finalToolbarCenterX
+      );
+      finalToolbarCenterX = Math.min(
+        finalToolbarCenterX,
+        svg.clientWidth - (TOOLBAR_APPROX_WIDTH / 2) - HORIZONTAL_EDGE_BUFFER
+      );
+      
+      setContextualToolbarPosition({ x: finalToolbarCenterX, y: finalToolbarTopY });
     } else {
       setContextualToolbarPosition(null);
     }
@@ -243,7 +273,6 @@ export default function AnnotationPage() {
     setActiveTool(null);
     setDraggingPoint({ lineId, pointType });
     setSelectedLineId(lineId); 
-    // Do not setContextualToolbarPosition(null); here to keep it visible during drag
   };
 
   const handleInteractionMove = useCallback((event: MouseEvent | TouchEvent) => {
@@ -349,7 +378,6 @@ export default function AnnotationPage() {
       setMovingLineId(lineId);
       setDragStartCoords({ x, y });
       setLineBeingMovedOriginalState({ ...line });
-      // Do not setContextualToolbarPosition(null); here to keep it visible during move
     } else if (!draggingPoint && !movingLineId && activeTool !== 'move') {
       setSelectedLineId(lineId);
       const line = lines.find(l => l.id === lineId);
@@ -897,7 +925,5 @@ export default function AnnotationPage() {
     </div>
   );
 }
-
-    
 
     
