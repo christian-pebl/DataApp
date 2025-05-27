@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { 
   LayoutGrid, Waves, SunMoon, FilePenLine, Edit, 
-  Trash2, Plus, Copy, RotateCcw, Move as MoveIcon, MoveRight // Changed CornerUpRight to MoveRight
+  Trash2, Plus, Copy, RotateCcw, Move as MoveIcon, MoveRight
 } from "lucide-react"; 
 import {
   DropdownMenu,
@@ -40,7 +40,7 @@ interface LineAnnotation {
   y1: number;
   x2: number;
   y2: number;
-  arrowStyle?: 'none' | 'start' | 'end' | 'both';
+  arrowStyle?: 'none' | 'end' | 'both'; // Updated options
   lineStyle?: 'solid' | 'dashed' | 'dotted';
   strokeWidth?: number;
 }
@@ -84,7 +84,8 @@ const LineStyleIcon = ({ style }: { style: 'solid' | 'dashed' | 'dotted' }) => {
   );
 };
 
-const ArrowStyleIcon = ({ style }: { style: 'none' | 'start' | 'end' | 'both' }) => {
+// Updated ArrowStyleIcon for simplified options
+const ArrowStyleIcon = ({ style }: { style: 'none' | 'end' | 'both' }) => {
   return (
     <svg width="24" height="16" viewBox="0 0 24 16" className="mr-2">
       <defs>
@@ -93,13 +94,13 @@ const ArrowStyleIcon = ({ style }: { style: 'none' | 'start' | 'end' | 'both' })
         </marker>
       </defs>
       <line 
-        x1={style === 'start' || style === 'both' ? "7" : "2"} 
+        x1={style === 'both' ? "7" : "2"} // Adjusted for 'start' being removed, 'both' implies markerStart
         y1="8" 
         x2={style === 'end' || style === 'both' ? "17" : "22"} 
         y2="8" 
         stroke="currentColor" 
         strokeWidth="2" 
-        markerStart={(style === 'start' || style === 'both') ? "url(#dropdown-arrowhead)" : undefined}
+        markerStart={(style === 'both') ? "url(#dropdown-arrowhead)" : undefined}
         markerEnd={(style === 'end' || style === 'both') ? "url(#dropdown-arrowhead)" : undefined}
       />
     </svg>
@@ -203,7 +204,7 @@ export default function AnnotationPage() {
       y1: centerY,
       x2: centerX + defaultLineLength / 2,
       y2: centerY,
-      arrowStyle: 'none',
+      arrowStyle: 'none', // Default
       lineStyle: 'solid',
       strokeWidth: DEFAULT_STROKE_WIDTH,
     };
@@ -231,6 +232,7 @@ export default function AnnotationPage() {
     let x = clientX - rect.left;
     let y = clientY - rect.top;
 
+    // Clamp coordinates to stay within SVG bounds
     x = Math.max(0, Math.min(x, svgOverlayRef.current.clientWidth));
     y = Math.max(0, Math.min(y, svgOverlayRef.current.clientHeight));
 
@@ -255,7 +257,10 @@ export default function AnnotationPage() {
       if (line) {
           const midX = (line.x1 + line.x2) / 2;
           const midY = (line.y1 + line.y2) / 2;
-          setContextualToolbarPosition({ x: midX, y: midY - 30 }); 
+          // Ensure toolbar position is within bounds
+          const toolbarX = Math.max(30, Math.min(midX, (svgOverlayRef.current?.clientWidth || midX) - 30));
+          const toolbarY = Math.max(30, Math.min(midY - 30, (svgOverlayRef.current?.clientHeight || midY) - 30));
+          setContextualToolbarPosition({ x: toolbarX, y: toolbarY }); 
       }
       setDraggingPoint(null);
     }
@@ -287,13 +292,15 @@ export default function AnnotationPage() {
       if (line) {
           const midX = (line.x1 + line.x2) / 2;
           const midY = (line.y1 + line.y2) / 2;
-          setContextualToolbarPosition({ x: midX, y: midY - 30 });
+          const toolbarX = Math.max(30, Math.min(midX, (svgOverlayRef.current?.clientWidth || midX) - 30));
+          const toolbarY = Math.max(30, Math.min(midY - 30, (svgOverlayRef.current?.clientHeight || midY) - 30));
+          setContextualToolbarPosition({ x: toolbarX, y: toolbarY });
       }
     }
   };
   
 
-  const handleArrowStyleChange = (style: 'none' | 'start' | 'end' | 'both') => {
+  const handleArrowStyleChange = (style: 'none' | 'end' | 'both') => {
     if (selectedLineId && !draggingPoint) {
       setLines(prevLines =>
         prevLines.map(line =>
@@ -346,7 +353,12 @@ export default function AnnotationPage() {
         };
         setLines(prevLines => [...prevLines, newLine]);
         setSelectedLineId(newLine.id); 
-        setContextualToolbarPosition({x: (newLine.x1 + newLine.x2) / 2, y: (newLine.y1 + newLine.y2) / 2 - 30});
+        // Ensure toolbar position is within bounds for the new line
+        const midX = (newLine.x1 + newLine.x2) / 2;
+        const midY = (newLine.y1 + newLine.y2) / 2;
+        const toolbarX = Math.max(30, Math.min(midX, (svgOverlayRef.current?.clientWidth || midX) - 30));
+        const toolbarY = Math.max(30, Math.min(midY - 30, (svgOverlayRef.current?.clientHeight || midY) - 30));
+        setContextualToolbarPosition({x: toolbarX, y: toolbarY});
       }
     }
   };
@@ -493,24 +505,21 @@ export default function AnnotationPage() {
                         </TooltipTrigger>
                         <TooltipContent><p>Arrow Style</p></TooltipContent>
                     </Tooltip>
-                    <DropdownMenuContent className="w-56"> {/* Increased width for icons */}
+                    <DropdownMenuContent className="w-56">
                         <DropdownMenuLabel>Arrow Style</DropdownMenuLabel>
                         <DropdownMenuSeparatorShadcn />
                         <DropdownMenuRadioGroup
                             value={selectedLine?.arrowStyle || 'none'}
-                            onValueChange={(value) => handleArrowStyleChange(value as 'none' | 'start' | 'end' | 'both')}
+                            onValueChange={(value) => handleArrowStyleChange(value as 'none' | 'end' | 'both')}
                         >
                             <DropdownMenuRadioItem value="none">
                                 <div className="flex items-center"><ArrowStyleIcon style="none" /><span>No Arrowhead</span></div>
                             </DropdownMenuRadioItem>
                             <DropdownMenuRadioItem value="end">
-                                <div className="flex items-center"><ArrowStyleIcon style="end" /><span>Arrow at End</span></div>
-                            </DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem value="start">
-                                <div className="flex items-center"><ArrowStyleIcon style="start" /><span>Arrow at Start</span></div>
+                                <div className="flex items-center"><ArrowStyleIcon style="end" /><span>Arrowhead on one side</span></div>
                             </DropdownMenuRadioItem>
                             <DropdownMenuRadioItem value="both">
-                                <div className="flex items-center"><ArrowStyleIcon style="both" /><span>Arrows at Both Ends</span></div>
+                                <div className="flex items-center"><ArrowStyleIcon style="both" /><span>Arrowhead on both sides</span></div>
                             </DropdownMenuRadioItem>
                         </DropdownMenuRadioGroup>
                     </DropdownMenuContent>
@@ -536,7 +545,7 @@ export default function AnnotationPage() {
                       </TooltipTrigger>
                       <TooltipContent><p>Line Style & Thickness</p></TooltipContent>
                     </Tooltip>
-                    <DropdownMenuContent className="w-56"> {/* Increased width for icons */}
+                    <DropdownMenuContent className="w-56">
                       <DropdownMenuLabel>Line Style</DropdownMenuLabel>
                       <DropdownMenuSeparatorShadcn />
                       <DropdownMenuRadioGroup 
@@ -682,7 +691,7 @@ export default function AnnotationPage() {
                           x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
                           stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
                           strokeWidth={line.strokeWidth || DEFAULT_STROKE_WIDTH} 
-                          markerStart={line.arrowStyle === 'start' || line.arrowStyle === 'both' ? "url(#arrowhead)" : undefined}
+                          markerStart={line.arrowStyle === 'both' ? "url(#arrowhead)" : undefined}
                           markerEnd={line.arrowStyle === 'end' || line.arrowStyle === 'both' ? "url(#arrowhead)" : undefined}
                           strokeDasharray={getStrokeDasharray(line.lineStyle)}
                           style={{ pointerEvents: 'none' }} 
