@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { 
   LayoutGrid, Waves, SunMoon, FilePenLine, Edit, 
-  Trash2, Plus, Copy, Move as MoveIcon, ArrowUpRight, Spline, Ban
+  Trash2, Plus, Copy, Move as MoveIcon, ArrowUpRight, Spline, Ban, MoveRight
 } from "lucide-react"; 
 import {
   DropdownMenu,
@@ -270,7 +270,7 @@ export default function AnnotationPage() {
     setActiveTool(null);
     setDraggingPoint({ lineId, pointType });
     setSelectedLineId(lineId); 
-    updateContextualToolbarPos(lines.find(l => l.id === lineId)); // Update toolbar position during drag start
+    // Toolbar position will be updated continuously during drag by handleInteractionMove
   };
 
   const handleInteractionMove = useCallback((event: MouseEvent | TouchEvent) => {
@@ -326,10 +326,10 @@ export default function AnnotationPage() {
     }
     if (draggingPoint) setDraggingPoint(null);
     if (movingLineId) {
+      // For line move, keep the move tool active unless user clicks elsewhere
       setMovingLineId(null);
       setDragStartCoords(null);
       setLineBeingMovedOriginalState(null);
-      // setActiveTool(null); // Keep move tool active if it was
     }
   }, [draggingPoint, movingLineId, lines, updateContextualToolbarPos]);
 
@@ -352,26 +352,20 @@ export default function AnnotationPage() {
   
   const handleSelectLine = (lineId: string, event: React.MouseEvent | React.TouchEvent) => {
     event.stopPropagation(); 
-    if (!draggingPoint && !movingLineId && activeTool !== 'move') { 
-      setSelectedLineId(lineId); 
-      setActiveTool(null); // Deactivate any active tool (like 'move') when selecting a different line
-      const line = lines.find(l => l.id === lineId);
-      updateContextualToolbarPos(line);
-    } else if (activeTool === 'move' && selectedLineId === lineId) {
-      // If move tool is active for this line, do nothing on selection click (mousedown will handle move)
-    } else if (activeTool === 'move' && selectedLineId !== lineId) {
-      // If move tool is active for another line, select this new line and deactivate move tool
-      setSelectedLineId(lineId);
-      setActiveTool(null);
-      const line = lines.find(l => l.id === lineId);
-      updateContextualToolbarPos(line);
+    if (activeTool === 'move' && selectedLineId === lineId) {
+      // If move tool is active for this line, do nothing on selection click (mousedown will handle move initiation)
+      return;
     }
+    setSelectedLineId(lineId); 
+    setActiveTool(null); // Deactivate any active tool (like 'move') when selecting a line directly
+    const line = lines.find(l => l.id === lineId);
+    updateContextualToolbarPos(line);
   };
 
   const handleLineHitboxMouseDown = (lineId: string, event: React.MouseEvent | React.TouchEvent) => {
     event.stopPropagation();
     if (activeTool === 'move' && selectedLineId === lineId) {
-      if (!svgOverlayRef.current) return;
+      if (!svgOverlayRef.current || draggingPoint) return; // Don't start move if already dragging a point
       const line = lines.find(l => l.id === lineId);
       if (!line) return;
 
@@ -384,11 +378,8 @@ export default function AnnotationPage() {
       setDragStartCoords({ x, y });
       setLineBeingMovedOriginalState({ ...line });
       // Contextual toolbar will be updated during move by handleInteractionMove
-    } else if (!draggingPoint && !movingLineId && activeTool !== 'move') {
-      setSelectedLineId(lineId);
-      setActiveTool(null); // Ensure move tool is off if just selecting
-      const line = lines.find(l => l.id === lineId);
-      updateContextualToolbarPos(line);
+    } else if (!draggingPoint && !movingLineId) { // If not already dragging point or line, and move tool isn't active for this line
+      handleSelectLine(lineId, event); // This will select the line and update toolbar
     }
   };
   
@@ -454,11 +445,12 @@ export default function AnnotationPage() {
   };
 
   const handleToggleMoveTool = () => {
-    if (!selectedLineId || draggingPoint || movingLineId) return;
+    if (!selectedLineId || draggingPoint || movingLineId) return; // Don't toggle move tool if currently dragging
+    
     if (activeTool === 'move') {
-      setActiveTool(null);
+      setActiveTool(null); // Deactivate move tool
     } else {
-      setActiveTool('move');
+      setActiveTool('move'); // Activate move tool for the currently selected line
     }
   };
 
@@ -472,7 +464,8 @@ export default function AnnotationPage() {
       return false; 
     }
     // For copy and delete, disable if move tool is active for the current line
-    return activeTool === 'move';
+    // but not if the line is currently being moved (movingLineId is set)
+    return activeTool === 'move' && !movingLineId;
   };
 
 
@@ -572,7 +565,7 @@ export default function AnnotationPage() {
                 Annotation Demo - Weekly Temperature
               </CardTitle>
               <CardDescription className="text-xs">
-                Toggle overlay to annotate. Click "+ Line" to add lines. Click lines to select & modify. Drag endpoints to resize.
+                Toggle overlay to annotate. Click "+ Line" to add lines. Click lines to select & modify. Drag endpoints to resize. Use move tool for whole line.
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
@@ -706,7 +699,6 @@ export default function AnnotationPage() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                   
-                  {/* Delete button moved to contextual toolbar */}
                 </div>
               </TooltipProvider>
             )}
@@ -725,7 +717,7 @@ export default function AnnotationPage() {
                       <Button 
                         variant="outline" 
                         size="icon" 
-                        className={cn("h-7 w-7", activeTool === 'move' && selectedLineId === movingLineId && 'bg-primary/20', activeTool === 'move' && selectedLineId !== movingLineId && selectedLineId && 'bg-accent/20' )} 
+                        className={cn("h-7 w-7", activeTool === 'move' && 'bg-accent/20' )} 
                         onClick={handleToggleMoveTool}
                         disabled={isContextualButtonDisabled('move')}
                       >
@@ -767,7 +759,7 @@ export default function AnnotationPage() {
             )}
 
             <div className="relative" ref={chartAreaRef}>
-              <div className={cn(isOverlayActive && "opacity-30 transition-opacity", (isOverlayActive && (draggingPoint || movingLineId || activeTool)) && "pointer-events-none")}>
+              <div className={cn(isOverlayActive && "opacity-30 transition-opacity", (isOverlayActive && (draggingPoint || movingLineId || activeTool ==='move')) && "pointer-events-none")}>
                 <ChartDisplay
                   data={dummyData}
                   plottableSeries={plottableSeries}
@@ -786,7 +778,7 @@ export default function AnnotationPage() {
                     className="absolute top-0 left-0 w-full h-full z-10" 
                     onClick={handleSvgBackgroundClick}
                     onTouchStart={handleSvgBackgroundClick}
-                    onMouseDown={(e) => {
+                    onMouseDown={(e) => { // Allow mousedown on SVG to initiate move if move tool is active for a line
                       if (activeTool === 'move' && selectedLineId && !draggingPoint) {
                         handleLineHitboxMouseDown(selectedLineId, e);
                       }
@@ -834,7 +826,7 @@ export default function AnnotationPage() {
                           x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
                           stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
                           strokeWidth={line.strokeWidth || DEFAULT_STROKE_WIDTH} 
-                          markerStart={(line.arrowStyle === 'start' || line.arrowStyle === 'both') ? "url(#arrowhead)" : undefined}
+                          markerStart={(line.arrowStyle === 'both') ? "url(#arrowhead)" : undefined}
                           markerEnd={(line.arrowStyle === 'end' || line.arrowStyle === 'both') ? "url(#arrowhead)" : undefined}
                           strokeDasharray={getStrokeDasharray(line.lineStyle)}
                           style={{ pointerEvents: 'none' }} 
@@ -891,5 +883,7 @@ export default function AnnotationPage() {
     </div>
   );
 }
+
+    
 
     
