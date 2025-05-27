@@ -71,9 +71,10 @@ export default function AnnotationPage() {
   useEffect(() => {
     const generatedData = generateDummyData();
     setDummyData(generatedData);
+    // Set an initial brush range if data is loaded, e.g., first 24 hours
     if (generatedData.length > 0) {
         setBrushStartIndex(0);
-        setBrushEndIndex(Math.min(23, generatedData.length - 1)); 
+        setBrushEndIndex(Math.min(23, generatedData.length - 1)); // Ensure endIndex doesn't exceed data length
     }
   }, []);
 
@@ -124,8 +125,10 @@ export default function AnnotationPage() {
 
   const handleAddAnnotation = () => {
     if (currentAnnotationText.trim() === "" || brushStartIndex === undefined || brushEndIndex === undefined || brushStartIndex >= brushEndIndex) {
+      // Potentially add a toast message here for invalid input
       return;
     }
+    // Ensure brush indices are within bounds of dummyData
     if (brushStartIndex < 0 || brushEndIndex >= dummyData.length) return;
 
     const newAnnotation: Annotation = {
@@ -148,12 +151,12 @@ export default function AnnotationPage() {
 
   const chartDescriptionText = useMemo(() => {
     if (!isAnnotationModeActive) {
-      return "Enable annotation mode to add notes.";
+      return "Enable annotation mode to add notes to selected time ranges.";
     }
     if (isRangeSelectedForAnnotation) {
-      return "Range selected. Enter your annotation in the card below.";
+      return "Range selected. Enter your annotation text in the 'Add Annotation' card that appears below this chart.";
     }
-    return "Select a range on the chart to annotate.";
+    return "Annotation mode is active. Select a range on the chart using the slider to begin annotating.";
   }, [isAnnotationModeActive, isRangeSelectedForAnnotation]);
 
   return (
@@ -230,7 +233,7 @@ export default function AnnotationPage() {
               <Label htmlFor="annotation-mode-switch" className="text-xs">Annotation Mode</Label>
             </div>
           </CardHeader>
-          <CardContent className="p-2 pt-2">
+          <CardContent className="p-2 pt-2"> {/* Reduced padding a bit */}
             <ChartDisplay
               data={dummyData}
               plottableSeries={plottableSeries}
@@ -246,11 +249,11 @@ export default function AnnotationPage() {
         </Card>
 
         {isAnnotationModeActive && isRangeSelectedForAnnotation && (
-          <Card>
+          <Card className="border-primary shadow-lg"> {/* Added border and shadow for prominence */}
             <CardHeader className="pb-2 pt-3">
               <CardTitle className="text-base flex items-center gap-2">
                   <Lightbulb className="h-4 w-4 text-primary" />
-                  Add Annotation
+                  Add Annotation for Selected Range
               </CardTitle>
               <CardDescription className="text-xs">
                   {`Selected range: ${dummyData[brushStartIndex as number]?.time ? format(parseISO(dummyData[brushStartIndex as number]?.time), 'MMM dd, HH:mm') : ''} to ${dummyData[brushEndIndex as number]?.time ? format(parseISO(dummyData[brushEndIndex as number]?.time), 'MMM dd, HH:mm') : ''}`}
@@ -263,12 +266,12 @@ export default function AnnotationPage() {
                   placeholder="Enter annotation text..."
                   value={currentAnnotationText}
                   onChange={(e) => setCurrentAnnotationText(e.target.value)}
-                  disabled={!isRangeSelectedForAnnotation}
+                  disabled={!isRangeSelectedForAnnotation} // Should be always enabled if this card is visible
                   className="text-sm"
                 />
                 <Button 
                   onClick={handleAddAnnotation} 
-                  disabled={!isRangeSelectedForAnnotation || currentAnnotationText.trim() === ""}
+                  disabled={currentAnnotationText.trim() === ""} // Only disable if text is empty
                   size="sm"
                   className="text-xs"
                 >
