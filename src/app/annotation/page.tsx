@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { 
   LayoutGrid, Waves, SunMoon, FilePenLine, Edit, 
-  CornerUpRight, Trash2, Spline, Plus, Copy, RotateCcw, Move as MoveIcon 
+  CornerUpRight, Trash2, Spline, Plus, Copy, RotateCcw, Move as MoveIcon, MoveRight 
 } from "lucide-react"; 
 import {
   DropdownMenu,
@@ -194,8 +194,10 @@ export default function AnnotationPage() {
     let x = clientX - rect.left;
     let y = clientY - rect.top;
 
+    // Clamp coordinates to SVG boundaries
     x = Math.max(0, Math.min(x, svgOverlayRef.current.clientWidth));
     y = Math.max(0, Math.min(y, svgOverlayRef.current.clientHeight));
+
 
     setLines(prevLines =>
       prevLines.map(line => {
@@ -243,8 +245,8 @@ export default function AnnotationPage() {
   
   const handleSelectLine = (lineId: string, event: React.MouseEvent | React.TouchEvent) => {
     event.stopPropagation(); 
-    if (!draggingPoint) {
-      setSelectedLineId(lineId);
+    if (!draggingPoint) { // Only allow selection if not currently dragging a point
+      setSelectedLineId(lineId); // Select the line even if it's already selected, to ensure toolbar shows
       const line = lines.find(l => l.id === lineId);
       if (line) {
           const midX = (line.x1 + line.x2) / 2;
@@ -253,6 +255,7 @@ export default function AnnotationPage() {
       }
     }
   };
+  
 
   const handleToggleArrow = () => {
     if (selectedLineId && !draggingPoint) {
@@ -435,7 +438,7 @@ export default function AnnotationPage() {
                         onClick={handleToggleArrow}
                         disabled={!selectedLineId || isToolbarButtonDisabled}
                       >
-                        <CornerUpRight className="h-4 w-4" />
+                        <MoveRight className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent><p>Toggle Arrowhead</p></TooltipContent>
@@ -640,5 +643,7 @@ export default function AnnotationPage() {
     </div>
   );
 }
+
+    
 
     
