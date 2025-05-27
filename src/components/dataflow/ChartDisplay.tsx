@@ -37,7 +37,7 @@ interface ChartDisplayProps {
   plottableSeries: string[];
   timeAxisLabel?: string;
   plotTitle?: string; 
-  chartRenderHeight?: number;
+  chartRenderHeight?: number; 
   brushStartIndex?: number;
   brushEndIndex?: number;
   onBrushChange?: (newIndex: { startIndex?: number; endIndex?: number }) => void;
@@ -45,7 +45,8 @@ interface ChartDisplayProps {
   activeHighlightRange?: { startIndex: number; endIndex: number } | null;
 }
 
-const INTERNAL_DEFAULT_CHART_HEIGHT = 278; 
+const INTERNAL_DEFAULT_CHART_HEIGHT = 278; // Base height for ChartDisplay
+
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
 
 const formatDateTick = (timeValue: string | number): string => {
@@ -76,20 +77,10 @@ export function ChartDisplay({
   yAxisConfigs = [],
   activeHighlightRange,
 }: ChartDisplayProps) {
+  
   const chartHeightToUse = React.useMemo(() => {
     return chartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
   }, [chartRenderHeight]);
-
-  const visibleChartAreaHeight = React.useMemo(() => {
-    return chartHeightToUse * 0.85; 
-  }, [chartHeightToUse]);
-
-  const wrapperStyle: React.CSSProperties = React.useMemo(() => ({
-    height: `${visibleChartAreaHeight}px`,
-    width: '100%',
-    overflow: 'hidden',
-  }), [visibleChartAreaHeight]);
-
 
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) {
@@ -119,36 +110,43 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
 
+  const highlightedData = React.useMemo(() => {
+    if (activeHighlightRange && chartData.length > 0 && plottableSeries.length > 0) {
+      const { startIndex, endIndex } = activeHighlightRange;
+      const validStartIndex = Math.max(0, Math.min(startIndex, chartData.length - 1));
+      const validEndIndex = Math.max(0, Math.min(endIndex, chartData.length - 1));
+      
+      const seriesKeyToHighlight = plottableSeries[0]; // For AnnotationPage, plottableSeries is ['temperature']
+
+      if (validStartIndex <= validEndIndex && seriesKeyToHighlight) {
+        return chartData.map((point, index) => {
+          const newPoint: DataPoint = { time: point.time };
+          if (index >= validStartIndex && index <= validEndIndex) {
+            newPoint[seriesKeyToHighlight] = point[seriesKeyToHighlight];
+          } else {
+            newPoint[seriesKeyToHighlight] = null; // Set to null outside range
+          }
+          // Ensure other plottable series are null if this is the highlight data
+          plottableSeries.forEach(ps => {
+            if (ps !== seriesKeyToHighlight) {
+              newPoint[ps] = null;
+            }
+          });
+          return newPoint;
+        });
+      }
+    }
+    return null; 
+  }, [activeHighlightRange, chartData, plottableSeries]);
+
   const yAxisLabelText = React.useMemo(() => {
     return yAxisConfigs.length === 1 && plottableSeries.length === 1
     ? `${plottableSeries[0]}${yAxisConfigs[0].unit ? ` (${yAxisConfigs[0].unit})` : ''}`
     : "Value";
   }, [yAxisConfigs, plottableSeries]);
   
-  const highlightedData = React.useMemo(() => {
-    if (activeHighlightRange && chartData.length > 0 && plottableSeries.length > 0) {
-      const { startIndex, endIndex } = activeHighlightRange;
-      const validStartIndex = Math.max(0, Math.min(startIndex, chartData.length - 1));
-      const validEndIndex = Math.max(0, Math.min(endIndex, chartData.length - 1));
-      const seriesKeyToHighlight = plottableSeries[0]; // Assuming single series for highlighter for now
-
-      if (validStartIndex <= validEndIndex) {
-        return chartData.map((point, index) => {
-          if (index >= validStartIndex && index <= validEndIndex) {
-            return point; 
-          }
-          // Create a point with nulls for the plottable series outside the highlighted range
-          const nullifiedPoint: DataPoint = { time: point.time };
-          (nullifiedPoint as any)[seriesKeyToHighlight] = null;
-          return nullifiedPoint;
-        });
-      }
-    }
-    return null;
-  }, [activeHighlightRange, chartData, plottableSeries]);
-
   const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
-     <div style={{ height: `${visibleChartAreaHeight}px`, width: '100%' }} className="flex flex-col items-center justify-center p-2">
+     <div style={{ height: `${chartHeightToUse}px`, width: '100%' }} className="flex flex-col items-center justify-center p-2">
       <div className="text-center text-muted-foreground">
         {icon}
         <p className="text-sm mt-2">{primaryText}</p>
@@ -180,149 +178,150 @@ export function ChartDisplay({
   };
 
   return (
-    <div style={wrapperStyle} className="flex-1 min-h-0">
-      <ResponsiveContainer width="100%" height={chartHeightToUse}>
-        <LineChart
-          data={chartData}
-          margin={{
-            top: 5,
-            right: yAxisConfigs.filter(c => c.orientation === 'right').length > 0 ? yAxisConfigs.filter(c => c.orientation === 'right').length * 40 + 5 : 20,
-            left: yAxisConfigs.filter(c => c.orientation === 'left').length > 0 ? yAxisConfigs.filter(c => c.orientation === 'left').length * 40 - 15 : 5,
-            bottom: 78, 
-          }}
+    <ResponsiveContainer width="100%" height={chartHeightToUse}>
+      <LineChart
+        data={chartData}
+        margin={{
+          top: 5,
+          right: yAxisConfigs.filter(c => c.orientation === 'right').length > 0 ? yAxisConfigs.filter(c => c.orientation === 'right').length * 40 + 5 : 20,
+          left: yAxisConfigs.filter(c => c.orientation === 'left').length > 0 ? yAxisConfigs.filter(c => c.orientation === 'left').length * 40 -15 : 5,
+          bottom: 110, 
+        }}
+      >
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+        <XAxis
+          dataKey="time"
+          stroke="hsl(var(--foreground))"
+          angle={-45}
+          textAnchor="end"
+          height={60} 
+          interval="preserveStartEnd"
+          tickFormatter={formatDateTick}
+          tick={{ fontSize: '0.6rem' }}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-          <XAxis
-            dataKey="time"
-            stroke="hsl(var(--foreground))"
-            angle={-45}
-            textAnchor="end"
-            height={50}
-            interval="preserveStartEnd"
-            tickFormatter={formatDateTick}
+          <RechartsLabel
+            value={timeAxisLabel || "Time (Adjust time window with slider)"}
+            offset={10} 
+            position="insideBottom"
+            fill="hsl(var(--muted-foreground))"
+            dy={35} 
+            style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
+          />
+        </XAxis>
+
+        {yAxisConfigs.length > 0 ? yAxisConfigs.map((config, index) => (
+          <YAxis
+            key={config.id}
+            yAxisId={config.id}
+            orientation={config.orientation}
+            stroke={`hsl(var(${config.color}))`}
+            domain={['auto', 'auto']}
             tick={{ fontSize: '0.6rem' }}
-          >
-            <RechartsLabel
-              value={timeAxisLabel ? `${timeAxisLabel}` : "Time"}
-              offset={20}
-              position="insideBottom"
-              fill="hsl(var(--muted-foreground))"
-              dy={28}
-              style={{ fontSize: '0.7rem', textAnchor: 'middle' }}
-            />
-          </XAxis>
-
-          {yAxisConfigs.length > 0 ? yAxisConfigs.map((config, index) => (
-            <YAxis
-              key={config.id}
-              yAxisId={config.id}
-              orientation={config.orientation}
-              stroke={`hsl(var(${config.color}))`}
-              domain={['auto', 'auto']}
-              tick={{ fontSize: '0.6rem' }}
-              tickFormatter={(value) => `${typeof value === 'number' ? value.toFixed(1) : value}${config.unit || ''}`}
-              label={{
-                value: config.label,
-                angle: -90,
-                position: config.orientation === 'left' ? 'insideLeft' : 'insideRight',
-                style: { textAnchor: 'middle', fontSize: '0.7rem', fill: `hsl(var(${config.color}))` },
-                dx: config.orientation === 'left' ? -5 - yAxisOffset(index, 'left') : 5 + yAxisOffset(index, 'right'),
-                dy: 0,
-              }}
-              width={40}
-            />
-          )) : (
-            <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']} tick={{ fontSize: '0.6rem' }}>
-              <RechartsLabel
-                value={yAxisLabelText}
-                angle={-90}
-                position="insideLeft"
-                style={{ textAnchor: 'middle', fontSize: '0.7rem' }}
-                fill="hsl(var(--foreground))"
-                dx={-5}
-              />
-            </YAxis>
-          )}
-
-          <RechartsTooltip
-            contentStyle={{
-              backgroundColor: "hsl(var(--background))",
-              borderColor: "hsl(var(--border))",
-              color: "hsl(var(--foreground))",
-              fontSize: '0.7rem',
+            tickFormatter={(value) => `${typeof value === 'number' ? value.toFixed(1) : value}${config.unit || ''}`}
+            label={{
+              value: config.label,
+              angle: -90,
+              position: config.orientation === 'left' ? 'insideLeft' : 'insideRight',
+              style: { textAnchor: 'middle', fontSize: '0.7rem', fill: `hsl(var(${config.color}))` },
+              dx: config.orientation === 'left' ? -5 - yAxisOffset(index, 'left') : 5 + yAxisOffset(index, 'right'),
+              dy: 0,
             }}
-            itemStyle={{ color: "hsl(var(--foreground))" }}
-            cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
+            width={40}
           />
-          <Legend
-            verticalAlign="bottom"
-            wrapperStyle={{ paddingTop: '10px', fontSize: '0.7rem' }} 
-          />
-          
-          {plottableSeries.map((seriesName, index) => {
-            const yAxisConfigForSeries = yAxisConfigs.find(c => c.dataKey === seriesName);
-            const mainLineColor = `hsl(var(${yAxisConfigForSeries ? yAxisConfigForSeries.color : chartColors[index % chartColors.length]}))`;
+        )) : (
+          <YAxis stroke="hsl(var(--foreground))" domain={['auto', 'auto']} tick={{ fontSize: '0.6rem' }}>
+            <RechartsLabel
+              value={yAxisLabelText}
+              angle={-90}
+              position="insideLeft"
+              style={{ textAnchor: 'middle', fontSize: '0.7rem' }}
+              fill="hsl(var(--foreground))"
+              dx={-5}
+            />
+          </YAxis>
+        )}
 
-            return (
-              <React.Fragment key={seriesName}>
-                {activeHighlightRange && highlightedData ? (
-                  <>
-                    {/* Background greyed-out line */}
-                    <Line
-                      type="monotone"
-                      dataKey={seriesName}
-                      stroke="hsl(var(--muted-foreground))"
-                      strokeOpacity={0.3}
-                      strokeWidth={1.5}
-                      dot={false}
-                      name={yAxisConfigForSeries ? yAxisConfigForSeries.label : seriesName.charAt(0).toUpperCase() + seriesName.slice(1)}
-                      connectNulls={true}
-                      yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
-                      legendType="none" 
-                    />
-                    {/* Highlighted segment */}
-                    <Line
-                      data={highlightedData} 
-                      type="monotone"
-                      dataKey={seriesName}
-                      stroke={mainLineColor}
-                      strokeWidth={2} 
-                      dot={false}
-                      name={`${yAxisConfigForSeries ? yAxisConfigForSeries.label : seriesName.charAt(0).toUpperCase() + seriesName.slice(1)} (Highlighted)`}
-                      connectNulls={true} 
-                      yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
-                    />
-                  </>
-                ) : (
+        <RechartsTooltip
+          contentStyle={{
+            backgroundColor: "hsl(var(--background))",
+            borderColor: "hsl(var(--border))",
+            color: "hsl(var(--foreground))",
+            fontSize: '0.7rem',
+          } as CSSProperties}
+          itemStyle={{ color: "hsl(var(--foreground))" } as CSSProperties}
+          cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
+        />
+        <Legend
+          verticalAlign="bottom"
+          wrapperStyle={{ paddingTop: '20px', fontSize: '0.7rem' }} 
+        />
+        
+        {plottableSeries.map((seriesName, index) => {
+          const yAxisConfigForSeries = yAxisConfigs.find(c => c.dataKey === seriesName);
+          const mainLineColor = `hsl(var(${yAxisConfigForSeries ? yAxisConfigForSeries.color : chartColors[index % chartColors.length]}))`;
+          const seriesDisplayName = yAxisConfigForSeries ? yAxisConfigForSeries.label : seriesName.charAt(0).toUpperCase() + seriesName.slice(1);
+
+          return (
+            <React.Fragment key={seriesName}>
+              {activeHighlightRange && highlightedData && seriesName === plottableSeries[0] ? (
+                <>
+                  {/* Background greyed-out line */}
                   <Line
                     type="monotone"
-                    dataKey={seriesName}
-                    stroke={mainLineColor}
+                    dataKey={seriesName} // This uses chartData by default from LineChart
+                    stroke="hsl(var(--muted-foreground))"
+                    strokeOpacity={0.3}
                     strokeWidth={1.5}
                     dot={false}
-                    name={yAxisConfigForSeries ? yAxisConfigForSeries.label : seriesName.charAt(0).toUpperCase() + seriesName.slice(1)}
                     connectNulls={true}
                     yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
+                    legendType="none" 
+                    isAnimationActive={false}
                   />
-                )}
-              </React.Fragment>
-            );
-          })}
-          <Brush
-            dataKey="time"
-            height={20} 
-            stroke="hsl(var(--primary))"
-            fill="transparent"
-            tickFormatter={formatDateTick}
-            travellerWidth={8}
-            startIndex={brushStartIndex}
-            endIndex={brushEndIndex}
-            onChange={onBrushChange}
-            y={10} 
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
+                  {/* Highlighted segment */}
+                  <Line
+                    data={highlightedData} 
+                    type="monotone"
+                    dataKey={seriesName} 
+                    stroke={mainLineColor}
+                    strokeWidth={2} 
+                    dot={false}
+                    name={`${seriesDisplayName} (Highlighted)`}
+                    connectNulls={true} 
+                    yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
+                    isAnimationActive={false}
+                  />
+                </>
+              ) : (
+                <Line
+                  type="monotone"
+                  dataKey={seriesName}
+                  stroke={mainLineColor}
+                  strokeWidth={1.5}
+                  dot={false}
+                  name={seriesDisplayName}
+                  connectNulls={true}
+                  yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
+                  isAnimationActive={false}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
+        <Brush
+          dataKey="time"
+          height={20} 
+          stroke="hsl(var(--primary))"
+          fill="transparent"
+          tickFormatter={formatDateTick}
+          travellerWidth={8}
+          startIndex={brushStartIndex}
+          endIndex={brushEndIndex}
+          onChange={onBrushChange}
+        />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
 
+    
