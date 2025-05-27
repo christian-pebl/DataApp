@@ -11,7 +11,7 @@ import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDispl
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { LayoutGrid, Waves, SunMoon, FilePenLine, Edit, Ban, PenLine, Minus, CornerUpRight, Type, Trash2 } from "lucide-react"; // Corrected to CornerUpRight, added Trash2
+import { LayoutGrid, Waves, SunMoon, FilePenLine, Edit, Ban, PenLine, Minus, CornerUpRight, Type, Trash2, MousePointerSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface DummyDataPoint {
@@ -65,13 +65,13 @@ export default function AnnotationPage() {
 
   const [isOverlayActive, setIsOverlayActive] = useState(false);
 
-  // State for line drawing & annotations
   const [drawingMode, setDrawingMode] = useState<'line' | null>(null);
   const [lineStartPoint, setLineStartPoint] = useState<{ x: number; y: number } | null>(null);
   const [lines, setLines] = useState<LineAnnotation[]>([]);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const svgOverlayRef = useRef<SVGSVGElement>(null);
   const chartAreaRef = useRef<HTMLDivElement>(null);
+  const [draggingPoint, setDraggingPoint] = useState<{ lineId: string; pointType: 'start' | 'end' } | null>(null);
 
 
   useEffect(() => {
@@ -129,7 +129,7 @@ export default function AnnotationPage() {
   };
 
   const handleSvgClick = (event: React.MouseEvent<SVGSVGElement>) => {
-    if (drawingMode !== 'line' || !svgOverlayRef.current) return;
+    if (drawingMode !== 'line' || !svgOverlayRef.current || draggingPoint) return;
 
     const rect = svgOverlayRef.current.getBoundingClientRect();
     const x = event.clientX - rect.left;
@@ -150,32 +150,67 @@ export default function AnnotationPage() {
           isDashed: false 
         }
       ]);
-      setLineStartPoint(null); 
-      // Keep drawingMode as 'line' to allow drawing multiple lines
+      setLineStartPoint(null);
     }
   };
 
+  const handleDraggablePointMouseDown = (lineId: string, pointType: 'start' | 'end', event: React.MouseEvent) => {
+    if (drawingMode) return; // Don't allow dragging if in drawing mode
+    event.stopPropagation();
+    setDraggingPoint({ lineId, pointType });
+    setSelectedLineId(lineId); // Ensure the line being dragged is selected
+  };
+
+  const handleSvgMouseMove = (event: React.MouseEvent<SVGSVGElement>) => {
+    if (!draggingPoint || !svgOverlayRef.current) return;
+
+    const rect = svgOverlayRef.current.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    setLines(prevLines =>
+      prevLines.map(line => {
+        if (line.id === draggingPoint.lineId) {
+          if (draggingPoint.pointType === 'start') {
+            return { ...line, x1: x, y1: y };
+          } else {
+            return { ...line, x2: x, y2: y };
+          }
+        }
+        return line;
+      })
+    );
+  };
+
+  const handleSvgMouseUp = () => {
+    if (draggingPoint) {
+      setDraggingPoint(null);
+    }
+  };
+
+
   const toggleDrawingMode = (mode: 'line' | null) => {
-    if (drawingMode === mode) { // If clicking the same mode button
+    if (drawingMode === mode) {
       setDrawingMode(null);
-      setLineStartPoint(null); // Clear any pending line start
-      setSelectedLineId(null); // Deselect line when exiting drawing mode
+      setLineStartPoint(null);
+      setSelectedLineId(null); 
     } else {
       setDrawingMode(mode);
-      setLineStartPoint(null); // Ensure starting fresh for line
-      setSelectedLineId(null); // Deselect any line when entering a new drawing mode
+      setLineStartPoint(null); 
+      setSelectedLineId(null);
+      setDraggingPoint(null); // Ensure not dragging when switching mode
     }
   };
   
   const handleSelectLine = (lineId: string, event: React.MouseEvent) => {
-    event.stopPropagation(); // Prevent triggering SVG click for drawing
-    if (drawingMode === null) { // Only allow selection if not actively drawing
+    event.stopPropagation(); 
+    if (drawingMode === null && !draggingPoint) {
       setSelectedLineId(prevId => prevId === lineId ? null : lineId);
     }
   };
 
   const handleToggleArrow = () => {
-    if (selectedLineId) {
+    if (selectedLineId && !draggingPoint) {
       setLines(prevLines =>
         prevLines.map(line =>
           line.id === selectedLineId ? { ...line, hasArrowEnd: !line.hasArrowEnd } : line
@@ -185,7 +220,7 @@ export default function AnnotationPage() {
   };
 
   const handleToggleDashed = () => {
-    if (selectedLineId) {
+    if (selectedLineId && !draggingPoint) {
       setLines(prevLines =>
         prevLines.map(line =>
           line.id === selectedLineId ? { ...line, isDashed: !line.isDashed } : line
@@ -195,13 +230,16 @@ export default function AnnotationPage() {
   };
 
   const handleDeleteSelectedLine = () => {
-    if (selectedLineId) {
+    if (selectedLineId && !draggingPoint) {
       setLines(prevLines => prevLines.filter(line => line.id !== selectedLineId));
       setSelectedLineId(null);
     }
   };
 
   const selectedLine = useMemo(() => lines.find(line => line.id === selectedLineId), [lines, selectedLineId]);
+
+  const isToolbarButtonDisabled = drawingMode !== null || draggingPoint !== null;
+
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -265,7 +303,7 @@ export default function AnnotationPage() {
                 Annotation Demo - Weekly Temperature
               </CardTitle>
               <CardDescription className="text-xs">
-                Toggle overlay to enable annotation tools. Draggable repositioning of lines is a future enhancement.
+                Toggle overlay to annotate. Click line endpoints to reposition.
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
@@ -278,6 +316,7 @@ export default function AnnotationPage() {
                     setDrawingMode(null);
                     setLineStartPoint(null);
                     setSelectedLineId(null);
+                    setDraggingPoint(null);
                   }
                 }}
               />
@@ -295,6 +334,7 @@ export default function AnnotationPage() {
                         size="sm" 
                         className="h-8 px-2" 
                         onClick={() => toggleDrawingMode(drawingMode === 'line' ? null : 'line')}
+                        disabled={draggingPoint !== null}
                       >
                         {drawingMode === 'line' ? 
                           <Ban className="h-4 w-4 mr-1" /> : 
@@ -315,7 +355,7 @@ export default function AnnotationPage() {
                         size="icon"
                         className="h-8 w-8"
                         onClick={handleToggleArrow}
-                        disabled={!selectedLineId || drawingMode !== null}
+                        disabled={!selectedLineId || isToolbarButtonDisabled}
                       >
                         <CornerUpRight className="h-4 w-4" />
                       </Button>
@@ -330,7 +370,7 @@ export default function AnnotationPage() {
                         size="icon"
                         className="h-8 w-8"
                         onClick={handleToggleDashed}
-                        disabled={!selectedLineId || drawingMode !== null}
+                        disabled={!selectedLineId || isToolbarButtonDisabled}
                       >
                         <Minus className="h-4 w-4 transform rotate-90"/> <Minus className="h-4 w-4 transform rotate-90 -ml-2.5"/> {/* Simulate dashed icon */}
                       </Button>
@@ -347,15 +387,13 @@ export default function AnnotationPage() {
                         size="icon"
                         className="h-8 w-8"
                         onClick={handleDeleteSelectedLine}
-                        disabled={!selectedLineId || drawingMode !== null}
+                        disabled={!selectedLineId || isToolbarButtonDisabled}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent><p>Delete Selected Line</p></TooltipContent>
                   </Tooltip>
-                  
-                  {/* Text Box and other tools deferred for simplicity */}
                 </div>
               </TooltipProvider>
             )}
@@ -376,10 +414,13 @@ export default function AnnotationPage() {
               {isOverlayActive && chartAreaRef.current && (
                  <svg
                     ref={svgOverlayRef}
-                    className="absolute top-0 left-0 w-full h-full z-10" 
+                    className="absolute top-0 left-0 w-full h-full z-10 cursor-crosshair" 
                     onClick={handleSvgClick}
+                    onMouseMove={handleSvgMouseMove}
+                    onMouseUp={handleSvgMouseUp}
+                    onMouseLeave={handleSvgMouseUp} // End drag if mouse leaves SVG
                     style={{ 
-                        pointerEvents: drawingMode === 'line' ? 'auto' : (drawingMode === null ? 'auto' : 'none'), // Allow clicks for selection if not drawing
+                        pointerEvents: (drawingMode === 'line' || draggingPoint) ? 'auto' : 'none',
                         width: chartAreaRef.current.clientWidth, 
                         height: chartAreaRef.current.clientHeight, 
                     }}
@@ -398,19 +439,44 @@ export default function AnnotationPage() {
                       </marker>
                     </defs>
                     {lines.map((line) => (
-                      <line
-                        key={line.id}
-                        x1={line.x1}
-                        y1={line.y1}
-                        x2={line.x2}
-                        y2={line.y2}
-                        stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
-                        strokeWidth={selectedLineId === line.id ? "3" : "2"}
-                        onClick={(e) => handleSelectLine(line.id, e)}
-                        className="cursor-pointer"
-                        markerEnd={line.hasArrowEnd ? "url(#arrowhead)" : undefined}
-                        strokeDasharray={line.isDashed ? "5,5" : undefined}
-                      />
+                      <g key={line.id}>
+                        <line
+                          x1={line.x1}
+                          y1={line.y1}
+                          x2={line.x2}
+                          y2={line.y2}
+                          stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
+                          strokeWidth={selectedLineId === line.id ? 3 : 2}
+                          onClick={(e) => handleSelectLine(line.id, e)}
+                          className="cursor-pointer"
+                          style={{ pointerEvents: (drawingMode === 'line' || draggingPoint) ? 'none' : 'auto' }} // Allow line clicks only if not drawing/dragging
+                          markerEnd={line.hasArrowEnd ? "url(#arrowhead)" : undefined}
+                          strokeDasharray={line.isDashed ? "5,5" : undefined}
+                        />
+                        {/* Draggable Handles for selected line */}
+                        {selectedLineId === line.id && !drawingMode && (
+                          <>
+                            <circle
+                              cx={line.x1}
+                              cy={line.y1}
+                              r="5"
+                              fill="hsl(var(--destructive))"
+                              className="cursor-move"
+                              onMouseDown={(e) => handleDraggablePointMouseDown(line.id, 'start', e)}
+                              style={{ pointerEvents: 'auto' }} 
+                            />
+                            <circle
+                              cx={line.x2}
+                              cy={line.y2}
+                              r="5"
+                              fill="hsl(var(--destructive))"
+                              className="cursor-move"
+                              onMouseDown={(e) => handleDraggablePointMouseDown(line.id, 'end', e)}
+                               style={{ pointerEvents: 'auto' }} 
+                            />
+                          </>
+                        )}
+                      </g>
                     ))}
                     {lineStartPoint && drawingMode === 'line' && ( 
                         <circle cx={lineStartPoint.x} cy={lineStartPoint.y} r="3" fill="hsl(var(--primary))" />
@@ -420,7 +486,8 @@ export default function AnnotationPage() {
             </div>
           </CardContent>
         </Card>
-         {isOverlayActive && selectedLineId && <CardDescription className="text-center text-xs mt-2">Line selected. Use toolbar to modify. Draggable repositioning of lines is a future enhancement.</CardDescription>}
+         {isOverlayActive && selectedLineId && !draggingPoint && <CardDescription className="text-center text-xs mt-2">Line selected. Use toolbar to modify or drag endpoints to reposition.</CardDescription>}
+         {isOverlayActive && draggingPoint && <CardDescription className="text-center text-xs mt-2">Dragging line endpoint...</CardDescription>}
       </main>
 
       <footer className="py-3 md:px-4 md:py-0 border-t">
@@ -433,6 +500,6 @@ export default function AnnotationPage() {
     </div>
   );
 }
-
+    
 
     
