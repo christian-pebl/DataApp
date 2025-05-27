@@ -11,7 +11,7 @@ import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDispl
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { LayoutGrid, Waves, SunMoon, FilePenLine, Edit, Ban, PenLine, Minus, CornerUpRight, Type, Trash2, MousePointerSquare } from "lucide-react";
+import { LayoutGrid, Waves, SunMoon, FilePenLine, Edit, Ban, PenLine, Minus, CornerUpRight, Type, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface DummyDataPoint {
@@ -167,14 +167,14 @@ export default function AnnotationPage() {
   const handleDraggablePointInteractionStart = (lineId: string, pointType: 'start' | 'end', event: React.MouseEvent | React.TouchEvent) => {
     if (drawingMode) return; 
     event.stopPropagation();
-    if ('preventDefault' in event) event.preventDefault(); // Prevent default touch actions
+    if ('preventDefault' in event) event.preventDefault(); 
     setDraggingPoint({ lineId, pointType });
     setSelectedLineId(lineId); 
   };
 
   const handleSvgInteractionMove = useCallback((event: React.MouseEvent<SVGSVGElement> | React.TouchEvent<SVGSVGElement>) => {
     if (!draggingPoint || !svgOverlayRef.current) return;
-    if ('preventDefault' in event) event.preventDefault(); // Prevent scrolling during drag
+    if ('preventDefault' in event) event.preventDefault(); 
 
     const { clientX, clientY } = getNormalizedCoordinates(event);
     const rect = svgOverlayRef.current.getBoundingClientRect();
@@ -202,10 +202,7 @@ export default function AnnotationPage() {
   }, [draggingPoint]);
 
 
-  // Attach global move and up listeners for dragging to handle cases where mouse/touch leaves SVG
   useEffect(() => {
-    const currentSvgRef = svgOverlayRef.current; // Capture ref for cleanup
-
     if (draggingPoint) {
       window.addEventListener('mousemove', handleSvgInteractionMove as any);
       window.addEventListener('touchmove', handleSvgInteractionMove as any, { passive: false });
@@ -220,7 +217,6 @@ export default function AnnotationPage() {
       window.removeEventListener('touchend', handleSvgInteractionEnd);
     };
   }, [draggingPoint, handleSvgInteractionMove, handleSvgInteractionEnd]);
-
 
 
   const toggleDrawingMode = (mode: 'line' | null) => {
@@ -432,14 +428,14 @@ export default function AnnotationPage() {
               </TooltipProvider>
             )}
             <div className="relative" ref={chartAreaRef}>
-              <div className={cn(isOverlayActive && "opacity-30 transition-opacity")}>
+              <div className={cn(isOverlayActive && "opacity-30 transition-opacity pointer-events-none")}>
                 <ChartDisplay
                   data={dummyData}
                   plottableSeries={plottableSeries}
                   yAxisConfigs={yAxisConfigs}
                   timeAxisLabel="Time"
                   plotTitle="" 
-                  chartRenderHeight={278}
+                  chartRenderHeight={278 * 0.85} // Adjust height for clipping effect
                   brushStartIndex={brushStartIndex}
                   brushEndIndex={brushEndIndex}
                   onBrushChange={handleBrushChange}
@@ -451,10 +447,9 @@ export default function AnnotationPage() {
                     className="absolute top-0 left-0 w-full h-full z-10" 
                     onClick={handleSvgInteractionStart}
                     onTouchStart={handleSvgInteractionStart}
-                    // MouseMove/TouchMove/MouseUp/TouchEnd are handled globally if draggingPoint is active
                     style={{ 
                         cursor: drawingMode === 'line' ? 'crosshair' : 'default',
-                        pointerEvents: (drawingMode === 'line' || draggingPoint) ? 'auto' : 'none', // Only capture clicks for drawing or during active drag for move
+                        pointerEvents: (drawingMode === 'line' || draggingPoint) ? 'auto' : 'none', 
                         width: chartAreaRef.current.clientWidth, 
                         height: chartAreaRef.current.clientHeight, 
                     }}
@@ -474,50 +469,47 @@ export default function AnnotationPage() {
                     </defs>
                     {lines.map((line) => (
                       <g key={line.id}>
-                        {/* Hitbox for easier selection */}
                         <line
                           x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
                           stroke="transparent"
-                          strokeWidth="20" // Larger stroke width for hitbox
+                          strokeWidth="20" 
                           className="cursor-pointer"
                           onClick={(e) => handleSelectLine(line.id, e)}
                           onTouchStart={(e) => handleSelectLine(line.id, e)}
                           style={{ pointerEvents: (drawingMode === 'line' || draggingPoint) ? 'none' : 'auto' }}
                         />
-                        {/* Visible line */}
                         <line
                           x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
                           stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
                           strokeWidth={selectedLineId === line.id ? 3 : 2}
                           markerEnd={line.hasArrowEnd ? "url(#arrowhead)" : undefined}
                           strokeDasharray={line.isDashed ? "5,5" : undefined}
-                          style={{ pointerEvents: 'none' }} // Visual line doesn't need pointer events
+                          style={{ pointerEvents: 'none' }} 
                         />
-                        {/* Draggable Handles for selected line */}
                         {selectedLineId === line.id && !drawingMode && (
                           <>
                             <circle
-                              cx={line.x1} cy={line.y1} r="8" // Increased radius for better touch
-                              fill="hsl(var(--destructive))" opacity="0.5" // Semi-transparent
+                              cx={line.x1} cy={line.y1} r="8" 
+                              fill="hsl(var(--destructive))" opacity="0.5" 
                               className="cursor-move"
                               onMouseDown={(e) => handleDraggablePointInteractionStart(line.id, 'start', e)}
                               onTouchStart={(e) => handleDraggablePointInteractionStart(line.id, 'start', e)}
                               style={{ pointerEvents: 'auto' }} 
                             />
-                             <circle // Inner visible dot
+                             <circle 
                               cx={line.x1} cy={line.y1} r="4"
                               fill="hsl(var(--destructive))"
                               style={{ pointerEvents: 'none' }}
                             />
                             <circle
-                              cx={line.x2} cy={line.y2} r="8" // Increased radius for better touch
-                              fill="hsl(var(--destructive))" opacity="0.5" // Semi-transparent
+                              cx={line.x2} cy={line.y2} r="8" 
+                              fill="hsl(var(--destructive))" opacity="0.5" 
                               className="cursor-move"
                               onMouseDown={(e) => handleDraggablePointInteractionStart(line.id, 'end', e)}
                               onTouchStart={(e) => handleDraggablePointInteractionStart(line.id, 'end', e)}
                               style={{ pointerEvents: 'auto' }} 
                             />
-                            <circle // Inner visible dot
+                            <circle 
                               cx={line.x2} cy={line.y2} r="4"
                               fill="hsl(var(--destructive))"
                               style={{ pointerEvents: 'none' }}
