@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { 
   LayoutGrid, Waves, SunMoon, FilePenLine, Edit, 
-  CornerUpRight, Trash2, Spline, Plus, Copy, RotateCcw, Move as MoveIcon, MoveRight 
+  Trash2, Plus, Copy, RotateCcw, Move as MoveIcon, MoveRight
 } from "lucide-react"; 
 import {
   DropdownMenu,
@@ -24,6 +24,7 @@ import {
   DropdownMenuSeparator as DropdownMenuSeparatorShadcn,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Slider } from "@/components/ui/slider"; // Import Slider
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
@@ -41,6 +42,7 @@ interface LineAnnotation {
   y2: number;
   hasArrowEnd?: boolean;
   lineStyle?: 'solid' | 'dashed' | 'dotted';
+  strokeWidth?: number; // Added for line thickness
 }
 
 const generateDummyData = (): DummyDataPoint[] => {
@@ -86,6 +88,8 @@ export default function AnnotationPage() {
   const chartAreaRef = useRef<HTMLDivElement>(null);
   const [draggingPoint, setDraggingPoint] = useState<{ lineId: string; pointType: 'start' | 'end' } | null>(null);
   const [contextualToolbarPosition, setContextualToolbarPosition] = useState<{ x: number; y: number } | null>(null);
+
+  const DEFAULT_STROKE_WIDTH = 2;
 
 
   const getNormalizedCoordinates = (event: React.MouseEvent | React.TouchEvent<Element> | MouseEvent | TouchEvent) => {
@@ -168,12 +172,12 @@ export default function AnnotationPage() {
       y2: centerY,
       hasArrowEnd: false,
       lineStyle: 'solid',
+      strokeWidth: DEFAULT_STROKE_WIDTH,
     };
 
     setLines(prevLines => [...prevLines, newLine]);
     setSelectedLineId(newLine.id);
     setContextualToolbarPosition({ x: centerX, y: centerY - 30 });
-    setDraggingPoint(null); // Ensure not in dragging mode
   };
 
 
@@ -194,7 +198,6 @@ export default function AnnotationPage() {
     let x = clientX - rect.left;
     let y = clientY - rect.top;
 
-    // Clamp coordinates to SVG boundaries
     x = Math.max(0, Math.min(x, svgOverlayRef.current.clientWidth));
     y = Math.max(0, Math.min(y, svgOverlayRef.current.clientHeight));
 
@@ -245,8 +248,8 @@ export default function AnnotationPage() {
   
   const handleSelectLine = (lineId: string, event: React.MouseEvent | React.TouchEvent) => {
     event.stopPropagation(); 
-    if (!draggingPoint) { // Only allow selection if not currently dragging a point
-      setSelectedLineId(lineId); // Select the line even if it's already selected, to ensure toolbar shows
+    if (!draggingPoint) { 
+      setSelectedLineId(lineId); 
       const line = lines.find(l => l.id === lineId);
       if (line) {
           const midX = (line.x1 + line.x2) / 2;
@@ -272,6 +275,17 @@ export default function AnnotationPage() {
       setLines(prevLines =>
         prevLines.map(line =>
           line.id === selectedLineId ? { ...line, lineStyle: style } : line
+        )
+      );
+    }
+  };
+
+  const handleStrokeWeightChange = (newWeightArray: number[]) => {
+    if (selectedLineId && !draggingPoint) {
+      const newWeight = newWeightArray[0];
+      setLines(prevLines =>
+        prevLines.map(line =>
+          line.id === selectedLineId ? { ...line, strokeWidth: newWeight } : line
         )
       );
     }
@@ -390,7 +404,7 @@ export default function AnnotationPage() {
                 Annotation Demo - Weekly Temperature
               </CardTitle>
               <CardDescription className="text-xs">
-                Toggle overlay to annotate. Click line to select. Drag endpoints to reposition. Use toolbars to modify.
+                Toggle overlay to annotate. Click "+ Line" to add lines. Click lines to select. Drag endpoints to reposition. Use toolbars to modify.
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
@@ -448,19 +462,22 @@ export default function AnnotationPage() {
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <DropdownMenuTrigger asChild>
-                          <Button
+                           <Button
                             variant="outline"
                             size="icon"
                             className="h-8 w-8"
                             disabled={!selectedLineId || isToolbarButtonDisabled}
+                            aria-label="Line Style Options"
                           >
-                            <Spline className="h-4 w-4" />
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
+                              <path d="M2 4h12v1H2zM2 7.5h12v2H2zM2 11h12v3H2z"/>
+                            </svg>
                           </Button>
                         </DropdownMenuTrigger>
                       </TooltipTrigger>
-                      <TooltipContent><p>Change Line Style</p></TooltipContent>
+                      <TooltipContent><p>Line Style & Thickness</p></TooltipContent>
                     </Tooltip>
-                    <DropdownMenuContent className="w-40">
+                    <DropdownMenuContent className="w-48">
                       <DropdownMenuLabel>Line Style</DropdownMenuLabel>
                       <DropdownMenuSeparatorShadcn />
                       <DropdownMenuRadioGroup 
@@ -471,6 +488,19 @@ export default function AnnotationPage() {
                         <DropdownMenuRadioItem value="dashed">Dashed</DropdownMenuRadioItem>
                         <DropdownMenuRadioItem value="dotted">Dotted</DropdownMenuRadioItem>
                       </DropdownMenuRadioGroup>
+                      <DropdownMenuSeparatorShadcn />
+                      <DropdownMenuLabel>Stroke Weight</DropdownMenuLabel>
+                       <div className="px-2 py-1.5">
+                         <Slider
+                            defaultValue={[DEFAULT_STROKE_WIDTH]}
+                            value={[selectedLine?.strokeWidth || DEFAULT_STROKE_WIDTH]}
+                            onValueChange={handleStrokeWeightChange}
+                            min={1}
+                            max={10}
+                            step={0.5}
+                            disabled={!selectedLineId || isToolbarButtonDisabled}
+                          />
+                       </div>
                     </DropdownMenuContent>
                   </DropdownMenu>
                   
@@ -569,7 +599,7 @@ export default function AnnotationPage() {
                         orient="auto"
                         markerUnits="strokeWidth"
                       >
-                        <polygon points="0 0, 6 2, 0 4" fill="hsl(var(--primary))" /> 
+                        <polygon points="0 0, 6 2, 0 4" fill="currentColor" /> 
                       </marker>
                     </defs>
                     {lines.map((line) => (
@@ -586,7 +616,7 @@ export default function AnnotationPage() {
                         <line
                           x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
                           stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
-                          strokeWidth={selectedLineId === line.id ? 2.5 : 1.5} 
+                          strokeWidth={line.strokeWidth || DEFAULT_STROKE_WIDTH} 
                           markerEnd={line.hasArrowEnd ? "url(#arrowhead)" : undefined}
                           strokeDasharray={getStrokeDasharray(line.lineStyle)}
                           style={{ pointerEvents: 'none' }} 
@@ -643,7 +673,3 @@ export default function AnnotationPage() {
     </div>
   );
 }
-
-    
-
-    
