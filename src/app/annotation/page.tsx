@@ -5,11 +5,14 @@ import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { LayoutGrid, Waves, SunMoon, FilePenLine } from "lucide-react"; // FilePenLine for Annotation page icon
+import { LayoutGrid, Waves, SunMoon, FilePenLine, Edit, ArrowUpRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface DummyDataPoint {
   time: string;
@@ -47,17 +50,17 @@ export default function AnnotationPage() {
   const pathname = usePathname();
   const [dummyData, setDummyData] = useState<DummyDataPoint[]>([]);
   
-  // For Brush, keep these for ChartDisplay but they won't be tied to annotations anymore
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(undefined);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
+
+  const [isOverlayActive, setIsOverlayActive] = useState(false);
 
   useEffect(() => {
     const generatedData = generateDummyData();
     setDummyData(generatedData);
-    // Set an initial brush range if data is loaded, e.g., first 24 hours
     if (generatedData.length > 0) {
         setBrushStartIndex(0);
-        setBrushEndIndex(Math.min(23, generatedData.length - 1)); // Ensure endIndex doesn't exceed data length
+        setBrushEndIndex(Math.min(23, generatedData.length - 1));
     }
   }, []);
 
@@ -161,27 +164,47 @@ export default function AnnotationPage() {
 
       <main className="flex-grow container mx-auto p-3 md:p-4 space-y-4">
         <Card>
-          <CardHeader className="pb-3 pt-4">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <FilePenLine className="h-5 w-5 text-primary" />
-              Dummy Temperature Data - Weekly
-            </CardTitle>
-            <CardDescription className="text-xs">
-              This page displays a simple time series plot of generated temperature data.
-            </CardDescription>
+          <CardHeader className="pb-3 pt-4 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Edit className="h-5 w-5 text-primary" />
+                Annotation Demo - Weekly Temperature
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Toggle overlay to enable placeholder annotation tools.
+              </CardDescription>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="annotation-overlay-switch"
+                checked={isOverlayActive}
+                onCheckedChange={setIsOverlayActive}
+              />
+              <Label htmlFor="annotation-overlay-switch" className="text-sm">Annotation Overlay</Label>
+            </div>
           </CardHeader>
-          <CardContent className="p-2 pt-2">
-            <ChartDisplay
-              data={dummyData}
-              plottableSeries={plottableSeries}
-              yAxisConfigs={yAxisConfigs}
-              timeAxisLabel="Time"
-              plotTitle="" 
-              chartRenderHeight={278} // Default height as before
-              brushStartIndex={brushStartIndex}
-              brushEndIndex={brushEndIndex}
-              onBrushChange={handleBrushChange}
-            />
+          <CardContent className="p-2 pt-2 relative">
+            {isOverlayActive && (
+              <div className="absolute top-2 left-2 z-10 bg-card border shadow-lg rounded-md p-2 flex space-x-1">
+                <Button variant="outline" size="icon" title="Draw Arrow (Placeholder)">
+                  <ArrowUpRight className="h-4 w-4" />
+                </Button>
+                {/* Add other placeholder toolbar buttons here */}
+              </div>
+            )}
+            <div className={cn(isOverlayActive && "opacity-30 transition-opacity")}>
+              <ChartDisplay
+                data={dummyData}
+                plottableSeries={plottableSeries}
+                yAxisConfigs={yAxisConfigs}
+                timeAxisLabel="Time"
+                plotTitle="" 
+                chartRenderHeight={278}
+                brushStartIndex={brushStartIndex}
+                brushEndIndex={brushEndIndex}
+                onBrushChange={handleBrushChange}
+              />
+            </div>
           </CardContent>
         </Card>
       </main>
