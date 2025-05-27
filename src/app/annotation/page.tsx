@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { 
   LayoutGrid, Waves, SunMoon, FilePenLine, Edit, 
-  Trash2, Plus, Copy, RotateCcw, Move as MoveIcon, MoveRight
+  Trash2, Plus, Copy, RotateCcw, Move as MoveIcon, ArrowUpRight
 } from "lucide-react"; 
 import {
   DropdownMenu,
@@ -24,7 +24,7 @@ import {
   DropdownMenuSeparator as DropdownMenuSeparatorShadcn,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Slider } from "@/components/ui/slider"; // Import Slider
+import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
@@ -40,9 +40,9 @@ interface LineAnnotation {
   y1: number;
   x2: number;
   y2: number;
-  hasArrowEnd?: boolean;
+  arrowStyle?: 'none' | 'start' | 'end' | 'both';
   lineStyle?: 'solid' | 'dashed' | 'dotted';
-  strokeWidth?: number; // Added for line thickness
+  strokeWidth?: number;
 }
 
 const generateDummyData = (): DummyDataPoint[] => {
@@ -70,6 +70,7 @@ const generateDummyData = (): DummyDataPoint[] => {
   return data;
 };
 
+const DEFAULT_STROKE_WIDTH = 2;
 
 export default function AnnotationPage() {
   const [theme, setTheme] = useState("light");
@@ -89,9 +90,6 @@ export default function AnnotationPage() {
   const [draggingPoint, setDraggingPoint] = useState<{ lineId: string; pointType: 'start' | 'end' } | null>(null);
   const [contextualToolbarPosition, setContextualToolbarPosition] = useState<{ x: number; y: number } | null>(null);
 
-  const DEFAULT_STROKE_WIDTH = 2;
-
-
   const getNormalizedCoordinates = (event: React.MouseEvent | React.TouchEvent<Element> | MouseEvent | TouchEvent) => {
     if ('touches' in event && event.touches.length > 0) {
       return { clientX: event.touches[0].clientX, clientY: event.touches[0].clientY };
@@ -99,7 +97,7 @@ export default function AnnotationPage() {
     if ('clientX' in event) {
       return { clientX: event.clientX, clientY: event.clientY };
     }
-    return { clientX: 0, clientY: 0 }; // Fallback
+    return { clientX: 0, clientY: 0 }; 
   };
 
   useEffect(() => {
@@ -170,7 +168,7 @@ export default function AnnotationPage() {
       y1: centerY,
       x2: centerX + defaultLineLength / 2,
       y2: centerY,
-      hasArrowEnd: false,
+      arrowStyle: 'none',
       lineStyle: 'solid',
       strokeWidth: DEFAULT_STROKE_WIDTH,
     };
@@ -260,11 +258,11 @@ export default function AnnotationPage() {
   };
   
 
-  const handleToggleArrow = () => {
+  const handleArrowStyleChange = (style: 'none' | 'start' | 'end' | 'both') => {
     if (selectedLineId && !draggingPoint) {
       setLines(prevLines =>
         prevLines.map(line =>
-          line.id === selectedLineId ? { ...line, hasArrowEnd: !line.hasArrowEnd } : line
+          line.id === selectedLineId ? { ...line, arrowStyle: style } : line
         )
       );
     }
@@ -443,20 +441,38 @@ export default function AnnotationPage() {
                   
                   <Separator orientation="vertical" className="h-6 mx-1" />
 
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant={selectedLine?.hasArrowEnd ? "secondary" : "outline"}
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={handleToggleArrow}
-                        disabled={!selectedLineId || isToolbarButtonDisabled}
-                      >
-                        <MoveRight className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent><p>Toggle Arrowhead</p></TooltipContent>
-                  </Tooltip>
+                  <DropdownMenu>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    disabled={!selectedLineId || isToolbarButtonDisabled}
+                                    aria-label="Arrow Style Options"
+                                >
+                                    <ArrowUpRight className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent><p>Arrow Style</p></TooltipContent>
+                    </Tooltip>
+                    <DropdownMenuContent className="w-48">
+                        <DropdownMenuLabel>Arrow Style</DropdownMenuLabel>
+                        <DropdownMenuSeparatorShadcn />
+                        <DropdownMenuRadioGroup
+                            value={selectedLine?.arrowStyle || 'none'}
+                            onValueChange={(value) => handleArrowStyleChange(value as 'none' | 'start' | 'end' | 'both')}
+                        >
+                            <DropdownMenuRadioItem value="none">No Arrowhead</DropdownMenuRadioItem>
+                            <DropdownMenuRadioItem value="end">Arrow at End</DropdownMenuRadioItem>
+                            <DropdownMenuRadioItem value="start">Arrow at Start</DropdownMenuRadioItem>
+                            <DropdownMenuRadioItem value="both">Arrows at Both Ends</DropdownMenuRadioItem>
+                        </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
 
                   <DropdownMenu>
                     <Tooltip>
@@ -523,7 +539,6 @@ export default function AnnotationPage() {
                 </div>
               </TooltipProvider>
             )}
-            {/* Contextual Toolbar for Selected Line */}
             {selectedLineId && contextualToolbarPosition && !draggingPoint && isOverlayActive && (
               <TooltipProvider delayDuration={0}>
                 <div
@@ -598,8 +613,9 @@ export default function AnnotationPage() {
                         refY="2" 
                         orient="auto"
                         markerUnits="strokeWidth"
+                        fill="currentColor" 
                       >
-                        <polygon points="0 0, 6 2, 0 4" fill="currentColor" /> 
+                        <polygon points="0 0, 6 2, 0 4" /> 
                       </marker>
                     </defs>
                     {lines.map((line) => (
@@ -617,7 +633,8 @@ export default function AnnotationPage() {
                           x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
                           stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
                           strokeWidth={line.strokeWidth || DEFAULT_STROKE_WIDTH} 
-                          markerEnd={line.hasArrowEnd ? "url(#arrowhead)" : undefined}
+                          markerStart={line.arrowStyle === 'start' || line.arrowStyle === 'both' ? "url(#arrowhead)" : undefined}
+                          markerEnd={line.arrowStyle === 'end' || line.arrowStyle === 'both' ? "url(#arrowhead)" : undefined}
                           strokeDasharray={getStrokeDasharray(line.lineStyle)}
                           style={{ pointerEvents: 'none' }} 
                         />
