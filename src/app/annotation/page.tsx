@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { 
   LayoutGrid, Waves, SunMoon, FilePenLine, Edit, 
-  Trash2, Plus, Copy, RotateCcw, Move as MoveIcon, MoveRight, Spline
+  Trash2, Plus, Copy, RotateCcw, Move as MoveIcon, MoveRight, Spline, Ban
 } from "lucide-react"; 
 import {
   DropdownMenu,
@@ -73,7 +73,6 @@ const generateDummyData = (): DummyDataPoint[] => {
 const DEFAULT_STROKE_WIDTH = 2;
 const ROTATION_ANGLE_STEP = 15; // degrees
 
-// Helper components for visual dropdown items
 const LineStyleIcon = ({ style }: { style: 'solid' | 'dashed' | 'dotted' }) => {
   let strokeDasharray;
   if (style === 'dashed') strokeDasharray = "3,2";
@@ -124,19 +123,17 @@ export default function AnnotationPage() {
   const svgOverlayRef = useRef<SVGSVGElement>(null);
   const chartAreaRef = useRef<HTMLDivElement>(null);
   
-  // State for dragging endpoints
   const [draggingPoint, setDraggingPoint] = useState<{ lineId: string; pointType: 'start' | 'end' } | null>(null);
   
-  // State for moving entire line
   const [movingLineId, setMovingLineId] = useState<string | null>(null);
   const [dragStartCoords, setDragStartCoords] = useState<{ x: number; y: number } | null>(null);
   const [lineBeingMovedOriginalState, setLineBeingMovedOriginalState] = useState<LineAnnotation | null>(null);
 
-  const [activeTool, setActiveTool] = useState<'move' | null>(null); // For explicit tool activation
+  const [activeTool, setActiveTool] = useState<'move' | null>(null);
   
   const [contextualToolbarPosition, setContextualToolbarPosition] = useState<{ x: number; y: number } | null>(null);
 
-  const getNormalizedCoordinates = (event: React.MouseEvent | React.TouchEvent<Element> | MouseEvent | TouchEvent) => {
+  const getNormalizedCoordinates = useCallback((event: React.MouseEvent | React.TouchEvent<Element> | MouseEvent | TouchEvent) => {
     if ('touches' in event && event.touches.length > 0) {
       return { clientX: event.touches[0].clientX, clientY: event.touches[0].clientY };
     }
@@ -144,15 +141,16 @@ export default function AnnotationPage() {
       return { clientX: event.clientX, clientY: event.clientY };
     }
     return { clientX: 0, clientY: 0 }; 
-  };
+  }, []);
 
   const updateContextualToolbarPos = useCallback((line: LineAnnotation | null | undefined) => {
     if (line && svgOverlayRef.current) {
+      const svgRect = svgOverlayRef.current.getBoundingClientRect();
       const midX = (line.x1 + line.x2) / 2;
       const midY = (line.y1 + line.y2) / 2;
-      const svgRect = svgOverlayRef.current.getBoundingClientRect();
-      const toolbarX = Math.max(30, Math.min(midX, svgRect.width - 30));
-      const toolbarY = Math.max(30, Math.min(midY - 40, svgRect.height - 40)); // Ensure space for toolbar
+      
+      const toolbarX = Math.max(30, Math.min(midX, svgRect.width - 30)); 
+      const toolbarY = Math.max(30, Math.min(midY - 50, svgRect.height - 50)); // Adjusted to position toolbar slightly above the line
       setContextualToolbarPosition({ x: toolbarX, y: toolbarY });
     } else {
       setContextualToolbarPosition(null);
@@ -216,7 +214,7 @@ export default function AnnotationPage() {
 
   const handleAddLine = () => {
     if (!svgOverlayRef.current || draggingPoint || movingLineId) return;
-    setActiveTool(null); // Deactivate other tools
+    setActiveTool(null); 
 
     const svgRect = svgOverlayRef.current.getBoundingClientRect();
     const centerX = svgRect.width / 2;
@@ -245,7 +243,7 @@ export default function AnnotationPage() {
     setActiveTool(null);
     setDraggingPoint({ lineId, pointType });
     setSelectedLineId(lineId); 
-    setContextualToolbarPosition(null); 
+    // Do not setContextualToolbarPosition(null); here to keep it visible during drag
   };
 
   const handleInteractionMove = useCallback((event: MouseEvent | TouchEvent) => {
@@ -265,7 +263,7 @@ export default function AnnotationPage() {
         prevLines.map(line => {
           if (line.id === draggingPoint.lineId) {
             const updatedLine = draggingPoint.pointType === 'start' ? { ...line, x1: x, y1: y } : { ...line, x2: x, y2: y };
-            updateContextualToolbarPos(updatedLine); // Update toolbar while dragging endpoint
+            updateContextualToolbarPos(updatedLine);
             return updatedLine;
           }
           return line;
@@ -285,14 +283,14 @@ export default function AnnotationPage() {
               x2: Math.max(0, Math.min(lineBeingMovedOriginalState.x2 + dx, svgOverlayRef.current!.clientWidth)),
               y2: Math.max(0, Math.min(lineBeingMovedOriginalState.y2 + dy, svgOverlayRef.current!.clientHeight)),
             };
-            updateContextualToolbarPos(movedLine); // Update toolbar while moving line
+            updateContextualToolbarPos(movedLine); 
             return movedLine;
           }
           return line;
         })
       );
     }
-  }, [draggingPoint, movingLineId, dragStartCoords, lineBeingMovedOriginalState, updateContextualToolbarPos]);
+  }, [draggingPoint, movingLineId, dragStartCoords, lineBeingMovedOriginalState, updateContextualToolbarPos, getNormalizedCoordinates]);
 
   const handleInteractionEnd = useCallback(() => {
     if (draggingPoint) {
@@ -306,7 +304,7 @@ export default function AnnotationPage() {
       setMovingLineId(null);
       setDragStartCoords(null);
       setLineBeingMovedOriginalState(null);
-      setActiveTool(null); // Ensure move tool is deactivated
+      setActiveTool(null); 
     }
   }, [draggingPoint, movingLineId, lines, updateContextualToolbarPos]);
 
@@ -351,7 +349,7 @@ export default function AnnotationPage() {
       setMovingLineId(lineId);
       setDragStartCoords({ x, y });
       setLineBeingMovedOriginalState({ ...line });
-      setContextualToolbarPosition(null); // Hide contextual toolbar during move
+      // Do not setContextualToolbarPosition(null); here to keep it visible during move
     } else if (!draggingPoint && !movingLineId && activeTool !== 'move') {
       setSelectedLineId(lineId);
       const line = lines.find(l => l.id === lineId);
@@ -427,7 +425,7 @@ export default function AnnotationPage() {
 
     const cx = (line.x1 + line.x2) / 2;
     const cy = (line.y1 + line.y2) / 2;
-    const angleRad = ROTATION_ANGLE_STEP * (Math.PI / 180); // Convert to radians
+    const angleRad = ROTATION_ANGLE_STEP * (Math.PI / 180); 
     const cosAngle = Math.cos(angleRad);
     const sinAngle = Math.sin(angleRad);
 
@@ -436,7 +434,7 @@ export default function AnnotationPage() {
       const translatedY = y - cy;
       const rotatedX = translatedX * cosAngle - translatedY * sinAngle;
       const rotatedY = translatedX * sinAngle + translatedY * cosAngle;
-      return { x: rotatedX + cx, y: rotatedY };
+      return { x: rotatedX + cx, y: rotatedY + cy };
     };
 
     const newP1 = rotatePoint(line.x1, line.y1);
@@ -714,7 +712,7 @@ export default function AnnotationPage() {
                 </div>
               </TooltipProvider>
             )}
-            {selectedLineId && contextualToolbarPosition && !draggingPoint && !movingLineId && isOverlayActive && (
+            {selectedLineId && contextualToolbarPosition && isOverlayActive && (
               <TooltipProvider delayDuration={0}>
                 <div
                   className="absolute z-30 bg-card border shadow-lg rounded-md p-1 flex items-center space-x-1"
@@ -795,14 +793,14 @@ export default function AnnotationPage() {
                         handleLineHitboxMouseDown(selectedLineId, e);
                       }
                     }}
-                    onTouchStartCapture={(e) => { // Use Capture to ensure it fires before line hitbox if needed
+                    onTouchStartCapture={(e) => { 
                       if (activeTool === 'move' && selectedLineId) {
-                         handleLineHitboxMouseDown(selectedLineId, e as unknown as React.TouchEvent<SVGElement>);
+                         handleLineHitboxMouseDown(selectedLineId, e as unknown as React.TouchEvent<SVGSVGElement>);
                       }
                     }}
                     style={{ 
                         cursor: svgCursor,
-                        pointerEvents: (draggingPoint || (movingLineId && dragStartCoords) || activeTool === 'move') ? 'auto' : 'auto', // Let SVG always capture if overlay is active for bg click
+                        pointerEvents: 'auto', 
                         width: chartAreaRef.current.clientWidth, 
                         height: chartAreaRef.current.clientHeight, 
                     }}
@@ -842,7 +840,7 @@ export default function AnnotationPage() {
                           x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
                           stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
                           strokeWidth={line.strokeWidth || DEFAULT_STROKE_WIDTH} 
-                          markerStart={(line.arrowStyle === 'both') ? "url(#arrowhead)" : undefined}
+                          markerStart={(line.arrowStyle === 'start' || line.arrowStyle === 'both') ? "url(#arrowhead)" : undefined}
                           markerEnd={(line.arrowStyle === 'end' || line.arrowStyle === 'both') ? "url(#arrowhead)" : undefined}
                           strokeDasharray={getStrokeDasharray(line.lineStyle)}
                           style={{ pointerEvents: 'none' }} 
@@ -899,5 +897,7 @@ export default function AnnotationPage() {
     </div>
   );
 }
+
+    
 
     
