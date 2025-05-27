@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
@@ -11,12 +11,20 @@ import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDispl
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { LayoutGrid, Waves, SunMoon, FilePenLine, Edit, ArrowUpRight } from "lucide-react";
+import { LayoutGrid, Waves, SunMoon, FilePenLine, Edit, Ban, PenLine } from "lucide-react"; // Added Ban, PenLine
 import { cn } from "@/lib/utils";
 
 interface DummyDataPoint {
   time: string;
   temperature: number;
+}
+
+interface LineAnnotation {
+  id: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
 }
 
 const generateDummyData = (): DummyDataPoint[] => {
@@ -54,6 +62,14 @@ export default function AnnotationPage() {
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
 
   const [isOverlayActive, setIsOverlayActive] = useState(false);
+
+  // State for line drawing
+  const [drawingMode, setDrawingMode] = useState<'line' | null>(null);
+  const [lineStartPoint, setLineStartPoint] = useState<{ x: number; y: number } | null>(null);
+  const [lines, setLines] = useState<LineAnnotation[]>([]);
+  const svgOverlayRef = useRef<SVGSVGElement>(null);
+  const chartAreaRef = useRef<HTMLDivElement>(null);
+
 
   useEffect(() => {
     const generatedData = generateDummyData();
@@ -108,6 +124,36 @@ export default function AnnotationPage() {
     setBrushStartIndex(newIndex.startIndex);
     setBrushEndIndex(newIndex.endIndex);
   };
+
+  const handleSvgClick = (event: React.MouseEvent<SVGSVGElement>) => {
+    if (drawingMode !== 'line' || !svgOverlayRef.current) return;
+
+    // Get click coordinates relative to the SVG overlay
+    const rect = svgOverlayRef.current.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    if (!lineStartPoint) {
+      setLineStartPoint({ x, y });
+    } else {
+      setLines(prevLines => [
+        ...prevLines, 
+        { x1: lineStartPoint.x, y1: lineStartPoint.y, x2: x, y2: y, id: Date.now().toString() }
+      ]);
+      setLineStartPoint(null); // Reset to allow drawing a new line immediately
+    }
+  };
+
+  const toggleDrawingMode = () => {
+    if (drawingMode === 'line') {
+      setDrawingMode(null);
+      setLineStartPoint(null); // Clear any pending line start
+    } else {
+      setDrawingMode('line');
+      setLineStartPoint(null); // Ensure starting fresh
+    }
+  };
+
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -171,39 +217,84 @@ export default function AnnotationPage() {
                 Annotation Demo - Weekly Temperature
               </CardTitle>
               <CardDescription className="text-xs">
-                Toggle overlay to enable placeholder annotation tools.
+                Toggle overlay to enable annotation tools.
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
               <Switch
                 id="annotation-overlay-switch"
                 checked={isOverlayActive}
-                onCheckedChange={setIsOverlayActive}
+                onCheckedChange={(checked) => {
+                  setIsOverlayActive(checked);
+                  if (!checked) { // If turning overlay off, also turn off drawing mode
+                    setDrawingMode(null);
+                    setLineStartPoint(null);
+                  }
+                }}
               />
               <Label htmlFor="annotation-overlay-switch" className="text-sm">Annotation Overlay</Label>
             </div>
           </CardHeader>
-          <CardContent className="p-2 pt-2 relative">
+          <CardContent className="p-2 pt-2">
             {isOverlayActive && (
-              <div className="absolute top-2 left-2 z-10 bg-card border shadow-lg rounded-md p-2 flex space-x-1">
-                <Button variant="outline" size="icon" title="Draw Arrow (Placeholder)">
-                  <ArrowUpRight className="h-4 w-4" />
+              <div className="absolute top-16 left-5 z-20 bg-card border shadow-lg rounded-md p-1 flex space-x-1"> {/* Adjusted top to be below header */}
+                <Button
+                  variant="outline"
+                  size="sm" // Make button slightly larger
+                  className="h-8 px-2" // Custom padding
+                  title={drawingMode === 'line' ? "Cancel Drawing" : "Draw Line"}
+                  onClick={toggleDrawingMode}
+                >
+                  {drawingMode === 'line' ? 
+                    <Ban className="h-4 w-4 mr-1" /> : 
+                    <PenLine className="h-4 w-4 mr-1" />
+                  }
+                  {drawingMode === 'line' ? "Cancel" : "Line"}
                 </Button>
                 {/* Add other placeholder toolbar buttons here */}
               </div>
             )}
-            <div className={cn(isOverlayActive && "opacity-30 transition-opacity")}>
-              <ChartDisplay
-                data={dummyData}
-                plottableSeries={plottableSeries}
-                yAxisConfigs={yAxisConfigs}
-                timeAxisLabel="Time"
-                plotTitle="" 
-                chartRenderHeight={278}
-                brushStartIndex={brushStartIndex}
-                brushEndIndex={brushEndIndex}
-                onBrushChange={handleBrushChange}
-              />
+            <div className="relative" ref={chartAreaRef}>
+              <div className={cn(isOverlayActive && "opacity-30 transition-opacity")}>
+                <ChartDisplay
+                  data={dummyData}
+                  plottableSeries={plottableSeries}
+                  yAxisConfigs={yAxisConfigs}
+                  timeAxisLabel="Time"
+                  plotTitle="" 
+                  chartRenderHeight={278}
+                  brushStartIndex={brushStartIndex}
+                  brushEndIndex={brushEndIndex}
+                  onBrushChange={handleBrushChange}
+                />
+              </div>
+              {isOverlayActive && chartAreaRef.current && (
+                 <svg
+                    ref={svgOverlayRef}
+                    className="absolute top-0 left-0 w-full h-full z-10" // Ensure SVG is on top
+                    onClick={handleSvgClick}
+                    style={{ 
+                        pointerEvents: drawingMode === 'line' ? 'auto' : 'none',
+                        width: chartAreaRef.current.clientWidth, // Match parent div width
+                        height: chartAreaRef.current.clientHeight, // Match parent div height
+                    }}
+                  >
+                    {lines.map((line) => (
+                      <line
+                        key={line.id}
+                        x1={line.x1}
+                        y1={line.y1}
+                        x2={line.x2}
+                        y2={line.y2}
+                        stroke="hsl(var(--primary))"
+                        strokeWidth="2"
+                      />
+                    ))}
+                    {lineStartPoint && ( // Visualize the starting point if drawing
+                        <circle cx={lineStartPoint.x} cy={lineStartPoint.y} r="3" fill="hsl(var(--primary))" />
+                    )}
+                  </svg>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -219,3 +310,4 @@ export default function AnnotationPage() {
     </div>
   );
 }
+
