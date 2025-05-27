@@ -11,7 +11,19 @@ import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDispl
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { LayoutGrid, Waves, SunMoon, FilePenLine, Edit, Ban, PenLine, Minus, CornerUpRight, Type, Trash2 } from "lucide-react";
+import { 
+  LayoutGrid, Waves, SunMoon, FilePenLine, Edit, Ban, PenLine, 
+  CornerUpRight, Trash2, Spline // Changed Minus to Spline
+} from "lucide-react"; 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator as DropdownMenuSeparatorShadcn, // Renamed to avoid conflict
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 interface DummyDataPoint {
@@ -26,7 +38,7 @@ interface LineAnnotation {
   x2: number;
   y2: number;
   hasArrowEnd?: boolean;
-  isDashed?: boolean;
+  lineStyle?: 'solid' | 'dashed' | 'dotted'; // Changed from isDashed
 }
 
 const generateDummyData = (): DummyDataPoint[] => {
@@ -145,10 +157,8 @@ export default function AnnotationPage() {
     let x = clientX - rect.left;
     let y = clientY - rect.top;
 
-    // Clamp coordinates to SVG boundaries
     x = Math.max(0, Math.min(x, svgOverlayRef.current.clientWidth));
     y = Math.max(0, Math.min(y, svgOverlayRef.current.clientHeight));
-
 
     if (!lineStartPoint) {
       setLineStartPoint({ x, y });
@@ -162,7 +172,7 @@ export default function AnnotationPage() {
           x2: x, 
           y2: y, 
           hasArrowEnd: false, 
-          isDashed: false 
+          lineStyle: 'solid' // Default to solid
         }
       ]);
       setLineStartPoint(null);
@@ -186,7 +196,6 @@ export default function AnnotationPage() {
     let x = clientX - rect.left;
     let y = clientY - rect.top;
 
-    // Clamp coordinates to SVG boundaries
     x = Math.max(0, Math.min(x, svgOverlayRef.current.clientWidth));
     y = Math.max(0, Math.min(y, svgOverlayRef.current.clientHeight));
 
@@ -258,11 +267,11 @@ export default function AnnotationPage() {
     }
   };
 
-  const handleToggleDashed = () => {
+  const handleLineStyleChange = (style: 'solid' | 'dashed' | 'dotted') => {
     if (selectedLineId && !draggingPoint) {
       setLines(prevLines =>
         prevLines.map(line =>
-          line.id === selectedLineId ? { ...line, isDashed: !line.isDashed } : line
+          line.id === selectedLineId ? { ...line, lineStyle: style } : line
         )
       );
     }
@@ -278,6 +287,18 @@ export default function AnnotationPage() {
   const selectedLine = useMemo(() => lines.find(line => line.id === selectedLineId), [lines, selectedLineId]);
 
   const isToolbarButtonDisabled = drawingMode !== null || draggingPoint !== null;
+
+  const getStrokeDasharray = (style?: 'solid' | 'dashed' | 'dotted') => {
+    switch (style) {
+      case 'dashed':
+        return "5,5";
+      case 'dotted':
+        return "1,4";
+      case 'solid':
+      default:
+        return undefined;
+    }
+  };
 
 
   return (
@@ -402,20 +423,35 @@ export default function AnnotationPage() {
                     <TooltipContent><p>Toggle Arrowhead (Selected Line)</p></TooltipContent>
                   </Tooltip>
 
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                       <Button
-                        variant={selectedLine?.isDashed ? "secondary" : "outline"}
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={handleToggleDashed}
-                        disabled={!selectedLineId || isToolbarButtonDisabled}
+                  <DropdownMenu>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={!selectedLineId || isToolbarButtonDisabled}
+                          >
+                            <Spline className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent><p>Change Line Style (Selected Line)</p></TooltipContent>
+                    </Tooltip>
+                    <DropdownMenuContent className="w-40">
+                      <DropdownMenuLabel>Line Style</DropdownMenuLabel>
+                      <DropdownMenuSeparatorShadcn />
+                      <DropdownMenuRadioGroup 
+                        value={selectedLine?.lineStyle || 'solid'} 
+                        onValueChange={(value) => handleLineStyleChange(value as 'solid' | 'dashed' | 'dotted')}
                       >
-                        <Minus className="h-4 w-4 transform rotate-90"/> <Minus className="h-4 w-4 transform rotate-90 -ml-2.5"/> {/* Simulate dashed icon */}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent><p>Toggle Dashed Style (Selected Line)</p></TooltipContent>
-                  </Tooltip>
+                        <DropdownMenuRadioItem value="solid">Solid</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="dashed">Dashed</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="dotted">Dotted</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   
                   <Separator orientation="vertical" className="h-6 mx-1" />
 
@@ -444,7 +480,7 @@ export default function AnnotationPage() {
                   yAxisConfigs={yAxisConfigs}
                   timeAxisLabel="Time"
                   plotTitle="" 
-                  chartRenderHeight={278 * 0.85} // Adjust height for clipping effect
+                  chartRenderHeight={278 * 0.85} 
                   brushStartIndex={brushStartIndex}
                   brushEndIndex={brushEndIndex}
                   onBrushChange={handleBrushChange}
@@ -456,6 +492,10 @@ export default function AnnotationPage() {
                     className="absolute top-0 left-0 w-full h-full z-10" 
                     onClick={handleSvgInteractionStart}
                     onTouchStart={handleSvgInteractionStart}
+                    onMouseMove={(e) => handleSvgInteractionMove(e.nativeEvent as MouseEvent)}
+                    onTouchMove={(e) => handleSvgInteractionMove(e.nativeEvent as TouchEvent)}
+                    onMouseUp={handleSvgInteractionEnd}
+                    onTouchEnd={handleSvgInteractionEnd}
                     style={{ 
                         cursor: drawingMode === 'line' ? 'crosshair' : 'default',
                         pointerEvents: (drawingMode === 'line' || draggingPoint) ? 'auto' : 'none', 
@@ -492,7 +532,7 @@ export default function AnnotationPage() {
                           stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
                           strokeWidth={selectedLineId === line.id ? 2.5 : 1.5} 
                           markerEnd={line.hasArrowEnd ? "url(#arrowhead)" : undefined}
-                          strokeDasharray={line.isDashed ? "4,4" : undefined} 
+                          strokeDasharray={getStrokeDasharray(line.lineStyle)}
                           style={{ pointerEvents: 'none' }} 
                         />
                         {selectedLineId === line.id && !drawingMode && (
@@ -550,3 +590,5 @@ export default function AnnotationPage() {
     </div>
   );
 }
+
+    
