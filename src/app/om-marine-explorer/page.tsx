@@ -1,16 +1,16 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo, useId } from "react"; // Added useId
 import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label as UiLabel } from "@/components/ui/label";
+import { Label as UiLabel } from "@/components/ui/label"; // Renamed to avoid conflict
 import { Input } from "@/components/ui/input";
-import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, MapPin, CalendarDays, Thermometer, Compass as CompassIcon, Timer, Wind as WindIcon, Sun as SunIcon, Sailboat, Copy } from "lucide-react";
+import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, MapPin, CalendarDays, Thermometer, Compass as CompassIcon, Timer, Wind as WindIcon, Sun as SunIcon, Sailboat, Copy } from "lucide-react"; // Added specific icons
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -37,7 +37,7 @@ const OpenLayersMapWithNoSSR = dynamic(
 
 type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle' | 'warning';
 
-const DEFAULT_LATITUDE = 51.7128; 
+const DEFAULT_LATITUDE = 51.7128;
 const DEFAULT_LONGITUDE = -5.0341;
 const DEFAULT_MAP_ZOOM = 10;
 
@@ -75,20 +75,23 @@ export default function OMMarineExplorerPage() {
   const [errorData, setErrorData] = useState<string | null>(null);
   const [dataLocationContext, setDataLocationContext] = useState<string | null>(null);
 
-  const initialVisibility = useMemo(() => 
+  const initialVisibility = useMemo(() =>
     Object.fromEntries(ALL_PARAMETERS.map(key => [key, true])) as Record<CombinedParameterKey, boolean>
   , []);
 
   const [plotVisibility, setPlotVisibility] = useState<Record<CombinedParameterKey, boolean>>(initialVisibility);
 
   const [fetchLogSteps, setFetchLogSteps] = useState<LogStep[]>([]);
-  const [showFetchLogAccordion, setShowFetchLogAccordion] = useState<string>(""); 
+  const [showFetchLogAccordion, setShowFetchLogAccordion] = useState<string>("");
   const [isLogLoading, setIsLogLoading] = useState(false);
   const [logOverallStatus, setLogOverallStatus] = useState<LogOverallStatus>('idle');
 
   const initialFetchDone = React.useRef(false);
 
   useEffect(() => {
+    // Assign icons to PARAMETER_CONFIG entries
+    // This assumes PARAMETER_CONFIG is mutable or this runs once before it's deeply used.
+    // Better: Make PARAMETER_CONFIG include icons directly if possible, or clone then modify.
     if (PARAMETER_CONFIG.seaLevelHeightMsl) (PARAMETER_CONFIG.seaLevelHeightMsl as any).icon = Waves;
     if (PARAMETER_CONFIG.waveHeight) (PARAMETER_CONFIG.waveHeight as any).icon = Sailboat;
     if (PARAMETER_CONFIG.waveDirection) (PARAMETER_CONFIG.waveDirection as any).icon = CompassIcon;
@@ -103,6 +106,7 @@ export default function OMMarineExplorerPage() {
 
   const handleMapLocationSelect = useCallback((coords: { lat: number; lon: number }) => {
     setMapSelectedCoords(coords);
+    // Determine location name based on coordinates
     let foundName = "Selected Location";
     for (const key in knownLocations) {
         if (knownLocations[key].lat.toFixed(3) === coords.lat.toFixed(3) && knownLocations[key].lon.toFixed(3) === coords.lon.toFixed(3)) {
@@ -152,7 +156,7 @@ export default function OMMarineExplorerPage() {
 
         if(loadingToastId) dismiss(loadingToastId);
         setFetchLogSteps(result.log || []);
-        setIsLoadingData(false); 
+        setIsLoadingData(false);
         setIsLogLoading(false);
 
         if (result.success && result.data) {
@@ -161,11 +165,11 @@ export default function OMMarineExplorerPage() {
             if (result.data.length === 0 && !result.error) {
                 toast({ variant: "default", title: "No Data", description: "No data points found for the selected criteria.", duration: 4000 });
                 setLogOverallStatus('warning');
-                setShowFetchLogAccordion("om-combined-fetch-log-item"); 
+                setShowFetchLogAccordion("om-combined-fetch-log-item");
             } else if (result.data.length === 0 && result.error) {
                 toast({ variant: "default", title: "No Data", description: result.error, duration: 4000 });
                 setLogOverallStatus('warning');
-                setShowFetchLogAccordion("om-combined-fetch-log-item"); 
+                setShowFetchLogAccordion("om-combined-fetch-log-item");
             } else {
                 toast({ title: "Data Loaded", description: `Loaded ${result.data.length} data points.` });
                 setLogOverallStatus('success');
@@ -209,18 +213,21 @@ export default function OMMarineExplorerPage() {
     }
     const defaultLoc = knownLocations[defaultLocationKey];
     const defaultDateRange = {
-        from: new Date("2025-05-17"),
-        to: new Date("2025-05-20"),
+        from: new Date("2025-05-17"), // Using the new default date
+        to: new Date("2025-05-20"),   // Using the new default date
     };
 
     if (defaultLoc && defaultDateRange.from && defaultDateRange.to) {
         initialFetchDone.current = true; // Set this before async call to prevent re-entry
         if (defaultDateRange.from > defaultDateRange.to) {
+            // This should not happen with the new default dates, but good to keep.
+            console.error("Initial date range is invalid: start date is after end date.");
             return;
         }
         const initialCoordsForFetch = { lat: defaultLoc.lat, lon: defaultLoc.lon };
         const initialLocationName = defaultLoc.name;
         
+        // Using the memoized initialVisibility for selecting default parameters
         const initialSelectedParams = ALL_PARAMETERS.filter(key => initialVisibility[key as CombinedParameterKey]);
 
         const performInitialFetch = async () => {
@@ -233,7 +240,7 @@ export default function OMMarineExplorerPage() {
                 longitude: initialCoordsForFetch.lon,
                 startDate: formatISO(defaultDateRange.from, { representation: 'date' }),
                 endDate: formatISO(defaultDateRange.to, { representation: 'date' }),
-                parameters: initialSelectedParams, 
+                parameters: initialSelectedParams, // Pass the initially selected parameters
             });
             
             setFetchLogSteps(result.log || []);
@@ -414,7 +421,7 @@ export default function OMMarineExplorerPage() {
                 <CardContent className="space-y-0.5 max-h-60 overflow-y-auto p-2">
                     {ALL_PARAMETERS.map((key) => {
                         const paramConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
-                        const IconComp = (paramConfig as any).icon || Info;
+                        const IconComp = (paramConfig as any).icon || Info; // Default to Info icon if not specified
                         return (
                             <div key={key} className="flex items-center space-x-1.5 py-0.5">
                                 <Checkbox
@@ -437,7 +444,7 @@ export default function OMMarineExplorerPage() {
           <div className="md:col-span-8 lg:col-span-9">
             <Card className="shadow-sm h-full">
               <CardHeader className="p-2 pt-3"><CardTitle className="text-base">{dataLocationContext || "Weather & Marine Data Plots"}</CardTitle></CardHeader>
-              <CardContent className="p-1.5 h-[calc(100%-2.5rem)]">
+              <CardContent className="p-1.5 h-[calc(100%-2.5rem)]"> {/* Adjusted height for content */}
                 <MarinePlotsGrid
                     marineData={combinedData}
                     isLoading={isLoadingData}
@@ -459,3 +466,5 @@ export default function OMMarineExplorerPage() {
     </div>
   );
 }
+
+    
