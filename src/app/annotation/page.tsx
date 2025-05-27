@@ -6,8 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-// ChartDisplay import removed as plot area is being removed
-// import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay"; 
+import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay"; 
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,8 +24,6 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { format, addHours, subDays } from 'date-fns';
 
-// DummyDataPoint and YAxisConfig might not be needed if ChartDisplay is fully removed
-// or fundamentally changed. For now, keeping DummyDataPoint for context.
 interface DummyDataPoint {
   time: string;
   temperature?: number;
@@ -98,10 +95,9 @@ export default function AnnotationPage() {
   const { toast } = useToast();
   const uniqueComponentId = useId();
 
-  // State for dummy data and brush (no longer used for chart display)
-  // const [dummyData, setDummyData] = useState<DummyDataPoint[]>([]);
-  // const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
-  // const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(23);
+  const [dummyData, setDummyData] = useState<DummyDataPoint[]>([]);
+  const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
+  const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(23);
 
   const [isOverlayActive, setIsOverlayActive] = useState(false);
   const [lines, setLines] = useState<LineAnnotation[]>([]);
@@ -118,7 +114,7 @@ export default function AnnotationPage() {
   const [contextualToolbarPosition, setContextualToolbarPosition] = useState<{ x: number, y: number } | null>(null);
 
   const svgOverlayRef = useRef<SVGSVGElement>(null);
-  const chartAreaRef = useRef<HTMLDivElement>(null); // This ref is for the annotation area
+  const chartAreaRef = useRef<HTMLDivElement>(null);
 
   const selectedLine = useMemo(() => lines.find(line => line.id === selectedLineId), [lines, selectedLineId]);
   
@@ -195,8 +191,20 @@ export default function AnnotationPage() {
     setContextualToolbarPosition({ x: finalToolbarCenterX, y: finalToolbarCenterY });
   }, []);
 
-  // Removed dummy data generation for chart
-  // useEffect(() => { ... });
+  useEffect(() => {
+    const now = new Date();
+    const oneWeekAgo = subDays(now, 7);
+    const generatedData: DummyDataPoint[] = [];
+    for (let i = 0; i < 7 * 24; i++) { // 7 days, 24 hours each
+      const time = addHours(oneWeekAgo, i);
+      generatedData.push({
+        time: time.toISOString(),
+        temperature: 15 + Math.sin(i / 12) * 5 + Math.random() * 2, // Simple sine wave + noise
+      });
+    }
+    setDummyData(generatedData);
+    setBrushEndIndex(Math.min(23, generatedData.length - 1)); // Show first 24 hours by default
+  }, []);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
@@ -212,8 +220,10 @@ export default function AnnotationPage() {
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
 
-  // Removed handleBrushChange as ChartDisplay is removed for plotting
-  // const handleBrushChange = useCallback((newIndex: { startIndex?: number; endIndex?: number }) => { ... });
+  const handleBrushChange = useCallback((newIndex: { startIndex?: number; endIndex?: number }) => {
+    setBrushStartIndex(newIndex.startIndex);
+    setBrushEndIndex(newIndex.endIndex);
+  }, []);
 
   const handleAddLine = useCallback(() => {
     if (!svgOverlayRef.current || anyAnnotationInteractionActive) return;
@@ -311,8 +321,8 @@ export default function AnnotationPage() {
     } else if (isDraggingToolbar && toolbarDragStart && toolbarInitialPosition) {
         const dxGlobal = clientX - toolbarDragStart.x;
         const dyGlobal = clientY - toolbarDragStart.y;
-        const HORIZONTAL_EDGE_BUFFER_TOOLBAR = 8; // Renamed to avoid conflict
-        const VERTICAL_GAP_TOOLBAR_DRAG = 8; // Renamed
+        const HORIZONTAL_EDGE_BUFFER_TOOLBAR = 8; 
+        const VERTICAL_GAP_TOOLBAR_DRAG = 8; 
         // const TOOLBAR_APPROX_HEIGHT = 32; // Already defined
         // const TOOLBAR_APPROX_WIDTH_MIN = 130; // Already defined
 
@@ -418,6 +428,8 @@ export default function AnnotationPage() {
             id: `${Date.now()}-${uniqueComponentId}-line-copy`,
             x1: newX1, y1: newY1,
             x2: newX2, y2: newY2,
+            strokeWidth: lineToCopy.strokeWidth || DEFAULT_STROKE_WIDTH,
+            color: lineToCopy.color || DEFAULT_LINE_COLOR,
         };
         setLines(prevLines => [...prevLines, newCopiedLine]);
         setSelectedLineId(newCopiedLine.id);
@@ -466,6 +478,18 @@ export default function AnnotationPage() {
     setToolbarInitialPosition({ ...contextualToolbarPosition });
     setIsDraggingToolbar(true);
   }, [contextualToolbarPosition, getNormalizedCoordinates, anyAnnotationInteractionActive]);
+
+  const yAxisConfigs: YAxisConfig[] = useMemo(() => ([
+    {
+      dataKey: 'temperature',
+      label: 'Temperature',
+      unit: '°C',
+      orientation: 'left',
+      yAxisId: 'temp-axis',
+      color: '--chart-1',
+    }
+  ]), []);
+
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -663,18 +687,30 @@ export default function AnnotationPage() {
               </div>
             )}
 
-            {/* Placeholder for plot area */}
             <div
               ref={chartAreaRef}
               className={cn(
-                "relative border rounded-md bg-muted/20", // Added border and bg for visual cue
+                "relative border rounded-md bg-muted/20",
                 isOverlayActive && anyAnnotationInteractionActive && "opacity-70 pointer-events-none"
               )}
-              style={{ height: `${ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT * 0.85}px` }} // Consistent height
+              style={{ height: `${ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT * 0.85}px` }}
             >
-              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                Plot area removed. Annotations will appear here.
-              </div>
+              {dummyData.length > 0 ? (
+                <ChartDisplay
+                  data={dummyData}
+                  plottableSeries={['temperature']}
+                  yAxisConfigs={yAxisConfigs}
+                  timeAxisLabel="Time (Hourly over 1 Week)"
+                  chartRenderHeight={ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT}
+                  brushStartIndex={brushStartIndex}
+                  brushEndIndex={brushEndIndex}
+                  onBrushChange={handleBrushChange}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                  Loading temperature data...
+                </div>
+              )}
               {isOverlayActive && (
                  <svg
                     ref={svgOverlayRef}
@@ -689,8 +725,8 @@ export default function AnnotationPage() {
                     }}
                 >
                     <defs>
-                        <marker id={`arrowheadEnd-${uniqueComponentId}`} markerWidth="3" markerHeight="3.5" refX="3" refY="1.75" orient="auto" fill="currentColor"><polygon points={`0 0, 3 1.75, 0 3.5`} /></marker>
-                        <marker id={`arrowheadStart-${uniqueComponentId}`} markerWidth="3" markerHeight="3.5" refX="0" refY="1.75" orient="auto-start-reverse" fill="currentColor"><polygon points={`0 0, 3 1.75, 0 3.5`} /></marker>
+                        <marker id={`arrowheadEnd-${uniqueComponentId}`} markerWidth="3" markerHeight="3.5" refX="0" refY="1.75" orient="auto" fill="currentColor"><polygon points="0 0, 3 1.75, 0 3.5" /></marker>
+                        <marker id={`arrowheadStart-${uniqueComponentId}`} markerWidth="3" markerHeight="3.5" refX="0" refY="1.75" orient="auto-start-reverse" fill="currentColor"><polygon points="0 0, 3 1.75, 0 3.5" /></marker>
                     </defs>
                     {lines.map(line => (
                         <g key={line.id} >
@@ -782,3 +818,4 @@ export default function AnnotationPage() {
     </div>
   );
 }
+
