@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip as RechartsTooltip, // Renamed to avoid conflict with Shadcn Tooltip
+  Tooltip as RechartsTooltip, 
   Legend,
   ResponsiveContainer,
   Label as RechartsLabel,
@@ -36,7 +36,7 @@ interface ChartDisplayProps {
   data: DataPoint[];
   plottableSeries: string[];
   timeAxisLabel?: string;
-  plotTitle?: string; // Used for no-data messages
+  plotTitle?: string; 
   chartRenderHeight?: number;
   brushStartIndex?: number;
   brushEndIndex?: number;
@@ -45,14 +45,13 @@ interface ChartDisplayProps {
   activeHighlightRange?: { startIndex: number; endIndex: number } | null;
 }
 
-const INTERNAL_DEFAULT_CHART_HEIGHT = 278;
+const INTERNAL_DEFAULT_CHART_HEIGHT = 278; 
 const chartColors = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"];
 
 const formatDateTick = (timeValue: string | number): string => {
   try {
     const date = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
     if (!isValid(date)) {
-      // Try to re-parse if it looks like a specific ISO format that parseISO might initially miss
       if (typeof timeValue === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(timeValue)) {
         const parsed = parseISO(timeValue);
         if (isValid(parsed)) return format(parsed, 'dd-MM-yy');
@@ -82,7 +81,7 @@ export function ChartDisplay({
   }, [chartRenderHeight]);
 
   const visibleChartAreaHeight = React.useMemo(() => {
-    return chartHeightToUse * 0.85; // For the clipping effect
+    return chartHeightToUse * 0.85; 
   }, [chartHeightToUse]);
 
   const wrapperStyle: React.CSSProperties = React.useMemo(() => ({
@@ -127,21 +126,20 @@ export function ChartDisplay({
   }, [yAxisConfigs, plottableSeries]);
   
   const highlightedData = React.useMemo(() => {
-    if (activeHighlightRange && chartData.length > 0) {
+    if (activeHighlightRange && chartData.length > 0 && plottableSeries.length > 0) {
       const { startIndex, endIndex } = activeHighlightRange;
       const validStartIndex = Math.max(0, Math.min(startIndex, chartData.length - 1));
       const validEndIndex = Math.max(0, Math.min(endIndex, chartData.length - 1));
+      const seriesKeyToHighlight = plottableSeries[0]; // Assuming single series for highlighter for now
 
       if (validStartIndex <= validEndIndex) {
         return chartData.map((point, index) => {
           if (index >= validStartIndex && index <= validEndIndex) {
-            return point;
+            return point; 
           }
-          // Create a point with nulls for all plottable series outside the highlighted range
-          const nullifiedPoint = { time: point.time };
-          plottableSeries.forEach(series => {
-            (nullifiedPoint as any)[series] = null;
-          });
+          // Create a point with nulls for the plottable series outside the highlighted range
+          const nullifiedPoint: DataPoint = { time: point.time };
+          (nullifiedPoint as any)[seriesKeyToHighlight] = null;
           return nullifiedPoint;
         });
       }
@@ -190,7 +188,7 @@ export function ChartDisplay({
             top: 5,
             right: yAxisConfigs.filter(c => c.orientation === 'right').length > 0 ? yAxisConfigs.filter(c => c.orientation === 'right').length * 40 + 5 : 20,
             left: yAxisConfigs.filter(c => c.orientation === 'left').length > 0 ? yAxisConfigs.filter(c => c.orientation === 'left').length * 40 - 15 : 5,
-            bottom: 78, // Adjusted for X-axis labels, title, and Brush
+            bottom: 78, 
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -258,7 +256,7 @@ export function ChartDisplay({
           />
           <Legend
             verticalAlign="bottom"
-            wrapperStyle={{ paddingTop: '10px', fontSize: '0.7rem' }} // Increased padding
+            wrapperStyle={{ paddingTop: '10px', fontSize: '0.7rem' }} 
           />
           
           {plottableSeries.map((seriesName, index) => {
@@ -312,7 +310,7 @@ export function ChartDisplay({
           })}
           <Brush
             dataKey="time"
-            height={20} // Taller brush
+            height={20} 
             stroke="hsl(var(--primary))"
             fill="transparent"
             tickFormatter={formatDateTick}
@@ -327,3 +325,4 @@ export function ChartDisplay({
     </div>
   );
 }
+

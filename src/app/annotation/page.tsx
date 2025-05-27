@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { 
   LayoutGrid, Waves, SunMoon, FilePenLine, Edit, 
   Trash2, Plus, Copy, Move as MoveIcon, Spline, Palette,
-  RotateCcw, GripVertical, MoveRight, Highlighter // Added Highlighter
+  RotateCcw, GripVertical, MoveRight, Highlighter
 } from "lucide-react"; 
 import {
   DropdownMenu,
@@ -78,9 +78,9 @@ const CHART_RENDERING_BASE_HEIGHT = 278;
 const DEFAULT_LINE_COLOR = 'hsl(var(--primary))';
 const TOOLBAR_APPROX_HEIGHT = 36; 
 const TOOLBAR_APPROX_WIDTH = 100; 
-const VERTICAL_GAP_TOOLBAR = 10;
+const VERTICAL_GAP_TOOLBAR = 8; // Reduced gap
 const HORIZONTAL_EDGE_BUFFER_TOOLBAR = 8;
-const TOOLBAR_OFFSET_FROM_LINE_Y = 15; 
+const TOOLBAR_OFFSET_FROM_LINE_Y = 15; // How far above the line the toolbar aims to be
 
 const LineStyleIcon = ({ style }: { style: 'solid' | 'dashed' | 'dotted' }) => {
   let strokeDasharray;
@@ -94,8 +94,8 @@ const LineStyleIcon = ({ style }: { style: 'solid' | 'dashed' | 'dotted' }) => {
 };
 
 const ArrowStyleIcon = ({ style }: { style: 'none' | 'end' | 'both' }) => {
-  const markerWidth = 3;
-  const padding = 2;
+  const markerWidth = 3; // Width of the arrowhead
+  const padding = 2; // Padding from the edges of the SVG
   let x1 = padding;
   let x2 = 24 - padding;
 
@@ -144,7 +144,7 @@ export default function AnnotationPage() {
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
 
   const [isOverlayActive, setIsOverlayActive] = useState(false);
-  const [isHighlighterToolActive, setIsHighlighterToolActive] = useState(false); // New state
+  const [isHighlighterToolActive, setIsHighlighterToolActive] = useState(false);
 
   const [lines, setLines] = useState<LineAnnotation[]>([]);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
@@ -184,11 +184,13 @@ export default function AnnotationPage() {
     let toolbarX = midX;
     let toolbarY = midY - TOOLBAR_APPROX_HEIGHT / 2 - TOOLBAR_OFFSET_FROM_LINE_Y; 
 
+    // Clamp Y position
     toolbarY = Math.max(
-      TOOLBAR_APPROX_HEIGHT / 2 + VERTICAL_GAP_TOOLBAR, // Ensure toolbar doesn't go above its own height + gap
-      Math.min(toolbarY, svgRect.height - TOOLBAR_APPROX_HEIGHT / 2 - VERTICAL_GAP_TOOLBAR) // Ensure toolbar doesn't go below its own height + gap
+      TOOLBAR_APPROX_HEIGHT / 2 + VERTICAL_GAP_TOOLBAR, 
+      Math.min(toolbarY, svgRect.height - TOOLBAR_APPROX_HEIGHT / 2 - VERTICAL_GAP_TOOLBAR)
     );
     
+    // Clamp X position
     toolbarX = Math.max(
       TOOLBAR_APPROX_WIDTH / 2 + HORIZONTAL_EDGE_BUFFER_TOOLBAR,
       Math.min(toolbarX, svgRect.width - TOOLBAR_APPROX_WIDTH / 2 - HORIZONTAL_EDGE_BUFFER_TOOLBAR)
@@ -196,6 +198,7 @@ export default function AnnotationPage() {
     
     setContextualToolbarPosition({ x: toolbarX, y: toolbarY });
   }, []);
+
 
   useEffect(() => {
     const generatedData = generateDummyData();
@@ -260,9 +263,8 @@ export default function AnnotationPage() {
   const handleDraggablePointInteractionStart = (lineId: string, pointType: 'start' | 'end', event: React.MouseEvent | React.TouchEvent) => {
     event.stopPropagation();
     if ('preventDefault' in event) event.preventDefault(); 
-    setSelectedLineId(lineId); // Ensure the line is selected
+    setSelectedLineId(lineId); 
     setDraggingPoint({ lineId, pointType });
-    // Toolbar position will be updated in handleInteractionMove
   };
 
   const handleInteractionMove = useCallback((event: MouseEvent | TouchEvent) => {
@@ -348,7 +350,6 @@ export default function AnnotationPage() {
         setIsDraggingToolbar(false);
         setToolbarDragStart(null);
         setToolbarInitialPosition(null);
-        // Toolbar position is already set by move, no need to update from line here
         return; 
     }
     if (finalLine) updateContextualToolbarPos(finalLine);
@@ -356,7 +357,8 @@ export default function AnnotationPage() {
   }, [draggingPoint, movingLineId, lines, updateContextualToolbarPos, isDraggingToolbar]);
 
   useEffect(() => {
-    if (draggingPoint || movingLineId || isDraggingToolbar) {
+    const isAnyDragActive = !!(draggingPoint || movingLineId || isDraggingToolbar);
+    if (isAnyDragActive) {
       window.addEventListener('mousemove', handleInteractionMove);
       window.addEventListener('touchmove', handleInteractionMove, { passive: false });
       window.addEventListener('mouseup', handleInteractionEnd);
@@ -373,7 +375,7 @@ export default function AnnotationPage() {
   
   const handleLineHitboxInteractionStart = (lineId: string, event: React.MouseEvent | React.TouchEvent<Element>) => {
     event.stopPropagation();
-    if (draggingPoint || isDraggingToolbar) return; // Prevent starting a move if already dragging a point or toolbar
+    if (draggingPoint || isDraggingToolbar) return; 
 
     const lineToInteract = lines.find(l => l.id === lineId);
     if (!lineToInteract) return;
@@ -381,6 +383,7 @@ export default function AnnotationPage() {
     setSelectedLineId(lineId); 
     updateContextualToolbarPos(lineToInteract); 
 
+    // This is the part for moving the whole line
     if (!svgOverlayRef.current) return;
     const { clientX, clientY } = getNormalizedCoordinates(event);
     const rect = svgOverlayRef.current.getBoundingClientRect();
@@ -393,7 +396,7 @@ export default function AnnotationPage() {
   };
 
   const handleToolbarDragStart = (event: React.MouseEvent | React.TouchEvent) => {
-    event.stopPropagation(); // Prevent other interactions
+    event.stopPropagation(); 
     if (!contextualToolbarPosition) return;
     setIsDraggingToolbar(true);
     const { clientX, clientY } = getNormalizedCoordinates(event);
@@ -525,11 +528,14 @@ export default function AnnotationPage() {
     isHighlighterToolActive &&
     brushStartIndex !== undefined &&
     brushEndIndex !== undefined &&
-    brushStartIndex <= brushEndIndex // Ensure start isn't after end
+    brushStartIndex <= brushEndIndex 
       ? { startIndex: brushStartIndex, endIndex: brushEndIndex }
       : null, 
   [isHighlighterToolActive, brushStartIndex, brushEndIndex]);
 
+
+  const isDrawingToolActive = false; // This will be true if line drawing or similar annotation drawing is active
+  const anyAnnotationInteractionActive = !!(draggingPoint || movingLineId || isDraggingToolbar || isDrawingToolActive);
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -608,7 +614,7 @@ export default function AnnotationPage() {
                     setMovingLineId(null);
                     setContextualToolbarPosition(null);
                     setIsDraggingToolbar(false);
-                    setIsHighlighterToolActive(false); // Also turn off highlighter tool
+                    setIsHighlighterToolActive(false);
                   }
                 }}
               />
@@ -781,6 +787,40 @@ export default function AnnotationPage() {
                       </DropdownMenuRadioGroup>
                     </DropdownMenuContent>
                   </DropdownMenu>
+
+                  <Separator orientation="vertical" className="h-6 mx-1" />
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={handleCopySelectedLine}
+                        disabled={isMainToolbarButtonDisabled('action') || isHighlighterToolActive}
+                        aria-label="Copy Selected Line"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>Copy Line</p></TooltipContent>
+                  </Tooltip>
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={handleDeleteSelectedLine}
+                        disabled={isMainToolbarButtonDisabled('action') || isHighlighterToolActive}
+                        aria-label="Delete Selected Line"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>Delete Line</p></TooltipContent>
+                  </Tooltip>
                 </div>
               </TooltipProvider>
             )}
@@ -792,7 +832,7 @@ export default function AnnotationPage() {
             >
               <div className={cn(
                 (isOverlayActive && !isHighlighterToolActive) && "opacity-30 transition-opacity", 
-                (isOverlayActive && (draggingPoint || movingLineId || isDraggingToolbar || isHighlighterToolActive)) && "pointer-events-none"
+                anyAnnotationInteractionActive || (isOverlayActive && isHighlighterToolActive) && "pointer-events-none"
               )}>
                 <ChartDisplay
                   data={dummyData}
@@ -804,10 +844,10 @@ export default function AnnotationPage() {
                   brushStartIndex={brushStartIndex}
                   brushEndIndex={brushEndIndex}
                   onBrushChange={handleBrushChange}
-                  activeHighlightRange={currentActiveHighlightRange} // Pass highlight range
+                  activeHighlightRange={currentActiveHighlightRange}
                 />
               </div>
-              {isOverlayActive && !isHighlighterToolActive && chartAreaRef.current && ( // Only render SVG overlay if highlighter is OFF
+              {isOverlayActive && !isHighlighterToolActive && chartAreaRef.current && ( 
                  <svg
                     ref={svgOverlayRef}
                     className="absolute top-0 left-0 w-full h-full z-10" 
@@ -815,7 +855,7 @@ export default function AnnotationPage() {
                     onTouchStart={handleSvgBackgroundClick} 
                     style={{ 
                         cursor: svgCursor,
-                        pointerEvents: (draggingPoint || movingLineId || isDraggingToolbar) ? 'auto' : 'auto', 
+                        pointerEvents: (isHighlighterToolActive) ? 'none' : ( (anyAnnotationInteractionActive || selectedLineId) ? 'auto' : 'auto' )
                     }}
                   >
                     <defs>
@@ -834,7 +874,7 @@ export default function AnnotationPage() {
                           strokeWidth="20" 
                           className={cn(
                             "cursor-pointer",
-                            selectedLineId === line.id && !draggingPoint && !movingLineId && !isDraggingToolbar && "cursor-move" 
+                             selectedLineId === line.id && !draggingPoint && !movingLineId && !isDraggingToolbar && "cursor-move"
                           )}
                           onMouseDown={(e) => handleLineHitboxInteractionStart(line.id, e)}
                           onTouchStart={(e) => handleLineHitboxInteractionStart(line.id, e as unknown as React.TouchEvent<SVGLineElement>)}
@@ -851,7 +891,7 @@ export default function AnnotationPage() {
                         />
                         {selectedLineId === line.id && !movingLineId && !isDraggingToolbar && (
                           <>
-                            <circle // Start point handle
+                            <circle 
                               cx={line.x1} cy={line.y1} r="8" 
                               fill="hsl(var(--destructive))" opacity="0.5" 
                               className="cursor-grab active:cursor-grabbing"
@@ -864,7 +904,7 @@ export default function AnnotationPage() {
                               fill="hsl(var(--destructive))"
                               style={{ pointerEvents: 'none' }}
                             />
-                            <circle // End point handle
+                            <circle 
                               cx={line.x2} cy={line.y2} r="8" 
                               fill="hsl(var(--destructive))" opacity="0.5" 
                               className="cursor-grab active:cursor-grabbing"
@@ -884,13 +924,13 @@ export default function AnnotationPage() {
                   </svg>
               )}
               {/* Contextual Toolbar */}
-              {isOverlayActive && !isHighlighterToolActive && selectedLineId && contextualToolbarPosition && (
+              {isOverlayActive && !isHighlighterToolActive && selectedLineId && contextualToolbarPosition && !draggingPoint && !movingLineId && (
                   <div
                       className="absolute bg-card border shadow-lg rounded-md p-1 flex items-center space-x-1 z-30"
                       style={{
                           left: `${contextualToolbarPosition.x}px`,
                           top: `${contextualToolbarPosition.y}px`,
-                          transform: `translateX(-50%) translateY(-${TOOLBAR_APPROX_HEIGHT / 2 + VERTICAL_GAP_TOOLBAR}px)`, // Center horizontally, position above
+                          transform: `translateX(-50%) translateY(-${TOOLBAR_APPROX_HEIGHT / 2 + VERTICAL_GAP_TOOLBAR}px)`,
                           cursor: isDraggingToolbar ? 'grabbing' : 'default',
                       }}
                   >
@@ -902,26 +942,14 @@ export default function AnnotationPage() {
                           >
                              <GripVertical className="h-4 w-4 text-muted-foreground" />
                           </div>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="outline" size="icon" className="h-7 w-7" onClick={handleCopySelectedLine} disabled={draggingPoint !== null || movingLineId !== null || isDraggingToolbar}><Copy className="h-3.5 w-3.5" /></Button>
-                            </TooltipTrigger>
-                            <TooltipContent><p>Copy Line</p></TooltipContent>
-                          </Tooltip>
-                           <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={handleDeleteSelectedLine} disabled={draggingPoint !== null || movingLineId !== null || isDraggingToolbar}><Trash2 className="h-3.5 w-3.5" /></Button>
-                            </TooltipTrigger>
-                            <TooltipContent><p>Delete Line</p></TooltipContent>
-                          </Tooltip>
                       </TooltipProvider>
                   </div>
               )}
             </div>
           </CardContent>
         </Card>
-         {isOverlayActive && !isHighlighterToolActive && selectedLineId && !draggingPoint && !movingLineId && !isDraggingToolbar && <CardDescription className="text-center text-xs mt-2">Line selected. Drag line or endpoints to move/resize. Use main toolbar to style.</CardDescription>}
-         {isOverlayActive && !isHighlighterToolActive && (draggingPoint || movingLineId || isDraggingToolbar) && <CardDescription className="text-center text-xs mt-2">{draggingPoint ? 'Dragging line endpoint...' : (movingLineId ? 'Moving line...' : 'Dragging toolbar...')}</CardDescription>}
+         {isOverlayActive && !isHighlighterToolActive && selectedLineId && !anyAnnotationInteractionActive && <CardDescription className="text-center text-xs mt-2">Line selected. Drag line or endpoints to move/resize. Use main toolbar to style.</CardDescription>}
+         {isOverlayActive && !isHighlighterToolActive && anyAnnotationInteractionActive && <CardDescription className="text-center text-xs mt-2">{draggingPoint ? 'Dragging line endpoint...' : (movingLineId ? 'Moving line...' : (isDraggingToolbar ? 'Dragging toolbar...' : 'Drawing...'))}</CardDescription>}
          {isOverlayActive && isHighlighterToolActive && <CardDescription className="text-center text-xs mt-2">Highlighter active. Use the chart slider below to select a range to highlight.</CardDescription>}
          {!isOverlayActive && (lines.length > 0 || currentActiveHighlightRange) && <CardDescription className="text-center text-xs mt-2">Toggle "Annotation Tools" to edit annotations or highlights.</CardDescription>}
       </main>
@@ -936,6 +964,4 @@ export default function AnnotationPage() {
     </div>
   );
 }
-    
-
     
