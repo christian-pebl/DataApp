@@ -36,12 +36,13 @@ interface ChartDisplayProps {
   data: DataPoint[];
   plottableSeries: string[];
   timeAxisLabel?: string;
-  plotTitle?: string; // Added for context in messages
+  plotTitle?: string;
   chartRenderHeight?: number;
   brushStartIndex?: number;
   brushEndIndex?: number;
   onBrushChange?: (newIndex: { startIndex?: number; endIndex?: number }) => void;
   yAxisConfigs?: YAxisConfig[];
+  activeHighlightRange?: { startIndex: number; endIndex: number } | null; // Added for highlighter
 }
 
 const INTERNAL_DEFAULT_CHART_HEIGHT = 350;
@@ -57,6 +58,7 @@ export function ChartDisplay({
   brushEndIndex,
   onBrushChange,
   yAxisConfigs = [],
+  activeHighlightRange = null,
 }: ChartDisplayProps) {
 
   const chartHeightToUse = chartRenderHeight ?? INTERNAL_DEFAULT_CHART_HEIGHT;
@@ -80,6 +82,37 @@ export function ChartDisplay({
     });
   }, [data, plottableSeries]);
 
+  const highlightedData = React.useMemo(() => {
+    if (!activeHighlightRange || !chartData || chartData.length === 0) {
+      return null; // No highlight or no data
+    }
+    const { startIndex, endIndex } = activeHighlightRange;
+    if (startIndex == null || endIndex == null || startIndex >= endIndex) {
+      return null;
+    }
+
+    // Create an array of the same length as chartData
+    // For the highlighted series, put actual data in range, null outside
+    // For other series, put null everywhere
+    return chartData.map((point, index) => {
+      const newPoint: DataPoint = { time: point.time };
+      plottableSeries.forEach(seriesName => {
+        // Assuming the highlighter only applies to the first plottable series for simplicity
+        // Or, if you want highlighter to apply to all, this logic would need adjustment
+        if (seriesName === plottableSeries[0]) { 
+          if (index >= startIndex && index <= endIndex) {
+            newPoint[seriesName] = point[seriesName];
+          } else {
+            newPoint[seriesName] = null;
+          }
+        } else {
+          newPoint[seriesName] = null; // Other series are not part of the highlight line
+        }
+      });
+      return newPoint;
+    });
+  }, [activeHighlightRange, chartData, plottableSeries]);
+
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
     if (!chartData || chartData.length === 0 || plottableSeries.length === 0) return false;
     return plottableSeries.some(seriesName =>
@@ -97,21 +130,18 @@ export function ChartDisplay({
     if (startIdx >= chartData.length || endIdx < 0 || startIdx > endIdx) {
          return { durationMs: Infinity, ticks: undefined, format: "dd-MM-yy" };
     }
-
     const startTimeValue = chartData[startIdx]?.time;
     const endTimeValue = chartData[endIdx]?.time;
 
     if (!startTimeValue || !endTimeValue) {
          return { durationMs: Infinity, ticks: undefined, format: "dd-MM-yy" };
     }
-
     const startDate = typeof startTimeValue === 'string' ? parseISO(startTimeValue) : new Date(startTimeValue);
     const endDate = typeof endTimeValue === 'string' ? parseISO(endTimeValue) : new Date(endTimeValue);
 
     if (!isValid(startDate) || !isValid(endDate)) {
         return { durationMs: Infinity, ticks: undefined, format: "dd-MM-yy" };
     }
-    
     const durationMs = differenceInMilliseconds(endDate, startDate);
 
     if (durationMs < MILLISECONDS_IN_48_HOURS) {
@@ -121,32 +151,23 @@ export function ChartDisplay({
         ticks.push(currentTick.getTime());
         currentTick = addHours(currentTick, 6);
       }
-      // Ensure the last data point's time is also a potential tick if it's not covered
-      if (ticks.length > 0 && ticks[ticks.length-1] < endDate.getTime() && (endDate.getTime() - ticks[ticks.length-1]) > 2*60*60*1000 ) {
-         // ticks.push(endDate.getTime()); // Only add if significantly past last 6hr tick
-      }
-      // Add first tick if not present
-      if (ticks.length === 0 || (ticks.length > 0 && startDate.getTime() < ticks[0] && (ticks[0] - startDate.getTime() > 2*60*60*1000))) {
-        // ticks.unshift(startDate.getTime());
-      }
-
-
       return { durationMs, ticks: ticks.length > 0 ? ticks : undefined, format: "HH:mm" };
     }
-
     return { durationMs, ticks: undefined, format: "dd-MM-yy" };
   }, [chartData, brushStartIndex, brushEndIndex]);
+
+  const yAxisLabelText = React.useMemo(() => {
+    return yAxisConfigs.length === 1 && yAxisConfigs[0]
+    ? `${yAxisConfigs[0].label}${yAxisConfigs[0].unit ? ` (${yAxisConfigs[0].unit})` : ''}`
+    : "Value";
+  }, [yAxisConfigs]);
 
   const formatXAxisTick = (timeValue: string | number): string => {
     try {
       const date = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
-      if (!isValid(date)) {
-        return String(timeValue); // Fallback for unparseable values
-      }
+      if (!isValid(date)) { return String(timeValue); }
       return format(date, visibleTimeRangeInfo.format);
-    } catch (e) {
-      return String(timeValue); // Fallback for any error
-    }
+    } catch (e) { return String(timeValue); }
   };
 
   const renderNoDataMessage = (icon: React.ReactNode, primaryText: string, secondaryText?: string) => (
@@ -173,13 +194,6 @@ export function ChartDisplay({
     );
   }
 
-  const yAxisLabelText = React.useMemo(() => {
-    return yAxisConfigs.length === 1 && yAxisConfigs[0]
-    ? `${yAxisConfigs[0].label}${yAxisConfigs[0].unit ? ` (${yAxisConfigs[0].unit})` : ''}`
-    : "Value";
-  }, [yAxisConfigs]);
-
-
   return (
     <ResponsiveContainer width="100%" height={chartHeightToUse}>
       <LineChart
@@ -188,7 +202,7 @@ export function ChartDisplay({
           top: 5,
           right: yAxisConfigs.filter(c => c.orientation === 'right').length > 0 ? Math.max(20, yAxisConfigs.filter(c => c.orientation === 'right').length * 40 + 5) : 20,
           left: yAxisConfigs.filter(c => c.orientation === 'left').length > 0 ? Math.max(25, yAxisConfigs.filter(c => c.orientation === 'left').length * 40 -15) : 25,
-          bottom: 75, // Adjusted for X-axis labels, title, and Brush
+          bottom: 110,
         }}
       >
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -197,18 +211,18 @@ export function ChartDisplay({
           stroke="hsl(var(--foreground))"
           angle={-45}
           textAnchor="end"
-          height={60} 
-          interval="preserveStartEnd" // Recharts will attempt to show ticks without overlap
-          ticks={visibleTimeRangeInfo.ticks} // Pass dynamic ticks for <48h range
+          height={60}
+          interval="preserveStartEnd"
+          ticks={visibleTimeRangeInfo.ticks}
           tickFormatter={formatXAxisTick}
           tick={{ fontSize: '0.6rem' }}
         >
           <RechartsYAxisLabel
             value={timeAxisLabel || "Time"}
-            offset={15}
+            offset={20}
             position="insideBottom"
             fill="hsl(var(--muted-foreground))"
-            dy={15}
+            dy={25}
             style={{ fontSize: '0.6rem', textAnchor: 'middle' } as React.CSSProperties}
           />
         </XAxis>
@@ -235,7 +249,7 @@ export function ChartDisplay({
                 dx: config.orientation === 'left' ? -5 - axisOffset : 5 + axisOffset,
                 dy: 0,
               }}
-              width={40} // Base width
+              width={40}
             />
           );
         }) : (
@@ -278,30 +292,65 @@ export function ChartDisplay({
           const seriesDisplayName = yAxisConfigForSeries ? yAxisConfigForSeries.label : seriesName.charAt(0).toUpperCase() + seriesName.slice(1);
 
           return (
-            <Line
-              key={seriesName}
-              type="monotone"
-              dataKey={seriesName}
-              stroke={mainLineColor}
-              strokeWidth={1.5}
-              dot={false}
-              name={seriesDisplayName}
-              connectNulls={true}
-              yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
-              isAnimationActive={false}
-            />
+            <React.Fragment key={seriesName}>
+              {activeHighlightRange && highlightedData && seriesName === plottableSeries[0] ? (
+                <>
+                  {/* Background greyed-out line */}
+                  <Line
+                    type="monotone"
+                    dataKey={seriesName}
+                    stroke="hsl(var(--muted-foreground))"
+                    strokeOpacity={0.3}
+                    strokeWidth={1.5}
+                    dot={false}
+                    name={`${seriesDisplayName} (Background)`}
+                    connectNulls={true}
+                    yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
+                    isAnimationActive={false}
+                    legendType="none" // Hide from legend
+                  />
+                  {/* Highlighted segment */}
+                  <Line
+                    data={highlightedData} // Use the specially prepared highlightedData
+                    type="monotone"
+                    dataKey={seriesName}
+                    stroke={mainLineColor} // Full color for highlight
+                    strokeWidth={2} // Slightly thicker for emphasis
+                    dot={false}
+                    name={seriesDisplayName} // Keep original name for legend/tooltip
+                    connectNulls={true}
+                    yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
+                    isAnimationActive={false}
+                  />
+                </>
+              ) : (
+                // Default line rendering if no highlight or not the primary series for highlighting
+                <Line
+                  type="monotone"
+                  dataKey={seriesName}
+                  stroke={mainLineColor}
+                  strokeWidth={1.5}
+                  dot={false}
+                  name={seriesDisplayName}
+                  connectNulls={true}
+                  yAxisId={yAxisConfigForSeries ? yAxisConfigForSeries.id : (yAxisConfigs[0]?.id || 0)}
+                  isAnimationActive={false}
+                />
+              )}
+            </React.Fragment>
           );
         })}
         <Brush
           dataKey="time"
-          height={12}
+          height={20} // Made brush a bit taller for better interaction
           stroke="hsl(var(--primary))"
           fill="transparent"
-          tickFormatter={(timeValue) => format(parseISO(timeValue as string), 'dd-MM-yy')} // Brush uses fixed format
+          tickFormatter={(timeValue) => format(parseISO(timeValue as string), 'dd-MM-yy')}
           travellerWidth={8}
           startIndex={brushStartIndex}
           endIndex={brushEndIndex}
           onChange={onBrushChange}
+          // y={chartHeightToUse - 70} // Adjust y based on desired position
         />
       </LineChart>
     </ResponsiveContainer>
