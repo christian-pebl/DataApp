@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label as UiLabel } from "@/components/ui/label";
-import { Input } from "@/components/ui/input"; // For search input
-import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, MapPin, CalendarDays, Thermometer, Compass, Timer, Wind as WindIcon, Sun as SunIcon, Sailboat, Copy, FilePenLine } from "lucide-react"; // Added FilePenLine
+import { Input } from "@/components/ui/input";
+import { Loader2, SunMoon, LayoutGrid, Waves, Search, Info, CheckCircle2, XCircle, ListChecks, MapPin, CalendarDays, Thermometer, Compass as CompassIcon, Timer, Wind as WindIcon, Sun as SunIcon, Sailboat, Copy } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 
 import type { CombinedDataPoint, LogStep, CombinedParameterKey } from './shared';
-import { PARAMETER_CONFIG, ALL_PARAMETERS } from './shared';
+import { ALL_PARAMETERS, PARAMETER_CONFIG } from './shared';
 import { fetchCombinedDataAction } from './actions';
 
 const OpenLayersMapWithNoSSR = dynamic(
@@ -37,7 +37,7 @@ const OpenLayersMapWithNoSSR = dynamic(
 
 type LogOverallStatus = 'pending' | 'success' | 'error' | 'idle' | 'warning';
 
-const DEFAULT_LATITUDE = 51.7128; // Milford Haven default
+const DEFAULT_LATITUDE = 51.7128; 
 const DEFAULT_LONGITUDE = -5.0341;
 const DEFAULT_MAP_ZOOM = 10;
 
@@ -56,6 +56,7 @@ export default function OMMarineExplorerPage() {
   const [theme, setTheme] = useState("light");
   const pathname = usePathname();
   const { toast, dismiss } = useToast();
+  const instanceId = useId(); // For unique checkbox IDs
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
     from: new Date("2025-05-17"),
@@ -76,7 +77,7 @@ export default function OMMarineExplorerPage() {
 
   const initialVisibility = useMemo(() => 
     Object.fromEntries(ALL_PARAMETERS.map(key => [key, true])) as Record<CombinedParameterKey, boolean>
-  , []); // ALL_PARAMETERS is stable
+  , []);
 
   const [plotVisibility, setPlotVisibility] = useState<Record<CombinedParameterKey, boolean>>(initialVisibility);
 
@@ -90,12 +91,12 @@ export default function OMMarineExplorerPage() {
   useEffect(() => {
     if (PARAMETER_CONFIG.seaLevelHeightMsl) (PARAMETER_CONFIG.seaLevelHeightMsl as any).icon = Waves;
     if (PARAMETER_CONFIG.waveHeight) (PARAMETER_CONFIG.waveHeight as any).icon = Sailboat;
-    if (PARAMETER_CONFIG.waveDirection) (PARAMETER_CONFIG.waveDirection as any).icon = Compass;
+    if (PARAMETER_CONFIG.waveDirection) (PARAMETER_CONFIG.waveDirection as any).icon = CompassIcon;
     if (PARAMETER_CONFIG.wavePeriod) (PARAMETER_CONFIG.wavePeriod as any).icon = Timer;
     if (PARAMETER_CONFIG.seaSurfaceTemperature) (PARAMETER_CONFIG.seaSurfaceTemperature as any).icon = Thermometer;
     if (PARAMETER_CONFIG.temperature2m) (PARAMETER_CONFIG.temperature2m as any).icon = Thermometer;
     if (PARAMETER_CONFIG.windSpeed10m) (PARAMETER_CONFIG.windSpeed10m as any).icon = WindIcon;
-    if (PARAMETER_CONFIG.windDirection10m) (PARAMETER_CONFIG.windDirection10m as any).icon = Compass;
+    if (PARAMETER_CONFIG.windDirection10m) (PARAMETER_CONFIG.windDirection10m as any).icon = CompassIcon;
     if (PARAMETER_CONFIG.ghi) (PARAMETER_CONFIG.ghi as any).icon = SunIcon;
   }, []);
 
@@ -187,15 +188,17 @@ export default function OMMarineExplorerPage() {
   }, [mapSelectedCoords, currentLocationName, dateRange, plotVisibility, toast, dismiss]);
 
   useEffect(() => {
-    const storedTheme = localStorage.getItem("theme");
+    const storedTheme = typeof window !== 'undefined' ? localStorage.getItem("theme") : null;
     if (storedTheme) setTheme(storedTheme);
-    else if (window.matchMedia("(prefers-color-scheme: dark)").matches) setTheme("dark");
+    else if (typeof window !== 'undefined' && window.matchMedia("(prefers-color-scheme: dark)").matches) setTheme("dark");
   }, []);
 
   useEffect(() => {
-    if (theme === "dark") document.documentElement.classList.add("dark");
-    else document.documentElement.classList.remove("dark");
-    localStorage.setItem("theme", theme);
+    if (typeof window !== 'undefined') {
+      if (theme === "dark") document.documentElement.classList.add("dark");
+      else document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", theme);
+    }
   }, [theme]);
 
   const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
@@ -205,19 +208,19 @@ export default function OMMarineExplorerPage() {
       return;
     }
     const defaultLoc = knownLocations[defaultLocationKey];
-    const defaultStartDate = new Date("2025-05-17");
-    const defaultEndDate = new Date("2025-05-20");
+    const defaultDateRange = {
+        from: new Date("2025-05-17"),
+        to: new Date("2025-05-20"),
+    };
 
-    if (defaultLoc && defaultStartDate && defaultEndDate) {
-        if (defaultStartDate > defaultEndDate) {
-            initialFetchDone.current = true;
+    if (defaultLoc && defaultDateRange.from && defaultDateRange.to) {
+        initialFetchDone.current = true; // Set this before async call to prevent re-entry
+        if (defaultDateRange.from > defaultDateRange.to) {
             return;
         }
         const initialCoordsForFetch = { lat: defaultLoc.lat, lon: defaultLoc.lon };
         const initialLocationName = defaultLoc.name;
-        const initialDateRange = { from: defaultStartDate, to: defaultEndDate };
         
-        // Filter parameters based on initial plot visibility for the initial fetch
         const initialSelectedParams = ALL_PARAMETERS.filter(key => initialVisibility[key as CombinedParameterKey]);
 
         const performInitialFetch = async () => {
@@ -228,8 +231,8 @@ export default function OMMarineExplorerPage() {
             const result = await fetchCombinedDataAction({
                 latitude: initialCoordsForFetch.lat,
                 longitude: initialCoordsForFetch.lon,
-                startDate: formatISO(initialDateRange.from, { representation: 'date' }),
-                endDate: formatISO(initialDateRange.to, { representation: 'date' }),
+                startDate: formatISO(defaultDateRange.from, { representation: 'date' }),
+                endDate: formatISO(defaultDateRange.to, { representation: 'date' }),
                 parameters: initialSelectedParams, 
             });
             
@@ -250,10 +253,9 @@ export default function OMMarineExplorerPage() {
             }
         };
         performInitialFetch();
-        initialFetchDone.current = true;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialVisibility]); // Depend on initialVisibility to ensure it's used in the initial fetch
+  // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, [initialVisibility]); // Depend on initialVisibility to ensure it's used for initial param selection
 
 
   const getLogTriggerContent = (status: LogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string | null) => {
@@ -356,16 +358,6 @@ export default function OMMarineExplorerPage() {
             <div className="flex items-center gap-1">
               <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (CSV)"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer (CSV)</p></TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger asChild><Link href="/om-marine-explorer" passHref><Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="Weather & Marine Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Weather &amp; Marine Explorer</p></TooltipContent></Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/annotation" passHref>
-                    <Button variant={pathname === '/annotation' ? "secondary": "ghost"} size="icon" aria-label="Annotation Page">
-                      <FilePenLine className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>Annotation Page</p></TooltipContent>
-              </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
@@ -373,9 +365,9 @@ export default function OMMarineExplorerPage() {
         </TooltipProvider>
       </header>
 
-      <main className="flex-grow container mx-auto p-3 md:p-4">
-        <Card className="mb-4">
-          <CardHeader className="pb-3 pt-4">
+      <main className="flex-grow container mx-auto p-2 md:p-3">
+        <Card className="mb-3">
+          <CardHeader className="pb-2 pt-3">
             <CardTitle className="text-lg flex items-center gap-2">
               <Waves className="h-5 w-5 text-primary" />Weather &amp; Marine Data Explorer
             </CardTitle>
@@ -389,9 +381,9 @@ export default function OMMarineExplorerPage() {
           <div className="md:col-span-4 lg:col-span-3 space-y-3">
             <Card>
               <CardHeader className="pb-2 pt-3"><CardTitle className="text-base flex items-center gap-1.5"><MapPin className="h-4 w-4 text-primary"/>Location & Date</CardTitle></CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-2 p-3">
                 <UiLabel htmlFor="om-map-container" className="text-xs font-medium mb-0.5 block">Click Map to Select Location</UiLabel>
-                <div id="om-map-container" className="h-[200px] w-full rounded-md overflow-hidden border">
+                <div id="om-map-container" className="h-[180px] w-full rounded-md overflow-hidden border">
                   <OpenLayersMapWithNoSSR
                     initialCenter={mapSelectedCoords ? [mapSelectedCoords.lon, mapSelectedCoords.lat] : [DEFAULT_LONGITUDE, DEFAULT_LATITUDE]}
                     initialZoom={DEFAULT_MAP_ZOOM}
@@ -419,19 +411,19 @@ export default function OMMarineExplorerPage() {
             
             <Card>
                 <CardHeader className="pb-2 pt-3"><CardTitle className="text-base flex items-center gap-1.5"><ListChecks className="h-4 w-4 text-primary" />Select Parameters</CardTitle></CardHeader>
-                <CardContent className="space-y-1 max-h-60 overflow-y-auto p-2">
+                <CardContent className="space-y-0.5 max-h-60 overflow-y-auto p-2">
                     {ALL_PARAMETERS.map((key) => {
                         const paramConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
                         const IconComp = (paramConfig as any).icon || Info;
                         return (
                             <div key={key} className="flex items-center space-x-1.5 py-0.5">
                                 <Checkbox
-                                    id={`visibility-${key}`}
+                                    id={`visibility-${key}-${instanceId}`}
                                     checked={plotVisibility[key as CombinedParameterKey]}
                                     onCheckedChange={(checked) => handlePlotVisibilityChange(key as CombinedParameterKey, !!checked)}
                                     className="h-3.5 w-3.5"
                                 />
-                                <UiLabel htmlFor={`visibility-${key}`} className="text-xs font-medium flex items-center gap-1 cursor-pointer">
+                                <UiLabel htmlFor={`visibility-${key}-${instanceId}`} className="text-xs font-medium flex items-center gap-1 cursor-pointer">
                                     <IconComp className="h-3.5 w-3.5 text-muted-foreground" />
                                     {paramConfig.name}
                                 </UiLabel>
@@ -457,9 +449,9 @@ export default function OMMarineExplorerPage() {
           </div>
         </div>
       </main>
-      <footer className="py-3 md:px-4 md:py-0 border-t">
-        <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
-          <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
+      <footer className="py-2 md:px-3 md:py-0 border-t">
+        <div className="container flex flex-col items-center justify-center gap-1 md:h-10 md:flex-row">
+          <p className="text-balance text-center text-[0.7rem] leading-loose text-muted-foreground">
             Weather &amp; Marine data from Open-Meteo.
           </p>
         </div>

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
-import { PlusCircle, SunMoon, LayoutGrid, Waves, FilePenLine } from "lucide-react"; // Added FilePenLine
+import { PlusCircle, SunMoon, LayoutGrid, Waves } from "lucide-react"; 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 
@@ -22,11 +22,11 @@ export default function DataExplorerPage() {
   const pathname = usePathname();
 
   useEffect(() => {
-    const storedTheme = localStorage.getItem("theme");
+    const storedTheme = typeof window !== 'undefined' ? localStorage.getItem("theme") : null;
     if (storedTheme) {
       setTheme(storedTheme);
     } else {
-      const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const systemPrefersDark = typeof window !== 'undefined' && window.matchMedia("(prefers-color-scheme: dark)").matches;
       if (systemPrefersDark) {
         setTheme("dark");
       }
@@ -34,12 +34,14 @@ export default function DataExplorerPage() {
   }, []);
 
   useEffect(() => {
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
+    if (typeof window !== 'undefined') {
+      if (theme === "dark") {
+        document.documentElement.classList.add("dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+      }
+      localStorage.setItem("theme", theme);
     }
-    localStorage.setItem("theme", theme);
   }, [theme]);
 
   const toggleTheme = () => {
@@ -69,7 +71,7 @@ export default function DataExplorerPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <TooltipProvider>
           <div className="container flex h-full items-center justify-between px-3 md:px-4">
-            <Link href="/om-marine-explorer" passHref>
+            <Link href="/om-marine-explorer" passHref> {/* Default link to marine explorer */}
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
@@ -93,16 +95,6 @@ export default function DataExplorerPage() {
                 </TooltipTrigger>
                 <TooltipContent><p>Weather &amp; Marine Explorer</p></TooltipContent>
               </Tooltip>
-               <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/annotation" passHref>
-                    <Button variant={pathname === '/annotation' ? "secondary": "ghost"} size="icon" aria-label="Annotation Page">
-                      <FilePenLine className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>Annotation Page</p></TooltipContent>
-              </Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -117,17 +109,17 @@ export default function DataExplorerPage() {
         </TooltipProvider>
       </header>
 
-      <main className="flex-grow container mx-auto p-3 md:p-4">
-        <div className="flex justify-center mb-3">
+      <main className="flex-grow container mx-auto p-2 md:p-3 space-y-3">
+        <div className="flex justify-center mb-2">
           <Button onClick={addPlot} size="sm" className="h-8 text-xs">
             <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot
           </Button>
         </div>
         {plots.length === 0 ? (
-          <div className="flex flex-col items-center justify-center text-muted-foreground h-64 p-3">
-            <LayoutGrid className="w-10 h-10 mb-3 text-muted" />
-            <p className="text-sm">No plots to display.</p>
-            <p className="text-xs">Click "Add New Plot" to get started.</p>
+          <div className="flex flex-col items-center justify-center text-muted-foreground h-60 p-2">
+            <LayoutGrid className="w-8 h-8 mb-2 text-muted" />
+            <p className="text-xs">No plots to display.</p>
+            <p className="text-[0.7rem]">Click "Add New Plot" to get started.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -143,9 +135,9 @@ export default function DataExplorerPage() {
         )}
       </main>
 
-      <footer className="py-3 md:px-4 md:py-0 border-t">
-        <div className="container flex flex-col items-center justify-center gap-2 md:h-12 md:flex-row">
-          <p className="text-balance text-center text-xs leading-loose text-muted-foreground">
+      <footer className="py-2 md:px-3 md:py-0 border-t">
+        <div className="container flex flex-col items-center justify-center gap-1 md:h-10 md:flex-row">
+          <p className="text-balance text-center text-[0.7rem] leading-loose text-muted-foreground">
             PEBL data app - CSV Data Explorer.
           </p>
         </div>
