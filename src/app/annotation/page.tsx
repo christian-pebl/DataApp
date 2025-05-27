@@ -11,7 +11,7 @@ import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDispl
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { LayoutGrid, Waves, SunMoon, FilePenLine, Edit, Ban, PenLine } from "lucide-react"; // Added Ban, PenLine
+import { LayoutGrid, Waves, SunMoon, FilePenLine, Edit, Ban, PenLine, Minus, CornerUpRightArrow, Type } from "lucide-react"; // Added icons
 import { cn } from "@/lib/utils";
 
 interface DummyDataPoint {
@@ -25,6 +25,8 @@ interface LineAnnotation {
   y1: number;
   x2: number;
   y2: number;
+  hasArrowEnd?: boolean;
+  isDashed?: boolean;
 }
 
 const generateDummyData = (): DummyDataPoint[] => {
@@ -63,10 +65,11 @@ export default function AnnotationPage() {
 
   const [isOverlayActive, setIsOverlayActive] = useState(false);
 
-  // State for line drawing
+  // State for line drawing & annotations
   const [drawingMode, setDrawingMode] = useState<'line' | null>(null);
   const [lineStartPoint, setLineStartPoint] = useState<{ x: number; y: number } | null>(null);
   const [lines, setLines] = useState<LineAnnotation[]>([]);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const svgOverlayRef = useRef<SVGSVGElement>(null);
   const chartAreaRef = useRef<HTMLDivElement>(null);
 
@@ -128,7 +131,6 @@ export default function AnnotationPage() {
   const handleSvgClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (drawingMode !== 'line' || !svgOverlayRef.current) return;
 
-    // Get click coordinates relative to the SVG overlay
     const rect = svgOverlayRef.current.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
@@ -138,22 +140,68 @@ export default function AnnotationPage() {
     } else {
       setLines(prevLines => [
         ...prevLines, 
-        { x1: lineStartPoint.x, y1: lineStartPoint.y, x2: x, y2: y, id: Date.now().toString() }
+        { 
+          id: Date.now().toString(), 
+          x1: lineStartPoint.x, 
+          y1: lineStartPoint.y, 
+          x2: x, 
+          y2: y, 
+          hasArrowEnd: false, 
+          isDashed: false 
+        }
       ]);
-      setLineStartPoint(null); // Reset to allow drawing a new line immediately
+      setLineStartPoint(null); 
+      // Keep drawingMode as 'line' to allow drawing multiple lines
     }
   };
 
-  const toggleDrawingMode = () => {
-    if (drawingMode === 'line') {
+  const toggleDrawingMode = (mode: 'line' | null) => {
+    if (drawingMode === mode) { // If clicking the same mode button
       setDrawingMode(null);
       setLineStartPoint(null); // Clear any pending line start
+      setSelectedLineId(null); // Deselect line when exiting drawing mode
     } else {
-      setDrawingMode('line');
-      setLineStartPoint(null); // Ensure starting fresh
+      setDrawingMode(mode);
+      setLineStartPoint(null); // Ensure starting fresh for line
+      setSelectedLineId(null); // Deselect any line when entering a new drawing mode
+    }
+  };
+  
+  const handleSelectLine = (lineId: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent triggering SVG click for drawing
+    if (drawingMode === null) { // Only allow selection if not actively drawing
+      setSelectedLineId(prevId => prevId === lineId ? null : lineId);
     }
   };
 
+  const handleToggleArrow = () => {
+    if (selectedLineId) {
+      setLines(prevLines =>
+        prevLines.map(line =>
+          line.id === selectedLineId ? { ...line, hasArrowEnd: !line.hasArrowEnd } : line
+        )
+      );
+    }
+  };
+
+  const handleToggleDashed = () => {
+    if (selectedLineId) {
+      setLines(prevLines =>
+        prevLines.map(line =>
+          line.id === selectedLineId ? { ...line, isDashed: !line.isDashed } : line
+        )
+      );
+    }
+  };
+
+  const handleDeleteSelectedLine = () => {
+    if (selectedLineId) {
+      setLines(prevLines => prevLines.filter(line => line.id !== selectedLineId));
+      setSelectedLineId(null);
+    }
+  };
+
+  const selectedLine = useMemo(() => lines.find(line => line.id === selectedLineId), [lines, selectedLineId]);
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -217,7 +265,7 @@ export default function AnnotationPage() {
                 Annotation Demo - Weekly Temperature
               </CardTitle>
               <CardDescription className="text-xs">
-                Toggle overlay to enable annotation tools.
+                Toggle overlay to enable annotation tools. Draggable repositioning of lines is a future enhancement.
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
@@ -226,9 +274,10 @@ export default function AnnotationPage() {
                 checked={isOverlayActive}
                 onCheckedChange={(checked) => {
                   setIsOverlayActive(checked);
-                  if (!checked) { // If turning overlay off, also turn off drawing mode
+                  if (!checked) { 
                     setDrawingMode(null);
                     setLineStartPoint(null);
+                    setSelectedLineId(null);
                   }
                 }}
               />
@@ -237,21 +286,75 @@ export default function AnnotationPage() {
           </CardHeader>
           <CardContent className="p-2 pt-2">
             {isOverlayActive && (
-              <div className="absolute top-16 left-5 z-20 bg-card border shadow-lg rounded-md p-1 flex space-x-1"> {/* Adjusted top to be below header */}
-                <Button
-                  variant="outline"
-                  size="sm" // Make button slightly larger
-                  className="h-8 px-2" // Custom padding
-                  title={drawingMode === 'line' ? "Cancel Drawing" : "Draw Line"}
-                  onClick={toggleDrawingMode}
-                >
-                  {drawingMode === 'line' ? 
-                    <Ban className="h-4 w-4 mr-1" /> : 
-                    <PenLine className="h-4 w-4 mr-1" />
-                  }
-                  {drawingMode === 'line' ? "Cancel" : "Line"}
-                </Button>
-                {/* Add other placeholder toolbar buttons here */}
+              <div className="absolute top-16 left-5 z-20 bg-card border shadow-lg rounded-md p-1 flex items-center space-x-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={drawingMode === 'line' ? "secondary" : "outline"}
+                      size="sm" 
+                      className="h-8 px-2" 
+                      onClick={() => toggleDrawingMode(drawingMode === 'line' ? null : 'line')}
+                    >
+                      {drawingMode === 'line' ? 
+                        <Ban className="h-4 w-4 mr-1" /> : 
+                        <PenLine className="h-4 w-4 mr-1" />
+                      }
+                      {drawingMode === 'line' ? "Cancel" : "Line"}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent><p>{drawingMode === 'line' ? "Cancel Line Drawing" : "Draw Straight Line"}</p></TooltipContent>
+                </Tooltip>
+                
+                <Separator orientation="vertical" className="h-6 mx-1" />
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={selectedLine?.hasArrowEnd ? "secondary" : "outline"}
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={handleToggleArrow}
+                      disabled={!selectedLineId || drawingMode !== null}
+                    >
+                      <CornerUpRightArrow className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent><p>Toggle Arrowhead (Selected Line)</p></TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                     <Button
+                      variant={selectedLine?.isDashed ? "secondary" : "outline"}
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={handleToggleDashed}
+                      disabled={!selectedLineId || drawingMode !== null}
+                    >
+                      <Minus className="h-4 w-4 transform rotate-90"/> <Minus className="h-4 w-4 transform rotate-90 -ml-2.5"/> {/* Simulate dashed icon */}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent><p>Toggle Dashed Style (Selected Line)</p></TooltipContent>
+                </Tooltip>
+                
+                <Separator orientation="vertical" className="h-6 mx-1" />
+
+                 <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={handleDeleteSelectedLine}
+                      disabled={!selectedLineId || drawingMode !== null}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent><p>Delete Selected Line</p></TooltipContent>
+                </Tooltip>
+                
+                {/* Text Box and other tools deferred for simplicity */}
               </div>
             )}
             <div className="relative" ref={chartAreaRef}>
@@ -271,14 +374,27 @@ export default function AnnotationPage() {
               {isOverlayActive && chartAreaRef.current && (
                  <svg
                     ref={svgOverlayRef}
-                    className="absolute top-0 left-0 w-full h-full z-10" // Ensure SVG is on top
+                    className="absolute top-0 left-0 w-full h-full z-10" 
                     onClick={handleSvgClick}
                     style={{ 
-                        pointerEvents: drawingMode === 'line' ? 'auto' : 'none',
-                        width: chartAreaRef.current.clientWidth, // Match parent div width
-                        height: chartAreaRef.current.clientHeight, // Match parent div height
+                        pointerEvents: drawingMode === 'line' ? 'auto' : (drawingMode === null ? 'auto' : 'none'), // Allow clicks for selection if not drawing
+                        width: chartAreaRef.current.clientWidth, 
+                        height: chartAreaRef.current.clientHeight, 
                     }}
                   >
+                    <defs>
+                      <marker
+                        id="arrowhead"
+                        markerWidth="10"
+                        markerHeight="7"
+                        refX="0"
+                        refY="3.5"
+                        orient="auto"
+                        markerUnits="strokeWidth"
+                      >
+                        <polygon points="0 0, 10 3.5, 0 7" fill="hsl(var(--primary))" />
+                      </marker>
+                    </defs>
                     {lines.map((line) => (
                       <line
                         key={line.id}
@@ -286,11 +402,15 @@ export default function AnnotationPage() {
                         y1={line.y1}
                         x2={line.x2}
                         y2={line.y2}
-                        stroke="hsl(var(--primary))"
-                        strokeWidth="2"
+                        stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
+                        strokeWidth={selectedLineId === line.id ? "3" : "2"}
+                        onClick={(e) => handleSelectLine(line.id, e)}
+                        className="cursor-pointer"
+                        markerEnd={line.hasArrowEnd ? "url(#arrowhead)" : undefined}
+                        strokeDasharray={line.isDashed ? "5,5" : undefined}
                       />
                     ))}
-                    {lineStartPoint && ( // Visualize the starting point if drawing
+                    {lineStartPoint && drawingMode === 'line' && ( 
                         <circle cx={lineStartPoint.x} cy={lineStartPoint.y} r="3" fill="hsl(var(--primary))" />
                     )}
                   </svg>
@@ -298,6 +418,7 @@ export default function AnnotationPage() {
             </div>
           </CardContent>
         </Card>
+         {isOverlayActive && selectedLineId && <CardDescription className="text-center text-xs mt-2">Line selected. Use toolbar to modify. Draggable repositioning of lines is a future enhancement.</CardDescription>}
       </main>
 
       <footer className="py-3 md:px-4 md:py-0 border-t">
