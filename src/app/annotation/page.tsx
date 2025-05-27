@@ -6,8 +6,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-// import { Switch } from "@/components/ui/switch"; // Switch removed
-// import { Label as UiLabel } from "@/components/ui/label"; // UiLabel removed as Switch is gone
 import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay";
 import {
   DropdownMenu,
@@ -46,6 +44,13 @@ const DEFAULT_STROKE_WIDTH = 1.5;
 const SELECTED_STROKE_WIDTH_OFFSET = 1; 
 
 const CHART_RENDERING_BASE_HEIGHT = 278; 
+
+const TOOLBAR_APPROX_WIDTH_MIN = 100; 
+const TOOLBAR_APPROX_HEIGHT = 32; 
+const VERTICAL_GAP_TOOLBAR = 8; 
+const HORIZONTAL_EDGE_BUFFER = 8; 
+const TOOLBAR_OFFSET_FROM_LINE_Y = 20; 
+
 
 const LineStyleIcon = ({ style, className }: { style: 'solid' | 'dashed' | 'dotted', className?: string }) => {
   let strokeDasharray;
@@ -91,13 +96,6 @@ const ColorSwatch = ({ color, className }: { color: string, className?: string }
   <div className={cn("w-3 h-3 rounded-sm border border-border mr-2 flex-shrink-0", className)} style={{ backgroundColor: color }} />
 );
 
-const HORIZONTAL_EDGE_BUFFER = 8;
-const TOOLBAR_APPROX_WIDTH_MIN = 100; // Approx width (Grip + 2 small icon buttons + padding)
-const TOOLBAR_APPROX_HEIGHT = 32; // Approx height
-const VERTICAL_GAP_TOOLBAR = 8; // Reduced from 10
-const TOOLBAR_OFFSET_FROM_LINE_Y = 20; // Reduced from 25
-
-
 export default function AnnotationPage() {
   const [theme, setTheme] = useState("light");
   const pathname = usePathname();
@@ -108,6 +106,7 @@ export default function AnnotationPage() {
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(23); 
 
+  // Annotation states
   const [isOverlayActive, setIsOverlayActive] = useState(false);
   const [lines, setLines] = useState<LineAnnotation[]>([]);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
@@ -126,6 +125,41 @@ export default function AnnotationPage() {
   const chartAreaRef = useRef<HTMLDivElement>(null); 
 
   const selectedLine = useMemo(() => lines.find(line => line.id === selectedLineId), [lines, selectedLineId]);
+
+  const anyAnnotationInteractionActive = useMemo(() => 
+    !!(draggingPoint || movingLineId || isDraggingToolbar),
+  [draggingPoint, movingLineId, isDraggingToolbar]);
+  
+  const isMainToolbarButtonDisabled = useMemo(() => 
+    anyAnnotationInteractionActive || !isOverlayActive, 
+  [anyAnnotationInteractionActive, isOverlayActive]);
+  
+  const isContextualToolbarButtonDisabled = useMemo(() => 
+     anyAnnotationInteractionActive || !selectedLineId, 
+     [anyAnnotationInteractionActive, selectedLineId]
+  );
+
+  const svgCursor = useMemo(() => {
+    if (isDraggingToolbar) return 'grabbing';
+    if (movingLineId) return 'grabbing'; 
+    if (draggingPoint) return 'grabbing'; 
+    if (selectedLineId && !anyAnnotationInteractionActive) return 'move'; 
+    return 'default';
+  }, [selectedLineId, draggingPoint, movingLineId, isDraggingToolbar, anyAnnotationInteractionActive]);
+
+  const yAxisConfigs: YAxisConfig[] = useMemo(() => [{
+    id: 'temp-y-axis',
+    orientation: 'left',
+    label: 'Temperature',
+    color: '--chart-1',
+    dataKey: 'temperature',
+    unit: '°C'
+  }], []);
+  
+  const chartDescriptionText = useMemo(() => {
+    if (!isOverlayActive) return "Enable 'Annotation Tools' to add annotations.";
+    return "Annotation tools active. Click '+ Line' to add. Click a line to select and move it, or drag its endpoints. Use toolbars to edit styles.";
+  }, [isOverlayActive]);
 
   const getNormalizedCoordinates = useCallback((event: React.MouseEvent | React.TouchEvent<Element> | globalThis.MouseEvent | globalThis.TouchEvent) => {
     let clientX = 0, clientY = 0;
@@ -149,21 +183,18 @@ export default function AnnotationPage() {
     let midY = (line.y1 + line.y2) / 2;
 
     let toolbarX = midX;
-    let toolbarY = midY - TOOLBAR_OFFSET_FROM_LINE_Y; // Try placing above first
+    let toolbarY = midY - TOOLBAR_OFFSET_FROM_LINE_Y; 
 
-    // Check if placing above goes off-screen OR if there's more space below
     if (toolbarY - (TOOLBAR_APPROX_HEIGHT / 2) < VERTICAL_GAP_TOOLBAR || 
-        (svgRect.height - midY < midY && midY + TOOLBAR_APPROX_HEIGHT + TOOLBAR_OFFSET_FROM_LINE_Y > svgRect.height)) {
-      toolbarY = midY + TOOLBAR_OFFSET_FROM_LINE_Y + TOOLBAR_APPROX_HEIGHT; // Place below
+        (svgRect.height - midY < midY && midY + TOOLBAR_APPROX_HEIGHT + TOOLBAR_OFFSET_FROM_LINE_Y + TOOLBAR_APPROX_HEIGHT > svgRect.height)) {
+      toolbarY = midY + TOOLBAR_OFFSET_FROM_LINE_Y + TOOLBAR_APPROX_HEIGHT; 
     }
     
-    // Clamp Y position
     toolbarY = Math.max(
       (TOOLBAR_APPROX_HEIGHT / 2) + VERTICAL_GAP_TOOLBAR,
       Math.min(toolbarY, svgRect.height - (TOOLBAR_APPROX_HEIGHT / 2) - VERTICAL_GAP_TOOLBAR)
     );
 
-    // Clamp X position
     const halfToolbarWidth = TOOLBAR_APPROX_WIDTH_MIN / 2;
     toolbarX = Math.max(
       halfToolbarWidth + HORIZONTAL_EDGE_BUFFER,
@@ -249,7 +280,6 @@ export default function AnnotationPage() {
     setDragStartCoords({ x: clientX - svgRect.left, y: clientY - svgRect.top });
     setLineBeingMovedOriginalState({ ...line });
     setMovingLineId(line.id); 
-    // setContextualToolbarPosition(null); // Hide toolbar during move
   }, [getNormalizedCoordinates, draggingPoint, updateContextualToolbarPos]);
   
   const handleDraggablePointInteractionStart = useCallback((lineId: string, pointType: 'start' | 'end', event: React.MouseEvent<SVGCircleElement> | React.TouchEvent<SVGCircleElement>) => {
@@ -259,8 +289,7 @@ export default function AnnotationPage() {
 
     setSelectedLineId(lineId);
     setDraggingPoint({ lineId, pointType });
-    // setContextualToolbarPosition(null); // Hide toolbar during point drag
-  }, [movingLineId]); // Removed updateContextualToolbarPos
+  }, [movingLineId]);
 
   const handleInteractionMove = useCallback((event: globalThis.MouseEvent | globalThis.TouchEvent) => {
     if (!svgOverlayRef.current) return;
@@ -333,7 +362,6 @@ export default function AnnotationPage() {
         setToolbarDragStart(null);
         setToolbarInitialPosition(null);
     } else if(lineForToolbarUpdate) {
-        // Ensure toolbar position is correct after drag ends
         updateContextualToolbarPos(lineForToolbarUpdate);
     }
   }, [lines, draggingPoint, movingLineId, isDraggingToolbar, updateContextualToolbarPos]);
@@ -391,12 +419,14 @@ export default function AnnotationPage() {
         let newX2 = lineToCopy.x2 + offsetX;
         let newY2 = lineToCopy.y2 + offsetY;
 
+        // If offset pushes it too far, try offsetting in the opposite direction
         if (newX2 > svgRect.width || newX1 < 0 || newY2 > svgRect.height || newY1 < 0) {
             offsetX = -10; offsetY = -10;
             newX1 = lineToCopy.x1 + offsetX; newY1 = lineToCopy.y1 + offsetY;
             newX2 = lineToCopy.x2 + offsetX; newY2 = lineToCopy.y2 + offsetY;
         }
         
+        // Clamp to bounds
         newX1 = Math.max(0, Math.min(newX1, svgRect.width));
         newY1 = Math.max(0, Math.min(newY1, svgRect.height));
         newX2 = Math.max(0, Math.min(newX2, svgRect.width));
@@ -444,41 +474,20 @@ export default function AnnotationPage() {
     }
   }, []);
 
-  const anyAnnotationInteractionActive = useMemo(() => 
-    !!(draggingPoint || movingLineId || isDraggingToolbar),
-  [draggingPoint, movingLineId, isDraggingToolbar]);
-  
-  const isMainToolbarButtonDisabled = useMemo(() => 
-    anyAnnotationInteractionActive, 
-  [anyAnnotationInteractionActive]);
-  
-  const isContextualToolbarButtonDisabled = useMemo(() => 
-     anyAnnotationInteractionActive || !selectedLineId, 
-     [anyAnnotationInteractionActive, selectedLineId]
-  );
-
-  const yAxisConfigs: YAxisConfig[] = useMemo(() => [{
-    id: 'temp-y-axis',
-    orientation: 'left',
-    label: 'Temperature',
-    color: '--chart-1',
-    dataKey: 'temperature',
-    unit: '°C'
-  }], []);
-
-  const svgCursor = useMemo(() => {
-    if (isDraggingToolbar) return 'grabbing';
-    if (movingLineId) return 'grabbing'; 
-    if (draggingPoint) return 'grabbing'; 
-    if (selectedLineId && !anyAnnotationInteractionActive) return 'move'; 
-    return 'default';
-  }, [selectedLineId, draggingPoint, movingLineId, isDraggingToolbar, anyAnnotationInteractionActive]);
-
-  const chartDescriptionText = useMemo(() => {
-    if (!isOverlayActive) return "Enable 'Annotation Tools' to add annotations.";
-    return "Annotation tools active. Click '+ Line' to add. Click a line to select and move it, or drag its endpoints. Use toolbar to edit styles.";
-  }, [isOverlayActive]);
-
+  const toggleOverlay = () => {
+    setIsOverlayActive(prev => {
+      const nextState = !prev;
+      if (!nextState) {
+        // Reset annotation states when turning off
+        setSelectedLineId(null);
+        setDraggingPoint(null);
+        setMovingLineId(null);
+        setContextualToolbarPosition(null);
+        setIsDraggingToolbar(false);
+      }
+      return nextState;
+    });
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -506,12 +515,14 @@ export default function AnnotationPage() {
             <div className="flex items-center space-x-2">
                <Button
                 variant={isOverlayActive ? "secondary" : "outline"}
-                size="sm"
-                onClick={() => setIsOverlayActive(!isOverlayActive)}
-                className="h-8 px-2 text-xs"
+                onClick={toggleOverlay}
+                className={cn(
+                  "h-8 px-2 text-xs",
+                  !isOverlayActive && "border-foreground/20 hover:border-foreground/30" // Darker border for OFF state
+                )}
               >
                 <FilePenLine className="h-4 w-4 mr-1.5" />
-                {isOverlayActive ? "Annotations On" : "Annotate"}
+                Annotate
               </Button>
             </div>
           </CardHeader>
@@ -645,7 +656,7 @@ export default function AnnotationPage() {
               ref={chartAreaRef} 
               className={cn(
                 "relative",
-                (anyAnnotationInteractionActive && isOverlayActive) && "opacity-70 pointer-events-none" // Apply to chart when overlay is active and an annotation interaction is happening
+                (isOverlayActive && anyAnnotationInteractionActive) && "opacity-70 pointer-events-none" 
               )}
               style={{ height: `${CHART_RENDERING_BASE_HEIGHT * 0.85}px` }}
             >
@@ -670,7 +681,6 @@ export default function AnnotationPage() {
                     onTouchStart={handleSvgBackgroundClick}
                     style={{ 
                         cursor: svgCursor,
-                        // Only allow SVG interaction if an interaction is already active or a line is selected (to allow hitbox click for move)
                         pointerEvents: (isOverlayActive && (anyAnnotationInteractionActive || selectedLineId)) ? 'auto' : 'none'
                     }}
                 >
@@ -684,10 +694,10 @@ export default function AnnotationPage() {
                             <line
                                 x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
                                 stroke="transparent"
-                                strokeWidth="20" // Larger hitbox
+                                strokeWidth="20" 
                                 className={cn(selectedLineId === line.id && !anyAnnotationInteractionActive ? "cursor-move" : "cursor-pointer")}
                                 onMouseDown={(e) => { e.stopPropagation(); handleLineHitboxInteractionStart(line, e);}}
-                                onTouchStart={(e) => { e.stopPropagation(); handleLineHitboxInteractionStart(line, e as unknown as React.TouchEvent<SVGGElement>);}} // Cast needed for type compatibility
+                                onTouchStart={(e) => { e.stopPropagation(); handleLineHitboxInteractionStart(line, e as unknown as React.TouchEvent<SVGGElement>);}}
                                 style={{ pointerEvents: (anyAnnotationInteractionActive && movingLineId !== line.id && draggingPoint?.lineId !== line.id) ? 'none' : 'auto' }}
                             />
                             {/* Visible line */}
@@ -698,7 +708,7 @@ export default function AnnotationPage() {
                                 strokeDasharray={getStrokeDasharray(line.lineStyle)}
                                 markerStart={(line.arrowStyle === 'start' || line.arrowStyle === 'both') ? "url(#arrowheadStart)" : undefined}
                                 markerEnd={(line.arrowStyle === 'end' || line.arrowStyle === 'both') ? "url(#arrowheadEnd)" : undefined}
-                                style={{ pointerEvents: 'none' }} // Visible line should not capture events itself
+                                style={{ pointerEvents: 'none' }} 
                             />
                             {/* Draggable endpoint handles for selected line */}
                             {selectedLineId === line.id && !movingLineId && !isDraggingToolbar && (
@@ -717,7 +727,7 @@ export default function AnnotationPage() {
                          <TooltipProvider delayDuration={0}>
                             <div 
                                 className="flex items-center space-x-0.5 p-0.5 bg-card border shadow-xl rounded-md cursor-default" 
-                                onMouseDown={(e) => e.stopPropagation()} // Prevent SVG click-through when clicking toolbar itself
+                                onMouseDown={(e) => e.stopPropagation()} 
                                 onTouchStart={(e) => e.stopPropagation()}
                             >
                                 <Tooltip>
