@@ -286,76 +286,78 @@ export default function AnnotationPage() {
           </CardHeader>
           <CardContent className="p-2 pt-2">
             {isOverlayActive && (
-              <div className="absolute top-16 left-5 z-20 bg-card border shadow-lg rounded-md p-1 flex items-center space-x-1">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={drawingMode === 'line' ? "secondary" : "outline"}
-                      size="sm" 
-                      className="h-8 px-2" 
-                      onClick={() => toggleDrawingMode(drawingMode === 'line' ? null : 'line')}
-                    >
-                      {drawingMode === 'line' ? 
-                        <Ban className="h-4 w-4 mr-1" /> : 
-                        <PenLine className="h-4 w-4 mr-1" />
-                      }
-                      {drawingMode === 'line' ? "Cancel" : "Line"}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent><p>{drawingMode === 'line' ? "Cancel Line Drawing" : "Draw Straight Line"}</p></TooltipContent>
-                </Tooltip>
-                
-                <Separator orientation="vertical" className="h-6 mx-1" />
+              <TooltipProvider delayDuration={0}>
+                <div className="absolute top-16 left-5 z-20 bg-card border shadow-lg rounded-md p-1 flex items-center space-x-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={drawingMode === 'line' ? "secondary" : "outline"}
+                        size="sm" 
+                        className="h-8 px-2" 
+                        onClick={() => toggleDrawingMode(drawingMode === 'line' ? null : 'line')}
+                      >
+                        {drawingMode === 'line' ? 
+                          <Ban className="h-4 w-4 mr-1" /> : 
+                          <PenLine className="h-4 w-4 mr-1" />
+                        }
+                        {drawingMode === 'line' ? "Cancel" : "Line"}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>{drawingMode === 'line' ? "Cancel Line Drawing" : "Draw Straight Line"}</p></TooltipContent>
+                  </Tooltip>
+                  
+                  <Separator orientation="vertical" className="h-6 mx-1" />
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={selectedLine?.hasArrowEnd ? "secondary" : "outline"}
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={handleToggleArrow}
-                      disabled={!selectedLineId || drawingMode !== null}
-                    >
-                      <CornerUpRight className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent><p>Toggle Arrowhead (Selected Line)</p></TooltipContent>
-                </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={selectedLine?.hasArrowEnd ? "secondary" : "outline"}
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={handleToggleArrow}
+                        disabled={!selectedLineId || drawingMode !== null}
+                      >
+                        <CornerUpRight className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>Toggle Arrowhead (Selected Line)</p></TooltipContent>
+                  </Tooltip>
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                     <Button
-                      variant={selectedLine?.isDashed ? "secondary" : "outline"}
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={handleToggleDashed}
-                      disabled={!selectedLineId || drawingMode !== null}
-                    >
-                      <Minus className="h-4 w-4 transform rotate-90"/> <Minus className="h-4 w-4 transform rotate-90 -ml-2.5"/> {/* Simulate dashed icon */}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent><p>Toggle Dashed Style (Selected Line)</p></TooltipContent>
-                </Tooltip>
-                
-                <Separator orientation="vertical" className="h-6 mx-1" />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                       <Button
+                        variant={selectedLine?.isDashed ? "secondary" : "outline"}
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={handleToggleDashed}
+                        disabled={!selectedLineId || drawingMode !== null}
+                      >
+                        <Minus className="h-4 w-4 transform rotate-90"/> <Minus className="h-4 w-4 transform rotate-90 -ml-2.5"/> {/* Simulate dashed icon */}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>Toggle Dashed Style (Selected Line)</p></TooltipContent>
+                  </Tooltip>
+                  
+                  <Separator orientation="vertical" className="h-6 mx-1" />
 
-                 <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={handleDeleteSelectedLine}
-                      disabled={!selectedLineId || drawingMode !== null}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent><p>Delete Selected Line</p></TooltipContent>
-                </Tooltip>
-                
-                {/* Text Box and other tools deferred for simplicity */}
-              </div>
+                   <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={handleDeleteSelectedLine}
+                        disabled={!selectedLineId || drawingMode !== null}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>Delete Selected Line</p></TooltipContent>
+                  </Tooltip>
+                  
+                  {/* Text Box and other tools deferred for simplicity */}
+                </div>
+              </TooltipProvider>
             )}
             <div className="relative" ref={chartAreaRef}>
               <div className={cn(isOverlayActive && "opacity-30 transition-opacity")}>
