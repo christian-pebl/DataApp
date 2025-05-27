@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { 
   LayoutGrid, Waves, SunMoon, FilePenLine, Edit, Ban, PenLine, 
-  CornerUpRight, Trash2, Spline, Plus, Copy, RotateCcw, Move as MoveIcon // Added Plus, Copy, RotateCcw, MoveIcon
+  CornerUpRight, Trash2, Spline, Plus, Copy, RotateCcw, Move as MoveIcon 
 } from "lucide-react"; 
 import {
   DropdownMenu,
@@ -190,7 +190,7 @@ export default function AnnotationPage() {
     if ('preventDefault' in event) event.preventDefault(); 
     setDraggingPoint({ lineId, pointType });
     setSelectedLineId(lineId); 
-    setContextualToolbarPosition(null); // Hide contextual toolbar during drag
+    setContextualToolbarPosition(null); 
   };
 
   const handleSvgInteractionMove = useCallback((event: MouseEvent | TouchEvent) => {
@@ -225,7 +225,7 @@ export default function AnnotationPage() {
       if (line) {
           const midX = (line.x1 + line.x2) / 2;
           const midY = (line.y1 + line.y2) / 2;
-          setContextualToolbarPosition({ x: midX, y: midY - 30 }); // Adjust Y to be above the line
+          setContextualToolbarPosition({ x: midX, y: midY - 30 }); 
       }
       setDraggingPoint(null);
     }
@@ -256,7 +256,7 @@ export default function AnnotationPage() {
     } else {
       setDrawingMode(mode);
       setLineStartPoint(null); 
-      setSelectedLineId(null); // Deselect any line when entering drawing mode
+      setSelectedLineId(null); 
       setDraggingPoint(null); 
       setContextualToolbarPosition(null);
     }
@@ -265,17 +265,14 @@ export default function AnnotationPage() {
   const handleSelectLine = (lineId: string, event: React.MouseEvent | React.TouchEvent) => {
     event.stopPropagation(); 
     if (drawingMode === null && !draggingPoint) {
-      if (selectedLineId === lineId) {
-        setSelectedLineId(null);
-        setContextualToolbarPosition(null);
-      } else {
-        setSelectedLineId(lineId);
-        const line = lines.find(l => l.id === lineId);
-        if (line) {
-            const midX = (line.x1 + line.x2) / 2;
-            const midY = (line.y1 + line.y2) / 2;
-            setContextualToolbarPosition({ x: midX, y: midY - 30 }); // Adjust Y to be above the line
-        }
+      // If a different line is clicked, select it.
+      // If the same line is clicked, it remains selected (no deselection here).
+      setSelectedLineId(lineId);
+      const line = lines.find(l => l.id === lineId);
+      if (line) {
+          const midX = (line.x1 + line.x2) / 2;
+          const midY = (line.y1 + line.y2) / 2;
+          setContextualToolbarPosition({ x: midX, y: midY - 30 });
       }
     }
   };
@@ -315,13 +312,13 @@ export default function AnnotationPage() {
         const newLine: LineAnnotation = {
           ...lineToCopy,
           id: Date.now().toString(),
-          x1: lineToCopy.x1 + 10, // Offset the copy
+          x1: lineToCopy.x1 + 10, 
           y1: lineToCopy.y1 + 10,
           x2: lineToCopy.x2 + 10,
           y2: lineToCopy.y2 + 10,
         };
         setLines(prevLines => [...prevLines, newLine]);
-        setSelectedLineId(newLine.id); // Select the new line
+        setSelectedLineId(newLine.id); 
         setContextualToolbarPosition({x: (newLine.x1 + newLine.x2) / 2, y: (newLine.y1 + newLine.y2) / 2 - 30});
       }
     }
@@ -406,7 +403,7 @@ export default function AnnotationPage() {
                 Annotation Demo - Weekly Temperature
               </CardTitle>
               <CardDescription className="text-xs">
-                Toggle overlay to annotate. Click line to select. Drag endpoints to reposition. Use toolbar to modify.
+                Toggle overlay to annotate. Click line to select. Drag endpoints to reposition. Use toolbars to modify.
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
@@ -524,7 +521,7 @@ export default function AnnotationPage() {
                   style={{
                     left: `${contextualToolbarPosition.x}px`,
                     top: `${contextualToolbarPosition.y}px`,
-                    transform: 'translateX(-50%)', // Center the toolbar
+                    transform: 'translateX(-50%)', 
                   }}
                 >
                   <Tooltip>
@@ -576,7 +573,7 @@ export default function AnnotationPage() {
                     onClick={(e) => { 
                       if (drawingMode === 'line') {
                         handleSvgInteractionStart(e);
-                      } else if (!draggingPoint && e.target === svgOverlayRef.current) { // Click on SVG background
+                      } else if (!draggingPoint && e.target === svgOverlayRef.current) { 
                         setSelectedLineId(null);
                         setContextualToolbarPosition(null);
                       }
@@ -595,7 +592,7 @@ export default function AnnotationPage() {
                     onTouchEnd={handleSvgInteractionEnd}
                     style={{ 
                         cursor: drawingMode === 'line' ? 'crosshair' : (draggingPoint ? 'grabbing' : 'default'),
-                        pointerEvents: (drawingMode === 'line' || draggingPoint) ? 'auto' : 'auto', // Always allow pointer events on SVG for line selection
+                        pointerEvents: 'auto', 
                         width: chartAreaRef.current.clientWidth, 
                         height: chartAreaRef.current.clientHeight, 
                     }}
@@ -687,6 +684,5 @@ export default function AnnotationPage() {
     </div>
   );
 }
-    
 
     
