@@ -13,6 +13,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { LayoutGrid, Waves, SunMoon, FilePenLine, Edit3, PlusCircle, Trash2, Lightbulb } from "lucide-react";
 import { format, parseISO } from 'date-fns';
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 interface DummyDataPoint {
   time: string;
@@ -64,14 +66,14 @@ export default function AnnotationPage() {
 
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [currentAnnotationText, setCurrentAnnotationText] = useState("");
+  const [isAnnotationModeActive, setIsAnnotationModeActive] = useState(false);
 
   useEffect(() => {
     const generatedData = generateDummyData();
     setDummyData(generatedData);
-    // Set initial brush to cover a smaller portion, e.g., first day
     if (generatedData.length > 0) {
         setBrushStartIndex(0);
-        setBrushEndIndex(Math.min(23, generatedData.length - 1)); // e.g., first 24 hours
+        setBrushEndIndex(Math.min(23, generatedData.length - 1)); 
     }
   }, []);
 
@@ -120,7 +122,6 @@ export default function AnnotationPage() {
 
   const handleAddAnnotation = () => {
     if (currentAnnotationText.trim() === "" || brushStartIndex === undefined || brushEndIndex === undefined || brushStartIndex >= brushEndIndex) {
-      // Optionally add a toast message for invalid input
       return;
     }
     if (brushStartIndex < 0 || brushEndIndex >= dummyData.length) return;
@@ -198,14 +199,24 @@ export default function AnnotationPage() {
 
       <main className="flex-grow container mx-auto p-3 md:p-4 space-y-4">
         <Card>
-          <CardHeader className="pb-3 pt-4">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Edit3 className="h-5 w-5 text-primary" />
-              Annotation Demo - Weekly Temperature
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Select a range on the chart using the slider, then add your annotation below.
-            </CardDescription>
+          <CardHeader className="pb-3 pt-4 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Edit3 className="h-5 w-5 text-primary" />
+                Annotation Demo - Weekly Temperature
+              </CardTitle>
+              <CardDescription className="text-xs">
+                {isAnnotationModeActive ? "Select a range on the chart to annotate." : "Enable annotation mode to add notes."}
+              </CardDescription>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="annotation-mode-switch"
+                checked={isAnnotationModeActive}
+                onCheckedChange={setIsAnnotationModeActive}
+              />
+              <Label htmlFor="annotation-mode-switch" className="text-xs">Annotation Mode</Label>
+            </div>
           </CardHeader>
           <CardContent className="p-2 pt-2">
             <ChartDisplay
@@ -213,7 +224,7 @@ export default function AnnotationPage() {
               plottableSeries={plottableSeries}
               yAxisConfigs={yAxisConfigs}
               timeAxisLabel="Time"
-              plotTitle="Weekly Temperature Trend"
+              plotTitle="" // Title is handled by CardHeader now
               chartRenderHeight={278} 
               brushStartIndex={brushStartIndex}
               brushEndIndex={brushEndIndex}
@@ -222,39 +233,41 @@ export default function AnnotationPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2 pt-3">
-            <CardTitle className="text-base flex items-center gap-2">
-                <Lightbulb className="h-4 w-4 text-primary" />
-                Add Annotation
-            </CardTitle>
-            <CardDescription className="text-xs">
-                {isRangeSelectedForAnnotation 
-                    ? `Selected range: ${dummyData[brushStartIndex as number]?.time ? format(parseISO(dummyData[brushStartIndex as number]?.time), 'MMM dd, HH:mm') : ''} to ${dummyData[brushEndIndex as number]?.time ? format(parseISO(dummyData[brushEndIndex as number]?.time), 'MMM dd, HH:mm') : ''}` 
-                    : "Use the slider on the chart above to select a time range."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <Input
-                type="text"
-                placeholder="Enter annotation text..."
-                value={currentAnnotationText}
-                onChange={(e) => setCurrentAnnotationText(e.target.value)}
-                disabled={!isRangeSelectedForAnnotation}
-                className="text-sm"
-              />
-              <Button 
-                onClick={handleAddAnnotation} 
-                disabled={!isRangeSelectedForAnnotation || currentAnnotationText.trim() === ""}
-                size="sm"
-                className="text-xs"
-              >
-                <PlusCircle className="mr-2 h-4 w-4" /> Add
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        {isAnnotationModeActive && isRangeSelectedForAnnotation && (
+          <Card>
+            <CardHeader className="pb-2 pt-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4 text-primary" />
+                  Add Annotation
+              </CardTitle>
+              <CardDescription className="text-xs">
+                  {isRangeSelectedForAnnotation 
+                      ? `Selected range: ${dummyData[brushStartIndex as number]?.time ? format(parseISO(dummyData[brushStartIndex as number]?.time), 'MMM dd, HH:mm') : ''} to ${dummyData[brushEndIndex as number]?.time ? format(parseISO(dummyData[brushEndIndex as number]?.time), 'MMM dd, HH:mm') : ''}` 
+                      : "Use the slider on the chart above to select a time range."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="text"
+                  placeholder="Enter annotation text..."
+                  value={currentAnnotationText}
+                  onChange={(e) => setCurrentAnnotationText(e.target.value)}
+                  disabled={!isRangeSelectedForAnnotation}
+                  className="text-sm"
+                />
+                <Button 
+                  onClick={handleAddAnnotation} 
+                  disabled={!isRangeSelectedForAnnotation || currentAnnotationText.trim() === ""}
+                  size="sm"
+                  className="text-xs"
+                >
+                  <PlusCircle className="mr-2 h-4 w-4" /> Add
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {annotations.length > 0 && (
           <Card>
