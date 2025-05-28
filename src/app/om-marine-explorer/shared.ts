@@ -1,63 +1,41 @@
-// This file's types and configs are used by data-explorer/page.tsx
-// If this file were to be removed, these definitions would need to be relocated.
-// For this step, we keep it here and data-explorer imports from it.
 
 import type { LucideIcon } from "lucide-react";
 import { z } from 'zod';
-import { isValidDateString } from '@/lib/utils';
+import { isValidDateString } from '@/lib/utils'; // Ensure this path is correct and lib/utils.ts is fine
 
-// Combined Data Point for both Weather and Marine data
+// Conversion Factor - Ensuring this is clearly exported
+export const MPH_CONVERSION_FACTOR = 2.23694; // m/s to mph
+
+// Main data point structure for combined weather and marine data
 export interface CombinedDataPoint {
-  time: string; // ISO timestamp
-
-  // Marine Parameters
+  time: string;
+  // Marine
   waveHeight?: number;
   waveDirection?: number;
   wavePeriod?: number;
   seaSurfaceTemperature?: number;
-  seaLevelHeightMsl?: number;
-
-  // Weather Parameters
+  seaLevelHeightMsl?: number; // Tide Height
+  // Weather
   temperature2m?: number;
-  windSpeed10m?: number; 
+  windSpeed10m?: number; // This will be in m/s from API, converted to mph in grid for display
   windDirection10m?: number;
-  ghi?: number; // Global Horizontal Irradiance (was shortwave_radiation)
+  ghi?: number; // Global Horizontal Irradiance from weather API
 }
 
 export const CombinedDataPointSchema = z.object({
   time: z.string(),
   // Marine
-  waveHeight: z.number().optional(),
-  waveDirection: z.number().optional(),
-  wavePeriod: z.number().optional(),
-  seaSurfaceTemperature: z.number().optional(),
-  seaLevelHeightMsl: z.number().optional(),
+  waveHeight: z.number().optional().nullable(),
+  waveDirection: z.number().optional().nullable(),
+  wavePeriod: z.number().optional().nullable(),
+  seaSurfaceTemperature: z.number().optional().nullable(),
+  seaLevelHeightMsl: z.number().optional().nullable(),
   // Weather
-  temperature2m: z.number().optional(),
-  windSpeed10m: z.number().optional(),
-  windDirection10m: z.number().optional(),
-  ghi: z.number().optional(),
+  temperature2m: z.number().optional().nullable(),
+  windSpeed10m: z.number().optional().nullable(),
+  windDirection10m: z.number().optional().nullable(),
+  ghi: z.number().optional().nullable(),
 });
-
-
-export const FetchCombinedDataInputSchema = z.object({
-  latitude: z.number().min(-90, "Latitude must be >= -90").max(90, "Latitude must be <= 90"),
-  longitude: z.number().min(-180, "Longitude must be >= -180").max(180, "Longitude must be <= 180"),
-  startDate: z.string().refine(isValidDateString, {
-    message: "Invalid start date format or value. Ensure YYYY-MM-DD format.",
-  }),
-  endDate: z.string().refine(isValidDateString, {
-    message: "Invalid end date format or value. Ensure YYYY-MM-DD format.",
-  }),
-  parameters: z.array(z.string()).min(1, "At least one parameter must be selected"),
-});
-export type FetchCombinedDataInput = z.infer<typeof FetchCombinedDataInputSchema>;
-
-export interface LogStep {
-  message: string;
-  status: 'info' | 'success' | 'error' | 'pending' | 'warning';
-  details?: string;
-}
 
 export type CombinedParameterKey =
   | 'seaLevelHeightMsl'
@@ -71,38 +49,80 @@ export type CombinedParameterKey =
   | 'ghi';
 
 export const ALL_PARAMETERS: CombinedParameterKey[] = [
-  // Marine Parameters
+  'temperature2m',
+  'windSpeed10m',
+  'windDirection10m',
+  'ghi',
   'seaLevelHeightMsl',
   'waveHeight',
   'waveDirection',
   'wavePeriod',
   'seaSurfaceTemperature',
-  // Weather Parameters
-  'temperature2m',
-  'windSpeed10m',
-  'windDirection10m',
-  'ghi',
 ];
 
 export interface ParameterConfigItem {
-  name: string; 
-  apiParam: string; 
+  name: string;
+  apiParam: string;
   unit: string;
-  apiSource: 'marine' | 'weather'; 
-  icon?: LucideIcon; 
-  color: string; 
+  apiSource: 'marine' | 'weather';
+  icon?: LucideIcon; // Made icon optional here, will be assigned in page.tsx
+  color: string;
 }
 
 export const PARAMETER_CONFIG: Record<CombinedParameterKey, ParameterConfigItem> = {
-  // Marine Parameters
-  seaLevelHeightMsl: { name: "Sea Level (MSL)", apiParam: "sea_level_height_msl", unit: "m", apiSource: 'marine', color: '--chart-1' },
-  waveHeight: { name: "Wave Height", apiParam: "wave_height", unit: "m", apiSource: 'marine', color: '--chart-2' },
-  waveDirection: { name: "Wave Direction", apiParam: "wave_direction", unit: "°", apiSource: 'marine', color: '--chart-3' },
-  wavePeriod: { name: "Wave Period", apiParam: "wave_period", unit: "s", apiSource: 'marine', color: '--chart-4' },
-  seaSurfaceTemperature: { name: "Sea Surface Temp", apiParam: "sea_surface_temperature", unit: "°C", apiSource: 'marine', color: '--chart-5'},
   // Weather Parameters
   temperature2m: { name: "Temperature (2m)", apiParam: "temperature_2m", unit: "°C", apiSource: 'weather', color: '--chart-1' },
   windSpeed10m: { name: "Wind Speed (10m)", apiParam: "windspeed_10m", unit: "m/s", apiSource: 'weather', color: '--chart-2' },
   windDirection10m: { name: "Wind Direction (10m)", apiParam: "winddirection_10m", unit: "°", apiSource: 'weather', color: '--chart-3' },
   ghi: { name: "Global Horizontal Irradiance (GHI)", apiParam: "shortwave_radiation", unit: "W/m²", apiSource: 'weather', color: '--chart-4' },
+  // Marine Parameters
+  seaLevelHeightMsl: { name: "Sea Level (MSL)", apiParam: "sea_level_height_msl", unit: "m", apiSource: 'marine', color: '--chart-5' },
+  waveHeight: { name: "Wave Height", apiParam: "wave_height", unit: "m", apiSource: 'marine', color: '--chart-1' }, // Reused chart-1 color
+  waveDirection: { name: "Wave Direction", apiParam: "wave_direction", unit: "°", apiSource: 'marine', color: '--chart-2' }, // Reused chart-2 color
+  wavePeriod: { name: "Wave Period", apiParam: "wave_period", unit: "s", apiSource: 'marine', color: '--chart-3' }, // Reused chart-3 color
+  seaSurfaceTemperature: { name: "Sea Surface Temp", apiParam: "sea_surface_temperature", unit: "°C", apiSource: 'marine', color: '--chart-4' }, // Reused chart-4 color
 };
+
+export const FetchCombinedDataInputSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  startDate: z.string().refine(isValidDateString, { message: "Invalid start date format or value. Ensure YYYY-MM-DD format." }),
+  endDate: z.string().refine(isValidDateString, { message: "Invalid end date format or value. Ensure YYYY-MM-DD format." }),
+  parameters: z.array(z.string()).min(1, "At least one parameter must be selected"),
+});
+export type FetchCombinedDataInput = z.infer<typeof FetchCombinedDataInputSchema>;
+
+export interface LogStep {
+  message: string;
+  status: 'info' | 'success' | 'error' | 'pending' | 'warning';
+  details?: string;
+}
+
+// Type for the raw 'hourly' object from Open-Meteo API responses
+export interface OpenMeteoHourlyResponse {
+  time: string[];
+  // Weather params
+  temperature_2m?: (number | null)[];
+  windspeed_10m?: (number | null)[];
+  winddirection_10m?: (number | null)[];
+  shortwave_radiation?: (number | null)[]; // GHI for weather API
+  // Marine params
+  sea_level_height_msl?: (number | null)[];
+  wave_height?: (number | null)[];
+  wave_direction?: (number | null)[];
+  wave_period?: (number | null)[];
+  sea_surface_temperature?: (number | null)[];
+}
+
+export interface OpenMeteoApiResponse {
+  latitude: number;
+  longitude: number;
+  generationtime_ms: number;
+  utc_offset_seconds: number;
+  timezone: string;
+  timezone_abbreviation: string;
+  hourly: OpenMeteoHourlyResponse;
+  hourly_units?: Record<string, string>; // Make units optional as they might not always be present
+  error?: boolean;
+  reason?: string;
+}
