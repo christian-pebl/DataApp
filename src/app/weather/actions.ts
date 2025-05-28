@@ -1,4 +1,4 @@
 
-// This file's functionality is being merged into /om-marine-explorer/actions.ts
-// This file will be removed by the build system.
+// This file's functionality has been merged into /om-marine-explorer/actions.ts (now /data-explorer)
+// This file will be removed by the build system if not referenced.
 export {};

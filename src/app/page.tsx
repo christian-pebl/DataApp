@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useEffect } from 'react';
@@ -9,7 +8,7 @@ export default function RedirectToDefaultPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // The redirect path is now /data-explorer
+    // The default page is now /data-explorer
     router.replace('/data-explorer');
   }, [router]);
 

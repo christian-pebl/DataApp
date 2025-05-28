@@ -1,31 +1,47 @@
-
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"; // Added useMemo
+import type { CSSProperties } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo, useId } from "react";
 import Link from "next/link";
 import { usePathname } from 'next/navigation';
-import dynamic from 'next/dynamic'; // Added for dynamic map import
-import type { DateRange } from "react-day-picker"; // Added for DatePicker
-import { format, subDays, addDays } from 'date-fns'; // Added for DatePicker defaults
+import dynamic from 'next/dynamic';
+import type { DateRange } from "react-day-picker";
+import { format, formatISO, subDays, addDays } from 'date-fns';
 
 import { Button } from "@/components/ui/button";
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
-import { PlusCircle, SunMoon, LayoutGrid, Waves, CloudSun, Anchor, MapPin, CalendarDays, Search } from "lucide-react"; // Added MapPin, CalendarDays, Search
+import {
+  PlusCircle, SunMoon, LayoutGrid, Waves, MapPin, CalendarDays, Search,
+  Loader2, Info, CheckCircle2, XCircle, Copy, CloudSun, Anchor,
+  Thermometer, Wind as WindIcon, Compass as CompassIcon, Sailboat, Timer as TimerIcon // Renamed Timer to TimerIcon
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"; // Added Card components
-import { DatePickerWithRange } from "@/components/ui/date-picker-with-range"; // Added DatePicker
-import { Input } from "@/components/ui/input"; // Added Input
-import { Label as UiLabel } from "@/components/ui/label"; // Added UiLabel
-import { useToast } from "@/hooks/use-toast"; // Added useToast
-import { cn } from "@/lib/utils"; // Added cn
+import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
+import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
+import { Input } from "@/components/ui/input";
+import { Label as UiLabel } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+
+// Imports from OM Marine Explorer (now combined weather/marine)
+import type { CombinedDataPoint, LogStep as ApiLogStep, CombinedParameterKey } from '../om-marine-explorer/shared';
+import { ALL_PARAMETERS, PARAMETER_CONFIG } from '../om-marine-explorer/shared';
+import { fetchCombinedDataAction } from '../om-marine-explorer/actions';
+import { MarinePlotsGrid } from '@/components/marine/MarinePlotsGrid'; // This grid handles combined data
 
 interface PlotConfig {
   id: string;
   title: string;
 }
 
-// Dynamically import OpenLayersMap component to avoid SSR issues
+type ApiLogOverallStatus = 'pending' | 'success' | 'error' | 'idle' | 'warning';
+
 const OpenLayersMapWithNoSSR = dynamic(
   () => import('@/components/map/OpenLayersMap').then(mod => mod.OpenLayersMap),
   {
@@ -34,13 +50,13 @@ const OpenLayersMapWithNoSSR = dynamic(
   }
 );
 
-// Default coordinates and known locations (copied from om-marine-explorer)
-const DEFAULT_LATITUDE = 51.7128; // Milford Haven
-const DEFAULT_LONGITUDE = -5.0341;
-const DEFAULT_MAP_ZOOM = 9;
+// Default coordinates and known locations (from om-marine-explorer)
+const DEFAULT_OM_LATITUDE = 51.7128; // Milford Haven
+const DEFAULT_OM_LONGITUDE = -5.0341;
+const DEFAULT_OM_MAP_ZOOM = 9;
 
-const defaultLocationKey = "milfordhaven";
-const knownLocations: Record<string, { name: string; lat: number; lon: number }> = {
+const defaultOmLocationKey = "milfordhaven";
+const knownOmLocations: Record<string, { name: string; lat: number; lon: number }> = {
   milfordhaven: { name: "Milford Haven", lat: 51.7128, lon: -5.0341 },
   newlyn: { name: "Newlyn", lat: 50.102, lon: -5.549 },
   dover: { name: "Dover", lat: 51.123, lon: 1.317 },
@@ -50,60 +66,73 @@ const knownLocations: Record<string, { name: string; lat: number; lon: number }>
   "stDavidsHead": { name: "St David's Head", lat: 52.0, lon: -5.3 },
 };
 
+
 export default function DataExplorerPage() {
   const [theme, setTheme] = useState("light");
+  const pathname = usePathname();
+  const { toast, dismiss } = useToast();
+  const instanceId = useId();
+
+  // CSV Plot State
   const [plots, setPlots] = useState<PlotConfig[]>([]);
   const plotsInitialized = useRef(false);
-  const pathname = usePathname();
-  const { toast } = useToast(); // For map location selection toast
 
-  // State for new Location & Date section (from om-marine-explorer)
+  // API Data State (Weather & Marine)
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
-    from: new Date("2025-05-17"), // Default copied from om-marine-explorer
-    to: new Date("2025-05-20"),   // Default copied from om-marine-explorer
+    from: new Date("2025-05-17"),
+    to: new Date("2025-05-20"),
   }));
-
   const [mapSelectedCoords, setMapSelectedCoords] = useState<{ lat: number; lon: number } | null>(
-    knownLocations[defaultLocationKey]
-      ? { lat: knownLocations[defaultLocationKey].lat, lon: knownLocations[defaultLocationKey].lon }
-      : { lat: DEFAULT_LATITUDE, lon: DEFAULT_LONGITUDE }
+    knownOmLocations[defaultOmLocationKey]
+      ? { lat: knownOmLocations[defaultOmLocationKey].lat, lon: knownOmLocations[defaultOmLocationKey].lon }
+      : { lat: DEFAULT_OM_LATITUDE, lon: DEFAULT_OM_LONGITUDE }
   );
   const [currentLocationName, setCurrentLocationName] = useState<string>(
-    knownLocations[defaultLocationKey]?.name || "Selected Location"
+    knownOmLocations[defaultOmLocationKey]?.name || "Selected Location"
   );
-  const [searchTerm, setSearchTerm] = useState<string>(knownLocations[defaultLocationKey]?.name || "");
+  const [searchTerm, setSearchTerm] = useState<string>(knownOmLocations[defaultOmLocationKey]?.name || "");
   const [suggestions, setSuggestions] = useState<Array<{ key: string; name: string }>>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionsRef = useRef<HTMLDivElement>(null);
-  const initialMapRenderDone = useRef(false); // To prevent re-centering map on every render
 
+  const initialApiPlotVisibility = useMemo(() => {
+    return Object.fromEntries(
+      ALL_PARAMETERS.map((key, index) => [key, index < 2]) // Default to first two API params visible
+    ) as Record<CombinedParameterKey, boolean>;
+  }, []);
+  const [apiPlotVisibility, setApiPlotVisibility] = useState<Record<CombinedParameterKey, boolean>>(initialApiPlotVisibility);
+
+  const [apiData, setApiData] = useState<CombinedDataPoint[] | null>(null);
+  const [isLoadingApiData, setIsLoadingApiData] = useState(false);
+  const [errorApiData, setErrorApiData] = useState<string | null>(null);
+  const [apiDataLocationContext, setApiDataLocationContext] = useState<string | null>(null);
+  const [apiFetchLogSteps, setApiFetchLogSteps] = useState<ApiLogStep[]>([]);
+  const [showApiFetchLogAccordion, setShowApiFetchLogAccordion] = useState<string>("");
+  const [isApiLogLoading, setIsApiLogLoading] = useState(false);
+  const [apiLogOverallStatus, setApiLogOverallStatus] = useState<ApiLogOverallStatus>('idle');
+  const lastApiErrorRef = useRef<string | null>(null);
+  const initialApiFetchDone = useRef(false);
+
+  // Theme
   useEffect(() => {
     const storedTheme = typeof window !== 'undefined' ? localStorage.getItem("theme") : null;
-    if (storedTheme) {
-      setTheme(storedTheme);
-    } else {
-      const systemPrefersDark = typeof window !== 'undefined' && window.matchMedia("(prefers-color-scheme: dark)").matches;
-      if (systemPrefersDark) {
-        setTheme("dark");
-      }
-    }
+    if (storedTheme) setTheme(storedTheme);
+    else if (typeof window !== 'undefined' && window.matchMedia("(prefers-color-scheme: dark)").matches) setTheme("dark");
   }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      if (theme === "dark") {
-        document.documentElement.classList.add("dark");
-      } else {
-        document.documentElement.classList.remove("dark");
-      }
+      if (theme === "dark") document.documentElement.classList.add("dark");
+      else document.documentElement.classList.remove("dark");
       localStorage.setItem("theme", theme);
     }
   }, [theme]);
 
-  const toggleTheme = () => {
-    setTheme(theme === "light" ? "dark" : "light");
-  };
+  const toggleTheme = useCallback(() => {
+    setTheme(prevTheme => (prevTheme === "light" ? "dark" : "light"));
+  }, []);
 
+  // CSV Plot Logic
   const addPlot = useCallback(() => {
     setPlots((prevPlots) => [
       ...prevPlots,
@@ -117,29 +146,43 @@ export default function DataExplorerPage() {
 
   useEffect(() => {
     if (!plotsInitialized.current && plots.length === 0) {
-      addPlot(); 
+      addPlot();
       plotsInitialized.current = true;
     }
   }, [addPlot, plots.length]);
 
-  // Logic for new Location & Date section (from om-marine-explorer)
+  // API Location & Parameter Logic
+  const plotConfigIcons: Record<CombinedParameterKey, LucideIcon | undefined> = useMemo(() => ({
+    seaLevelHeightMsl: Waves,
+    waveHeight: Sailboat,
+    waveDirection: CompassIcon,
+    wavePeriod: TimerIcon,
+    seaSurfaceTemperature: Thermometer,
+    temperature2m: Thermometer,
+    windSpeed10m: WindIcon,
+    windDirection10m: CompassIcon,
+    ghi: SunMoon, // Assuming GHI was added back or is part of combined
+    // cloudCover: Cloud, // If cloudCover is re-added
+  }), []);
+
+
   const handleMapLocationSelect = useCallback((coords: { lat: number; lon: number }) => {
     setMapSelectedCoords(coords);
     let foundName = "Custom Location";
-    for (const key in knownLocations) {
-      if (knownLocations[key].lat.toFixed(3) === coords.lat.toFixed(3) && knownLocations[key].lon.toFixed(3) === coords.lon.toFixed(3)) {
-        foundName = knownLocations[key].name;
+    for (const key in knownOmLocations) {
+      if (knownOmLocations[key].lat.toFixed(3) === coords.lat.toFixed(3) && knownOmLocations[key].lon.toFixed(3) === coords.lon.toFixed(3)) {
+        foundName = knownOmLocations[key].name;
         break;
       }
     }
     setCurrentLocationName(foundName);
-    setSearchTerm(foundName); // Update search term when map is clicked
-    toast({ title: "Location Selected on Map", description: `${foundName} (Lat: ${coords.lat.toFixed(3)}, Lon: ${coords.lon.toFixed(3)})` });
+    setSearchTerm(foundName);
+    toast({ title: "Location Selected on Map", description: `${foundName} (Lat: ${coords.lat.toFixed(3)}, Lon: ${coords.lon.toFixed(3)})`, duration: 3000 });
     setShowSuggestions(false);
   }, [toast]);
 
   const handleSuggestionClick = useCallback((locationKey: string) => {
-    const selectedLoc = knownLocations[locationKey];
+    const selectedLoc = knownOmLocations[locationKey];
     if (selectedLoc) {
       handleMapLocationSelect({ lat: selectedLoc.lat, lon: selectedLoc.lon });
     }
@@ -148,18 +191,22 @@ export default function DataExplorerPage() {
   useEffect(() => {
     if (searchTerm === "") {
       setSuggestions([]);
-      // Keep suggestions open if input is focused, even if empty
-      // setShowSuggestions(false); 
+      if(document.activeElement === document.getElementById(`om-location-search-${instanceId}`)) {
+        setSuggestions(Object.entries(knownOmLocations).map(([key, loc]) => ({ key, name: loc.name })).slice(0,5));
+        setShowSuggestions(true);
+      } else {
+        setShowSuggestions(false);
+      }
       return;
     }
     const lowerSearchTerm = searchTerm.toLowerCase();
-    const filtered = Object.entries(knownLocations)
+    const filtered = Object.entries(knownOmLocations)
       .filter(([key, loc]) => key.toLowerCase().includes(lowerSearchTerm) || loc.name.toLowerCase().includes(lowerSearchTerm))
       .map(([key, loc]) => ({ key, name: loc.name }))
       .slice(0, 5);
     setSuggestions(filtered);
-    setShowSuggestions(true); // Always show if there are suggestions and search term is not empty
-  }, [searchTerm]);
+    setShowSuggestions(true);
+  }, [searchTerm, instanceId]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -171,19 +218,200 @@ export default function DataExplorerPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-
-  // Ensure initialMapRenderDone logic for default map centering
-  useEffect(() => {
-    if (!mapSelectedCoords && !initialMapRenderDone.current && knownLocations[defaultLocationKey]) {
-      setMapSelectedCoords({
-        lat: knownLocations[defaultLocationKey].lat,
-        lon: knownLocations[defaultLocationKey].lon,
-      });
-      setCurrentLocationName(knownLocations[defaultLocationKey].name);
-      setSearchTerm(knownLocations[defaultLocationKey].name);
-      initialMapRenderDone.current = true;
+  const handleFetchApiData = useCallback(async (isInitialLoad = false) => {
+    if (!mapSelectedCoords) {
+      if (!isInitialLoad) toast({ variant: "destructive", title: "Missing Location", description: "Please select a location on the map." });
+      return;
     }
-  }, [mapSelectedCoords]);
+    if (!dateRange || !dateRange.from || !dateRange.to) {
+      if (!isInitialLoad) toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a valid date range." });
+      return;
+    }
+    if (dateRange.from > dateRange.to) {
+      if (!isInitialLoad) toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
+      return;
+    }
+    const selectedParams = ALL_PARAMETERS.filter(key => apiPlotVisibility[key]);
+    if (selectedParams.length === 0) {
+      if (!isInitialLoad) toast({ variant: "destructive", title: "No API Parameters Selected", description: "Please select at least one API parameter to fetch." });
+      return;
+    }
+
+    setIsLoadingApiData(true); setErrorApiData(null); setApiData(null); setApiDataLocationContext(null);
+    setApiFetchLogSteps([{ message: `Fetching ${selectedParams.length} parameter(s) for ${currentLocationName}...`, status: 'pending' }]);
+    lastApiErrorRef.current = null;
+    setIsApiLogLoading(true); setApiLogOverallStatus('pending'); setShowApiFetchLogAccordion("api-fetch-log-item");
+
+    let loadingToastId: string | undefined;
+    if (!isInitialLoad) {
+      loadingToastId = toast({ title: "Fetching API Data", description: `Fetching for ${currentLocationName}...` }).id;
+    }
+
+    try {
+      const result = await fetchCombinedDataAction({
+        latitude: mapSelectedCoords.lat,
+        longitude: mapSelectedCoords.lon,
+        startDate: formatISO(dateRange.from, { representation: 'date' }),
+        endDate: formatISO(dateRange.to, { representation: 'date' }),
+        parameters: selectedParams,
+      });
+
+      if (loadingToastId) dismiss(loadingToastId);
+      setApiFetchLogSteps(result.log || []);
+      setIsApiLogLoading(false); setIsApiLogLoading(false);
+
+      if (result.success && result.data) {
+        setApiData(result.data);
+        setApiDataLocationContext(result.dataLocationContext || `API Data for ${currentLocationName}`);
+        if (result.data.length === 0 && !result.error) {
+          toast({ variant: "default", title: "No API Data", description: "No data points found for the selected criteria.", duration: 4000 });
+          setApiLogOverallStatus('warning');
+          setShowApiFetchLogAccordion("api-fetch-log-item");
+        } else if (result.data.length > 0) {
+          if (!isInitialLoad) {
+            toast({ title: "API Data Loaded", description: `Loaded ${result.data.length} API data points for ${currentLocationName}.` });
+          }
+          setApiLogOverallStatus('success');
+          if (result.log.every(l => l.status !== 'error' && l.status !== 'warning')) {
+            setShowApiFetchLogAccordion(""); // Close log if no errors/warnings
+          } else {
+            setShowApiFetchLogAccordion("api-fetch-log-item");
+          }
+        } else { // result.data is empty and result.error exists
+           setErrorApiData(result.error || "Failed to load API data.");
+           lastApiErrorRef.current = result.error || "Failed to load API data.";
+           toast({ variant: "destructive", title: "Error Loading API Data", description: result.error || "Failed to load API data." });
+           setApiLogOverallStatus('error');
+           setShowApiFetchLogAccordion("api-fetch-log-item");
+        }
+      } else {
+        setErrorApiData(result.error || "Failed to load API data.");
+        lastApiErrorRef.current = result.error || "Failed to load API data.";
+        toast({ variant: "destructive", title: "Error Loading API Data", description: result.error || "Failed to load API data." });
+        setApiLogOverallStatus('error');
+        setShowApiFetchLogAccordion("api-fetch-log-item");
+      }
+    } catch (e) {
+      if (loadingToastId) dismiss(loadingToastId);
+      setIsLoadingApiData(false); setIsApiLogLoading(false);
+      const errorMsg = e instanceof Error ? e.message : "An unknown error occurred during API fetch.";
+      setErrorApiData(errorMsg);
+      lastApiErrorRef.current = errorMsg;
+      setApiFetchLogSteps(prev => [...prev, { message: `Critical error in API fetch operation: ${errorMsg}`, status: 'error' }]);
+      toast({ variant: "destructive", title: "Critical API Fetch Error", description: errorMsg });
+      setApiLogOverallStatus('error');
+      setShowApiFetchLogAccordion("api-fetch-log-item");
+    }
+  }, [mapSelectedCoords, currentLocationName, dateRange, apiPlotVisibility, toast, dismiss]);
+
+  // Auto-fetch API data on initial load if default location/dates are set
+  useEffect(() => {
+    const defaultLoc = knownOmLocations[defaultOmLocationKey];
+    if (defaultLoc && !initialApiFetchDone.current) {
+      const defaultCoords = { lat: defaultLoc.lat, lon: defaultLoc.lon };
+      const defaultName = defaultLoc.name;
+      if (defaultCoords && defaultName && dateRange?.from && dateRange?.to && !isLoadingApiData && !errorApiData && !apiData) {
+        if (dateRange.from <= dateRange.to) {
+          handleFetchApiData(true);
+          initialApiFetchDone.current = true;
+        }
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only once on mount (or if dependencies were to change, though they are stable here)
+
+  const handleApiPlotVisibilityChange = useCallback((key: CombinedParameterKey, checked: boolean) => {
+    setApiPlotVisibility(prev => ({ ...prev, [key]: checked }));
+  }, []);
+
+  const allApiParamsSelected = useMemo(() => ALL_PARAMETERS.every(key => apiPlotVisibility[key]), [apiPlotVisibility]);
+
+  const handleSelectAllApiParams = useCallback((checked: boolean) => {
+    setApiPlotVisibility(Object.fromEntries(ALL_PARAMETERS.map(key => [key, checked])) as Record<CombinedParameterKey, boolean>);
+  }, []);
+
+  // Log Accordion Renderer
+  const getLogTriggerContent = useCallback((status: ApiLogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string | null) => {
+    if (isLoading) return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Fetching log...</>;
+    if (status === 'success') return <><CheckCircle2 className="mr-2 h-3 w-3 text-green-500" />{defaultTitle}: Success</>;
+    if (status === 'error') return <><XCircle className="mr-2 h-3 w-3 text-destructive" />{defaultTitle}: Failed {lastError ? `(${lastError.substring(0, 30)}...)` : ''}</>;
+    if (status === 'pending') return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />{defaultTitle}: In Progress</>;
+    if (status === 'warning') return <><Info className="mr-2 h-3 w-3 text-yellow-500" />{defaultTitle}: Warning {lastError ? `(${lastError.substring(0,30)}...)` : ''}</>;
+    return <><Info className="mr-2 h-3 w-3 text-muted-foreground" />{defaultTitle}</>;
+  }, []);
+
+  const getLogAccordionItemClass = useCallback((status: ApiLogOverallStatus) => {
+    if (status === 'pending') return "bg-blue-500/5 dark:bg-blue-500/10";
+    if (status === 'success') return "bg-green-500/5 dark:bg-green-500/10";
+    if (status === 'error') return "bg-destructive/10 dark:bg-destructive/20";
+    if (status === 'warning') return "bg-yellow-500/5 dark:bg-yellow-500/10";
+    return "";
+  }, []);
+
+  const handleCopyLog = useCallback((logSteps: ApiLogStep[]) => {
+    if (logSteps.length === 0) {
+      toast({ title: "Log Empty", description: "There are no log messages to copy.", duration: 3000 });
+      return;
+    }
+    const logText = logSteps
+      .map(step => `[${step.status.toUpperCase()}] ${step.message}${step.details ? `\n  Details: ${step.details}` : ''}`)
+      .join('\n\n');
+    navigator.clipboard.writeText(logText)
+      .then(() => toast({ title: "Log Copied", description: "Fetch log copied to clipboard.", duration: 3000 }))
+      .catch(err => {
+        console.error('Failed to copy log: ', err);
+        toast({ variant: "destructive", title: "Copy Failed", description: "Could not copy log to clipboard.", duration: 3000 });
+      });
+  }, [toast]);
+
+  const renderLogAccordion = useCallback((
+    logSteps: ApiLogStep[], 
+    accordionValue: string, 
+    onValueChange: (value: string) => void, 
+    isLoadingFlag: boolean, 
+    overallStatus: ApiLogOverallStatus, 
+    title: string,
+    lastError?: string | null
+  ) => (
+    (isLoadingFlag || logSteps.length > 0 || overallStatus === 'error' || overallStatus === 'warning') && (
+      <CardFooter className="p-0 pt-2 flex flex-col items-stretch">
+        <Accordion type="single" collapsible value={accordionValue} onValueChange={onValueChange} className="w-full">
+          <AccordionItem value={title.toLowerCase().replace(/\s+/g, '-') + "-log-item"} className={cn("border rounded-md", getLogAccordionItemClass(overallStatus))}>
+            <AccordionTrigger className="px-3 py-1.5 text-xs hover:no-underline [&_svg.lucide-chevron-down]:h-3 [&_svg.lucide-chevron-down]:w-3">
+              {getLogTriggerContent(overallStatus, isLoadingFlag, title, lastError)}
+            </AccordionTrigger>
+            <AccordionContent className="px-2 pb-1 pt-0">
+              <ScrollArea className="max-h-[35rem] h-auto w-full rounded-md border bg-muted/30 dark:bg-muted/10 p-1.5 mt-1">
+                <ul className="space-y-1 text-[0.7rem]">
+                  {logSteps.map((step, index) => (
+                    <li key={index} className="flex items-start gap-1.5">
+                      {step.status === 'pending' && <Loader2 className="h-3 w-3 mt-0.5 text-blue-500 animate-spin flex-shrink-0" />}
+                      {step.status === 'success' && <CheckCircle2 className="h-3 w-3 mt-0.5 text-green-500 flex-shrink-0" />}
+                      {step.status === 'error' && <XCircle className="h-3 w-3 mt-0.5 text-destructive flex-shrink-0" />}
+                      {step.status === 'info' && <Info className="h-3 w-3 mt-0.5 text-muted-foreground flex-shrink-0" />}
+                      {step.status === 'warning' && <Info className="h-3 w-3 mt-0.5 text-yellow-500 flex-shrink-0" />}
+                      <div className="min-w-0">
+                        <p className={cn("break-words", step.status === 'error' && "text-destructive font-semibold", step.status === 'warning' && "text-yellow-600 dark:text-yellow-400")}>{step.message}</p>
+                        {step.details && <p className="text-muted-foreground text-[0.6rem] whitespace-pre-wrap break-all">{step.details}</p>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {logSteps.length === 0 && !isLoadingFlag && <p className="text-center text-muted-foreground text-[0.65rem] py-2">No log details for this operation.</p>}
+              </ScrollArea>
+              {logSteps.length > 0 && !isLoadingFlag && (
+                <div className="w-full flex justify-end mt-2">
+                  <Button variant="outline" size="sm" onClick={() => handleCopyLog(logSteps)} className="h-7 text-xs">
+                    <Copy className="mr-1.5 h-3 w-3" /> Copy Log
+                  </Button>
+                </div>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </CardFooter>
+    )
+  ), [getLogAccordionItemClass, getLogTriggerContent, handleCopyLog]);
 
 
   return (
@@ -195,120 +423,160 @@ export default function DataExplorerPage() {
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/data-explorer" passHref>
-                    <Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (CSV)">
-                      <LayoutGrid className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>Data Explorer (CSV)</p></TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/weather" passHref>
-                    <Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Weather Page">
-                      <CloudSun className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>Weather Page</p></TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/om-marine-explorer" passHref>
-                    <Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="OM Marine Explorer">
-                      <Waves className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent><p>OM Marine Explorer</p></TooltipContent>
-              </Tooltip>
+              <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer (CSV)"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer (CSV)</p></TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Link href="/om-marine-explorer" passHref><Button variant={pathname === '/om-marine-explorer' ? "secondary": "ghost"} size="icon" aria-label="Weather & Marine Explorer"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Weather & Marine Explorer</p></TooltipContent></Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme">
-                    <SunMoon className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent><p>Toggle Theme</p></TooltipContent>
-              </Tooltip>
+              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
           </div>
         </TooltipProvider>
       </header>
 
       <main className="flex-grow container mx-auto p-2 md:p-3 space-y-3">
+        
+        {/* API Data Section */}
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2 pt-3">
+            <CardTitle className="text-base flex items-center gap-1.5">
+              <Waves className="h-4 w-4 text-primary" /> Open-Meteo Weather &amp; Marine Data
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 grid grid-cols-1 md:grid-cols-12 gap-3">
+            <div className="md:col-span-4 space-y-3">
+                <Card>
+                    <CardHeader className="pb-2 pt-3"><CardTitle className="text-sm flex items-center gap-1.5"><MapPin className="h-4 w-4 text-primary"/>Location &amp; Date</CardTitle></CardHeader>
+                    <CardContent className="space-y-2 p-3">
+                        <div className="relative" ref={suggestionsRef}>
+                        <UiLabel htmlFor={`om-location-search-${instanceId}`} className="text-xs font-medium mb-0.5 block">Search Location</UiLabel>
+                        <Input
+                            id={`om-location-search-${instanceId}`}
+                            type="text"
+                            placeholder="e.g., Milford Haven"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onFocus={() => { if(suggestions.length > 0 || searchTerm==="" || Object.values(knownOmLocations).some(loc => loc.name === searchTerm)) setShowSuggestions(true);}}
+                            className="h-9 text-xs flex-grow"
+                            disabled={isLoadingApiData}
+                        />
+                        {showSuggestions && (
+                            <div className="absolute top-full left-0 right-0 z-20 mt-1 border bg-card shadow-lg rounded-md max-h-60 overflow-y-auto">
+                            {suggestions.map(loc => (
+                                <button
+                                key={loc.key}
+                                onClick={() => handleSuggestionClick(loc.key)}
+                                className="block w-full text-left px-3 py-1.5 text-xs hover:bg-muted"
+                                >
+                                {loc.name}
+                                </button>
+                            ))}
+                            </div>
+                        )}
+                        </div>
+                        
+                        <UiLabel htmlFor={`om-map-container-${instanceId}`} className="text-xs font-medium mb-0.5 block pt-1">Click Map to Select Location</UiLabel>
+                        <div id={`om-map-container-${instanceId}`} className="h-[180px] w-full rounded-md overflow-hidden border">
+                        <OpenLayersMapWithNoSSR
+                            initialCenter={mapSelectedCoords ? [mapSelectedCoords.lon, mapSelectedCoords.lat] : [DEFAULT_OM_LONGITUDE, DEFAULT_OM_LATITUDE]}
+                            initialZoom={DEFAULT_OM_MAP_ZOOM}
+                            selectedCoords={mapSelectedCoords}
+                            onLocationSelect={handleMapLocationSelect}
+                        />
+                        </div>
+                        {mapSelectedCoords && (
+                        <p className="text-xs text-muted-foreground text-center">
+                            {currentLocationName} (Lat: {mapSelectedCoords.lat.toFixed(3)}, Lon: {mapSelectedCoords.lon.toFixed(3)})
+                        </p>
+                        )}
+
+                        <div>
+                        <UiLabel htmlFor={`om-date-range-${instanceId}`} className="text-xs font-medium mb-0.5 block pt-1">Date Range</UiLabel>
+                        <DatePickerWithRange id={`om-date-range-${instanceId}`} date={dateRange} onDateChange={setDateRange} disabled={isLoadingApiData} />
+                        {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && <p className="text-xs text-destructive px-1 pt-1">Start date error.</p>}
+                        </div>
+                    </CardContent>
+                </Card>
+                 <Card>
+                    <CardHeader className="pb-2 pt-3 flex flex-row items-center justify-between">
+                        <CardTitle className="text-sm flex items-center gap-1.5"><LayoutGrid className="h-4 w-4 text-primary" />Select API Parameters</CardTitle>
+                        <div className="flex items-center space-x-1.5">
+                            <Checkbox
+                                id={`select-all-api-params-${instanceId}`}
+                                checked={allApiParamsSelected}
+                                onCheckedChange={(checked) => handleSelectAllApiParams(!!checked)}
+                                className="h-3.5 w-3.5"
+                                disabled={isLoadingApiData}
+                                aria-label={allApiParamsSelected ? "Deselect all API parameters" : "Select all API parameters"}
+                            />
+                            <UiLabel htmlFor={`select-all-api-params-${instanceId}`} className="text-xs font-medium cursor-pointer">
+                                {allApiParamsSelected ? "Deselect All" : "Select All"}
+                            </UiLabel>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-2">
+                        <ScrollArea className="h-48 w-full rounded-md border p-1">
+                            {ALL_PARAMETERS.map((key) => {
+                            const paramConfig = PARAMETER_CONFIG[key];
+                            if (!paramConfig) return null;
+                            const IconComp = plotConfigIcons[key] || Info;
+                            const uniqueCheckboxId = `api-visibility-${key}-${instanceId}`;
+                            return (
+                                <div key={key} className="flex items-center space-x-1.5 py-0.5">
+                                <Checkbox
+                                    id={uniqueCheckboxId}
+                                    checked={apiPlotVisibility[key]}
+                                    onCheckedChange={(checked) => handleApiPlotVisibilityChange(key, !!checked)}
+                                    className="h-3.5 w-3.5"
+                                    disabled={isLoadingApiData}
+                                />
+                                <UiLabel htmlFor={uniqueCheckboxId} className="text-xs font-medium flex items-center gap-1 cursor-pointer">
+                                    <IconComp className="h-3.5 w-3.5 text-muted-foreground" />
+                                    {paramConfig.name}
+                                </UiLabel>
+                                </div>
+                            );
+                            })}
+                        </ScrollArea>
+                    </CardContent>
+                    <CardFooter className="p-3 pt-1">
+                        <Button 
+                            onClick={() => handleFetchApiData(false)} 
+                            disabled={isLoadingApiData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => apiPlotVisibility[key]).length === 0} 
+                            className="w-full h-9 text-xs"
+                        >
+                        {isLoadingApiData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
+                        {isLoadingApiData ? "Fetching API Data..." : "Fetch API Data"}
+                        </Button>
+                    </CardFooter>
+                    {renderLogAccordion(apiFetchLogSteps, showApiFetchLogAccordion, setShowApiFetchLogAccordion, isApiLogLoading, apiLogOverallStatus, "API Fetch Log", lastApiErrorRef.current)}
+                </Card>
+            </div>
+            <div className="md:col-span-8">
+                 <Card className="shadow-sm h-full">
+                    <CardHeader className="p-2 pt-3"><CardTitle className="text-sm">{apiDataLocationContext || "Weather &amp; Marine API Data Plots"}</CardTitle></CardHeader>
+                    <CardContent className="p-1.5 h-[calc(100%-2.5rem)]"> {/* Adjust height for header */}
+                        <MarinePlotsGrid
+                        marineData={apiData} // Pass apiData
+                        isLoading={isLoadingApiData}
+                        error={errorApiData}
+                        plotVisibility={apiPlotVisibility} // Pass apiPlotVisibility
+                        />
+                    </CardContent>
+                </Card>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Separator className="my-4" />
+
+        {/* CSV Data Section */}
         <div className="flex justify-center mb-3">
           <Button onClick={addPlot} size="sm" className="h-8 text-xs">
             <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot (CSV)
           </Button>
         </div>
 
-        {/* New Location & Date Selection Card */}
-        <Card className="mb-3 shadow-sm">
-          <CardHeader className="pb-2 pt-3">
-            <CardTitle className="text-base flex items-center gap-1.5">
-              <MapPin className="h-4 w-4 text-primary" /> Location &amp; Date (for API Data - future)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 p-3">
-             <div className="relative" ref={suggestionsRef}>
-              <UiLabel htmlFor="location-search-data-explorer" className="text-xs font-medium mb-0.5 block">Search Location</UiLabel>
-              <div className="flex gap-1">
-                <Input
-                  id="location-search-data-explorer"
-                  type="text"
-                  placeholder="e.g., Milford Haven"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onFocus={() => { if(suggestions.length > 0 || searchTerm === "" || Object.values(knownLocations).some(loc => loc.name === searchTerm)) setShowSuggestions(true);}}
-                  className="h-9 text-xs flex-grow"
-                />
-              </div>
-              {showSuggestions && (
-                <div className="absolute top-full left-0 right-0 z-10 mt-1 border bg-card shadow-lg rounded-md max-h-60 overflow-y-auto">
-                  {suggestions.map(loc => (
-                    <button
-                      key={loc.key}
-                      onClick={() => handleSuggestionClick(loc.key)}
-                      className="block w-full text-left px-3 py-1.5 text-xs hover:bg-muted"
-                    >
-                      {loc.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div>
-              <p className="text-xs font-medium mb-1">Select Location on Map:</p>
-              <div className="h-[200px] w-full rounded-md overflow-hidden border">
-                <OpenLayersMapWithNoSSR
-                  initialCenter={mapSelectedCoords ? [mapSelectedCoords.lon, mapSelectedCoords.lat] : [DEFAULT_LONGITUDE, DEFAULT_LATITUDE]}
-                  initialZoom={DEFAULT_MAP_ZOOM}
-                  selectedCoords={mapSelectedCoords}
-                  onLocationSelect={handleMapLocationSelect}
-                />
-              </div>
-              {mapSelectedCoords && (
-                <p className="text-xs text-muted-foreground text-center mt-1">
-                  {currentLocationName} (Lat: {mapSelectedCoords.lat.toFixed(3)}, Lon: {mapSelectedCoords.lon.toFixed(3)})
-                </p>
-              )}
-            </div>
-            <div>
-              <p className="text-xs font-medium mb-1 flex items-center gap-1">
-                <CalendarDays className="h-3.5 w-3.5 text-primary/80" /> Select Date Range:
-              </p>
-              <DatePickerWithRange date={dateRange} onDateChange={setDateRange} />
-            </div>
-          </CardContent>
-        </Card>
-        {/* End of New Location & Date Selection Card */}
-
         {plots.length === 0 ? (
-          <div className="flex flex-col items-center justify-center text-muted-foreground h-60 p-2">
+          <div className="flex flex-col items-center justify-center text-muted-foreground h-40 p-2 border rounded-md bg-muted/20">
             <LayoutGrid className="w-8 h-8 mb-2 text-muted" />
             <p className="text-xs">No CSV plots to display.</p>
             <p className="text-[0.7rem]">Click "Add New Plot (CSV)" to get started.</p>
@@ -330,11 +598,10 @@ export default function DataExplorerPage() {
       <footer className="py-2 md:px-3 md:py-0 border-t">
         <div className="container flex flex-col items-center justify-center gap-1 md:h-10 md:flex-row">
           <p className="text-balance text-center text-[0.7rem] leading-loose text-muted-foreground">
-            PEBL data app - CSV Data Explorer.
+            PEBL data app - Data Explorer. API data from Open-Meteo.
           </p>
         </div>
       </footer>
     </div>
   );
 }
-

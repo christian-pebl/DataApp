@@ -1,3 +1,6 @@
+// This file's types and configs are used by data-explorer/page.tsx
+// If this file were to be removed, these definitions would need to be relocated.
+// For this step, we keep it here and data-explorer imports from it.
 
 import type { LucideIcon } from "lucide-react";
 import { z } from 'zod';
@@ -12,14 +15,13 @@ export interface CombinedDataPoint {
   waveDirection?: number;
   wavePeriod?: number;
   seaSurfaceTemperature?: number;
-  seaLevelHeightMsl?: number; // For tide data
+  seaLevelHeightMsl?: number;
 
   // Weather Parameters
   temperature2m?: number;
   windSpeed10m?: number; 
   windDirection10m?: number;
-  // cloudCover is removed
-  ghi?: number; // Global Horizontal Irradiance
+  ghi?: number; // Global Horizontal Irradiance (was shortwave_radiation)
 }
 
 export const CombinedDataPointSchema = z.object({
@@ -69,11 +71,13 @@ export type CombinedParameterKey =
   | 'ghi';
 
 export const ALL_PARAMETERS: CombinedParameterKey[] = [
+  // Marine Parameters
   'seaLevelHeightMsl',
   'waveHeight',
   'waveDirection',
   'wavePeriod',
   'seaSurfaceTemperature',
+  // Weather Parameters
   'temperature2m',
   'windSpeed10m',
   'windDirection10m',
@@ -96,9 +100,9 @@ export const PARAMETER_CONFIG: Record<CombinedParameterKey, ParameterConfigItem>
   waveDirection: { name: "Wave Direction", apiParam: "wave_direction", unit: "°", apiSource: 'marine', color: '--chart-3' },
   wavePeriod: { name: "Wave Period", apiParam: "wave_period", unit: "s", apiSource: 'marine', color: '--chart-4' },
   seaSurfaceTemperature: { name: "Sea Surface Temp", apiParam: "sea_surface_temperature", unit: "°C", apiSource: 'marine', color: '--chart-5'},
-  // Weather Parameters (now merged)
+  // Weather Parameters
   temperature2m: { name: "Temperature (2m)", apiParam: "temperature_2m", unit: "°C", apiSource: 'weather', color: '--chart-1' },
-  windSpeed10m: { name: "Wind Speed (10m)", apiParam: "windspeed_10m", unit: "m/s", apiSource: 'weather', color: '--chart-2' }, // Assuming m/s for consistency, conversion done in action if API gives km/h
+  windSpeed10m: { name: "Wind Speed (10m)", apiParam: "windspeed_10m", unit: "m/s", apiSource: 'weather', color: '--chart-2' },
   windDirection10m: { name: "Wind Direction (10m)", apiParam: "winddirection_10m", unit: "°", apiSource: 'weather', color: '--chart-3' },
   ghi: { name: "Global Horizontal Irradiance (GHI)", apiParam: "shortwave_radiation", unit: "W/m²", apiSource: 'weather', color: '--chart-4' },
 };
