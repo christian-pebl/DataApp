@@ -1,46 +1,16 @@
 
 'use server';
 
-import type { CombinedDataPoint, FetchCombinedDataInput, LogStep, CombinedParameterKey } from './shared';
-import { FetchCombinedDataInputSchema, PARAMETER_CONFIG, ALL_PARAMETERS } from './shared';
 import { format, parseISO, isPast, isValid } from 'date-fns';
-
-// Interface for the raw hourly data part of the OpenMeteo API response
-interface OpenMeteoHourlyResponse {
-  time: string[];
-  // Marine specific
-  sea_level_height_msl?: (number | null)[];
-  wave_height?: (number | null)[];
-  wave_direction?: (number | null)[];
-  wave_period?: (number | null)[];
-  sea_surface_temperature?: (number | null)[];
-  // Weather specific
-  temperature_2m?: (number | null)[];
-  windspeed_10m?: (number | null)[]; // Requested as m/s
-  winddirection_10m?: (number | null)[];
-  cloudcover?: (number | null)[]; // cloud_cover in API
-  shortwave_radiation?: (number | null)[]; // For GHI
-}
-
-// Interface for the overall API response from OpenMeteo (Weather or Marine)
-type OpenMeteoApiResponse = {
-  latitude: number;
-  longitude: number;
-  generationtime_ms: number;
-  utc_offset_seconds: number;
-  timezone: string;
-  timezone_abbreviation: string;
-  hourly_units?: Record<string, string>;
-  hourly?: OpenMeteoHourlyResponse;
-  error?: boolean;
-  reason?: string;
-};
+import type { CombinedDataPoint, FetchCombinedDataInput, LogStep, CombinedParameterKey, OpenMeteoHourlyResponse, OpenMeteoApiResponse } from './shared';
+import { FetchCombinedDataInputSchema, PARAMETER_CONFIG } from './shared';
 
 async function fetchFromOpenMeteo(
   apiUrl: string,
   apiName: 'Marine' | 'Weather',
   log: LogStep[]
 ): Promise<OpenMeteoApiResponse | null> {
+  const currentStepIndex = log.length;
   log.push({ message: `Attempting to fetch data from Open-Meteo ${apiName} API...`, status: 'pending' });
   log.push({ message: `Constructed ${apiName} API URL: ${apiUrl}`, status: 'info', details: apiUrl });
 
@@ -64,39 +34,91 @@ async function fetchFromOpenMeteo(
       } catch (e) {
         reason += ` Non-JSON Response: ${rawResponseBody.substring(0, 200)}`;
       }
-      log.push({ message: `${apiName} API Error: ${reason}`, status: 'error', details: rawResponseBody });
+      log[currentStepIndex] = { message: `${apiName} API Error: ${reason}`, status: 'error', details: rawResponseBody };
       return null;
     }
 
     let apiData: OpenMeteoApiResponse;
     try {
       apiData = JSON.parse(rawResponseBody);
-      log.push({ message: `Successfully parsed ${apiName} API JSON response.`, status: 'success' });
     } catch (jsonError) {
-      log.push({ message: `Failed to parse ${apiName} API JSON response: ${jsonError instanceof Error ? jsonError.message : String(jsonError)}`, status: 'error', details: rawResponseBody });
+      const errorMsg = jsonError instanceof Error ? jsonError.message : String(jsonError);
+      log[currentStepIndex] = { message: `Failed to parse ${apiName} API JSON response: ${errorMsg}`, status: 'error', details: rawResponseBody };
       return null;
     }
 
     if (apiData.error) {
-      log.push({ message: `Open-Meteo ${apiName} API reported an error: ${apiData.reason}`, status: 'error', details: rawResponseBody });
+      log[currentStepIndex] = { message: `Open-Meteo ${apiName} API reported an error: ${apiData.reason}`, status: 'error', details: rawResponseBody };
       return null;
     }
-    log.push({ message: `${apiName} API response indicates no explicit error flag.`, status: 'success' });
 
     if (!apiData.hourly || !apiData.hourly.time || apiData.hourly.time.length === 0) {
-      log.push({ message: `No hourly data structure or time array returned from Open-Meteo ${apiName} API. Essential time data missing.`, status: 'warning' });
+      log.push({ message: `No hourly timestamps from ${apiName} API for processing, or API data was null/empty. Skipping processing for this source.`, status: 'warning' });
+      log[currentStepIndex] = { message: `${apiName} API did not return hourly time data.`, status: 'warning', details: rawResponseBody };
       return null; // Critical: cannot process without time data
     }
     log.push({ message: `Received ${apiData.hourly.time.length} timestamps from ${apiName} API.`, status: 'info' });
 
+    log[currentStepIndex] = { message: `Successfully fetched and initiated parsing for ${apiName} API.`, status: 'success' };
     return apiData;
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-    log.push({ message: `Critical error during ${apiName} API fetch or processing: ${errorMessage}`, status: 'error', details: error instanceof Error ? error.stack : undefined });
+    log[currentStepIndex] = { message: `Critical error during ${apiName} API fetch or processing: ${errorMessage}`, status: 'error', details: error instanceof Error ? error.stack : undefined };
     return null;
   }
 }
+
+function processApiHourlyData(
+  apiRespData: OpenMeteoApiResponse, // Assumed to be valid and checked before calling
+  paramConfigsForThisSource: Array<typeof PARAMETER_CONFIG[CombinedParameterKey] & { dataKey: CombinedParameterKey }>,
+  apiSource: 'marine' | 'weather',
+  combinedDataMap: Map<string, Partial<CombinedDataPoint>>,
+  log: LogStep[]
+) {
+  if (!apiRespData.hourly || !apiRespData.hourly.time || apiRespData.hourly.time.length === 0) {
+    log.push({ message: `Skipping processing for ${apiSource}: No hourly time data found.`, status: 'warning' });
+    return;
+  }
+
+  const times = apiRespData.hourly.time;
+  let processedCount = 0;
+  log.push({ message: `Processing ${times.length} timestamps from ${apiSource} API.`, status: 'info' });
+
+  times.forEach((time, index) => {
+    const entry = combinedDataMap.get(time) || { time };
+    let dataPointHasNewValue = false;
+
+    paramConfigsForThisSource.forEach(config => {
+      const appKey = config.dataKey;
+      const apiParamName = config.apiParam;
+      const apiHourly = apiRespData.hourly as OpenMeteoHourlyResponse;
+
+      if (!(apiParamName in apiHourly)) {
+        log.push({ message: `[${apiSource} processing] API parameter '${apiParamName}' for '${appKey}' not found in hourly response.`, status: 'warning' });
+        return; 
+      }
+      
+      const apiParamArray = (apiHourly as any)[apiParamName];
+
+      if (apiParamArray && Array.isArray(apiParamArray) && index < apiParamArray.length && apiParamArray[index] !== null && apiParamArray[index] !== undefined) {
+        let value = apiParamArray[index];
+        (entry as any)[appKey] = Number(value);
+        dataPointHasNewValue = true;
+      } else {
+        // Log only if we expected this parameter based on paramConfigsForThisSource
+        // log.push({ message: `[${apiSource} processing] No valid value for ${appKey} (${apiParamName}) at index ${index}. Array length: ${apiParamArray?.length}`, status: 'info' });
+      }
+    });
+
+    if (dataPointHasNewValue || combinedDataMap.has(time)) {
+      combinedDataMap.set(time, entry);
+      if (dataPointHasNewValue) processedCount++;
+    }
+  });
+  log.push({ message: `Updated ${processedCount} data values from ${apiSource} API across ${times.length} total timestamps.`, status: 'success' });
+}
+
 
 export async function fetchCombinedDataAction(
   input: FetchCombinedDataInput
@@ -159,34 +181,32 @@ export async function fetchCombinedDataAction(
 
   if (marineApiParamsString) {
     const marineApiUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${latitude}&longitude=${longitude}&start_date=${formattedStartDate}&end_date=${formattedEndDate}&hourly=${marineApiParamsString}`;
-    log.push({ message: `Requesting Marine API (${marineApiUrl}) with hourly parameters: '${marineApiParamsString}'`, status: 'info' });
     apiPromises.push(
       fetchFromOpenMeteo(marineApiUrl, 'Marine', log).then(data => {
         marineApiData = data;
       })
     );
   } else {
-    log.push({ message: 'No marine parameters selected for fetching.', status: 'info' });
+    log.push({ message: 'No marine parameters selected; Marine API call skipped.', status: 'info' });
   }
 
   let weatherApiBaseUrl = 'https://api.open-meteo.com/v1/forecast';
   if (isPast(parsedEndDate)) {
     weatherApiBaseUrl = 'https://archive-api.open-meteo.com/v1/archive';
-    log.push({ message: `Using Weather Archive API (${weatherApiBaseUrl}) as end date (${formattedEndDate}) is in the past.`, status: 'info' });
+    log.push({ message: `Targeting Weather Archive API (${weatherApiBaseUrl}) as end date (${formattedEndDate}) is in the past.`, status: 'info' });
   } else {
-    log.push({ message: `Using Weather Forecast API (${weatherApiBaseUrl}) as end date (${formattedEndDate}) is not in the past.`, status: 'info' });
+    log.push({ message: `Targeting Weather Forecast API (${weatherApiBaseUrl}) as end date (${formattedEndDate}) is not in the past.`, status: 'info' });
   }
 
   if (weatherApiParamsString) {
     const weatherApiUrl = `${weatherApiBaseUrl}?latitude=${latitude}&longitude=${longitude}&start_date=${formattedStartDate}&end_date=${formattedEndDate}&hourly=${weatherApiParamsString}&wind_speed_unit=ms`;
-    log.push({ message: `Requesting Weather API (${weatherApiUrl}) with hourly parameters: '${weatherApiParamsString}' and wind_speed_unit=ms`, status: 'info' });
     apiPromises.push(
       fetchFromOpenMeteo(weatherApiUrl, 'Weather', log).then(data => {
         weatherApiData = data;
       })
     );
   } else {
-    log.push({ message: 'No weather parameters selected for fetching.', status: 'info' });
+     log.push({ message: 'No weather parameters selected; Weather API call skipped.', status: 'info' });
   }
 
   await Promise.all(apiPromises);
@@ -212,72 +232,36 @@ export async function fetchCombinedDataAction(
 
   const combinedDataMap = new Map<string, Partial<CombinedDataPoint>>();
 
-  const processApiHourlyData = (
-    apiRespData: OpenMeteoApiResponse | null,
-    paramConfigsForThisSource: typeof marineParamsToFetchConfig, // Array of ParameterConfigItem
-    apiSource: 'marine' | 'weather'
-  ) => {
-    if (!apiRespData || !apiRespData.hourly || !apiRespData.hourly.time || apiRespData.hourly.time.length === 0) {
-      log.push({ message: `No hourly timestamps from ${apiSource} API for processing, or API data was null/empty. Skipping processing for this source.`, status: 'warning' });
-      return;
-    }
-    const times = apiRespData.hourly.time;
-    let processedCount = 0;
-    log.push({ message: `Processing ${times.length} timestamps from ${apiSource} API.`, status: 'info' });
-
-    times.forEach((time, index) => {
-      const entry = combinedDataMap.get(time) || { time };
-      let dataPointHasNewValue = false;
-
-      paramConfigsForThisSource.forEach(config => {
-        // config.dataKey is the application key (e.g. 'temperature2m')
-        // config.apiParam is the API key (e.g. 'temperature_2m')
-        const appKey = config.dataKey as CombinedParameterKey;
-        const apiParamName = config.apiParam;
-        const apiHourly = apiRespData.hourly as OpenMeteoHourlyResponse;
-        
-        log.push({ message: `[${apiSource} processing] Timestamp: ${time}, Index: ${index}, AppKey: ${appKey}, APIParam: ${apiParamName}`, status: 'info' });
-
-        if (!(apiParamName in apiHourly)) {
-          log.push({ message: `[${apiSource} processing] API parameter '${apiParamName}' not found in hourly data for ${appKey}.`, status: 'warning' });
-          return; // Skip this parameter for this timestamp
-        }
-        
-        const apiParamArray = (apiHourly as any)[apiParamName];
-
-        if (apiParamArray && Array.isArray(apiParamArray) && index < apiParamArray.length && apiParamArray[index] !== null && apiParamArray[index] !== undefined) {
-          let value = apiParamArray[index];
-          log.push({ message: `[${apiSource} processing] Found value for ${appKey} (${apiParamName}): ${value}`, status: 'info' });
-          (entry as any)[appKey] = Number(value);
-          dataPointHasNewValue = true;
-        } else {
-           log.push({ message: `[${apiSource} processing] No valid value for ${appKey} (${apiParamName}) at index ${index}. Array length: ${apiParamArray?.length}`, status: 'info' });
-        }
-      });
-
-      if(dataPointHasNewValue || combinedDataMap.has(time)) {
-        combinedDataMap.set(time, entry);
-        if(dataPointHasNewValue) processedCount++;
-      }
-    });
-     log.push({ message: `Updated ${processedCount} data values from ${apiSource} API across ${times.length} total timestamps.`, status: 'success' });
-  };
-
   if (marineApiData) {
-    processApiHourlyData(marineApiData, marineParamsToFetchConfig, 'marine');
+    processApiHourlyData(marineApiData, marineParamsToFetchConfig, 'marine', combinedDataMap, log);
   }
   if (weatherApiData) {
-    processApiHourlyData(weatherApiData, weatherParamsToFetchConfig, 'weather');
+    processApiHourlyData(weatherApiData, weatherParamsToFetchConfig, 'weather', combinedDataMap, log);
   }
 
-  const finalCombinedData: CombinedDataPoint[] = Array.from(combinedDataMap.values()) as CombinedDataPoint[];
-  finalCombinedData.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+  const finalCombinedData: CombinedDataPoint[] = Array.from(combinedDataMap.values())
+    .map(point => { // Ensure all defined parameters in PARAMETER_CONFIG have at least a null entry if not present
+        const completePoint: Partial<CombinedDataPoint> = { time: point.time };
+        selectedParamKeys.forEach(key => {
+            const paramKey = key as CombinedParameterKey;
+            if (point[paramKey] !== undefined) {
+                (completePoint as any)[paramKey] = point[paramKey];
+            } else {
+                 // Only add null if it was an expected parameter based on selection,
+                 // and it wasn't found in any API response after processing.
+                (completePoint as any)[paramKey] = null;
+            }
+        });
+        return completePoint as CombinedDataPoint;
+    })
+    .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
 
   if (finalCombinedData.length === 0 && selectedParamKeys.length > 0) {
-    const noDataError = primaryErrorFromApi || "No data found for the selected parameters, location, and date range after processing API responses.";
+    const noDataError = primaryErrorFromApi || "No data points found for the selected parameters, location, and date range after processing API responses.";
     log.push({ message: noDataError, status: primaryErrorFromApi ? 'error' : 'warning' });
     return {
-      success: !primaryErrorFromApi, // False if there was an API error, true if just no data
+      success: !primaryErrorFromApi, 
       data: [],
       log,
       dataLocationContext: `Data for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)}`,
@@ -290,9 +274,11 @@ export async function fetchCombinedDataAction(
   }
 
   return {
-    success: true,
+    success: !primaryErrorFromApi, // Success is true if no API hard error occurred
     data: finalCombinedData,
     log,
     dataLocationContext: `Data for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)} (Open-Meteo)`
   };
 }
+
+    
