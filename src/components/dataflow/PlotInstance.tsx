@@ -52,6 +52,8 @@ interface LineAnnotation {
 const DEFAULT_LINE_COLOR = 'hsl(var(--primary))';
 const DEFAULT_STROKE_WIDTH = 1.5;
 const SELECTED_STROKE_WIDTH_OFFSET = 1;
+const DEFAULT_PLOT_HEIGHT = 350;
+const EXPANDED_PLOT_HEIGHT = 600;
 
 interface ValidationStep {
   id: string;
@@ -73,28 +75,18 @@ interface SavedPlotState {
   brushEndIndex?: number;
   lines?: LineAnnotation[];
   isOverlayActive?: boolean;
-  // activeTool?: 'line' | 'move' | null; // No longer used
+  activeTool?: 'line' | 'move' | null;
 }
 
 const MAX_FILE_SIZE_MB = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-
-const DEFAULT_PLOT_HEIGHT = 350;
-const EXPANDED_PLOT_HEIGHT = 600;
-
-const TOOLBAR_APPROX_WIDTH_MIN = 130;
-const TOOLBAR_APPROX_HEIGHT = 32;
-const VERTICAL_GAP_TOOLBAR = 8;
-const HORIZONTAL_EDGE_BUFFER_TOOLBAR = 8;
-const TOOLBAR_OFFSET_FROM_LINE_Y = 20;
-
 
 const LineStyleIcon = ({ style, className }: { style: 'solid' | 'dashed' | 'dotted', className?: string }) => {
   let strokeDasharray;
   if (style === 'dashed') strokeDasharray = "3,2";
   if (style === 'dotted') strokeDasharray = "1,2";
   return (
-    <svg width="24" height="16" viewBox="0 0 24 16" className={cn("h-4 w-6", className)}>
+    <svg width="16" height="16" viewBox="0 0 24 16" className={cn("h-3.5 w-3.5", className)}>
       <line x1="2" y1="8" x2="22" y2="8" stroke="currentColor" strokeWidth="2" strokeDasharray={strokeDasharray} />
     </svg>
   );
@@ -108,14 +100,14 @@ const ArrowStyleIcon = ({ style, uniqueId, className }: { style: 'none' | 'end' 
   let x1 = padding;
   let x2 = 24 - padding;
 
-  const endMarkerId = `arrowheadEnd-${uniqueId}-preview-${style}`;
-  const startMarkerId = `arrowheadStart-${uniqueId}-preview-${style}`;
+  const endMarkerId = `dropdown-arrow-end-preview-${uniqueId}-${style}`;
+  const startMarkerId = `dropdown-arrow-start-preview-${uniqueId}-${style}`;
 
   if (style === 'end') { x2 -= markerWidth; }
   else if (style === 'both') { x1 += markerWidth; x2 -= markerWidth; }
 
   return (
-    <svg width="24" height="16" viewBox="0 0 24 16" className={cn("h-4 w-6", className)}>
+    <svg width="16" height="16" viewBox="0 0 24 16" className={cn("h-3.5 w-3.5", className)}>
       <defs>
         <marker id={endMarkerId} markerWidth={markerWidth} markerHeight={markerHeight} refX={markerWidth} refY={refY} orient="auto" fill="currentColor"><polygon points={`0 0, ${markerWidth} ${refY}, 0 ${markerHeight}`} /></marker>
         <marker id={startMarkerId} markerWidth={markerWidth} markerHeight={markerHeight} refX="0" refY={refY} orient="auto-start-reverse" fill="currentColor"><polygon points={`0 0, ${markerWidth} ${refY}, 0 ${markerHeight}`} /></marker>
@@ -133,6 +125,7 @@ const ColorSwatch = ({ color, className }: { color: string, className?: string }
   <div className={cn("w-3 h-3 rounded-sm border border-border mr-2 flex-shrink-0", className)} style={{ backgroundColor: color }} />
 );
 
+
 interface PlotInstanceProps {
   instanceId: string;
   onRemovePlot: (id: string) => void;
@@ -140,55 +133,10 @@ interface PlotInstanceProps {
 }
 
 export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Data Plot" }: PlotInstanceProps) {
-  // Hooks order: useId -> useState -> useRef -> useToast -> useMemo -> useCallback -> useEffect
   const uniqueComponentId = useId();
   const fileInputId = `${uniqueComponentId}-csv-upload-${instanceId}`;
   const jsonLoadInputId = `${uniqueComponentId}-json-load-${instanceId}`;
 
-  // Data and Plot state
-  const [rawCsvText, setRawCsvText] = useState<string | null>(null);
-  const [parsedData, setParsedData] = useState<DataPoint[]>([]);
-  const [currentFileName, setCurrentFileName] = useState<string | undefined>(undefined);
-  const [dataSeries, setDataSeries] = useState<string[]>([]);
-  const [visibleSeries, setVisibleSeries] = useState<Record<string, boolean>>({});
-  const [timeAxisLabel, setTimeAxisLabel] = useState<string | undefined>(undefined);
-  const [plotTitle, setPlotTitle] = useState<string>(initialPlotTitle);
-  const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
-  const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
-  const [isPlotExpanded, setIsPlotExpanded] = useState(false);
-
-  // Validation and UI State
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [currentFileForValidation, setCurrentFileForValidation] = useState<string | null>(null);
-  const [accordionValue, setAccordionValue] = useState<string>("");
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [isMinimalistView, setIsMinimalistView] = useState(false);
-
-  // Annotation state
-  const [isOverlayActive, setIsOverlayActive] = useState(false);
-  const [lines, setLines] = useState<LineAnnotation[]>([]);
-  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
-
-  const [draggingPoint, setDraggingPoint] = useState<{ lineId: string; pointType: 'start' | 'end' } | null>(null);
-  const [movingLineId, setMovingLineId] = useState<string | null>(null);
-  const [dragStartCoords, setDragStartCoords] = useState<{ x: number; y: number } | null>(null);
-  const [lineBeingMovedOriginalState, setLineBeingMovedOriginalState] = useState<LineAnnotation | null>(null);
-
-  const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
-  const [toolbarDragStart, setToolbarDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [toolbarInitialPosition, setToolbarInitialPosition] = useState<{ x: number; y: number } | null>(null);
-  const [contextualToolbarPosition, setContextualToolbarPosition] = useState<{ x: number, y: number } | null>(null);
-  const [activeTool, setActiveTool] = useState<'line' | 'move' | null>(null); // For main toolbar tools
-
-  // Refs
-  const svgOverlayRef = useRef<SVGSVGElement>(null);
-  const chartAreaRef = useRef<HTMLDivElement>(null);
-  const csvFileInputRef = useRef<HTMLInputElement>(null);
-  const jsonLoadInputRef = useRef<HTMLInputElement>(null);
-
-  const { toast, dismiss } = useToast();
-
-  // Moved initialValidationSteps definition before its use in useState
   const initialValidationSteps = useMemo<ValidationStep[]>(() => [
     { id: 'fileSelection', label: 'File selection', status: 'pending', message: undefined },
     { id: 'fileType', label: `Checking file name, type, and size (must be .csv, < ${MAX_FILE_SIZE_MB}MB)`, status: 'pending', message: undefined },
@@ -201,64 +149,45 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     { id: 'dataReady', label: 'Import complete', status: 'pending', message: undefined },
   ], []);
 
-  const [validationSteps, setValidationSteps] = useState<ValidationStep[]>(() => initialValidationSteps.map(s => ({ ...s })));
+  const [rawCsvText, setRawCsvText] = useState<string | null>(null);
+  const [parsedData, setParsedData] = useState<DataPoint[]>([]);
+  const [currentFileName, setCurrentFileName] = useState<string | undefined>(undefined);
+  const [dataSeries, setDataSeries] = useState<string[]>([]);
+  const [visibleSeries, setVisibleSeries] = useState<Record<string, boolean>>({});
+  const [timeAxisLabel, setTimeAxisLabel] = useState<string | undefined>(undefined);
+  const [plotTitle, setPlotTitle] = useState<string>(initialPlotTitle);
+  const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
+  const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
+  const [isPlotExpanded, setIsPlotExpanded] = useState(false);
 
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [validationSteps, setValidationSteps] = useState<ValidationStep[]>(() => initialValidationSteps.map(s => ({...s})));
+  const [currentFileForValidation, setCurrentFileForValidation] = useState<string | null>(null);
+  const [accordionValue, setAccordionValue] = useState<string>("");
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimalistView, setIsMinimalistView] = useState(false);
 
-  // Memoized values
-  const allSeriesSelected = useMemo(() => dataSeries.length > 0 && dataSeries.every(series => visibleSeries[series]), [dataSeries, visibleSeries]);
-  const selectedLine = useMemo(() => lines.find(line => line.id === selectedLineId), [lines, selectedLineId]);
+  const [isOverlayActive, setIsOverlayActive] = useState(false);
+  const [activeTool, setActiveTool] = useState<'line' | 'move' | null>(null);
+  const [lines, setLines] = useState<LineAnnotation[]>([]);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [movingLineId, setMovingLineId] = useState<string | null>(null);
+  const [dragStartCoords, setDragStartCoords] = useState<{ x: number; y: number } | null>(null);
+  const [lineBeingMovedOriginalState, setLineBeingMovedOriginalState] = useState<LineAnnotation | null>(null);
+  const [draggingPoint, setDraggingPoint] = useState<{ lineId: string; pointType: 'start' | 'end' } | null>(null);
 
-  const anyAnnotationInteractionActive = useMemo(() =>
-    !!(draggingPoint || movingLineId || isDraggingToolbar),
-    [draggingPoint, movingLineId, isDraggingToolbar]);
+  const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
+  const [toolbarDragStart, setToolbarDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [toolbarInitialPosition, setToolbarInitialPosition] = useState<{ x: number; y: number } | null>(null);
+  const [contextualToolbarPosition, setContextualToolbarPosition] = useState<{ x: number, y: number } | null>(null);
 
-  const isMainToolbarButtonDisabled = useMemo(() =>
-    anyAnnotationInteractionActive,
-    [anyAnnotationInteractionActive]
-  );
+  const svgOverlayRef = useRef<SVGSVGElement>(null);
+  const chartAreaRef = useRef<HTMLDivElement>(null);
+  const csvFileInputRef = useRef<HTMLInputElement>(null);
+  const jsonLoadInputRef = useRef<HTMLInputElement>(null);
 
-  const isContextualToolbarButtonDisabled = useMemo(() =>
-     anyAnnotationInteractionActive || !selectedLineId,
-     [anyAnnotationInteractionActive, selectedLineId]
-  );
+  const { toast, dismiss } = useToast();
 
-  const svgCursor = useMemo(() => {
-    if (isDraggingToolbar) return 'grabbing';
-    if (movingLineId) return 'grabbing'; // Moving entire line
-    if (draggingPoint) return 'grabbing'; // Dragging an endpoint
-    if (activeTool === 'line') return 'crosshair';
-    if (selectedLineId && !anyAnnotationInteractionActive) return 'move'; // Indicates the line itself is movable if selected
-    return 'default';
-  }, [selectedLineId, draggingPoint, movingLineId, isDraggingToolbar, anyAnnotationInteractionActive, activeTool]);
-
-
-  const currentPlotHeight = useMemo(() => {
-    return isPlotExpanded ? EXPANDED_PLOT_HEIGHT : DEFAULT_PLOT_HEIGHT;
-  }, [isPlotExpanded]);
-
-  const yAxisConfigs = useMemo((): YAxisConfig[] => {
-    if (dataSeries.length === 0 || Object.keys(visibleSeries).filter(key => visibleSeries[key]).length === 0) {
-      return [{ dataKey: "value", label: "Value", unit: '', orientation: 'left', yAxisId: 'left-axis', color: '--chart-1' }];
-    }
-    const visibleKeys = dataSeries.filter(s => visibleSeries[s]);
-    if (visibleKeys.length === 0) {
-      return [{ dataKey: "value", label: "Value", unit: '', orientation: 'left', yAxisId: 'left-axis', color: '--chart-1' }];
-    }
-    return visibleKeys.map((seriesKey, index) => ({
-      dataKey: seriesKey,
-      label: seriesKey,
-      unit: '',
-      orientation: index % 2 === 0 ? 'left' : 'right',
-      yAxisId: `${seriesKey}-axis-${instanceId}`,
-      color: `--chart-${(index % 5) + 1}` as any,
-    }));
-  }, [dataSeries, visibleSeries, instanceId]);
-
-  const plottableSeries = useMemo(() => {
-    return dataSeries.filter(s => visibleSeries[s]);
-  }, [dataSeries, visibleSeries]);
-
-  // Callbacks
   const updateStepStatus = useCallback((stepId: string, status: 'success' | 'error' | 'pending' | 'warning', message?: string) => {
     setValidationSteps(prevSteps =>
       prevSteps.map(step =>
@@ -266,283 +195,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       )
     );
   }, []);
-
-  const getNormalizedCoordinates = useCallback((event: ReactMouseEvent | ReactTouchEvent<Element> | globalThis.MouseEvent | globalThis.TouchEvent) => {
-    let clientX = 0, clientY = 0;
-    if ('touches' in event && event.touches.length > 0) {
-      clientX = event.touches[0].clientX;
-      clientY = event.touches[0].clientY;
-    } else if ('clientX' in event) {
-      clientX = event.clientX;
-      clientY = event.clientY;
-    }
-    return { clientX, clientY };
-  }, []);
-
-  const updateContextualToolbarPos = useCallback((line: LineAnnotation | null) => {
-    if (!line || !svgOverlayRef.current || !chartAreaRef.current) {
-      setContextualToolbarPosition(null);
-      return;
-    }
-    const svgRect = svgOverlayRef.current.getBoundingClientRect();
-    
-    let midX = (line.x1 + line.x2) / 2;
-    let midY = (line.y1 + line.y2) / 2;
-
-    let finalToolbarCenterX = midX;
-    let finalToolbarCenterY = midY - TOOLBAR_APPROX_HEIGHT / 2 - TOOLBAR_OFFSET_FROM_LINE_Y;
-
-    if (finalToolbarCenterY - TOOLBAR_APPROX_HEIGHT / 2 < VERTICAL_GAP_TOOLBAR) {
-      finalToolbarCenterY = midY + TOOLBAR_APPROX_HEIGHT / 2 + TOOLBAR_OFFSET_FROM_LINE_Y;
-    }
-
-    finalToolbarCenterY = Math.max(
-      TOOLBAR_APPROX_HEIGHT / 2 + VERTICAL_GAP_TOOLBAR,
-      Math.min(finalToolbarCenterY, svgRect.height - TOOLBAR_APPROX_HEIGHT / 2 - VERTICAL_GAP_TOOLBAR)
-    );
-    
-    const approxToolbarWidth = isMinimalistView ? TOOLBAR_APPROX_WIDTH_MIN : (document.querySelector(`#plot-instance-${instanceId} .contextual-toolbar`)?.clientWidth || TOOLBAR_APPROX_WIDTH_MIN);
-    const halfToolbarWidth = approxToolbarWidth / 2;
-
-    finalToolbarCenterX = Math.max(
-      halfToolbarWidth + HORIZONTAL_EDGE_BUFFER_TOOLBAR,
-      Math.min(finalToolbarCenterX, svgRect.width - halfToolbarWidth - HORIZONTAL_EDGE_BUFFER_TOOLBAR)
-    );
-
-    setContextualToolbarPosition({ x: finalToolbarCenterX, y: finalToolbarCenterY });
-  }, [instanceId, isMinimalistView]);
-
-
-  const handleAddLine = useCallback(() => {
-    if (!svgOverlayRef.current || anyAnnotationInteractionActive) return;
-    setActiveTool(null); // Ensure we are not in move mode
-    const svgRect = svgOverlayRef.current.getBoundingClientRect();
-    const centerX = svgRect.width / 2;
-    const centerY = svgRect.height / 2;
-    const defaultLineLength = Math.min(svgRect.width, svgRect.height) * 0.2;
-
-    const newLine: LineAnnotation = {
-      id: `${Date.now()}-${uniqueComponentId}-line`,
-      x1: centerX - defaultLineLength / 2,
-      y1: centerY,
-      x2: centerX + defaultLineLength / 2,
-      y2: centerY,
-      arrowStyle: 'none',
-      lineStyle: 'solid',
-      strokeWidth: DEFAULT_STROKE_WIDTH,
-      color: DEFAULT_LINE_COLOR,
-    };
-    setLines(prevLines => [...prevLines, newLine]);
-    setSelectedLineId(newLine.id);
-    updateContextualToolbarPos(newLine);
-  }, [uniqueComponentId, anyAnnotationInteractionActive, updateContextualToolbarPos]);
-
-
-  const handleLineStyleChange = useCallback((style: 'solid' | 'dashed' | 'dotted') => {
-    if (selectedLineId && !anyAnnotationInteractionActive) {
-      setLines(prevLines => prevLines.map(line => line.id === selectedLineId ? { ...line, lineStyle: style } : line));
-    }
-  }, [selectedLineId, anyAnnotationInteractionActive]);
-
-  const handleStrokeWeightChange = useCallback((newWeightArray: number[]) => {
-    if (selectedLineId && !anyAnnotationInteractionActive) {
-      const newWeight = newWeightArray[0];
-      setLines(prevLines => prevLines.map(line => line.id === selectedLineId ? { ...line, strokeWidth: newWeight } : line));
-    }
-  }, [selectedLineId, anyAnnotationInteractionActive]);
-
-  const handleLineColorChange = useCallback((color: string) => {
-    if (selectedLineId && !anyAnnotationInteractionActive) {
-      setLines(prevLines => prevLines.map(line => line.id === selectedLineId ? { ...line, color: color } : line));
-    }
-  }, [selectedLineId, anyAnnotationInteractionActive]);
-
-  const handleArrowStyleChange = useCallback((style: 'none' | 'end' | 'both') => {
-    if (selectedLineId && !anyAnnotationInteractionActive) {
-      setLines(prevLines => prevLines.map(line => line.id === selectedLineId ? { ...line, arrowStyle: style } : line));
-    }
-  }, [selectedLineId, anyAnnotationInteractionActive]);
-
-  const handleCopySelectedLine = useCallback(() => {
-    if (!selectedLineId || anyAnnotationInteractionActive) return;
-    const lineToCopy = lines.find(l => l.id === selectedLineId);
-    if (lineToCopy && svgOverlayRef.current) {
-        const svgRect = svgOverlayRef.current.getBoundingClientRect();
-        let offsetX = 10, offsetY = 10;
-
-        let newX1 = lineToCopy.x1 + offsetX;
-        let newY1 = lineToCopy.y1 + offsetY;
-        let newX2 = lineToCopy.x2 + offsetX;
-        let newY2 = lineToCopy.y2 + offsetY;
-
-        if (newX2 > svgRect.width || newX1 < 0 || newY2 > svgRect.height || newY1 < 0) {
-            offsetX = -10; offsetY = -10;
-            newX1 = lineToCopy.x1 + offsetX; newY1 = lineToCopy.y1 + offsetY;
-            newX2 = lineToCopy.x2 + offsetX; newY2 = lineToCopy.y2 + offsetY;
-        }
-
-        newX1 = Math.max(0, Math.min(newX1, svgRect.width));
-        newY1 = Math.max(0, Math.min(newY1, svgRect.height));
-        newX2 = Math.max(0, Math.min(newX2, svgRect.width));
-        newY2 = Math.max(0, Math.min(newY2, svgRect.height));
-
-        const newCopiedLine: LineAnnotation = {
-            ...lineToCopy,
-            id: `${Date.now()}-${uniqueComponentId}-line-copy`,
-            x1: newX1, y1: newY1,
-            x2: newX2, y2: newY2,
-        };
-        setLines(prevLines => [...prevLines, newCopiedLine]);
-        setSelectedLineId(newCopiedLine.id);
-        updateContextualToolbarPos(newCopiedLine);
-        toast({ title: "Line Copied", duration: 2000 });
-    }
-  }, [selectedLineId, lines, uniqueComponentId, toast, anyAnnotationInteractionActive, updateContextualToolbarPos]);
-
-  const handleDeleteSelectedLine = useCallback(() => {
-    if (selectedLineId && !anyAnnotationInteractionActive) {
-      setLines(prevLines => prevLines.filter(line => line.id !== selectedLineId));
-      setSelectedLineId(null);
-      setContextualToolbarPosition(null);
-      toast({ title: "Line Deleted", duration: 2000 });
-    }
-  }, [selectedLineId, toast, anyAnnotationInteractionActive]);
-
-  const getStrokeDasharray = useCallback((style?: 'solid' | 'dashed' | 'dotted') => {
-    switch (style) {
-      case 'dashed': return "5,5"; case 'dotted': return "1,4";
-      case 'solid': default: return undefined;
-    }
-  }, []);
-
-  const handleSvgBackgroundClick = useCallback((event: ReactMouseEvent<SVGElement> | ReactTouchEvent<SVGElement>) => {
-    if (event.target === svgOverlayRef.current && !draggingPoint && !movingLineId && !isDraggingToolbar && activeTool === null) {
-      setSelectedLineId(null);
-      setContextualToolbarPosition(null);
-    }
-  }, [draggingPoint, movingLineId, isDraggingToolbar, activeTool]);
-
-  const handleLineHitboxInteractionStart = useCallback((line: LineAnnotation, event: ReactMouseEvent<SVGGElement> | ReactTouchEvent<SVGGElement>) => {
-    event.stopPropagation();
-    if ('preventDefault' in event && event.type.startsWith('touch')) event.preventDefault();
-    
-    setSelectedLineId(line.id);
-    updateContextualToolbarPos(line);
-
-    if (!svgOverlayRef.current || draggingPoint || isDraggingToolbar ) return;
-    
-    // Logic for moving the whole line: if move tool is active for this line OR if the click is on an already selected line (and not a drag handle)
-    if (activeTool === 'move' && selectedLineId === line.id) {
-        const { clientX, clientY } = getNormalizedCoordinates(event);
-        const svgRect = svgOverlayRef.current.getBoundingClientRect();
-        setDragStartCoords({ x: clientX - svgRect.left, y: clientY - svgRect.top });
-        setLineBeingMovedOriginalState({ ...line });
-        setMovingLineId(line.id);
-        // setContextualToolbarPosition(null); // Keep toolbar visible
-    }
-
-  }, [getNormalizedCoordinates, draggingPoint, isDraggingToolbar, activeTool, selectedLineId, updateContextualToolbarPos]);
-
-
-  const handleDraggablePointInteractionStart = useCallback((lineId: string, pointType: 'start' | 'end', event: ReactMouseEvent<SVGCircleElement> | ReactTouchEvent<SVGCircleElement>) => {
-    event.stopPropagation();
-    if ('preventDefault' in event && event.type.startsWith('touch')) event.preventDefault();
-    if (movingLineId || isDraggingToolbar || activeTool === 'move') return; // Don't allow endpoint drag if move tool is active
-
-    setSelectedLineId(lineId);
-    setDraggingPoint({ lineId, pointType });
-    // setContextualToolbarPosition(null); // Keep toolbar visible
-  }, [movingLineId, isDraggingToolbar, activeTool, updateContextualToolbarPos]);
-
-
-  const handleInteractionMove = useCallback((event: globalThis.MouseEvent | globalThis.TouchEvent) => {
-    if (!svgOverlayRef.current) return;
-    if ('preventDefault' in event && (draggingPoint || movingLineId || isDraggingToolbar)) event.preventDefault();
-
-    const { clientX, clientY } = getNormalizedCoordinates(event);
-    const svgRect = svgOverlayRef.current.getBoundingClientRect();
-    let svgX = clientX - svgRect.left;
-    let svgY = clientY - svgRect.top;
-
-    let lineToUpdateForToolbar: LineAnnotation | null = null;
-
-    if (draggingPoint) {
-      svgX = Math.max(0, Math.min(svgX, svgRect.width));
-      svgY = Math.max(0, Math.min(svgY, svgRect.height));
-      setLines(prevLines => prevLines.map(l => {
-        if (l.id === draggingPoint.lineId) {
-          const updatedLine = draggingPoint.pointType === 'start' ? { ...l, x1: svgX, y1: svgY } : { ...l, x2: svgX, y2: svgY };
-          lineToUpdateForToolbar = updatedLine;
-          return updatedLine;
-        }
-        return l;
-      }));
-    } else if (movingLineId && dragStartCoords && lineBeingMovedOriginalState) {
-      const dx = svgX - dragStartCoords.x;
-      const dy = svgY - dragStartCoords.y;
-      setLines(prevLines => prevLines.map(l => {
-        if (l.id === movingLineId) {
-          const newX1 = Math.max(0, Math.min(lineBeingMovedOriginalState.x1 + dx, svgRect.width));
-          const newY1 = Math.max(0, Math.min(lineBeingMovedOriginalState.y1 + dy, svgRect.height));
-          const newX2 = Math.max(0, Math.min(lineBeingMovedOriginalState.x2 + dx, svgRect.width));
-          const newY2 = Math.max(0, Math.min(lineBeingMovedOriginalState.y2 + dy, svgRect.height));
-          const updatedLine = { ...l, x1: newX1, y1: newY1, x2: newX2, y2: newY2 };
-          lineToUpdateForToolbar = updatedLine;
-          return updatedLine;
-        }
-        return l;
-      }));
-    } else if (isDraggingToolbar && toolbarDragStart && toolbarInitialPosition) {
-        const dxGlobal = clientX - toolbarDragStart.x;
-        const dyGlobal = clientY - toolbarDragStart.y;
-        
-        let newToolbarX = toolbarInitialPosition.x + dxGlobal;
-        let newToolbarY = toolbarInitialPosition.y + dyGlobal;
-        
-        const approxToolbarWidth = isMinimalistView ? TOOLBAR_APPROX_WIDTH_MIN : (document.querySelector(`#plot-instance-${instanceId} .contextual-toolbar`)?.clientWidth || TOOLBAR_APPROX_WIDTH_MIN);
-        const halfToolbarWidth = approxToolbarWidth / 2;
-
-        newToolbarY = Math.max(TOOLBAR_APPROX_HEIGHT / 2 + VERTICAL_GAP_TOOLBAR, Math.min(newToolbarY, svgRect.height - TOOLBAR_APPROX_HEIGHT / 2 - VERTICAL_GAP_TOOLBAR));
-        newToolbarX = Math.max(halfToolbarWidth + HORIZONTAL_EDGE_BUFFER_TOOLBAR, Math.min(newToolbarX, svgRect.width - halfToolbarWidth - HORIZONTAL_EDGE_BUFFER_TOOLBAR));
-        setContextualToolbarPosition({ x: newToolbarX, y: newToolbarY });
-    }
-
-    if (lineToUpdateForToolbar && (draggingPoint || movingLineId)) {
-      updateContextualToolbarPos(lineToUpdateForToolbar);
-    }
-
-  }, [draggingPoint, movingLineId, dragStartCoords, lineBeingMovedOriginalState, getNormalizedCoordinates, updateContextualToolbarPos, isDraggingToolbar, toolbarDragStart, toolbarInitialPosition, isMinimalistView, instanceId]);
-
-  const handleInteractionEnd = useCallback(() => {
-    let lineForToolbarUpdate: LineAnnotation | null = null;
-    if(draggingPoint) lineForToolbarUpdate = lines.find(l => l.id === draggingPoint.lineId) || null;
-    else if (movingLineId) lineForToolbarUpdate = lines.find(l => l.id === movingLineId) || null;
-    
-    setDraggingPoint(null);
-    setMovingLineId(null);
-    setDragStartCoords(null);
-    setLineBeingMovedOriginalState(null);
-
-    if (isDraggingToolbar) {
-        setIsDraggingToolbar(false);
-        setToolbarDragStart(null);
-        setToolbarInitialPosition(null);
-    } else if(lineForToolbarUpdate) { 
-        updateContextualToolbarPos(lineForToolbarUpdate);
-    }
-    // Do NOT reset activeTool here, it's toggled by its button
-  }, [lines, draggingPoint, movingLineId, isDraggingToolbar, updateContextualToolbarPos]);
-
-  const handleToolbarDragStart = useCallback((event: ReactMouseEvent | ReactTouchEvent) => {
-    event.stopPropagation();
-    if (!contextualToolbarPosition || anyAnnotationInteractionActive ) return;
-    if ('preventDefault' in event && event.type.startsWith('touch')) event.preventDefault();
-
-    const { clientX, clientY } = getNormalizedCoordinates(event);
-    setToolbarDragStart({ x: clientX, y: clientY });
-    setToolbarInitialPosition({ ...contextualToolbarPosition });
-    setIsDraggingToolbar(true);
-  }, [contextualToolbarPosition, getNormalizedCoordinates, anyAnnotationInteractionActive]);
 
   const parseAndValidateCsv = useCallback((csvText: string, fileName: string): { success: boolean; data?: DataPoint[], seriesNames?: string[], timeHeader?: string } => {
     const freshValidationSteps = initialValidationSteps.map(step => ({ ...step, status: 'pending' as const, message: undefined }));
@@ -568,6 +220,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
 
     let potentialVariableHeaders = originalHeaders.slice(1);
     let actualVariableHeadersToProcess: string[];
+
     if (potentialVariableHeaders.length > 0 && potentialVariableHeaders[potentialVariableHeaders.length - 1].trim().toLowerCase() === 'rec') {
       actualVariableHeadersToProcess = potentialVariableHeaders.slice(0, -1);
       updateStepStatus('variableColumnCheck', 'success', `Identified ${actualVariableHeadersToProcess.length} variable column(s). Last column "Rec" excluded.`);
@@ -587,9 +240,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     const headerCounts = new Map<string, number>();
     actualVariableHeadersToProcess.forEach((originalVarHeader) => {
       let baseKey = (originalVarHeader || "Unnamed_Variable").trim();
-      // If baseKey is "time" (case-insensitive), append suffix to avoid collision with the primary time key
-      if (baseKey.toLowerCase() === "time") { 
-        baseKey = "Time_Var"; // Make it distinct initially
+      if (baseKey.toLowerCase() === "time") {
+        baseKey = "Time_Var";
       }
       let processedHeader = baseKey;
       let count = headerCounts.get(baseKey) || 0;
@@ -687,24 +339,17 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       
       const newVisibleSeries: Record<string, boolean> = {};
       parsedResult.seriesNames.forEach((name, index) => {
-        newVisibleSeries[name] = index < 4; // Default to first 4 series visible
+        newVisibleSeries[name] = index < 4; 
       });
       setVisibleSeries(newVisibleSeries);
 
       setBrushStartIndex(0);
       setBrushEndIndex(parsedResult.data.length > 0 ? Math.min(parsedResult.data.length - 1, 99) : undefined);
 
-      // Reset annotation state
-      setLines([]);
-      setSelectedLineId(null);
-      setContextualToolbarPosition(null);
-      setDraggingPoint(null);
-      setMovingLineId(null);
-      setDragStartCoords(null);
-      setLineBeingMovedOriginalState(null);
-      setIsDraggingToolbar(false);
-      setToolbarDragStart(null);
-      setToolbarInitialPosition(null);
+      setLines([]); setSelectedLineId(null); setContextualToolbarPosition(null);
+      setDraggingPoint(null); setMovingLineId(null); setDragStartCoords(null);
+      setLineBeingMovedOriginalState(null); setIsDraggingToolbar(false);
+      setToolbarDragStart(null); setToolbarInitialPosition(null);
       setActiveTool(null);
 
       const successToast = toast({ title: "File Processed Successfully", description: `${fileName} processed.` });
@@ -717,25 +362,21 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
 
   const handleFileChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     setIsProcessing(true);
-    setCurrentFileForValidation(null); // Reset for new file
-    const file = event.target.files?.[0];
-    
-    // Reset validation steps for a new file
+    setCurrentFileForValidation(null); 
     const freshValidationSteps = initialValidationSteps.map(step => ({ ...step, status: 'pending' as const, message: undefined }));
     setValidationSteps(freshValidationSteps);
-    setAccordionValue(""); // Close accordion initially
+    setAccordionValue("validation-details-" + instanceId);
 
+    const file = event.target.files?.[0];
     if (!file) {
       setIsProcessing(false);
-      if (event.target) event.target.value = ""; // Clear file input
+      if (event.target) event.target.value = "";
       return;
     }
-
-    setCurrentFileForValidation(file.name); // Set current file for validation display
+    setCurrentFileForValidation(file.name);
 
     const updateAndReturnError = (stepId: string, errorMsg: string, title?: string) => {
       updateStepStatus(stepId, 'error', errorMsg);
-      // Mark subsequent steps as failed due to prerequisite failure
       setValidationSteps(prevSteps => prevSteps.map(step => {
         const stepIndex = initialValidationSteps.findIndex(s => s.id === step.id);
         const errorStepIndex = initialValidationSteps.findIndex(s => s.id === stepId);
@@ -745,7 +386,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         return step;
       }));
       toast({ variant: "destructive", title: title || "File Validation Error", description: `${file.name}: ${errorMsg}` });
-      setAccordionValue("validation-details-" + instanceId); // Open accordion on error
+      setAccordionValue("validation-details-" + instanceId);
       return null;
     };
 
@@ -784,7 +425,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
 
     processCsvFileContent(fileContent, file.name);
     setIsProcessing(false);
-    if (csvFileInputRef.current) csvFileInputRef.current.value = ""; // Clear file input after processing
+    if (csvFileInputRef.current) csvFileInputRef.current.value = ""; 
   }, [instanceId, processCsvFileContent, toast, updateStepStatus, initialValidationSteps]);
 
   const handleLoadSavedPlotFileChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
@@ -792,32 +433,45 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     const file = event.target.files?.[0];
     if (!file) {
       setIsProcessing(false);
+      if (event.target) event.target.value = "";
       return;
     }
+    const freshValidationSteps = initialValidationSteps.map(step => ({ ...step, status: 'pending' as const, message: undefined }));
+    setValidationSteps(freshValidationSteps);
+    setCurrentFileForValidation(file.name);
+    updateStepStatus('fileSelection', 'success', `Loading state from: ${file.name}`);
+
     try {
       const jsonText = await file.text();
       const savedState = JSON.parse(jsonText) as SavedPlotState;
 
-      // Validate essential fields in savedState
       if (
         !savedState.rawCsvText ||
         !savedState.currentFileName ||
         !savedState.plotTitle ||
-        !savedState.dataSeries || // Check dataSeries is present
-        savedState.visibleSeries === undefined // Check visibleSeries is present
+        !Array.isArray(savedState.dataSeries) || 
+        savedState.visibleSeries === undefined 
       ) {
-        throw new Error("Invalid save file structure. Missing essential fields.");
+        const errorMsg = "Invalid save file structure. Missing essential fields.";
+        updateStepStatus('fileType', 'error', errorMsg);
+        initialValidationSteps.slice(initialValidationSteps.findIndex(s => s.id === 'fileType') + 1).forEach(s => updateStepStatus(s.id, 'error', 'Prerequisite step failed.'));
+        toast({ variant: "destructive", title: "Load Error", description: errorMsg });
+        setAccordionValue("validation-details-" + instanceId);
+        setIsProcessing(false);
+        if (event.target) event.target.value = "";
+        return;
       }
+      updateStepStatus('fileType', 'success', 'Save file structure appears valid.');
+
 
       const { success: successfullyProcessed, seriesNames: actualSeriesInLoadedCsv, timeHeader: actualTimeHeader } = processCsvFileContent(savedState.rawCsvText, savedState.currentFileName);
 
-      if (successfullyProcessed && actualSeriesInLoadedCsv) { // Check actualSeriesInLoadedCsv here
+      if (successfullyProcessed && actualSeriesInLoadedCsv) {
         setPlotTitle(savedState.plotTitle);
-
-        // Restore visible series, ensuring keys match actual parsed series
+        
         const restoredVisibleSeries: Record<string, boolean> = {};
         actualSeriesInLoadedCsv.forEach(name => {
-          restoredVisibleSeries[name] = savedState.visibleSeries[name] === true; // Default to false if not in savedState
+          restoredVisibleSeries[name] = savedState.visibleSeries[name] === true;
         });
         setVisibleSeries(restoredVisibleSeries);
         
@@ -827,35 +481,35 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         setBrushEndIndex(savedState.brushEndIndex);
 
         setLines(savedState.lines || []);
-        // setActiveTool(savedState.activeTool === undefined ? null : savedState.activeTool); // Restore activeTool
         setIsOverlayActive(savedState.isOverlayActive === true);
+        setActiveTool(savedState.activeTool === undefined ? null : savedState.activeTool);
 
-        // Restore timeAxisLabel carefully
         if (savedState.timeAxisLabel !== undefined) {
           setTimeAxisLabel(savedState.timeAxisLabel);
-        } else if (actualTimeHeader) { // Fallback to header from reparsed CSV
+        } else if (actualTimeHeader) { 
           setTimeAxisLabel(actualTimeHeader);
         }
-
+        updateStepStatus('dataReady', 'success', "Plot state loaded and CSV data re-processed successfully.");
         toast({ title: "Plot State Loaded", description: `Successfully loaded state from ${file.name}.` });
       } else {
-        toast({ variant: "destructive", title: "Load Error", description: `Could not process CSV data from the loaded file ${file.name}. The embedded CSV data might be invalid.` });
-        // Set validation steps to show error
-        const freshValidationSteps = initialValidationSteps.map(s => s.id === 'fileSelection' ? { ...s, status: 'error' as const, message: `Failed to load: CSV data within ${file.name} seems invalid.` } : { ...s, status: 'error' as const, message: 'Prerequisite step failed.' });
-        setValidationSteps(freshValidationSteps);
+        const errorMsg = `Could not process CSV data from loaded file ${file.name}. Embedded CSV might be invalid.`;
+        updateStepStatus('dataRowFormat', 'error', errorMsg); // Or a more general step
+        initialValidationSteps.slice(initialValidationSteps.findIndex(s => s.id === 'dataRowFormat') + 1).forEach(s => updateStepStatus(s.id, 'error', 'Prerequisite step failed.'));
+        toast({ variant: "destructive", title: "Load Error", description: errorMsg });
         setAccordionValue("validation-details-" + instanceId);
       }
 
     } catch (error: any) {
       console.error("Error loading plot state:", error);
-      toast({ variant: "destructive", title: "Load Failed", description: error.message || `Could not load plot state from ${file.name}. File might be corrupted or not a valid plot save file.` });
-      const freshValidationSteps = initialValidationSteps.map(s => s.id === 'fileSelection' ? { ...s, status: 'error' as const, message: `Failed to load: ${error.message || 'Invalid file'}` } : { ...s, status: 'error' as const, message: 'Prerequisite step failed.' });
-      setValidationSteps(freshValidationSteps);
+      const errorMsg = error.message || `Could not load plot state from ${file.name}. File might be corrupted or not a valid plot save file.`;
+      updateStepStatus('fileRead', 'error', errorMsg);
+      initialValidationSteps.slice(initialValidationSteps.findIndex(s => s.id === 'fileRead') + 1).forEach(s => updateStepStatus(s.id, 'error', 'Prerequisite step failed.'));
+      toast({ variant: "destructive", title: "Load Failed", description: errorMsg });
       setAccordionValue("validation-details-" + instanceId);
     }
     setIsProcessing(false);
-    if (jsonLoadInputRef.current) jsonLoadInputRef.current.value = ""; // Clear file input
-  }, [instanceId, processCsvFileContent, toast, updateStepStatus, initialValidationSteps]);
+    if (jsonLoadInputRef.current) jsonLoadInputRef.current.value = "";
+  }, [instanceId, processCsvFileContent, toast, initialValidationSteps, updateStepStatus]);
 
   const handleSavePlot = useCallback(() => {
     if (!rawCsvText || !currentFileName) {
@@ -875,7 +529,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       brushEndIndex,
       lines: lines || [],
       isOverlayActive: isOverlayActive || false,
-      // activeTool: activeTool || null, // Save activeTool
+      activeTool: activeTool || null,
     };
     const jsonString = JSON.stringify(stateToSave, null, 2);
     const blob = new Blob([jsonString], { type: "application/json" });
@@ -883,48 +537,27 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     const a = document.createElement("a");
     a.href = url;
     a.download = `${plotTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'plot_save'}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     toast({ title: "Plot State Saved", description: `Configuration saved as ${a.download}.` });
-  }, [rawCsvText, currentFileName, plotTitle, timeAxisLabel, dataSeries, visibleSeries, isPlotExpanded, isMinimalistView, brushStartIndex, brushEndIndex, lines, isOverlayActive, toast]);
+  }, [rawCsvText, currentFileName, plotTitle, timeAxisLabel, dataSeries, visibleSeries, isPlotExpanded, isMinimalistView, brushStartIndex, brushEndIndex, lines, isOverlayActive, activeTool, toast]);
 
 
   const handleClearDataInstance = useCallback(() => {
-    setRawCsvText(null);
-    setParsedData([]);
-    setCurrentFileName(undefined);
-    setPlotTitle(initialPlotTitle);
-    setDataSeries([]);
-    setVisibleSeries({});
+    setRawCsvText(null); setParsedData([]); setCurrentFileName(undefined);
+    setPlotTitle(initialPlotTitle); setDataSeries([]); setVisibleSeries({});
     setTimeAxisLabel(undefined);
     setValidationSteps(initialValidationSteps.map(s => ({ ...s })));
-    setCurrentFileForValidation(null);
-    setAccordionValue("");
-    setIsPlotExpanded(false);
-    setIsMinimalistView(false);
-    setBrushStartIndex(0);
-    setBrushEndIndex(undefined);
-
-    // Clear annotation state
-    setLines([]);
-    setSelectedLineId(null);
-    setContextualToolbarPosition(null);
-    setDraggingPoint(null);
-    setMovingLineId(null);
-    setDragStartCoords(null);
-    setLineBeingMovedOriginalState(null);
-    setIsDraggingToolbar(false);
-    setToolbarDragStart(null);
-    setToolbarInitialPosition(null);
-    setIsOverlayActive(false); // Turn off annotation overlay
-    setActiveTool(null);
-
-    // Clear file input refs
+    setCurrentFileForValidation(null); setAccordionValue("");
+    setIsPlotExpanded(false); setIsMinimalistView(false);
+    setBrushStartIndex(0); setBrushEndIndex(undefined);
+    setLines([]); setSelectedLineId(null); setContextualToolbarPosition(null);
+    setDraggingPoint(null); setMovingLineId(null); setDragStartCoords(null);
+    setLineBeingMovedOriginalState(null); setIsDraggingToolbar(false);
+    setToolbarDragStart(null); setToolbarInitialPosition(null);
+    setIsOverlayActive(false); setActiveTool(null);
+    setIsProcessing(false); 
     if (csvFileInputRef.current) csvFileInputRef.current.value = "";
     if (jsonLoadInputRef.current) jsonLoadInputRef.current.value = "";
-
     toast({ title: "Data Cleared", description: "Plot data and annotations have been cleared." });
   }, [initialPlotTitle, toast, initialValidationSteps]);
 
@@ -941,43 +574,334 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
   }, [dataSeries]);
 
   const getSummaryStep = useCallback((): ValidationStep | null => {
-    if (!validationSteps.length && !isProcessing && !currentFileForValidation) return null;
-    if (isProcessing && validationSteps.every(s => s.status === 'pending')) {
-      return { id: 'processing', label: `Preparing to process ${currentFileForValidation || 'file'}...`, status: 'pending' };
+    if (isProcessing) {
+      const currentProcessingStep = validationSteps.find(step => step.status === 'pending');
+      if (currentProcessingStep) {
+        return { ...currentProcessingStep, label: `Processing: ${currentProcessingStep.label}` };
+      }
+      return { id: 'processing_fallback', label: `Processing ${currentFileForValidation || 'file'}...`, status: 'pending' };
     }
-    if (validationSteps.length === 0 && currentFileForValidation) {
-      return { id: 'fileSelectedSummary', label: `Processing: ${currentFileForValidation}`, status: 'pending' };
-    }
-    if (validationSteps.length === 0) return null;
-
-    const currentProcessingStep = validationSteps.find(step => step.status === 'pending');
-    if (isProcessing && currentProcessingStep) return { ...currentProcessingStep, label: `Processing: ${currentProcessingStep.label}` };
 
     const firstError = validationSteps.find(step => step.status === 'error');
     if (firstError) return firstError;
 
-    const dataReadyStep = validationSteps.find(step => step.id === 'dataReady');
-    if (dataReadyStep && dataReadyStep.status === 'success' && validationSteps.every(s => s.status === 'success' || s.status === 'warning' || (s.id === 'dataReady' && s.status === 'success'))) {
-      return dataReadyStep;
+    const dataReadySuccess = validationSteps.find(step => step.id === 'dataReady' && step.status === 'success');
+    if (dataReadySuccess) return dataReadySuccess;
+    
+    if (currentFileForValidation) { // If a file was attempted but no definitive success/error
+        const lastSignificantStep = [...validationSteps].reverse().find(step => step.status === 'success' || step.status === 'warning');
+        if (lastSignificantStep) return lastSignificantStep;
+        // If only pending steps remain after processing (should not happen if setIsProcessing(false) is called)
+        const firstPending = validationSteps.find(step => step.status === 'pending');
+        if (firstPending) return { ...firstPending, label: `Status: ${firstPending.label}`}; // Or some other generic message
     }
     
-    const lastNonPendingStep = [...validationSteps].reverse().find(step => step.status !== 'pending');
-    if (lastNonPendingStep) return lastNonPendingStep;
-
-    return validationSteps[0] || null;
+    return null; // For initial state or after clearing
   }, [validationSteps, isProcessing, currentFileForValidation]);
+
+
+  const allSeriesSelected = useMemo(() => dataSeries.length > 0 && dataSeries.every(series => visibleSeries[series]), [dataSeries, visibleSeries]);
+  
+  const currentPlotHeight = useMemo(() => {
+    return isPlotExpanded ? EXPANDED_PLOT_HEIGHT : DEFAULT_PLOT_HEIGHT;
+  }, [isPlotExpanded]);
+
+  const yAxisConfigs = useMemo((): YAxisConfig[] => {
+    if (dataSeries.length === 0 || Object.keys(visibleSeries).filter(key => visibleSeries[key]).length === 0) {
+      return [{ dataKey: "value", label: "Value", unit: '', orientation: 'left', yAxisId: 'left-axis-' + instanceId, color: '--chart-1' }];
+    }
+    const visibleKeys = dataSeries.filter(s => visibleSeries[s]);
+    if (visibleKeys.length === 0) {
+      return [{ dataKey: "value", label: "Value", unit: '', orientation: 'left', yAxisId: 'left-axis-' + instanceId, color: '--chart-1' }];
+    }
+    return visibleKeys.map((seriesKey, index) => ({
+      dataKey: seriesKey,
+      label: seriesKey,
+      unit: '',
+      orientation: index % 2 === 0 ? 'left' : 'right',
+      yAxisId: `${seriesKey}-axis-${instanceId}`,
+      color: `--chart-${(index % 5) + 1}` as any,
+    }));
+  }, [dataSeries, visibleSeries, instanceId]);
+
+  const plottableSeries = useMemo(() => {
+    return dataSeries.filter(s => visibleSeries[s]);
+  }, [dataSeries, visibleSeries]);
 
   const handleBrushChange = useCallback((newIndex: { startIndex?: number; endIndex?: number }) => {
     setBrushStartIndex(newIndex.startIndex);
     setBrushEndIndex(newIndex.endIndex);
   }, []);
 
-  const toggleMainToolbarTool = (toolName: 'line' | 'move') => {
-    setActiveTool(prevTool => (prevTool === toolName ? null : toolName));
-  };
+  const getNormalizedCoordinates = useCallback((event: ReactMouseEvent | ReactTouchEvent<Element> | globalThis.MouseEvent | globalThis.TouchEvent) => {
+    let clientX = 0, clientY = 0;
+    if ('touches' in event && event.touches.length > 0) {
+      clientX = event.touches[0].clientX;
+      clientY = event.touches[0].clientY;
+    } else if ('clientX' in event) {
+      clientX = event.clientX;
+      clientY = event.clientY;
+    }
+    return { clientX, clientY };
+  }, []);
 
-  // Effects
-  useEffect(() => { // For global interaction listeners
+  const updateContextualToolbarPos = useCallback((line: LineAnnotation | null) => {
+    if (!line || !svgOverlayRef.current || !chartAreaRef.current) {
+      setContextualToolbarPosition(null);
+      return;
+    }
+    const svgRect = svgOverlayRef.current.getBoundingClientRect();
+    const TOOLBAR_APPROX_WIDTH = document.querySelector(`#plot-instance-${instanceId} .contextual-toolbar`)?.clientWidth || 130;
+    const TOOLBAR_APPROX_HEIGHT_ACTUAL = 32;
+    const VERTICAL_GAP_TOOLBAR = 8;
+    const HORIZONTAL_EDGE_BUFFER = 8;
+    const TOOLBAR_OFFSET_FROM_LINE_Y = 20;
+
+    const midX = (line.x1 + line.x2) / 2;
+    let midY = (line.y1 + line.y2) / 2;
+
+    let finalToolbarCenterY = midY - TOOLBAR_OFFSET_FROM_LINE_Y - TOOLBAR_APPROX_HEIGHT_ACTUAL / 2;
+    if (finalToolbarCenterY - TOOLBAR_APPROX_HEIGHT_ACTUAL / 2 < VERTICAL_GAP_TOOLBAR) {
+      finalToolbarCenterY = midY + TOOLBAR_OFFSET_FROM_LINE_Y + TOOLBAR_APPROX_HEIGHT_ACTUAL / 2;
+    }
+    finalToolbarCenterY = Math.max(
+      TOOLBAR_APPROX_HEIGHT_ACTUAL / 2 + VERTICAL_GAP_TOOLBAR,
+      Math.min(finalToolbarCenterY, svgRect.height - TOOLBAR_APPROX_HEIGHT_ACTUAL / 2 - VERTICAL_GAP_TOOLBAR)
+    );
+    let finalToolbarCenterX = Math.max(
+      TOOLBAR_APPROX_WIDTH / 2 + HORIZONTAL_EDGE_BUFFER,
+      Math.min(midX, svgRect.width - TOOLBAR_APPROX_WIDTH / 2 - HORIZONTAL_EDGE_BUFFER)
+    );
+    setContextualToolbarPosition({ x: finalToolbarCenterX, y: finalToolbarCenterY });
+  }, [instanceId]);
+
+  const handleAddLine = useCallback(() => {
+    if (!svgOverlayRef.current) return;
+    const svgRect = svgOverlayRef.current.getBoundingClientRect();
+    const centerX = svgRect.width / 2;
+    const centerY = svgRect.height / 2;
+    const defaultLineLength = Math.min(svgRect.width, svgRect.height) * 0.2;
+
+    const newLine: LineAnnotation = {
+      id: `${Date.now()}-${uniqueComponentId}-line`,
+      x1: centerX - defaultLineLength / 2, y1: centerY,
+      x2: centerX + defaultLineLength / 2, y2: centerY,
+      arrowStyle: 'none', lineStyle: 'solid',
+      strokeWidth: DEFAULT_STROKE_WIDTH, color: DEFAULT_LINE_COLOR,
+    };
+    setLines(prevLines => [...prevLines, newLine]);
+    setSelectedLineId(newLine.id);
+    setActiveTool(null); 
+    updateContextualToolbarPos(newLine);
+  }, [uniqueComponentId, updateContextualToolbarPos]);
+
+  const handleLineStyleChange = useCallback((style: 'solid' | 'dashed' | 'dotted') => {
+    if (selectedLineId) {
+      setLines(prevLines => prevLines.map(l => l.id === selectedLineId ? { ...l, lineStyle: style } : l));
+    }
+  }, [selectedLineId]);
+
+  const handleStrokeWeightChange = useCallback((newWeightArray: number[]) => {
+    if (selectedLineId) {
+      const newWeight = newWeightArray[0];
+      setLines(prevLines => prevLines.map(l => l.id === selectedLineId ? { ...l, strokeWidth: newWeight } : l));
+    }
+  }, [selectedLineId]);
+
+  const handleLineColorChange = useCallback((color: string) => {
+     if (selectedLineId) {
+      setLines(prevLines => prevLines.map(l => l.id === selectedLineId ? { ...l, color: color } : l));
+    }
+  }, [selectedLineId]);
+
+  const handleArrowStyleChange = useCallback((style: 'none' | 'end' | 'both') => {
+    if (selectedLineId) {
+      setLines(prevLines => prevLines.map(l => l.id === selectedLineId ? { ...l, arrowStyle: style } : l));
+    }
+  }, [selectedLineId]);
+
+  const handleCopySelectedLine = useCallback(() => {
+    if (!selectedLineId) return;
+    const lineToCopy = lines.find(l => l.id === selectedLineId);
+    if (lineToCopy && svgOverlayRef.current) {
+      const svgRect = svgOverlayRef.current.getBoundingClientRect();
+      let offsetX = 10, offsetY = 10;
+      let newX1 = lineToCopy.x1 + offsetX; let newY1 = lineToCopy.y1 + offsetY;
+      let newX2 = lineToCopy.x2 + offsetX; let newY2 = lineToCopy.y2 + offsetY;
+      if (newX2 > svgRect.width || newX1 < 0 || newY2 > svgRect.height || newY1 < 0) {
+          offsetX = -10; offsetY = -10;
+          newX1 = lineToCopy.x1 + offsetX; newY1 = lineToCopy.y1 + offsetY;
+          newX2 = lineToCopy.x2 + offsetX; newY2 = lineToCopy.y2 + offsetY;
+      }
+      newX1 = Math.max(0, Math.min(newX1, svgRect.width)); newY1 = Math.max(0, Math.min(newY1, svgRect.height));
+      newX2 = Math.max(0, Math.min(newX2, svgRect.width)); newY2 = Math.max(0, Math.min(newY2, svgRect.height));
+      const newCopiedLine: LineAnnotation = {
+          ...lineToCopy, id: `${Date.now()}-${uniqueComponentId}-line-copy`,
+          x1: newX1, y1: newY1, x2: newX2, y2: newY2,
+      };
+      setLines(prevLines => [...prevLines, newCopiedLine]);
+      setSelectedLineId(newCopiedLine.id);
+      updateContextualToolbarPos(newCopiedLine);
+      toast({ title: "Line Copied", duration: 2000 });
+    }
+  }, [selectedLineId, lines, uniqueComponentId, toast, updateContextualToolbarPos]);
+
+  const handleDeleteSelectedLine = useCallback(() => {
+    if (selectedLineId) {
+      setLines(prevLines => prevLines.filter(line => line.id !== selectedLineId));
+      setSelectedLineId(null);
+      setContextualToolbarPosition(null);
+      toast({ title: "Line Deleted", duration: 2000 });
+    }
+  }, [selectedLineId, toast]);
+
+  const getStrokeDasharray = useCallback((style?: 'solid' | 'dashed' | 'dotted') => {
+    switch (style) {
+      case 'dashed': return "5,5"; case 'dotted': return "1,4";
+      case 'solid': default: return undefined;
+    }
+  }, []);
+
+  const handleSvgBackgroundClick = useCallback((event: ReactMouseEvent<SVGElement> | ReactTouchEvent<SVGElement>) => {
+    if (event.target === svgOverlayRef.current && !draggingPoint && !movingLineId && !isDraggingToolbar && activeTool === null) {
+      setSelectedLineId(null);
+      setContextualToolbarPosition(null);
+    }
+  }, [draggingPoint, movingLineId, isDraggingToolbar, activeTool]);
+
+  const handleLineHitboxInteractionStart = useCallback((line: LineAnnotation, event: ReactMouseEvent<SVGGElement> | ReactTouchEvent<SVGGElement>) => {
+    event.stopPropagation();
+    if ('preventDefault' in event && event.type.startsWith('touch')) event.preventDefault();
+    
+    setSelectedLineId(line.id);
+    updateContextualToolbarPos(line);
+
+    if (!svgOverlayRef.current || draggingPoint || isDraggingToolbar || activeTool === 'move') return;
+    
+    // If line is clicked (and not an endpoint and move tool is not active), and it's already selected, initiate move
+    // For this interaction model: clicking selects, a second click on the selected line's body initiates move
+    if (selectedLineId === line.id) {
+      const { clientX, clientY } = getNormalizedCoordinates(event);
+      const svgRect = svgOverlayRef.current.getBoundingClientRect();
+      setDragStartCoords({ x: clientX - svgRect.left, y: clientY - svgRect.top });
+      setLineBeingMovedOriginalState({ ...line });
+      setMovingLineId(line.id);
+    }
+
+  }, [getNormalizedCoordinates, draggingPoint, isDraggingToolbar, activeTool, selectedLineId, updateContextualToolbarPos]);
+
+  const handleDraggablePointInteractionStart = useCallback((lineId: string, pointType: 'start' | 'end', event: ReactMouseEvent<SVGCircleElement> | ReactTouchEvent<SVGCircleElement>) => {
+    event.stopPropagation();
+    if ('preventDefault' in event && event.type.startsWith('touch')) event.preventDefault();
+    if (movingLineId || isDraggingToolbar || activeTool === 'move') return;
+
+    setSelectedLineId(lineId);
+    setDraggingPoint({ lineId, pointType });
+    updateContextualToolbarPos(lines.find(l => l.id === lineId) || null);
+  }, [movingLineId, isDraggingToolbar, lines, activeTool, updateContextualToolbarPos]);
+
+  const handleInteractionMove = useCallback((event: globalThis.MouseEvent | globalThis.TouchEvent) => {
+    if (!svgOverlayRef.current) return;
+    if ('preventDefault' in event && (draggingPoint || movingLineId || isDraggingToolbar)) event.preventDefault();
+
+    const { clientX, clientY } = getNormalizedCoordinates(event);
+    const svgRect = svgOverlayRef.current.getBoundingClientRect();
+    let svgX = clientX - svgRect.left;
+    let svgY = clientY - svgRect.top;
+
+    let lineToUpdateForToolbar: LineAnnotation | null = null;
+
+    if (draggingPoint) {
+      svgX = Math.max(0, Math.min(svgX, svgRect.width));
+      svgY = Math.max(0, Math.min(svgY, svgRect.height));
+      setLines(prevLines => prevLines.map(l => {
+        if (l.id === draggingPoint.lineId) {
+          const updatedLine = draggingPoint.pointType === 'start' ? { ...l, x1: svgX, y1: svgY } : { ...l, x2: svgX, y2: svgY };
+          lineToUpdateForToolbar = updatedLine;
+          return updatedLine;
+        }
+        return l;
+      }));
+    } else if (movingLineId && dragStartCoords && lineBeingMovedOriginalState) {
+      const dx = svgX - dragStartCoords.x;
+      const dy = svgY - dragStartCoords.y;
+      setLines(prevLines => prevLines.map(l => {
+        if (l.id === movingLineId) {
+          const newX1 = Math.max(0, Math.min(lineBeingMovedOriginalState.x1 + dx, svgRect.width));
+          const newY1 = Math.max(0, Math.min(lineBeingMovedOriginalState.y1 + dy, svgRect.height));
+          const newX2 = Math.max(0, Math.min(lineBeingMovedOriginalState.x2 + dx, svgRect.width));
+          const newY2 = Math.max(0, Math.min(lineBeingMovedOriginalState.y2 + dy, svgRect.height));
+          const updatedLine = { ...l, x1: newX1, y1: newY1, x2: newX2, y2: newY2 };
+          lineToUpdateForToolbar = updatedLine;
+          return updatedLine;
+        }
+        return l;
+      }));
+    } else if (isDraggingToolbar && toolbarDragStart && toolbarInitialPosition) {
+        const dxGlobal = clientX - toolbarDragStart.x;
+        const dyGlobal = clientY - toolbarDragStart.y;
+        const HORIZONTAL_EDGE_BUFFER_TOOLBAR_DRAG = 8; 
+        const VERTICAL_GAP_TOOLBAR_DRAG = 8;
+        const TOOLBAR_APPROX_WIDTH = document.querySelector(`#plot-instance-${instanceId} .contextual-toolbar`)?.clientWidth || 130;
+        const TOOLBAR_APPROX_HEIGHT_ACTUAL = 32;
+
+        let newToolbarX = toolbarInitialPosition.x + dxGlobal;
+        let newToolbarY = toolbarInitialPosition.y + dyGlobal;
+
+        newToolbarY = Math.max(TOOLBAR_APPROX_HEIGHT_ACTUAL / 2 + VERTICAL_GAP_TOOLBAR_DRAG, Math.min(newToolbarY, svgRect.height - TOOLBAR_APPROX_HEIGHT_ACTUAL / 2 - VERTICAL_GAP_TOOLBAR_DRAG));
+        newToolbarX = Math.max(TOOLBAR_APPROX_WIDTH / 2 + HORIZONTAL_EDGE_BUFFER_TOOLBAR_DRAG, Math.min(newToolbarX, svgRect.width - TOOLBAR_APPROX_WIDTH / 2 - HORIZONTAL_EDGE_BUFFER_TOOLBAR_DRAG));
+        setContextualToolbarPosition({ x: newToolbarX, y: newToolbarY });
+    }
+    if (lineToUpdateForToolbar && (draggingPoint || movingLineId)) {
+      updateContextualToolbarPos(lineToUpdateForToolbar);
+    }
+  }, [draggingPoint, movingLineId, dragStartCoords, lineBeingMovedOriginalState, getNormalizedCoordinates, updateContextualToolbarPos, isDraggingToolbar, toolbarDragStart, toolbarInitialPosition, instanceId]);
+
+  const handleInteractionEnd = useCallback(() => {
+    let lineForToolbarUpdate: LineAnnotation | null = null;
+    if(draggingPoint) lineForToolbarUpdate = lines.find(l => l.id === draggingPoint.lineId) || null;
+    else if (movingLineId) lineForToolbarUpdate = lines.find(l => l.id === movingLineId) || null;
+    
+    setDraggingPoint(null);
+    setMovingLineId(null);
+    setDragStartCoords(null);
+    setLineBeingMovedOriginalState(null);
+
+    if (isDraggingToolbar) {
+        setIsDraggingToolbar(false);
+        setToolbarDragStart(null);
+        setToolbarInitialPosition(null);
+    } else if(lineForToolbarUpdate) { 
+        updateContextualToolbarPos(lineForToolbarUpdate);
+    }
+  }, [lines, draggingPoint, movingLineId, isDraggingToolbar, updateContextualToolbarPos]);
+
+  const handleToolbarDragStart = useCallback((event: ReactMouseEvent | ReactTouchEvent) => {
+    event.stopPropagation();
+    if (!contextualToolbarPosition || anyAnnotationInteractionActive ) return;
+    if ('preventDefault' in event && event.type.startsWith('touch')) event.preventDefault();
+
+    const { clientX, clientY } = getNormalizedCoordinates(event);
+    setToolbarDragStart({ x: clientX, y: clientY });
+    setToolbarInitialPosition({ ...contextualToolbarPosition });
+    setIsDraggingToolbar(true);
+  }, [contextualToolbarPosition, getNormalizedCoordinates, anyAnnotationInteractionActive]);
+  
+  const toggleOverlay = () => {
+    setIsOverlayActive(prev => {
+      const nextState = !prev;
+      if (!nextState) { 
+        setSelectedLineId(null);
+        setDraggingPoint(null);
+        setMovingLineId(null);
+        setContextualToolbarPosition(null);
+        setActiveTool(null);
+      }
+      return nextState;
+    });
+  };
+  
+  useEffect(() => {
     if (draggingPoint || movingLineId || isDraggingToolbar) {
       window.addEventListener('mousemove', handleInteractionMove);
       window.addEventListener('touchmove', handleInteractionMove, { passive: false });
@@ -992,21 +916,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     };
   }, [draggingPoint, movingLineId, isDraggingToolbar, handleInteractionMove, handleInteractionEnd]);
 
-  useEffect(() => { // For controlling accordion based on validation
-    if (!isProcessing && validationSteps.length > 0) {
-      const hasError = validationSteps.some(step => step.status === 'error');
-      if (hasError) {
-        setAccordionValue("validation-details-" + instanceId);
-      } else {
-        const dataReadySuccess = validationSteps.find(s => s.id === 'dataReady' && s.status === 'success');
-        if (dataReadySuccess) {
-          setAccordionValue(""); 
-        }
-      }
-    }
-  }, [isProcessing, validationSteps, instanceId]);
-
-  useEffect(() => { // For cleaning up annotation state if overlay is turned off
+  useEffect(() => {
     if (!isOverlayActive) {
       setSelectedLineId(null);
       setContextualToolbarPosition(null);
@@ -1017,7 +927,35 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     }
   }, [isOverlayActive]);
 
+  const anyAnnotationInteractionActive = useMemo(() =>
+    !!(draggingPoint || movingLineId || isDraggingToolbar),
+    [draggingPoint, movingLineId, isDraggingToolbar]);
+
+  const isMainToolbarButtonDisabled = useMemo(() =>
+    anyAnnotationInteractionActive,
+    [anyAnnotationInteractionActive]
+  );
+
+  const isContextualToolbarButtonDisabled = useMemo(() =>
+     anyAnnotationInteractionActive || !selectedLineId,
+     [anyAnnotationInteractionActive, selectedLineId]
+  );
+
+  const svgCursor = useMemo(() => {
+    if (isDraggingToolbar) return 'grabbing';
+    if (movingLineId) return 'grabbing';
+    if (draggingPoint) return 'grabbing';
+    if (activeTool === 'move' && selectedLineId) return 'move';
+    if (selectedLineId && !anyAnnotationInteractionActive) return 'move'; // Default to move if a line is selected and no tool active
+    return 'default';
+  }, [selectedLineId, draggingPoint, movingLineId, isDraggingToolbar, anyAnnotationInteractionActive, activeTool]);
+  
+  const selectedLine = useMemo(() => lines.find(line => line.id === selectedLineId), [lines, selectedLineId]);
+
   const summaryStep = getSummaryStep();
+
+  // Removed handlePlotHeightToggle as per previous request to remove expand/collapse buttons
+  // isPlotExpanded state is still present but not used for UI toggling anymore.
 
   return (
     <Card className="shadow-lg">
@@ -1028,27 +966,24 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
             type="text"
             value={plotTitle}
             onChange={(e) => setPlotTitle(e.target.value)}
-            className="text-sm font-semibold p-1 border-none focus:ring-0 h-auto bg-transparent w-auto max-w-[200px] truncate"
+            className="text-sm font-semibold p-1 border-none focus:ring-0 h-auto bg-transparent w-auto max-w-[150px] truncate text-foreground"
             disabled={isProcessing}
           />
         </CardTitle>
         <div className="flex items-center gap-0.5">
-          <div className="flex items-center space-x-1 mr-1">
-            <Button
-              onClick={() => setIsOverlayActive(!isOverlayActive)}
-              disabled={parsedData.length === 0}
-              variant={isOverlayActive ? "default" : "outline"}
-              className={cn(
-                "h-7 px-2 text-xs flex items-center gap-1",
-                isOverlayActive 
-                  ? "bg-accent hover:bg-accent/90 text-accent-foreground" 
-                  : "border-accent text-accent hover:bg-accent hover:text-accent-foreground"
-              )}
-            >
-              <FilePenLine className="h-3.5 w-3.5 mr-0.5" />
-              Annotate
-            </Button>
-          </div>
+          <Button
+            onClick={toggleOverlay}
+            variant={isOverlayActive ? "default" : "outline"}
+            className={cn(
+              "h-7 px-2 text-xs flex items-center gap-1",
+              isOverlayActive 
+                ? "bg-accent hover:bg-accent/90 text-accent-foreground" 
+                : "border-accent text-accent hover:bg-accent hover:text-accent-foreground"
+            )}
+            disabled={parsedData.length === 0}
+          >
+            <FilePenLine className="h-3.5 w-3.5 mr-0.5" /> Annotate
+          </Button>
           <Separator orientation="vertical" className="h-5 mx-0.5" />
           <TooltipProvider delayDuration={100}>
             <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={handleSavePlot} aria-label="Save plot state" className="h-7 w-7" disabled={!rawCsvText}><Save className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent side="bottom"><p>Save Plot</p></TooltipContent></Tooltip>
@@ -1060,21 +995,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
               </TooltipTrigger>
               <TooltipContent side="bottom"><p>{isMinimalistView ? "Show Controls" : "Minimalist View"}</p></TooltipContent>
             </Tooltip>
-             <Tooltip>
-              <TooltipTrigger asChild>
-                 <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => setIsPlotExpanded(!isPlotExpanded)}
-                    disabled={parsedData.length === 0}
-                    aria-label={isPlotExpanded ? "Collapse plot area" : "Expand plot area"}
-                  >
-                    {isPlotExpanded ? <ChevronsUp className="h-4 w-4" /> : <ChevronsDown className="h-4 w-4" />}
-                  </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom"><p>{isPlotExpanded ? "Collapse Plot Area" : "Expand Plot Area"}</p></TooltipContent>
-            </Tooltip>
+            {/* Removed plot expand/collapse toggle as per previous instruction */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsMinimized(!isMinimized)} aria-label={isMinimized ? "Expand plot instance" : "Minimize plot instance"}>
@@ -1091,48 +1012,24 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       {!isMinimized && (
         <CardContent className={cn("p-2 pt-1", !isMinimalistView && "md:grid md:grid-cols-12 md:gap-2")}>
           {!isMinimalistView && (
-            <div className="md:col-span-3 flex flex-col space-y-1.5">
-              {/* Import & Validate Section */}
-              <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0">
+            <div className="md:col-span-2 space-y-1.5 flex flex-col"> {/* Import & Validate Panel */}
+              <div className="space-y-1 border p-1.5 rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1">
                     <Settings2 className="h-3 w-3 text-[#2B7A78]" />
                     <h3 className="text-xs font-semibold text-[#2B7A78]">Import & Validate</h3>
                 </div>
-                <div className="px-1 py-1.5 flex justify-center">
-                    <Button asChild variant="outline" size="sm" className="w-full h-8 text-xs">
-                        <UiLabel htmlFor={fileInputId} className="cursor-pointer flex items-center justify-center">
-                           Choose file
-                        </UiLabel>
-                     </Button>
-                     <Input
-                        id={fileInputId}
-                        ref={csvFileInputRef}
-                        type="file"
-                        accept=".csv"
-                        onChange={handleFileChange}
-                        disabled={isProcessing}
-                        className="sr-only"
-                     />
+                <div className="px-1 py-1.5">
+                  <Button asChild variant="outline" size="sm" className="w-full h-8 text-xs">
+                     <UiLabel htmlFor={fileInputId} className="cursor-pointer flex items-center justify-center">Choose file</UiLabel>
+                  </Button>
+                  <Input id={fileInputId} ref={csvFileInputRef} type="file" accept=".csv" onChange={handleFileChange} disabled={isProcessing} className="sr-only" />
                 </div>
                 <div className="px-1 pb-0.5">
                   <Button asChild variant="outline" size="sm" className="w-full h-7 text-xs">
-                    <UiLabel htmlFor={jsonLoadInputId} className="cursor-pointer flex items-center justify-center gap-1.5">
-                       <UploadCloud className="h-3.5 w-3.5"/> Load Plot
-                    </UiLabel>
+                    <UiLabel htmlFor={jsonLoadInputId} className="cursor-pointer flex items-center justify-center gap-1.5"><UploadCloud className="h-3.5 w-3.5"/> Load Plot</UiLabel>
                   </Button>
-                  <Input
-                    id={jsonLoadInputId}
-                    ref={jsonLoadInputRef}
-                    type="file"
-                    accept=".json"
-                    onChange={handleLoadSavedPlotFileChange}
-                    disabled={isProcessing}
-                    className="sr-only"
-                  />
+                  <Input id={jsonLoadInputId} ref={jsonLoadInputRef} type="file" accept=".json" onChange={handleLoadSavedPlotFileChange} disabled={isProcessing} className="sr-only"/>
                 </div>
-                {currentFileForValidation && !summaryStep && isProcessing && (
-                     <p className="text-[0.6rem] text-primary animate-pulse px-1">Preparing: <span className="font-semibold">{currentFileForValidation}</span>...</p>
-                )}
                 {summaryStep && (
                   <div className="px-1">
                   <Accordion type="single" collapsible value={accordionValue} onValueChange={setAccordionValue} className="w-full">
@@ -1141,24 +1038,24 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                         className={cn(
                           "flex items-center justify-between text-[0.6rem] p-1 rounded-md hover:no-underline hover:bg-muted/50 text-left",
                           summaryStep.status === 'error' && 'bg-destructive/10 text-destructive hover:bg-destructive/20',
-                          summaryStep.status === 'success' && validationSteps.every(s => s.status === 'success' || s.status === 'warning' || (s.id === 'dataReady' && s.status === 'success')) && !isProcessing && 'bg-green-500/10 text-green-700 hover:bg-green-500/20',
-                          (isProcessing || summaryStep.status === 'pending') && 'bg-blue-500/10 text-blue-700 hover:bg-blue-500/20',
+                          summaryStep.status === 'success' && 'bg-green-500/10 text-green-700 hover:bg-green-500/20',
+                          summaryStep.status === 'pending' && 'bg-blue-500/10 text-blue-700 hover:bg-blue-500/20',
+                          summaryStep.status === 'warning' && 'bg-yellow-500/10 text-yellow-700 hover:bg-yellow-500/20',
                           "[&_svg.lucide-chevron-down]:h-3 [&_svg.lucide-chevron-down]:w-3 py-1"
                       )}>
                         <div className="flex items-center gap-1 min-w-0">
-                          {isProcessing || summaryStep.status === 'pending' ? <Hourglass className="h-2.5 w-2.5 animate-spin flex-shrink-0" /> :
+                          {summaryStep.status === 'pending' ? <Hourglass className="h-2.5 w-2.5 animate-spin flex-shrink-0" /> :
                            summaryStep.status === 'success' ? <CheckCircle2 className="h-2.5 w-2.5 text-green-600 flex-shrink-0" /> :
                            summaryStep.status === 'warning' ? <Info className="h-2.5 w-2.5 text-yellow-600 flex-shrink-0" /> :
-                           <XCircleIcon className="h-2.5 w-2.5 text-red-500 flex-shrink-0" />}
+                           summaryStep.status === 'error' ? <XCircleIcon className="h-2.5 w-2.5 text-red-500 flex-shrink-0" /> :
+                           <UploadCloud className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />}
                            <span className="font-medium text-[0.55rem] whitespace-nowrap overflow-hidden text-ellipsis">
                              {summaryStep.label}
                            </span>
                         </div>
                       </AccordionTrigger>
                       <AccordionContent className="pt-0.5 pb-0">
-                        <div className="text-[0.55rem] text-muted-foreground px-1 pb-0.5">
-                            File: {currentFileForValidation || currentFileName || "N/A"}
-                        </div>
+                        <div className="text-[0.55rem] text-muted-foreground px-1 pb-0.5">File: {currentFileForValidation || currentFileName || "N/A"}</div>
                         <ScrollArea className="w-full rounded-md border p-1 bg-muted/20 max-h-28">
                           {validationSteps.map(step => (
                             <li key={step.id} className="flex items-start list-none py-0.5">
@@ -1169,14 +1066,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                                 {step.status === 'warning' && <Info className="h-full w-full text-yellow-500" />}
                               </div>
                               <div className="flex-grow min-w-0">
-                                <span className={cn('block text-[0.55rem] leading-tight', step.status === 'error' && 'text-destructive font-semibold', step.status === 'success' && 'text-green-600', step.status === 'warning' && 'text-yellow-600 dark:text-yellow-400')}>
-                                  {step.label}
-                                </span>
-                                {step.message && step.status !== 'pending' && (
-                                    <span className={cn("text-[0.45rem] block whitespace-pre-wrap leading-tight", step.status === 'error' ? 'text-red-700' : step.status === 'warning' ? 'text-yellow-700' : 'text-muted-foreground')} title={step.message}>
-                                       &ndash; {step.message}
-                                    </span>
-                                )}
+                                <span className={cn('block text-[0.55rem] leading-tight', step.status === 'error' && 'text-destructive font-semibold', step.status === 'success' && 'text-green-600', step.status === 'warning' && 'text-yellow-600 dark:text-yellow-400')}>{step.label}</span>
+                                {step.message && step.status !== 'pending' && (<span className={cn("text-[0.45rem] block whitespace-pre-wrap leading-tight", step.status === 'error' ? 'text-red-700' : step.status === 'warning' ? 'text-yellow-700' : 'text-muted-foreground')} title={step.message}>&ndash; {step.message}</span>)}
                                  {step.status === 'pending' && <span className="text-[0.45rem] text-muted-foreground block leading-tight">&ndash; Pending...</span>}
                               </div>
                             </li>
@@ -1187,57 +1078,45 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                   </Accordion>
                   </div>
                 )}
-                {!summaryStep && !isProcessing && !currentFileForValidation && (
-                     <p className="text-[0.6rem] text-muted-foreground px-1 pb-0.5">Upload CSV or Load Plot.</p>
-                )}
+                {(!summaryStep && !isProcessing) && (<p className="text-[0.6rem] text-muted-foreground px-1 pb-0.5">Upload CSV or Load Plot.</p>)}
                 <div className="px-1 pb-0.5 pt-1 space-y-1">
-                  <Button onClick={handleClearDataInstance} variant="outline" size="sm" className="w-full h-7 text-xs" disabled={isProcessing || (!currentFileName && !rawCsvText)}>
-                    Clear Data
-                  </Button>
+                  <Button onClick={handleClearDataInstance} variant="outline" size="sm" className="w-full h-7 text-xs" disabled={isProcessing || (!currentFileName && !rawCsvText)}>Clear Data</Button>
                 </div>
-              </div>
-
-              {/* Select Variables Section */}
-              <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0">
-                <div className="flex items-center gap-1">
-                  <ListFilter className="h-3 w-3 text-[#2B7A78]" />
-                  <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
-                </div>
-                <div className="flex items-center space-x-1.5">
-                  <Checkbox id={`select-all-rhs-${instanceId}-${uniqueComponentId}`} checked={allSeriesSelected} onCheckedChange={() => handleSelectAllToggle(!allSeriesSelected)} disabled={dataSeries.length === 0} aria-label={allSeriesSelected ? "Deselect all series" : "Select all series"} className="h-3.5 w-3.5" />
-                  <UiLabel htmlFor={`select-all-rhs-${instanceId}-${uniqueComponentId}`} className="text-xs font-medium leading-snug peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                    {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
-                  </UiLabel>
-                </div>
-                <ScrollArea className="w-full rounded-md border p-1 flex-1">
-                  {dataSeries.length > 0 ? (
-                    dataSeries.map((seriesName) => (
-                      <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
-                        <Checkbox id={`series-rhs-${seriesName}-${instanceId}-${uniqueComponentId}`} checked={!!visibleSeries[seriesName]} onCheckedChange={(checked) => handleSeriesVisibilityChange(seriesName, !!checked)} className="h-3.5 w-3.5" />
-                        <UiLabel htmlFor={`series-rhs-${seriesName}-${instanceId}-${uniqueComponentId}`} className="text-xs leading-snug peer-disabled:cursor-not-allowed peer-disabled:opacity-70 truncate min-w-0" title={seriesName}>
-                          {seriesName}
-                        </UiLabel>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-xs text-center text-muted-foreground py-2">
-                      No variables loaded.
-                    </p>
-                  )}
-                </ScrollArea>
               </div>
             </div>
           )}
-
-          {/* Chart Area and SVG Overlay */}
-          <div className={cn(!isMinimalistView ? "md:col-span-9" : "col-span-full", isMinimalistView ? "flex-1 min-h-0" : "md:self-start")}>
-             <div
-              ref={chartAreaRef}
-              className={cn(
-                "relative border rounded-md bg-muted/20",
-                (isOverlayActive && (anyAnnotationInteractionActive || activeTool === 'line')) && "opacity-70 pointer-events-none"
-              )}
-             >
+          {!isMinimalistView && (
+            <div className="md:col-span-2 space-y-1.5 flex flex-col"> {/* Select Variables Panel */}
+                <div className="space-y-1 p-1.5 border rounded-md flex flex-col flex-1 min-h-0">
+                    <div className="flex items-center gap-1">
+                        <ListFilter className="h-3 w-3 text-[#2B7A78]" />
+                        <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
+                    </div>
+                    <div className="flex items-center space-x-1.5">
+                        <Checkbox id={`select-all-rhs-${instanceId}-${uniqueComponentId}`} checked={allSeriesSelected} onCheckedChange={() => handleSelectAllToggle(!allSeriesSelected)} disabled={dataSeries.length === 0} aria-label={allSeriesSelected ? "Deselect all series" : "Select all series"} className="h-3.5 w-3.5" />
+                        <UiLabel htmlFor={`select-all-rhs-${instanceId}-${uniqueComponentId}`} className="text-xs font-medium leading-snug peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                            {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
+                        </UiLabel>
+                    </div>
+                    <ScrollArea className="w-full rounded-md border p-1 h-48"> {/* Fixed height for variable list */}
+                        {dataSeries.length > 0 ? (
+                            dataSeries.map((seriesName) => (
+                            <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
+                                <Checkbox id={`series-rhs-${seriesName}-${instanceId}-${uniqueComponentId}`} checked={!!visibleSeries[seriesName]} onCheckedChange={(checked) => handleSeriesVisibilityChange(seriesName, !!checked)} className="h-3.5 w-3.5" />
+                                <UiLabel htmlFor={`series-rhs-${seriesName}-${instanceId}-${uniqueComponentId}`} className="text-xs leading-snug peer-disabled:cursor-not-allowed peer-disabled:opacity-70 truncate min-w-0" title={seriesName}>
+                                {seriesName}
+                                </UiLabel>
+                            </div>
+                            ))
+                        ) : (
+                            <p className="text-xs text-center text-muted-foreground py-2">No variables loaded.</p>
+                        )}
+                    </ScrollArea>
+                </div>
+            </div>
+          )}
+          <div className={cn(!isMinimalistView ? "md:col-span-8 md:self-start" : "col-span-full", isMinimalistView ? "flex-1 min-h-0" : "")}> {/* Plot Area Panel */}
+             <div ref={chartAreaRef} className={cn( "relative", (isOverlayActive && (anyAnnotationInteractionActive || activeTool === 'line')) && "opacity-70 pointer-events-none" )}>
               {parsedData.length > 0 ? (
                 <ChartDisplay
                   data={parsedData}
@@ -1250,7 +1129,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                   onBrushChange={handleBrushChange}
                 />
               ) : (
-                <div style={{ height: `${DEFAULT_PLOT_HEIGHT}px` }} className="flex items-center justify-center text-muted-foreground text-sm p-4 border rounded-md bg-muted/20">
+                <div style={{ height: `${DEFAULT_PLOT_HEIGHT}px` }} className="flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-muted/20">
                   {currentFileName ? "No data to display for " + currentFileName : "Upload a CSV file or load a saved plot to visualize data."}
                 </div>
               )}
@@ -1263,10 +1142,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                   className="absolute top-0 left-0 z-10"
                   onClick={handleSvgBackgroundClick}
                   onTouchStart={handleSvgBackgroundClick}
-                  style={{
-                    cursor: svgCursor,
-                    pointerEvents: (anyAnnotationInteractionActive || activeTool === 'line' || selectedLineId) ? 'auto' : 'none'
-                  }}
+                  style={{ cursor: svgCursor, pointerEvents: (anyAnnotationInteractionActive || selectedLineId || isDraggingToolbar) ? 'auto' : 'none' }}
                 >
                   <defs>
                      <marker id={`arrowheadEnd-${uniqueComponentId}`} markerWidth="3" markerHeight="3.5" refX="3" refY="1.75" orient="auto" fill="currentColor"><polygon points="0 0, 3 1.75, 0 3.5" /></marker>
@@ -1276,9 +1152,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                     <g key={line.id} >
                       <line
                         x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
-                        stroke="transparent"
-                        strokeWidth="20"
-                        className={cn(selectedLineId === line.id && !anyAnnotationInteractionActive && activeTool !== 'move' ? "cursor-grab" : selectedLineId === line.id && activeTool === 'move' ? "cursor-move" : "cursor-pointer")}
+                        stroke="transparent" strokeWidth="20"
+                        className={cn(selectedLineId === line.id && !anyAnnotationInteractionActive ? "cursor-move" : "cursor-pointer")}
                         onMouseDown={(e) => handleLineHitboxInteractionStart(line, e)}
                         onTouchStart={(e) => handleLineHitboxInteractionStart(line, e as unknown as ReactTouchEvent<SVGGElement>)}
                         style={{ pointerEvents: (anyAnnotationInteractionActive && movingLineId !== line.id && draggingPoint?.lineId !== line.id) ? 'none' : 'auto' }}
@@ -1292,7 +1167,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                         markerEnd={(line.arrowStyle === 'end' || line.arrowStyle === 'both') ? `url(#arrowheadEnd-${uniqueComponentId})` : undefined}
                         style={{ pointerEvents: 'none' }}
                       />
-                      {selectedLineId === line.id && !movingLineId && !isDraggingToolbar && activeTool !== 'move' && (
+                      {selectedLineId === line.id && !movingLineId && !isDraggingToolbar && ( 
                         <>
                           <circle cx={line.x1} cy={line.y1} r="8" fill="hsl(var(--destructive))" fillOpacity="0.3" className="cursor-grab active:cursor-grabbing" onMouseDown={(e) => handleDraggablePointInteractionStart(line.id, 'start', e)} onTouchStart={(e) => handleDraggablePointInteractionStart(line.id, 'start', e as unknown as ReactTouchEvent<SVGCircleElement>)} style={{ pointerEvents: (anyAnnotationInteractionActive && draggingPoint?.lineId !== line.id) ? 'none' : 'auto' }} />
                           <circle cx={line.x1} cy={line.y1} r="3" fill="hsl(var(--background))" stroke="hsl(var(--destructive))" strokeWidth="1.5" style={{ pointerEvents: 'none' }} />
@@ -1302,71 +1177,50 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                       )}
                     </g>
                   ))}
-                  {selectedLineId && contextualToolbarPosition && isOverlayActive && (
+                  {selectedLineId && contextualToolbarPosition && isOverlayActive && ( 
                     <foreignObject 
-                      x={contextualToolbarPosition.x - ( (document.querySelector(`#plot-instance-${instanceId} .contextual-toolbar`)?.clientWidth || TOOLBAR_APPROX_WIDTH_MIN) / 2)} 
-                      y={contextualToolbarPosition.y - (TOOLBAR_APPROX_HEIGHT / 2)} 
-                      width={(document.querySelector(`#plot-instance-${instanceId} .contextual-toolbar`)?.clientWidth || TOOLBAR_APPROX_WIDTH_MIN) + 10} // add buffer for shadow
-                      height={TOOLBAR_APPROX_HEIGHT + 10} // add buffer for shadow
+                      x={contextualToolbarPosition.x - ((document.querySelector(`#plot-instance-${instanceId} .contextual-toolbar`)?.clientWidth || 130) / 2)} 
+                      y={contextualToolbarPosition.y - (32 / 2)} 
+                      width={(document.querySelector(`#plot-instance-${instanceId} .contextual-toolbar`)?.clientWidth || 130) + 10} 
+                      height={32 + 10} 
                       style={{ pointerEvents: anyAnnotationInteractionActive ? 'none' : 'auto' }}
                     >
-                         <TooltipProvider delayDuration={0}>
-                            <div
-                                id={`plot-instance-${instanceId}`}
-                                className="contextual-toolbar flex items-center space-x-0.5 p-0.5 bg-card border shadow-xl rounded-md w-fit"
-                                onMouseDown={(e) => {e.stopPropagation(); handleToolbarDragStart(e); }}
-                                onTouchStart={(e) => {e.stopPropagation(); handleToolbarDragStart(e); }}
-                            >
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7 cursor-grab active:cursor-grabbing"
-                                        disabled={isContextualToolbarButtonDisabled || isDraggingToolbar}
-                                        aria-label="Move Toolbar"
-                                    >
-                                        <GripVertical className="h-4 w-4"/>
+                       <TooltipProvider delayDuration={0}>
+                          <div
+                              id={`plot-instance-${instanceId}`} // Ensure this ID is unique if multiple PlotInstances are on a page.
+                              className="contextual-toolbar flex items-center space-x-0.5 p-0.5 bg-card border shadow-xl rounded-md w-fit"
+                              onMouseDown={(e) => {e.stopPropagation(); handleToolbarDragStart(e); }}
+                              onTouchStart={(e) => {e.stopPropagation(); handleToolbarDragStart(e); }}
+                          >
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 cursor-grab active:cursor-grabbing" disabled={isContextualToolbarButtonDisabled || isDraggingToolbar} aria-label="Move Toolbar">
+                                      <GripVertical className="h-4 w-4"/>
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom"><p>Move Toolbar</p></TooltipContent>
+                              </Tooltip>
+                              <Separator orientation="vertical" className="h-4 mx-0.5"/>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopySelectedLine} disabled={isContextualToolbarButtonDisabled} aria-label="Copy Line">
+                                      <Copy className="h-3.5 w-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom"><p>Copy Line</p></TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={handleDeleteSelectedLine} disabled={isContextualToolbarButtonDisabled} aria-label="Delete Line">
+                                        <Trash2 className="h-3.5 w-3.5" />
                                     </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="bottom"><p>Move Toolbar</p></TooltipContent>
-                                </Tooltip>
-                                <Separator orientation="vertical" className="h-4 mx-0.5"/>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                      <Button 
-                                        variant="ghost" 
-                                        size="icon" 
-                                        className={cn("h-7 w-7", activeTool === 'move' && selectedLine?.id === selectedLineId && "bg-secondary")} 
-                                        onClick={() => toggleMainToolbarTool('move')} 
-                                        disabled={isContextualToolbarButtonDisabled}
-                                        aria-label="Move Line"
-                                      >
-                                          <MoveIcon className="h-3.5 w-3.5" />
-                                      </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="bottom"><p>Move Line</p></TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopySelectedLine} disabled={isContextualToolbarButtonDisabled} aria-label="Copy Line">
-                                        <Copy className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="bottom"><p>Copy Line</p></TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={handleDeleteSelectedLine} disabled={isContextualToolbarButtonDisabled} aria-label="Delete Line">
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                      </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="bottom"><p>Delete Line</p></TooltipContent>
-                                </Tooltip>
-                            </div>
-                         </TooltipProvider>
-                      </foreignObject>
-                    )}
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom"><p>Delete Line</p></TooltipContent>
+                              </Tooltip>
+                          </div>
+                       </TooltipProvider>
+                    </foreignObject>
+                  )}
                 </svg>
               )}
             </div>
@@ -1382,9 +1236,9 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                 <Button
                   variant={"outline"}
                   size="sm"
-                  className={cn("h-8 px-2 text-xs", activeTool === 'line' && "bg-secondary")}
+                  className="h-8 px-2 text-xs"
                   onClick={handleAddLine}
-                  disabled={isMainToolbarButtonDisabled && activeTool !== 'line'}
+                  disabled={isMainToolbarButtonDisabled}
                   aria-label={"Add Line"}
                 >
                   <Plus className="h-4 w-4 mr-1" /> Line
@@ -1398,11 +1252,11 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="icon" className="h-8 w-8" disabled={isMainToolbarButtonDisabled || !selectedLineId} aria-label="Line Style & Thickness Options">
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
-                        <rect y="3" width="16" height="1.5" rx="0.5" />
-                        <rect y="6.25" width="16" height="2.5" rx="0.5" />
-                        <rect y="10.5" width="16" height="3.5" rx="0.5" />
-                      </svg>
+                       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
+                          <rect y="3" width="16" height="1.5" rx="0.5"/>
+                          <rect y="6.25" width="16" height="2.5" rx="0.5"/>
+                          <rect y="10.5" width="16" height="3.5" rx="0.5"/>
+                        </svg>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="w-60">
@@ -1489,14 +1343,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={handleCopySelectedLine}
-                  disabled={isMainToolbarButtonDisabled || !selectedLineId}
-                  aria-label="Copy Selected Line"
-                >
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleCopySelectedLine} disabled={isMainToolbarButtonDisabled || !selectedLineId} aria-label="Copy Selected Line">
                   <Copy className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
@@ -1504,14 +1351,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive"
-                  onClick={handleDeleteSelectedLine}
-                  disabled={isMainToolbarButtonDisabled || !selectedLineId}
-                  aria-label="Delete Selected Line"
-                >
+                <Button variant="outline" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={handleDeleteSelectedLine} disabled={isMainToolbarButtonDisabled || !selectedLineId} aria-label="Delete Selected Line">
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
@@ -1521,34 +1361,20 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         </div>
       )}
 
-      {isPlotExpanded && parsedData.length > 0 && !isMinimalistView && !isMinimized && (
+      {!isMinimalistView && !isMinimized && parsedData.length > 0 && (
         <div className="flex justify-center pt-1 pb-1 border-t">
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setIsPlotExpanded(false)}
-            aria-label="Collapse plot area"
+            onClick={() => setIsPlotExpanded(!isPlotExpanded)}
+            aria-label={isPlotExpanded ? "Collapse plot area" : "Expand plot area"}
             className="h-7 text-xs"
           >
-            <ChevronsUp className="h-4 w-4 mr-1" /> Collapse Plot
+            {isPlotExpanded ? <ChevronsUp className="h-4 w-4 mr-1" /> : <ChevronsDown className="h-4 w-4 mr-1" />}
+            {isPlotExpanded ? "Collapse Plot" : "Expand Plot"}
           </Button>
-        </div>
-      )}
-      {!isPlotExpanded && parsedData.length > 0 && !isMinimalistView && !isMinimized && (
-         <div className="flex justify-center pt-1 pb-1 border-t">
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsPlotExpanded(true)}
-                aria-label="Expand plot area"
-                className="h-7 text-xs"
-            >
-                <ChevronsDown className="h-4 w-4 mr-1" /> Expand Plot
-            </Button>
         </div>
       )}
     </Card>
   );
 }
-
-    
