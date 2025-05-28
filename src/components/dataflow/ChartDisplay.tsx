@@ -14,23 +14,17 @@ import {
   Brush,
   Label as RechartsYAxisLabel,
 } from 'recharts';
-import { format, parseISO, isValid, differenceInHours } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { format, parseISO, isValid, differenceInHours, addHours, subDays } from 'date-fns';
+import type { YAxisConfig } from './ChartDisplay'; // Self-referential for type export
 
+// Interface for a single data point
 interface DataPoint {
-  time: string | number;
-  [key: string]: string | number | undefined | null;
+  time: string | number; // Can be ISO string or timestamp number
+  [key: string]: string | number | undefined | null; // Other data series
 }
 
-export interface YAxisConfig {
-  dataKey: string;
-  label: string;
-  unit?: string;
-  orientation: 'left' | 'right';
-  color?: string;
-  yAxisId: string;
-  tickFormatter?: (value: any) => string;
-}
+// Re-export YAxisConfig if it's used by parent components
+export type { YAxisConfig } from './ChartDisplay'; // Adjust path if necessary, or define inline
 
 interface ChartDisplayProps {
   data: DataPoint[];
@@ -41,16 +35,15 @@ interface ChartDisplayProps {
   brushStartIndex?: number;
   brushEndIndex?: number;
   onBrushChange?: (newIndex: { startIndex?: number; endIndex?: number }) => void;
-  // Removed activeHighlightRange for simplicity as per user request to revert to simpler plot
 }
 
-const INTERNAL_DEFAULT_CHART_HEIGHT = 350; // Default height if not provided
+const ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT = 350; // Fallback if chartRenderHeight not provided
 
-const formatDateTick = (timeValue: string | number): string => {
+const formatDateTickBrush = (timeValue: string | number): string => {
   try {
     const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
     if (!isValid(dateObj)) return String(timeValue);
-    return format(dateObj, 'dd-MM-yy');
+    return format(dateObj, 'dd/MM/yy');
   } catch (e) {
     return String(timeValue);
   }
@@ -66,8 +59,7 @@ export function ChartDisplay({
   brushEndIndex,
   onBrushChange,
 }: ChartDisplayProps) {
-
-  const chartHeightToUse = chartRenderHeight || INTERNAL_DEFAULT_CHART_HEIGHT;
+  const chartHeightToUse = chartRenderHeight || ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT;
 
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -78,7 +70,7 @@ export function ChartDisplay({
         if (value !== null && value !== undefined && !isNaN(Number(value))) {
           newPoint[seriesKey] = Number(value);
         } else {
-          newPoint[seriesKey] = null; // Use null for non-numeric/missing for Recharts
+          newPoint[seriesKey] = null;
         }
       });
       return newPoint;
@@ -87,17 +79,24 @@ export function ChartDisplay({
 
   const memoizedXAxisTickFormatter = React.useCallback((timeValue: string | number): string => {
     if (!chartData || chartData.length === 0 || brushStartIndex === undefined || brushEndIndex === undefined) {
-      return formatDateTick(timeValue);
+      const dateObjFallback = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
+      return isValid(dateObjFallback) ? format(dateObjFallback, 'dd/MM/yy HH:mm') : String(timeValue);
     }
     const firstVisibleTime = chartData[brushStartIndex]?.time;
     const lastVisibleTime = chartData[brushEndIndex]?.time;
 
-    if (!firstVisibleTime || !lastVisibleTime) return formatDateTick(timeValue);
+    if (!firstVisibleTime || !lastVisibleTime) {
+      const dateObjFallback = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
+      return isValid(dateObjFallback) ? format(dateObjFallback, 'dd/MM/yy HH:mm') : String(timeValue);
+    }
 
     const startDate = typeof firstVisibleTime === 'string' ? parseISO(firstVisibleTime) : new Date(firstVisibleTime);
     const endDate = typeof lastVisibleTime === 'string' ? parseISO(lastVisibleTime) : new Date(lastVisibleTime);
 
-    if (!isValid(startDate) || !isValid(endDate)) return formatDateTick(timeValue);
+    if (!isValid(startDate) || !isValid(endDate)) {
+      const dateObjFallback = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
+      return isValid(dateObjFallback) ? format(dateObjFallback, 'dd/MM/yy HH:mm') : String(timeValue);
+    }
     
     const durationHours = differenceInHours(endDate, startDate);
 
@@ -107,7 +106,7 @@ export function ChartDisplay({
       if (durationHours < 48) {
         return format(dateObj, 'HH:mm');
       }
-      return format(dateObj, 'dd-MM-yy');
+      return format(dateObj, 'dd/MM/yy HH:mm');
     } catch (e) {
       return String(timeValue);
     }
@@ -132,20 +131,26 @@ export function ChartDisplay({
     if (durationHours < 48) {
       const ticks = [];
       let currentTickTime = startDate.getTime();
-      const sixHoursInMillis = 6 * 60 * 60 * 1000;
+      // Adjust interval based on duration to avoid too many ticks
+      const intervalMillis = durationHours <= 6 ? 1 * 60 * 60 * 1000 : // Every hour for <= 6 hours
+                              durationHours <= 12 ? 2 * 60 * 60 * 1000 : // Every 2 hours for <= 12 hours
+                              durationHours <= 24 ? 3 * 60 * 60 * 1000 : // Every 3 hours for <= 24 hours
+                              6 * 60 * 60 * 1000; // Every 6 hours for < 48 hours
+
       while (currentTickTime <= endDate.getTime()) {
         ticks.push(currentTickTime);
-        currentTickTime += sixHoursInMillis;
+        currentTickTime += intervalMillis;
       }
-      // Ensure the last actual data point's time is considered if not exactly on a 6hr interval
-      if (ticks[ticks.length - 1] < endDate.getTime() && chartData[brushEndIndex]?.time) {
+      // Ensure the last actual data point's time is considered if not exactly on an interval
+      if (ticks.length > 0 && ticks[ticks.length - 1] < endDate.getTime() && chartData[brushEndIndex]?.time) {
           const lastDataTime = typeof chartData[brushEndIndex].time === 'string' ? parseISO(chartData[brushEndIndex].time as string).getTime() : Number(chartData[brushEndIndex].time);
           if (lastDataTime > ticks[ticks.length -1]) ticks.push(lastDataTime);
       }
-      return ticks;
+      return ticks.length > 1 ? ticks : undefined; // Return undefined if only one tick to let Recharts decide
     }
-    return undefined; // Let Recharts decide for longer ranges
+    return undefined; // Let Recharts decide for longer ranges (will use dd/MM/yy HH:mm format)
   }, [chartData, brushStartIndex, brushEndIndex]);
+
 
   const hasAnyNumericDataForSelectedSeries = useMemo(() => {
     if (!chartData || chartData.length === 0) return false;
@@ -157,9 +162,8 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
 
-
   const renderNoDataMessage = (message: string) => (
-    <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+    <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4">
       {message}
     </div>
   );
@@ -171,7 +175,7 @@ export function ChartDisplay({
     return <div style={{ height: `${chartHeightToUse}px`, width: '100%' }}>{renderNoDataMessage("Please select at least one variable to plot.")}</div>;
   }
   if (!hasAnyNumericDataForSelectedSeries) {
-    return <div style={{ height: `${chartHeightToUse}px`, width: '100%' }}>{renderNoDataMessage("No valid numeric data found for the selected series.")}</div>;
+     return <div style={{ height: `${chartHeightToUse}px`, width: '100%' }}>{renderNoDataMessage(`No valid numeric data found for the selected series: ${plottableSeries.join(', ')}.`)}</div>;
   }
 
   return (
@@ -181,9 +185,9 @@ export function ChartDisplay({
           data={chartData}
           margin={{
             top: 5,
-            right: 25, 
-            left: yAxisConfigs.filter(yc => yc.orientation === 'left').length > 0 ? 25 : 5, // more left margin if left Y-axis
-            bottom: 100, // Increased to accommodate XAxis, Brush, and Legend
+            right: 25,
+            left: yAxisConfigs.some(yc => yc.orientation === 'left') ? 25 : 5,
+            bottom: 110, // Increased to accommodate XAxis, Brush, and Legend
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -194,17 +198,19 @@ export function ChartDisplay({
             textAnchor="end"
             height={60} // Adjusted height for angled labels and title
             stroke="hsl(var(--muted-foreground))"
-            tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
-            ticks={memoizedXAxisTicks}
-            interval={memoizedXAxisTicks ? undefined : "preserveStartEnd"}
+            tick={{ fontSize: '0.7rem', fill: 'hsl(var(--muted-foreground))' }}
+            ticks={memoizedXAxisTicks} // Use memoized ticks for short durations
+            interval={memoizedXAxisTicks ? 0 : "preserveStartEnd"} // Use interval 0 if ticks are provided
           >
-            <RechartsYAxisLabel
-              value={timeAxisLabel}
-              position="insideBottom"
-              offset={-50} // Position below angled ticks
-              dy={15} // Fine-tune vertical position
-              style={{ textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--foreground))' }}
-            />
+            {timeAxisLabel && (
+              <RechartsYAxisLabel
+                value={timeAxisLabel}
+                position="insideBottom"
+                offset={-30} // Adjusted offset to sit correctly below angled ticks
+                dy={20}
+                style={{ textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--foreground))' }}
+              />
+            )}
           </XAxis>
 
           {yAxisConfigs.map(config => (
@@ -215,7 +221,7 @@ export function ChartDisplay({
               stroke={config.color ? `hsl(var(${config.color}))` : "hsl(var(--muted-foreground))"}
               tickFormatter={config.tickFormatter || ((value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value))}
               tick={{ fontSize: '0.7rem', fill: 'hsl(var(--muted-foreground))' }}
-              width={config.orientation === 'left' ? 45 : 40} // Adjusted width
+              width={config.orientation === 'left' ? 45 : 40}
               label={
                 config.label ? (
                   <RechartsYAxisLabel
@@ -223,7 +229,7 @@ export function ChartDisplay({
                     value={`${config.label}${config.unit ? ` (${config.unit})` : ''}`}
                     position={config.orientation === 'left' ? 'insideLeft' : 'insideRight'}
                     style={{ textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--foreground))' }}
-                    offset={config.orientation === 'left' ? -5 : 10} // Adjusted offset
+                    offset={config.orientation === 'left' ? -5 : 10}
                   />
                 ) : undefined
               }
@@ -236,8 +242,8 @@ export function ChartDisplay({
               border: '1px solid hsl(var(--border))',
               borderRadius: 'var(--radius)',
               fontSize: '0.7rem',
-              boxShadow: 'var(--shadow-md)',
-            }}
+              boxShadow: '0 2px 8px hsla(var(--foreground) / 0.1)',
+            } as React.CSSProperties}
             labelFormatter={(label) => {
               try {
                 const date = typeof label === 'string' ? parseISO(label) : new Date(label);
@@ -252,7 +258,7 @@ export function ChartDisplay({
           <Legend wrapperStyle={{ paddingTop: '15px', fontSize: '0.75em' }} />
 
           {plottableSeries.map(seriesKey => {
-            const yAxisConfig = yAxisConfigs.find(yc => yc.dataKey === seriesKey) || yAxisConfigs[0];
+            const yAxisConfig = yAxisConfigs.find(yc => yc.dataKey === seriesKey) || (yAxisConfigs.length > 0 ? yAxisConfigs[0] : { yAxisId: '0' });
             return (
               <Line
                 key={seriesKey}
@@ -272,15 +278,15 @@ export function ChartDisplay({
           {data.length > 1 && onBrushChange && (
             <Brush
               dataKey="time"
-              height={20}
+              height={20} // Standard height for brush
               stroke="hsl(var(--primary))"
               fill="transparent"
-              tickFormatter={formatDateTick} // Simplified for brush always 'dd-MM-yy'
+              tickFormatter={formatDateTickBrush} // Uses dd/MM/yy
               startIndex={brushStartIndex}
               endIndex={brushEndIndex}
               onChange={onBrushChange}
               travellerWidth={8}
-              y={15} // Adjusted to sit below XAxis properly
+              y={10} // Adjusted to sit comfortably below XAxis based on LineChart margin
             />
           )}
         </LineChart>
