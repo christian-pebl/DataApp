@@ -82,25 +82,16 @@ async function fetchFromOpenMeteo(
     }
     log.push({ message: `${apiName} API response indicates no explicit error flag.`, status: 'success' });
 
-    if (!apiData.hourly || !apiData.hourly.time || apiData.hourly.time.length === 0) {
-      log.push({ message: `No hourly data or timestamps returned from Open-Meteo ${apiName} API.`, status: 'warning' });
-      return null; // Critical: No time data means no data points can be formed
+    // Reverted: This section no longer has the strict array length validation loop,
+    // nor does it explicitly return null if apiData.hourly or apiData.hourly.time is missing.
+    // The original behavior was to log a warning and proceed, letting processApiHourlyData handle missing arrays.
+    if (!apiData.hourly || !apiData.hourly.time) {
+      log.push({ message: `No hourly data structure or time array returned from Open-Meteo ${apiName} API.`, status: 'warning' });
+    } else if (apiData.hourly.time.length === 0) {
+      log.push({ message: `Empty time array returned from Open-Meteo ${apiName} API.`, status: 'warning' });
+    } else {
+      log.push({ message: `Received ${apiData.hourly.time.length} timestamps from ${apiName} API.`, status: 'info' });
     }
-    log.push({ message: `Received ${apiData.hourly.time.length} timestamps from ${apiName} API.`, status: 'info' });
-
-    // Validate array lengths
-    const timeLength = apiData.hourly.time.length;
-    for (const key in apiData.hourly) {
-      if (key !== 'time' && Array.isArray((apiData.hourly as any)[key])) {
-        const paramArray = (apiData.hourly as any)[key] as (number | null)[];
-        if (paramArray.length !== timeLength) {
-          log.push({ message: `Mismatched array lengths for parameter '${key}' (${paramArray.length}) and time array (${timeLength}) in ${apiName} API response. Data may be inconsistent.`, status: 'error' });
-          return null; // Data integrity issue, cannot reliably merge
-        }
-      }
-    }
-    log.push({ message: `Validated array lengths for all hourly parameters in ${apiName} API response.`, status: 'success' });
-
 
     return apiData;
 
@@ -180,9 +171,11 @@ export async function fetchCombinedDataAction(
   let weatherApiBaseUrl = 'https://api.open-meteo.com/v1/forecast'; // Default to forecast
   if (isPast(parsedEndDate)) { 
     weatherApiBaseUrl = 'https://archive-api.open-meteo.com/v1/archive';
-    log.push({ message: `Using Weather Archive API as end date (${formattedEndDate}) is in the past. Endpoint: ${weatherApiBaseUrl}`, status: 'info' });
+    // Reverted: Removed explicit logging of weatherApiBaseUrl here
+    log.push({ message: `Using Weather Archive API as end date (${formattedEndDate}) is in the past.`, status: 'info' });
   } else {
-    log.push({ message: `Using Weather Forecast API as end date (${formattedEndDate}) is not in the past. Endpoint: ${weatherApiBaseUrl}`, status: 'info' });
+    // Reverted: Removed explicit logging of weatherApiBaseUrl here
+    log.push({ message: `Using Weather Forecast API as end date (${formattedEndDate}) is not in the past.`, status: 'info' });
   }
 
   if (weatherParamsToFetch.length > 0) {
@@ -234,8 +227,6 @@ export async function fetchCombinedDataAction(
     apiSource: 'marine' | 'weather'
   ) => {
     if (!apiRespData || !apiRespData.hourly || !apiRespData.hourly.time || apiRespData.hourly.time.length === 0) {
-      // This condition is now theoretically handled by fetchFromOpenMeteo returning null earlier.
-      // But as a safeguard:
       log.push({ message: `No hourly timestamps from ${apiSource} API for processing, or API data was null/empty before processing.`, status: 'warning' });
       return;
     }
@@ -248,7 +239,6 @@ export async function fetchCombinedDataAction(
 
       paramKeysForThisSource.forEach(appKey => {
         const config = PARAMETER_CONFIG[appKey];
-        // Ensure the key exists in PARAMETER_CONFIG and its apiSource matches
         if (config && config.apiSource === apiSource) {
           const apiHourly = apiRespData.hourly as OpenMeteoHourlyResponse;
           const apiParamArray = (apiHourly as any)[config.apiParam];
@@ -261,7 +251,7 @@ export async function fetchCombinedDataAction(
         }
       });
 
-      if(dataPointHasValue || combinedDataMap.has(time)) { // Keep entry if it already existed from other source
+      if(dataPointHasValue || combinedDataMap.has(time)) {
         combinedDataMap.set(time, entry);
         if(dataPointHasValue) processedCount++;
       }
@@ -272,10 +262,10 @@ export async function fetchCombinedDataAction(
   const marineAppKeys = selectedParamKeys.filter(k => PARAMETER_CONFIG[k as CombinedParameterKey]?.apiSource === 'marine') as CombinedParameterKey[];
   const weatherAppKeys = selectedParamKeys.filter(k => PARAMETER_CONFIG[k as CombinedParameterKey]?.apiSource === 'weather') as CombinedParameterKey[];
 
-  if (marineApiData) { // process if marineApiData is not null
+  if (marineApiData) {
     processApiHourlyData(marineApiData, marineAppKeys, 'marine');
   }
-  if (weatherApiData) { // process if weatherApiData is not null
+  if (weatherApiData) {
     processApiHourlyData(weatherApiData, weatherAppKeys, 'weather');
   }
 
@@ -289,7 +279,7 @@ export async function fetchCombinedDataAction(
       success: true, // API calls might have succeeded but returned no data
       data: [], 
       log, 
-      dataLocationContext: `No data for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)}`, 
+      dataLocationContext: `Data for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)}`, 
       error: noDataError
     };
   } else if (finalCombinedData.length === 0) {
@@ -305,6 +295,5 @@ export async function fetchCombinedDataAction(
     dataLocationContext: `Data for Lat: ${latitude.toFixed(2)}, Lon: ${longitude.toFixed(2)} (Open-Meteo)`
   };
 }
-
 
     
