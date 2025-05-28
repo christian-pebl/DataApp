@@ -33,43 +33,50 @@ interface MarinePlotsGridProps {
   isLoading: boolean;
   error: string | null;
   plotVisibility: PlotVisibilityState;
-  handlePlotVisibilityChange: (key: CombinedParameterKey, checked: boolean) => void;
+  // handlePlotVisibilityChange and plotConfigIcons are no longer passed as props
 }
 
 export function MarinePlotsGrid({
   marineData,
   isLoading,
   error,
-  plotVisibility,
-  handlePlotVisibilityChange,
+  plotVisibility: externalPlotVisibility, // Renamed to avoid conflict with internal state
 }: MarinePlotsGridProps) {
+  
   // Log incoming props
-  console.log("MarinePlotsGrid - Props Received:", { 
-    marineData: marineData ? `Data points: ${marineData.length}` : 'null', 
+  console.log("MarinePlotsGrid PROPS:", { 
+    marineDataLength: marineData ? marineData.length : 'null', 
     isLoading, 
     error, 
-    plotVisibility 
+    externalPlotVisibility 
   });
   if (marineData && marineData.length > 0) {
-    console.log("MarinePlotsGrid - Sample marineData[0]:", marineData[0]);
+    // console.log("MarinePlotsGrid - Sample marineData[0]:", marineData[0]);
   }
-
 
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
-  const [plotConfigsInternal, setPlotConfigsInternal] = useState<Array<ParameterConfigItem & { dataKey: CombinedParameterKey; Icon: LucideIcon; dataTransform?: (value: number) => number; }>>([]);
+  
+  // Internal state for plot configurations, allowing reordering
+  const [plotConfigsInternal, setPlotConfigsInternal] = useState<Array<ParameterConfigItem & { dataKey: CombinedParameterKey; Icon: LucideIcon; dataTransform?: (value: number | null | undefined) => number | null | undefined; }>>([]);
+  
+  // Internal state for plot visibility if not controlled externally
+  const [internalPlotVisibility, setInternalPlotVisibility] = useState<PlotVisibilityState>(externalPlotVisibility);
   const [seriesDataAvailability, setSeriesDataAvailability] = useState<Record<CombinedParameterKey, SeriesAvailabilityStatus>>({});
 
+  // Initialize plotConfigsInternal from shared config
   useEffect(() => {
-    console.log("MarinePlotsGrid - Initializing plotConfigsInternal effect triggered.");
     const configs = ALL_PARAMETERS.map(key => {
       const baseConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
-      let dataTransformFunc: ((value: number) => number) | undefined = undefined;
+      let dataTransformFunc: ((value: number | null | undefined) => number | null | undefined) | undefined = undefined;
       let displayUnit = baseConfig.unit;
 
       if (key === 'windSpeed10m' && baseConfig.apiSource === 'weather') {
-        displayUnit = 'mph';
-        dataTransformFunc = (value: number) => parseFloat((value * MPH_CONVERSION_FACTOR).toFixed(1));
+        displayUnit = 'mph'; // Display in mph
+        dataTransformFunc = (value) => {
+          if (typeof value !== 'number') return value; // Pass through null/undefined
+          return parseFloat((value * MPH_CONVERSION_FACTOR).toFixed(1));
+        }
       }
       
       return {
@@ -82,9 +89,17 @@ export function MarinePlotsGrid({
       };
     });
     setPlotConfigsInternal(configs);
-    console.log("MarinePlotsGrid - plotConfigsInternal initialized:", configs);
-  }, []);
+    console.log("MarinePlotsGrid - plotConfigsInternal initialized:", configs.map(c => c.dataKey));
+  }, []); // Runs once on mount
 
+  // Initialize plot visibility based on external prop or default to all true
+  useEffect(() => {
+    setInternalPlotVisibility(externalPlotVisibility || 
+      Object.fromEntries(ALL_PARAMETERS.map(key => [key, true])) as Record<CombinedParameterKey, boolean>
+    );
+  }, [externalPlotVisibility]);
+
+  // Update series data availability
   useEffect(() => {
     console.log("MarinePlotsGrid - seriesDataAvailability effect triggered. isLoading:", isLoading, "marineData length:", marineData?.length);
     if (isLoading) {
@@ -125,11 +140,9 @@ export function MarinePlotsGrid({
     if (marineData && marineData.length > 0 && brushEndIndex === undefined) {
       setBrushStartIndex(0);
       setBrushEndIndex(marineData.length - 1);
-      console.log("MarinePlotsGrid - Brush range initialized to full data range.");
     } else if ((!marineData || marineData.length === 0)) {
       setBrushStartIndex(0);
       setBrushEndIndex(undefined);
-      console.log("MarinePlotsGrid - Brush range reset due to no data.");
     }
   }, [marineData, brushEndIndex]);
 
@@ -140,15 +153,14 @@ export function MarinePlotsGrid({
 
   const displayData = useMemo(() => {
     if (!marineData || marineData.length === 0 || brushStartIndex === undefined || brushEndIndex === undefined) {
-      console.log("MarinePlotsGrid - displayData: No data to display or brush range invalid.");
       return [];
     }
     const start = Math.max(0, brushStartIndex);
     const end = Math.min(marineData.length - 1, brushEndIndex);
     const slicedData = marineData.slice(start, end + 1);
-    console.log("MarinePlotsGrid - displayData calculated. Length:", slicedData.length, "Start index:", start, "End index:", end);
+    console.log("MarinePlotsGrid - displayData calculated. Length:", slicedData.length, "Brush Start:", start, "Brush End:", end);
     if (slicedData.length > 0) {
-      console.log("MarinePlotsGrid - Sample displayData[0]:", slicedData[0]);
+      // console.log("MarinePlotsGrid - Sample displayData[0] (for brush range):", slicedData[0]);
     }
     return slicedData;
   }, [marineData, brushStartIndex, brushEndIndex]);
@@ -161,9 +173,12 @@ export function MarinePlotsGrid({
       if (targetIndex >= 0 && targetIndex < newConfigs.length) {
         [newConfigs[index], newConfigs[targetIndex]] = [newConfigs[targetIndex], newConfigs[index]];
       }
-      console.log("MarinePlotsGrid - Plot moved. New order:", newConfigs.map(c => c.dataKey));
       return newConfigs;
     });
+  }, []);
+  
+  const handlePlotVisibilityChangeLocal = useCallback((key: CombinedParameterKey, checked: boolean) => {
+    setInternalPlotVisibility(prev => ({ ...prev, [key]: checked }));
   }, []);
 
 
@@ -211,16 +226,20 @@ export function MarinePlotsGrid({
         {plotConfigsInternal.map((config, index) => {
           const IconComponent = config.Icon || Info;
           const availabilityStatus = seriesDataAvailability[config.dataKey];
-          const isVisible = plotVisibility[config.dataKey];
+          const isVisible = internalPlotVisibility[config.dataKey]; // Use internal state
           
           const transformedDisplayData = displayData.map(point => {
-            const value = point[config.dataKey as keyof CombinedDataPoint] as number | undefined;
-            if (value === undefined || value === null || isNaN(Number(value))) return { ...point, [config.dataKey]: undefined };
+            const value = point[config.dataKey as keyof CombinedDataPoint];
+            if (value === undefined || value === null || (typeof value === 'number' && isNaN(value))) {
+              return { ...point, [config.dataKey]: undefined };
+            }
             if (typeof value === 'number' && config.dataTransform) {
               return { ...point, [config.dataKey]: config.dataTransform(value) };
             }
             return point;
           });
+          console.log(`MarinePlotsGrid - [Plot: ${config.name}] Transformed display data sample (first 2):`, transformedDisplayData.slice(0,2));
+
 
           const lastDataPointWithValidValue = [...transformedDisplayData].reverse().find(p => {
             const val = p[config.dataKey as keyof CombinedDataPoint];
@@ -239,38 +258,38 @@ export function MarinePlotsGrid({
             return val !== undefined && val !== null && !isNaN(Number(val));
           });
           
-          console.log(`MarinePlotsGrid - Rendering plot for: ${config.name} (key: ${config.dataKey})`, {
+           console.log(`MarinePlotsGrid - Rendering plot for: ${config.name} (key: ${config.dataKey})`, {
             isVisible,
             availabilityStatus,
             hasValidDataForSeriesInView,
             currentValue,
             displayValue,
-            transformedDisplayDataLength: transformedDisplayData.length,
-            // transformedDisplayDataSample: transformedDisplayData.slice(0, 2) // Log first 2 points of transformed data
           });
 
           return (
             <div key={config.dataKey as string} className="border rounded-md p-1.5 shadow-sm bg-card flex-shrink-0 flex flex-col">
               <div className="flex items-center justify-between px-1 pt-0.5 text-xs">
-                <div className="flex flex-1 items-center gap-1.5 min-w-0">
-                  <Checkbox
-                    id={`visibility-${config.dataKey}-${index}`}
-                    checked={isVisible}
-                    onCheckedChange={(checked) => handlePlotVisibilityChange(config.dataKey, !!checked)}
-                    className="h-3.5 w-3.5"
-                  />
-                  <Label htmlFor={`visibility-${config.dataKey}-${index}`} className="flex items-center gap-1 cursor-pointer min-w-0">
-                    <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                    <span className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis" title={config.name}>
-                      {config.name}
-                    </span>
-                  </Label>
-                  <div className="flex-shrink-0 flex items-center ml-1">
-                    {isLoading && availabilityStatus === 'pending' && <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />}
-                    {!isLoading && availabilityStatus === 'available' && isVisible && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
-                    {!isLoading && (availabilityStatus === 'unavailable' || (availabilityStatus === 'available' && !hasValidDataForSeriesInView)) && isVisible && <XCircle className="h-3.5 w-3.5 text-red-500" />}
-                  </div>
+                 {/* Left side of header: Checkbox, Icon, Title, Status */}
+                <div className="flex flex-1 items-center gap-1 min-w-0">
+                    <Checkbox
+                        id={`visibility-${config.dataKey}-${index}`}
+                        checked={isVisible}
+                        onCheckedChange={(checked) => handlePlotVisibilityChangeLocal(config.dataKey, !!checked)}
+                        className="h-3.5 w-3.5"
+                    />
+                    <Label htmlFor={`visibility-${config.dataKey}-${index}`} className="flex items-center gap-1 cursor-pointer min-w-0">
+                        <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                        <span className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis" title={config.name}>
+                            {config.name}
+                        </span>
+                    </Label>
+                    <div className="flex-shrink-0 flex items-center ml-1">
+                        {(isLoading && availabilityStatus === 'pending') && <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />}
+                        {(!isLoading && availabilityStatus === 'available' && isVisible && hasValidDataForSeriesInView) && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+                        {(!isLoading && (availabilityStatus === 'unavailable' || (availabilityStatus === 'available' && !hasValidDataForSeriesInView)) && isVisible) && <XCircle className="h-3.5 w-3.5 text-red-500" />}
+                    </div>
                 </div>
+                {/* Right side of header: Current Value, Reorder Buttons */}
                 <div className="flex items-center flex-shrink-0">
                     {displayValue && (
                         <span className={cn("text-muted-foreground text-xs ml-auto pl-2 whitespace-nowrap")}>{displayValue}</span>
@@ -295,7 +314,7 @@ export function MarinePlotsGrid({
                           tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
                           tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
                           stroke="hsl(var(--border))"
-                          width={35}
+                          width={35} // Reduced width for Y-axis
                           axisLine={false}
                           tickLine={false}
                         />
@@ -303,15 +322,19 @@ export function MarinePlotsGrid({
                          <RechartsTooltip
                             contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', fontSize: '0.6rem' }}
                             itemStyle={{ color: 'hsl(var(--foreground))' }}
-                            formatter={(value: number, name: string, props) => {
+                            formatter={(value: number | null | undefined, name: string, props) => { // name is the dataKey
                                 const currentConfig = plotConfigsInternal.find(pc => pc.dataKey === name);
-                                return [`${value !== null && value !== undefined && typeof value === 'number' ? value.toFixed(1): 'N/A'}${currentConfig?.unit || ''}`, currentConfig?.name || name];
+                                const formattedValue = (value !== null && value !== undefined && typeof value === 'number' && !isNaN(value)) 
+                                    ? value.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) 
+                                    : 'N/A';
+                                return [`${formattedValue}${currentConfig?.unit || ''}`, currentConfig?.name || name];
                             }}
                             labelFormatter={(label) => {
                                 try {
-                                    return format(parseISO(label), 'MMM dd, HH:mm');
+                                    const date = parseISO(String(label));
+                                    return isValid(date) ? format(date, 'MMM dd, HH:mm') : String(label);
                                 } catch {
-                                    return label;
+                                    return String(label);
                                 }
                             }}
                             isAnimationActive={false}
@@ -323,7 +346,7 @@ export function MarinePlotsGrid({
                           strokeWidth={1.5}
                           dot={false}
                           connectNulls
-                          name={config.dataKey as string}
+                          name={config.name} // Use config.name for tooltip title
                           isAnimationActive={false}
                         />
                       </LineChart>
@@ -345,7 +368,7 @@ export function MarinePlotsGrid({
       </div>
 
       {marineData && marineData.length > 0 && (
-        <div className="h-[60px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
+        <div className="h-[65px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={marineData} margin={{ top: 5, right: 25, left: 25, bottom: 0 }}>
               <XAxis
@@ -359,7 +382,7 @@ export function MarinePlotsGrid({
                 dy={5} 
                 interval="preserveStartEnd"
               />
-               <Line dataKey={plotConfigsInternal.find(p => plotVisibility[p.dataKey] && seriesDataAvailability[p.dataKey] === 'available')?.dataKey || plotConfigsInternal[0]?.dataKey} stroke="transparent" dot={false} isAnimationActive={false} />
+               <Line dataKey={plotConfigsInternal.find(p => internalPlotVisibility[p.dataKey] && seriesDataAvailability[p.dataKey] === 'available')?.dataKey || plotConfigsInternal[0]?.dataKey} stroke="transparent" dot={false} isAnimationActive={false} />
               <Brush
                 dataKey="time"
                 height={14}
@@ -370,7 +393,7 @@ export function MarinePlotsGrid({
                 startIndex={brushStartIndex}
                 endIndex={brushEndIndex}
                 onChange={handleBrushChangeLocal}
-                y={5} 
+                y={10} 
               />
             </LineChart>
           </ResponsiveContainer>
@@ -379,6 +402,3 @@ export function MarinePlotsGrid({
     </div>
   );
 }
-
-
-    
