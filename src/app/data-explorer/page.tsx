@@ -14,7 +14,7 @@ import { PlotInstance } from "@/components/dataflow/PlotInstance";
 import {
   PlusCircle, SunMoon, LayoutGrid, Waves, MapPin, CalendarDays, Search,
   Loader2, Info, CheckCircle2, XCircle, Copy, CloudSun, Anchor,
-  Thermometer, Wind as WindIcon, Compass as CompassIcon, Sailboat, Timer as TimerIcon, ListChecks // Renamed Timer to TimerIcon
+  Thermometer, Wind as WindIcon, Compass as CompassIcon, Sailboat, Timer as TimerIcon, ListChecks
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -23,7 +23,7 @@ import { Separator } from "@/components/ui/separator";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
 import { Input } from "@/components/ui/input";
-import { Label as UiLabel } from "@/components/ui/label";
+import { Label as UiLabel } from "@/components/ui/label"; // Renamed to avoid conflict with Recharts Label
 import { Checkbox } from "@/components/ui/checkbox";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -97,7 +97,7 @@ export default function DataExplorerPage() {
 
   const initialApiPlotVisibility = useMemo(() => {
     return Object.fromEntries(
-      ALL_PARAMETERS.map((key, index) => [key, index < 2]) // Default to first two API params visible
+      ALL_PARAMETERS.map(key => [key, true]) // Default all API params to visible
     ) as Record<CombinedParameterKey, boolean>;
   }, []);
   const [apiPlotVisibility, setApiPlotVisibility] = useState<Record<CombinedParameterKey, boolean>>(initialApiPlotVisibility);
@@ -115,27 +115,24 @@ export default function DataExplorerPage() {
 
   const plotConfigIcons: Record<CombinedParameterKey, LucideIcon | undefined> = useMemo(() => {
     const icons: Partial<Record<CombinedParameterKey, LucideIcon>> = {
+      // Marine
       seaLevelHeightMsl: Waves,
       waveHeight: Sailboat,
       waveDirection: CompassIcon,
       wavePeriod: TimerIcon,
       seaSurfaceTemperature: Thermometer,
+      // Weather
       temperature2m: Thermometer,
       windSpeed10m: WindIcon,
       windDirection10m: CompassIcon,
-      ghi: SunMoon,
+      ghi: SunMoon, // Global Horizontal Irradiance
     };
-    // Assign icons dynamically based on PARAMETER_CONFIG
-    // This ensures if PARAMETER_CONFIG is updated, icons are looked up correctly
     ALL_PARAMETERS.forEach(key => {
       const config = PARAMETER_CONFIG[key as CombinedParameterKey];
       if (config && config.icon) {
-        // This assumes config.icon is already a LucideIcon component.
-        // If it's a string name, you'd need a map here.
         icons[key] = config.icon;
       } else if (!icons[key]) {
-        // Fallback icon if not defined in initial map or PARAMETER_CONFIG
-        icons[key] = Info;
+        icons[key] = Info; // Fallback
       }
     });
     return icons as Record<CombinedParameterKey, LucideIcon | undefined>;
@@ -322,76 +319,26 @@ export default function DataExplorerPage() {
     }
   }, [mapSelectedCoords, currentLocationName, dateRange, apiPlotVisibility, toast, dismiss]);
 
-  // Auto-fetch API data on initial load if default location/dates are set
    useEffect(() => {
     const defaultLoc = knownOmLocations[defaultOmLocationKey];
     if (defaultLoc && !initialApiFetchDone.current) {
       const defaultCoords = { lat: defaultLoc.lat, lon: defaultLoc.lon };
       const defaultName = defaultLoc.name;
-      const defaultSelectedParams = ALL_PARAMETERS.filter((key, index) => index < 2);
+      // Ensure `initialApiPlotVisibility` is used to derive `defaultSelectedParams`
+      const defaultSelectedParams = ALL_PARAMETERS.filter(key => initialApiPlotVisibility[key]);
 
-      if (defaultCoords && defaultName && dateRange?.from && dateRange?.to && !isLoadingApiData && !errorApiData && !apiData) {
+      if (mapSelectedCoords && currentLocationName && dateRange?.from && dateRange?.to && !isLoadingApiData && !errorApiData && !apiData) {
         if (dateRange.from <= dateRange.to && defaultSelectedParams.length > 0) {
-          // Temporarily set apiPlotVisibility for initial load
-          const initialVisibility = Object.fromEntries(
-            ALL_PARAMETERS.map(key => [key, defaultSelectedParams.includes(key)])
-          ) as Record<CombinedParameterKey, boolean>;
-          
-          // Use a temporary visibility for this specific fetch call
-          // and then let the user control it via checkboxes.
-          // We can call handleFetchApiData directly but with care for dependencies or slightly modify it.
-          
-          // To simplify and ensure correct state, call fetchCombinedDataAction directly
-          // and manage states inside this useEffect, bypassing the broader handleFetchApiData
-          // or ensure handleFetchApiData is stable enough not to cause loops here.
-          
-          // For initial load, ensure selectedParams are derived correctly
-          // This effect might re-run if dependencies like handleFetchApiData aren't stable.
-          // Let's make initial fetch more direct to avoid dependency loops:
-          
+          // Use the callback, ensuring it uses the defaultSelectedParams correctly
+          // or pass them explicitly if needed, but the state should be initialized correctly.
           (async () => {
-            if (!mapSelectedCoords || !dateRange?.from || !dateRange?.to) return;
-            
-            setIsLoadingApiData(true); setErrorApiData(null); setApiData(null);
-            setApiFetchLogSteps([{ message: `Initial fetch for ${defaultName}...`, status: 'pending' }]);
-            setIsApiLogLoading(true); setApiLogOverallStatus('pending');
-
-            const result = await fetchCombinedDataAction({
-              latitude: defaultCoords.lat,
-              longitude: defaultCoords.lon,
-              startDate: formatISO(dateRange.from, { representation: 'date' }),
-              endDate: formatISO(dateRange.to, { representation: 'date' }),
-              parameters: defaultSelectedParams,
-            });
-
-            setApiFetchLogSteps(result.log || []);
-            setIsApiLogLoading(false);
-
-            if (result.success && result.data) {
-              setApiData(result.data);
-              setApiDataLocationContext(result.dataLocationContext || `API Data for ${defaultName}`);
-              if (result.data.length === 0 && !result.error) {
-                setApiLogOverallStatus('warning');
-              } else if (result.data.length > 0) {
-                setApiLogOverallStatus('success');
-              } else {
-                 setErrorApiData(result.error || "Failed to load API data.");
-                 lastApiErrorRef.current = result.error || "Failed to load API data.";
-                 setApiLogOverallStatus('error');
-              }
-            } else {
-              setErrorApiData(result.error || "Failed to load API data.");
-              lastApiErrorRef.current = result.error || "Failed to load API data.";
-              setApiLogOverallStatus('error');
-            }
-            setIsLoadingApiData(false);
+            await handleFetchApiData(true); // Pass true for initial load
             initialApiFetchDone.current = true;
           })();
         }
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Keep dependencies minimal for initial load
+  }, [handleFetchApiData, mapSelectedCoords, currentLocationName, dateRange, isLoadingApiData, errorApiData, apiData, initialApiPlotVisibility]);
 
 
   const handleApiPlotVisibilityChange = useCallback((key: CombinedParameterKey, checked: boolean) => {
@@ -497,7 +444,6 @@ export default function DataExplorerPage() {
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
-              {/* Removed Data Explorer and Weather & Marine links as this page is now the consolidated one */}
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
           </div>
@@ -510,7 +456,7 @@ export default function DataExplorerPage() {
         <Card className="shadow-sm">
           <CardHeader className="pb-2 pt-3">
             <CardTitle className="text-base flex items-center gap-1.5">
-               Open Data {/* Updated Title */}
+               Open Data
             </CardTitle>
           </CardHeader>
           <CardContent className="p-3 grid grid-cols-1 md:grid-cols-12 gap-3">
