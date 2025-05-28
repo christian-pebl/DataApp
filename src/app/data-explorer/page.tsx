@@ -23,18 +23,17 @@ import { Separator } from "@/components/ui/separator";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
 import { Input } from "@/components/ui/input";
-import { Label as UiLabel } from "@/components/ui/label"; // Renamed to avoid conflict with Recharts Label
+import { Label as UiLabel } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
-// Imports from OM Marine Explorer (now combined weather/marine)
 import type { CombinedDataPoint, LogStep as ApiLogStep, CombinedParameterKey } from '../om-marine-explorer/shared';
 import { ALL_PARAMETERS, PARAMETER_CONFIG } from '../om-marine-explorer/shared';
 import { fetchCombinedDataAction } from '../om-marine-explorer/actions';
-import { MarinePlotsGrid } from '@/components/marine/MarinePlotsGrid'; // This grid handles combined data
+import { MarinePlotsGrid } from '@/components/marine/MarinePlotsGrid';
 
 interface PlotConfig {
   id: string;
@@ -97,7 +96,7 @@ export default function DataExplorerPage() {
 
   const initialApiPlotVisibility = useMemo(() => {
     return Object.fromEntries(
-      ALL_PARAMETERS.map(key => [key, true]) // Default all API params to visible
+      ALL_PARAMETERS.map(key => [key, true])
     ) as Record<CombinedParameterKey, boolean>;
   }, []);
   const [apiPlotVisibility, setApiPlotVisibility] = useState<Record<CombinedParameterKey, boolean>>(initialApiPlotVisibility);
@@ -114,25 +113,22 @@ export default function DataExplorerPage() {
   const initialApiFetchDone = useRef(false);
 
   const plotConfigIcons: Record<CombinedParameterKey, LucideIcon | undefined> = useMemo(() => {
-    const icons: Partial<Record<CombinedParameterKey, LucideIcon>> = {
-      // Marine
-      seaLevelHeightMsl: Waves,
-      waveHeight: Sailboat,
-      waveDirection: CompassIcon,
-      wavePeriod: TimerIcon,
-      seaSurfaceTemperature: Thermometer,
-      // Weather
-      temperature2m: Thermometer,
-      windSpeed10m: WindIcon,
-      windDirection10m: CompassIcon,
-      ghi: SunMoon, // Global Horizontal Irradiance
-    };
+    const icons: Partial<Record<CombinedParameterKey, LucideIcon>> = {};
     ALL_PARAMETERS.forEach(key => {
       const config = PARAMETER_CONFIG[key as CombinedParameterKey];
       if (config && config.icon) {
         icons[key] = config.icon;
       } else if (!icons[key]) {
-        icons[key] = Info; // Fallback
+        if (key === 'seaLevelHeightMsl') icons[key] = Waves;
+        else if (key === 'waveHeight') icons[key] = Sailboat;
+        else if (key === 'waveDirection') icons[key] = CompassIcon;
+        else if (key === 'wavePeriod') icons[key] = TimerIcon;
+        else if (key === 'seaSurfaceTemperature') icons[key] = Thermometer;
+        else if (key === 'temperature2m') icons[key] = Thermometer;
+        else if (key === 'windSpeed10m') icons[key] = WindIcon;
+        else if (key === 'windDirection10m') icons[key] = CompassIcon;
+        else if (key === 'ghi') icons[key] = SunMoon;
+        else icons[key] = Info; // Fallback
       }
     });
     return icons as Record<CombinedParameterKey, LucideIcon | undefined>;
@@ -162,7 +158,7 @@ export default function DataExplorerPage() {
   const addPlot = useCallback(() => {
     setPlots((prevPlots) => [
       ...prevPlots,
-      { id: `plot-${Date.now()}-${prevPlots.length}`, title: `Plot ${prevPlots.length + 1}` },
+      { id: `plot-${Date.now()}-${prevPlots.length}`, title: `Device Plot ${prevPlots.length + 1}` },
     ]);
   }, []);
 
@@ -243,7 +239,7 @@ export default function DataExplorerPage() {
       if (!isInitialLoad) toast({ variant: "destructive", title: "Invalid Date Range", description: "Start date cannot be after end date." });
       return;
     }
-    const selectedParams = ALL_PARAMETERS.filter(key => apiPlotVisibility[key]);
+    const selectedParams = ALL_PARAMETERS.filter(key => apiPlotVisibility[key as CombinedParameterKey]);
     if (selectedParams.length === 0) {
       if (!isInitialLoad) toast({ variant: "destructive", title: "No API Parameters Selected", description: "Please select at least one API parameter to fetch." });
       return;
@@ -284,12 +280,12 @@ export default function DataExplorerPage() {
             toast({ title: "API Data Loaded", description: `Loaded ${result.data.length} API data points for ${currentLocationName}.` });
           }
           setApiLogOverallStatus('success');
-          if (result.log.every(l => l.status !== 'error' && l.status !== 'warning')) {
+          if (result.log && result.log.every(l => l.status !== 'error' && l.status !== 'warning')) {
             setShowApiFetchLogAccordion(""); // Close log if no errors/warnings
           } else {
             setShowApiFetchLogAccordion("api-fetch-log-item");
           }
-        } else { // result.data is empty and result.error exists
+        } else { 
            setErrorApiData(result.error || "Failed to load API data.");
            lastApiErrorRef.current = result.error || "Failed to load API data.";
            toast({ variant: "destructive", title: "Error Loading API Data", description: result.error || "Failed to load API data." });
@@ -319,33 +315,25 @@ export default function DataExplorerPage() {
     }
   }, [mapSelectedCoords, currentLocationName, dateRange, apiPlotVisibility, toast, dismiss]);
 
-   useEffect(() => {
-    const defaultLoc = knownOmLocations[defaultOmLocationKey];
-    if (defaultLoc && !initialApiFetchDone.current) {
-      const defaultCoords = { lat: defaultLoc.lat, lon: defaultLoc.lon };
-      const defaultName = defaultLoc.name;
-      // Ensure `initialApiPlotVisibility` is used to derive `defaultSelectedParams`
-      const defaultSelectedParams = ALL_PARAMETERS.filter(key => initialApiPlotVisibility[key]);
-
-      if (mapSelectedCoords && currentLocationName && dateRange?.from && dateRange?.to && !isLoadingApiData && !errorApiData && !apiData) {
-        if (dateRange.from <= dateRange.to && defaultSelectedParams.length > 0) {
-          // Use the callback, ensuring it uses the defaultSelectedParams correctly
-          // or pass them explicitly if needed, but the state should be initialized correctly.
-          (async () => {
-            await handleFetchApiData(true); // Pass true for initial load
-            initialApiFetchDone.current = true;
-          })();
+  useEffect(() => {
+    if (!initialApiFetchDone.current) {
+      const defaultLoc = knownOmLocations[defaultOmLocationKey];
+      if (defaultLoc && initialCoords && currentLocationName && dateRange?.from && dateRange?.to) {
+        const selectedParamsOnInit = ALL_PARAMETERS.filter(key => initialApiPlotVisibility[key as CombinedParameterKey]);
+        if (selectedParamsOnInit.length > 0) {
+          handleFetchApiData(true);
+          initialApiFetchDone.current = true;
         }
       }
     }
-  }, [handleFetchApiData, mapSelectedCoords, currentLocationName, dateRange, isLoadingApiData, errorApiData, apiData, initialApiPlotVisibility]);
+  }, [initialCoords, currentLocationName, dateRange, handleFetchApiData, initialApiPlotVisibility]);
 
 
   const handleApiPlotVisibilityChange = useCallback((key: CombinedParameterKey, checked: boolean) => {
     setApiPlotVisibility(prev => ({ ...prev, [key]: checked }));
   }, []);
 
-  const allApiParamsSelected = useMemo(() => ALL_PARAMETERS.every(key => apiPlotVisibility[key]), [apiPlotVisibility]);
+  const allApiParamsSelected = useMemo(() => ALL_PARAMETERS.every(key => apiPlotVisibility[key as CombinedParameterKey]), [apiPlotVisibility]);
 
   const handleSelectAllApiParams = useCallback((checked: boolean) => {
     setApiPlotVisibility(Object.fromEntries(ALL_PARAMETERS.map(key => [key, checked])) as Record<CombinedParameterKey, boolean>);
@@ -533,16 +521,16 @@ export default function DataExplorerPage() {
                     <CardContent className="p-2">
                         <ScrollArea className="h-48 w-full rounded-md border p-1">
                             {ALL_PARAMETERS.map((key) => {
-                            const paramConfig = PARAMETER_CONFIG[key];
+                            const paramConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
                             if (!paramConfig) return null;
-                            const IconComp = plotConfigIcons[key] || Info;
+                            const IconComp = plotConfigIcons[key as CombinedParameterKey] || Info;
                             const uniqueCheckboxId = `api-visibility-${key}-${instanceId}`;
                             return (
                                 <div key={key} className="flex items-center space-x-1.5 py-0.5">
                                 <Checkbox
                                     id={uniqueCheckboxId}
-                                    checked={apiPlotVisibility[key]}
-                                    onCheckedChange={(checked) => handleApiPlotVisibilityChange(key, !!checked)}
+                                    checked={apiPlotVisibility[key as CombinedParameterKey]}
+                                    onCheckedChange={(checked) => handleApiPlotVisibilityChange(key as CombinedParameterKey, !!checked)}
                                     className="h-3.5 w-3.5"
                                     disabled={isLoadingApiData}
                                 />
@@ -558,7 +546,7 @@ export default function DataExplorerPage() {
                     <CardFooter className="p-3 pt-1">
                         <Button 
                             onClick={() => handleFetchApiData(false)} 
-                            disabled={isLoadingApiData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => apiPlotVisibility[key]).length === 0} 
+                            disabled={isLoadingApiData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => apiPlotVisibility[key as CombinedParameterKey]).length === 0} 
                             className="w-full h-9 text-xs"
                         >
                         {isLoadingApiData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
@@ -586,18 +574,18 @@ export default function DataExplorerPage() {
         
         <Separator className="my-4" />
 
-        {/* CSV Data Section */}
+        {/* Device Data Section */}
         <div className="flex justify-center mb-3">
           <Button onClick={addPlot} size="sm" className="h-8 text-xs">
-            <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot (CSV)
+            <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot (Device Data)
           </Button>
         </div>
 
         {plots.length === 0 ? (
           <div className="flex flex-col items-center justify-center text-muted-foreground h-40 p-2 border rounded-md bg-muted/20">
             <LayoutGrid className="w-8 h-8 mb-2 text-muted" />
-            <p className="text-xs">No CSV plots to display.</p>
-            <p className="text-[0.7rem]">Click "Add New Plot (CSV)" to get started.</p>
+            <p className="text-xs">No device data plots to display.</p>
+            <p className="text-[0.7rem]">Click "Add New Plot (Device Data)" to get started.</p>
           </div>
         ) : (
           <div className="space-y-3">

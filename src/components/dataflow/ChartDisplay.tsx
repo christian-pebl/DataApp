@@ -23,7 +23,7 @@ export interface YAxisConfig {
   unit?: string;
   orientation: 'left' | 'right';
   yAxisId: string;
-  color?: string; // e.g., '--chart-1', '--chart-2'
+  color?: string; 
   tickFormatter?: (value: any) => string;
 }
 
@@ -66,7 +66,7 @@ export function ChartDisplay({
         if (value !== null && value !== undefined && !isNaN(Number(value))) {
           newPoint[seriesKey] = Number(value);
         } else {
-          newPoint[seriesKey] = null; // Ensure non-numeric or missing values are null for Recharts
+          newPoint[seriesKey] = null;
         }
       });
       return newPoint;
@@ -87,13 +87,13 @@ export function ChartDisplay({
     try {
       const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
       if (!isValid(dateObj)) {
-        // console.warn(`Invalid date encountered in XAxis: ${timeValue}`); // Keep for debugging if needed
-        return String(timeValue); // Fallback to original string
+        console.warn(`Invalid date encountered in XAxis: ${timeValue}`);
+        return String(timeValue); 
       }
-      return format(dateObj, 'dd/MM/yy'); // Always "dd/MM/yy"
+      return format(dateObj, 'dd/MM/yy'); 
     } catch (e) {
-      // console.error(`Error formatting date in XAxis: ${timeValue}`, e); // Keep for debugging if needed
-      return String(timeValue); // Fallback
+      console.error(`Error formatting date in XAxis: ${timeValue}`, e);
+      return String(timeValue); 
     }
   }, []);
 
@@ -101,16 +101,18 @@ export function ChartDisplay({
     try {
       const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
       if (!isValid(dateObj)) return String(timeValue);
-      return format(dateObj, 'dd/MM/yy'); // Always "dd/MM/yy"
+      return format(dateObj, 'dd/MM/yy'); 
     } catch (e) {
       return String(timeValue);
     }
   }, []);
 
   const yAxisLabelText = React.useMemo(() => {
-    return yAxisConfigs.length === 1 && yAxisConfigs[0]
-    ? `${yAxisConfigs[0].label}${yAxisConfigs[0].unit ? ` (${yAxisConfigs[0].unit})` : ''}`
-    : "Value";
+    if (yAxisConfigs.length === 1 && yAxisConfigs[0]) {
+      const config = yAxisConfigs[0];
+      return `${config.label}${config.unit ? ` (${config.unit})` : ''}`;
+    }
+    return "Value";
   }, [yAxisConfigs]);
 
 
@@ -142,7 +144,7 @@ export function ChartDisplay({
             top: 5,
             right: yAxisConfigs.some(yc => yc.orientation === 'right' && plottableSeries.includes(yc.dataKey)) ? 20 : 5,
             left: yAxisConfigs.some(yc => yc.orientation === 'left' && plottableSeries.includes(yc.dataKey)) ? 25 : 5,
-            bottom: 85, // Increased bottom margin to move brush lower
+            bottom: 85, 
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -153,14 +155,14 @@ export function ChartDisplay({
             textAnchor="end"
             height={60}
             stroke="hsl(var(--muted-foreground))"
-            tick={{ fontSize: '0.6rem' }}
+            tick={{ fontSize: '0.7rem' }}
             interval="preserveStartEnd"
             label={{
               value: timeAxisLabel,
               position: 'insideBottom',
-              offset: 15, // Adjusted for spacing
-              dy: 15,    // Adjusted for spacing
-              style: { textAnchor: 'middle', fontSize: '0.6rem', fill: 'hsl(var(--foreground))' }
+              offset: 15, 
+              dy: 25,    
+              style: { textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--foreground))' } as CSSProperties
             }}
           />
 
@@ -173,17 +175,17 @@ export function ChartDisplay({
                 orientation={config.orientation}
                 stroke={config.color ? `hsl(var(${config.color}))` : "hsl(var(--muted-foreground))"}
                 tickFormatter={config.tickFormatter || ((value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value))}
-                tick={{ fontSize: '0.6rem' }}
+                tick={{ fontSize: '0.7rem' }}
                 width={config.orientation === 'left' ? 40 : 35}
-                domain={['dataMin', 'dataMax']} // Scales Y-axis to min/max of visible data
+                domain={['dataMin', 'dataMax']}
                 label={
                   config.label ? (
                     <RechartsYAxisLabel
                       angle={config.orientation === 'left' ? -90 : 90}
                       value={`${config.label}${config.unit ? ` (${config.unit})` : ''}`}
                       position={config.orientation === 'left' ? 'insideLeft' : 'insideRight'}
-                      style={{ textAnchor: 'middle', fontSize: '0.6rem', fill: 'hsl(var(--foreground))' }}
-                      offset={config.orientation === 'left' ? -5 : 10} // Adjust offset for better label placement
+                      style={{ textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--foreground))' } as CSSProperties}
+                      offset={config.orientation === 'left' ? -5 : 10}
                     />
                   ) : undefined
                 }
@@ -196,13 +198,13 @@ export function ChartDisplay({
               backgroundColor: 'hsl(var(--background))',
               border: '1px solid hsl(var(--border))',
               borderRadius: 'var(--radius)',
-              fontSize: '0.6rem', // Smaller tooltip font
+              fontSize: '0.7rem', 
               boxShadow: '0 2px 8px hsla(var(--foreground) / 0.1)',
             } as CSSProperties}
             labelFormatter={(label) => {
               try {
                 const date = typeof label === 'string' ? parseISO(label) : new Date(label);
-                return isValid(date) ? format(date, 'PPp') : String(label); // Full date and time for tooltip
+                return isValid(date) ? format(date, 'PPp') : String(label);
               } catch { return String(label); }
             }}
             formatter={(value: number | null | undefined, name: string) => {
@@ -211,7 +213,7 @@ export function ChartDisplay({
             }}
             isAnimationActive={false}
           />
-          <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '0.6rem' }} />
+          <Legend wrapperStyle={{ paddingTop: '15px', fontSize: '0.7rem' }} />
 
           {plottableSeries.map(seriesKey => {
             const yAxisConfigForLine = yAxisConfigs.find(yc => yc.dataKey === seriesKey) || (yAxisConfigs.length > 0 ? yAxisConfigs[0] : undefined);
@@ -222,7 +224,7 @@ export function ChartDisplay({
                 type="monotone"
                 dataKey={seriesKey}
                 stroke={yAxisConfigForLine?.color ? `hsl(var(${yAxisConfigForLine.color}))` : "hsl(var(--chart-1))"}
-                strokeWidth={1.5} // Thinner lines
+                strokeWidth={1.5}
                 yAxisId={yAxisConfigForLine?.yAxisId}
                 dot={false}
                 connectNulls={true}
@@ -234,14 +236,14 @@ export function ChartDisplay({
           {data.length > 1 && onBrushChange && (
             <Brush
               dataKey="time"
-              height={12} // Slimmer brush
+              height={20} 
               stroke="hsl(var(--primary))"
               fill="transparent"
               tickFormatter={formatDateTickBrush}
               startIndex={brushStartIndex}
               endIndex={brushEndIndex}
               onChange={onBrushChange}
-              travellerWidth={8} // Slimmer handles
+              travellerWidth={10} 
             />
           )}
         </LineChart>
