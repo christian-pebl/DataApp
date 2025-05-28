@@ -15,11 +15,19 @@ import {
   Label as RechartsYAxisLabel,
 } from 'recharts';
 import { format, parseISO, isValid, differenceInMilliseconds } from 'date-fns';
-import type { YAxisConfig } from './ChartDisplay'; // Self-referential type export
+
 
 // Re-export YAxisConfig if it's defined here and used externally, or ensure it's imported if defined elsewhere.
 // For now, assuming it's defined here for self-containment or imported correctly.
-export type { YAxisConfig };
+export interface YAxisConfig {
+  dataKey: string;
+  label: string;
+  unit?: string;
+  orientation: 'left' | 'right';
+  yAxisId: string;
+  color?: string; // e.g., '--chart-1', '--chart-2'
+  tickFormatter?: (value: any) => string;
+}
 
 
 interface DataPoint {
@@ -29,9 +37,6 @@ interface DataPoint {
 
 const ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT = 350;
 
-// Define time constants for formatter logic
-const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000; // Approx 30 days
 
 interface ChartDisplayProps {
   data: DataPoint[];
@@ -82,22 +87,6 @@ export function ChartDisplay({
     );
   }, [chartData, plottableSeries]);
 
-  const visibleTimeRangeDurationMs = React.useMemo(() => {
-    if (!chartData || chartData.length < 2 || brushStartIndex === undefined || brushEndIndex === undefined || brushStartIndex >= brushEndIndex) {
-      return null;
-    }
-    const firstVisibleTime = chartData[brushStartIndex]?.time;
-    const lastVisibleTime = chartData[brushEndIndex]?.time;
-
-    if (!firstVisibleTime || !lastVisibleTime) return null;
-
-    const startDate = typeof firstVisibleTime === 'string' ? parseISO(firstVisibleTime) : new Date(firstVisibleTime);
-    const endDate = typeof lastVisibleTime === 'string' ? parseISO(lastVisibleTime) : new Date(lastVisibleTime);
-
-    if (!isValid(startDate) || !isValid(endDate)) return null;
-
-    return differenceInMilliseconds(endDate, startDate);
-  }, [chartData, brushStartIndex, brushEndIndex]);
 
   const memoizedXAxisTickFormatter = React.useCallback((timeValue: string | number): string => {
     try {
@@ -105,26 +94,17 @@ export function ChartDisplay({
       if (!isValid(dateObj)) {
         return String(timeValue);
       }
-
-      if (visibleTimeRangeDurationMs !== null) {
-        if (visibleTimeRangeDurationMs < FORTY_EIGHT_HOURS_MS) {
-          return format(dateObj, 'HH'); // Hour only for ranges less than 2 days
-        } else if (visibleTimeRangeDurationMs < THIRTY_DAYS_MS) {
-          return format(dateObj, 'dd/MM'); // Day/Month for ranges less than ~30 days
-        }
-      }
-      // Default for longer ranges or if duration cannot be determined
-      return format(dateObj, 'dd/MM/yy');
+      return format(dateObj, 'dd/MM/yy'); // Always use dd/MM/yy
     } catch (e) {
-      return String(timeValue); // Fallback for any error
+      return String(timeValue);
     }
-  }, [visibleTimeRangeDurationMs]);
+  }, []);
 
   const formatDateTickBrush = useCallback((timeValue: string | number): string => {
     try {
       const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
       if (!isValid(dateObj)) return String(timeValue);
-      return format(dateObj, 'dd/MM'); // Use dd/MM for the brush overview
+      return format(dateObj, 'dd/MM/yy'); // Always use dd/MM/yy
     } catch (e) {
       return String(timeValue);
     }
@@ -143,6 +123,7 @@ export function ChartDisplay({
     </div>
   );
 
+  // Main return: All hooks are now above this point
   if (!data || data.length === 0) {
     return <div style={{ height: `${chartHeightToUse}px`, width: '100%' }}>{renderNoDataMessage("No data loaded or data is empty.")}</div>;
   }
@@ -170,7 +151,7 @@ export function ChartDisplay({
           tickFormatter={memoizedXAxisTickFormatter}
           angle={-45}
           textAnchor="end"
-          height={60}
+          height={60} // Increased for angled labels
           stroke="hsl(var(--muted-foreground))"
           tick={{ fontSize: '0.7rem' }}
           interval="preserveStartEnd"
@@ -194,7 +175,7 @@ export function ChartDisplay({
               stroke={config.color ? `hsl(var(${config.color}))` : "hsl(var(--muted-foreground))"}
               tickFormatter={config.tickFormatter || ((value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value))}
               tick={{ fontSize: '0.7rem' }}
-              width={config.orientation === 'left' ? 45 : 40}
+              width={config.orientation === 'left' ? 45 : 40} // Adjusted width
               label={
                 config.label ? (
                   <RechartsYAxisLabel
@@ -202,7 +183,7 @@ export function ChartDisplay({
                     value={`${config.label}${config.unit ? ` (${config.unit})` : ''}`}
                     position={config.orientation === 'left' ? 'insideLeft' : 'insideRight'}
                     style={{ textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--foreground))' }}
-                    offset={config.orientation === 'left' ? -5 : 10}
+                    offset={config.orientation === 'left' ? -5 : 10} // Adjusted offset
                   />
                 ) : undefined
               }
@@ -222,7 +203,7 @@ export function ChartDisplay({
           labelFormatter={(label) => {
             try {
               const date = typeof label === 'string' ? parseISO(label) : new Date(label);
-              return isValid(date) ? format(date, 'PPp') : String(label);
+              return isValid(date) ? format(date, 'PPp') : String(label); // More detailed tooltip label
             } catch { return String(label); }
           }}
           formatter={(value: number, name: string) => {
@@ -231,7 +212,7 @@ export function ChartDisplay({
           }}
           isAnimationActive={false}
         />
-        <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '0.7rem' }} />
+        <Legend wrapperStyle={{ paddingTop: '15px', fontSize: '0.7rem' }} />
 
         {plottableSeries.map(seriesKey => {
           const yAxisConfigForLine = yAxisConfigs.find(yc => yc.dataKey === seriesKey) || yAxisConfigs[0];
@@ -268,3 +249,4 @@ export function ChartDisplay({
     </ResponsiveContainer>
   );
 }
+
