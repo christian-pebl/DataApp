@@ -64,8 +64,8 @@ const ArrowStyleIcon = ({ style, uniqueId, className }: { style: 'none' | 'end' 
   let x1 = padding;
   let x2 = 24 - padding;
 
-  const endMarkerId = `dropdown-arrow-end-preview-${uniqueId}`;
-  const startMarkerId = `dropdown-arrow-start-preview-${uniqueId}`;
+  const endMarkerId = `dropdown-arrow-end-preview-${uniqueId}-${style}`;
+  const startMarkerId = `dropdown-arrow-start-preview-${uniqueId}-${style}`;
 
   if (style === 'end') { x2 -= markerWidth; }
   else if (style === 'both') { x1 += markerWidth; x2 -= markerWidth; }
@@ -97,7 +97,7 @@ export default function AnnotationPage() {
 
   const [dummyData, setDummyData] = useState<DummyDataPoint[]>([]);
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
-  const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(23);
+  const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined); // Initialize to undefined
 
   const [isOverlayActive, setIsOverlayActive] = useState(false);
   const [lines, setLines] = useState<LineAnnotation[]>([]);
@@ -157,39 +157,44 @@ export default function AnnotationPage() {
     return { clientX, clientY };
   }, []);
 
+  const TOOLBAR_APPROX_WIDTH_MIN = 130;
+  const TOOLBAR_APPROX_HEIGHT = 32;
+  const HORIZONTAL_EDGE_BUFFER_TOOLBAR = 8;
+  const VERTICAL_GAP_TOOLBAR = 8;
+  const TOOLBAR_OFFSET_FROM_LINE_Y = 20;
+
   const updateContextualToolbarPos = useCallback((line: LineAnnotation | null) => {
     if (!line || !svgOverlayRef.current || !chartAreaRef.current) {
       setContextualToolbarPosition(null);
       return;
     }
     const svgRect = svgOverlayRef.current.getBoundingClientRect();
-    const TOOLBAR_APPROX_WIDTH_MIN = 130; 
-    const TOOLBAR_APPROX_HEIGHT = 32;
-    const VERTICAL_GAP_TOOLBAR = 8;
-    const HORIZONTAL_EDGE_BUFFER = 8;
-    const TOOLBAR_OFFSET_FROM_LINE_Y = 20;
+    let toolbarWidth = TOOLBAR_APPROX_WIDTH_MIN;
+    const toolbarElement = document.querySelector(`#annotation-page-${uniqueComponentId} .contextual-toolbar`);
+    if (toolbarElement) {
+      toolbarWidth = toolbarElement.clientWidth;
+    }
+    const toolbarHeight = TOOLBAR_APPROX_HEIGHT;
 
     const midX = (line.x1 + line.x2) / 2;
     let midY = (line.y1 + line.y2) / 2;
 
-    let finalToolbarCenterX = midX;
-    let finalToolbarCenterY = midY - TOOLBAR_OFFSET_FROM_LINE_Y - TOOLBAR_APPROX_HEIGHT / 2; 
-
-    if (finalToolbarCenterY - TOOLBAR_APPROX_HEIGHT / 2 < VERTICAL_GAP_TOOLBAR) {
-      finalToolbarCenterY = midY + TOOLBAR_OFFSET_FROM_LINE_Y + TOOLBAR_APPROX_HEIGHT / 2; 
+    let finalToolbarCenterY = midY - TOOLBAR_OFFSET_FROM_LINE_Y - toolbarHeight / 2;
+    if (finalToolbarCenterY - toolbarHeight / 2 < VERTICAL_GAP_TOOLBAR) {
+      finalToolbarCenterY = midY + TOOLBAR_OFFSET_FROM_LINE_Y + toolbarHeight / 2;
     }
     
     finalToolbarCenterY = Math.max(
-      TOOLBAR_APPROX_HEIGHT / 2 + VERTICAL_GAP_TOOLBAR,
-      Math.min(finalToolbarCenterY, svgRect.height - TOOLBAR_APPROX_HEIGHT / 2 - VERTICAL_GAP_TOOLBAR)
+      toolbarHeight / 2 + VERTICAL_GAP_TOOLBAR,
+      Math.min(finalToolbarCenterY, svgRect.height - toolbarHeight / 2 - VERTICAL_GAP_TOOLBAR)
     );
 
-    finalToolbarCenterX = Math.max(
-      TOOLBAR_APPROX_WIDTH_MIN / 2 + HORIZONTAL_EDGE_BUFFER,
-      Math.min(finalToolbarCenterX, svgRect.width - TOOLBAR_APPROX_WIDTH_MIN / 2 - HORIZONTAL_EDGE_BUFFER)
+    const finalToolbarCenterX = Math.max(
+      toolbarWidth / 2 + HORIZONTAL_EDGE_BUFFER_TOOLBAR,
+      Math.min(midX, svgRect.width - toolbarWidth / 2 - HORIZONTAL_EDGE_BUFFER_TOOLBAR)
     );
     setContextualToolbarPosition({ x: finalToolbarCenterX, y: finalToolbarCenterY });
-  }, []);
+  }, [uniqueComponentId]);
 
   useEffect(() => {
     const now = new Date();
@@ -203,7 +208,9 @@ export default function AnnotationPage() {
       });
     }
     setDummyData(generatedData);
-    setBrushEndIndex(Math.min(23, generatedData.length - 1)); // Show first 24 hours by default
+    // Default to full range for brush
+    setBrushStartIndex(0);
+    setBrushEndIndex(generatedData.length > 0 ? generatedData.length - 1 : undefined);
   }, []);
 
   useEffect(() => {
@@ -321,16 +328,19 @@ export default function AnnotationPage() {
     } else if (isDraggingToolbar && toolbarDragStart && toolbarInitialPosition) {
         const dxGlobal = clientX - toolbarDragStart.x;
         const dyGlobal = clientY - toolbarDragStart.y;
-        const HORIZONTAL_EDGE_BUFFER_TOOLBAR = 8; 
-        const VERTICAL_GAP_TOOLBAR_DRAG = 8; 
-        // const TOOLBAR_APPROX_HEIGHT = 32; // Already defined
-        // const TOOLBAR_APPROX_WIDTH_MIN = 130; // Already defined
+        const HORIZONTAL_EDGE_BUFFER_TOOLBAR_DRAG = HORIZONTAL_EDGE_BUFFER_TOOLBAR; 
+        const VERTICAL_GAP_TOOLBAR_DRAG = VERTICAL_GAP_TOOLBAR; 
+        let currentToolbarWidth = TOOLBAR_APPROX_WIDTH_MIN;
+        const toolbarElement = document.querySelector(`#annotation-page-${uniqueComponentId} .contextual-toolbar`);
+        if (toolbarElement) {
+          currentToolbarWidth = toolbarElement.clientWidth;
+        }
 
         let newToolbarX = toolbarInitialPosition.x + dxGlobal;
         let newToolbarY = toolbarInitialPosition.y + dyGlobal;
 
         newToolbarY = Math.max(TOOLBAR_APPROX_HEIGHT / 2 + VERTICAL_GAP_TOOLBAR_DRAG, Math.min(newToolbarY, svgRect.height - TOOLBAR_APPROX_HEIGHT / 2 - VERTICAL_GAP_TOOLBAR_DRAG));
-        newToolbarX = Math.max(TOOLBAR_APPROX_WIDTH_MIN / 2 + HORIZONTAL_EDGE_BUFFER_TOOLBAR, Math.min(newToolbarX, svgRect.width - TOOLBAR_APPROX_WIDTH_MIN / 2 - HORIZONTAL_EDGE_BUFFER_TOOLBAR));
+        newToolbarX = Math.max(currentToolbarWidth / 2 + HORIZONTAL_EDGE_BUFFER_TOOLBAR_DRAG, Math.min(newToolbarX, svgRect.width - currentToolbarWidth / 2 - HORIZONTAL_EDGE_BUFFER_TOOLBAR_DRAG));
         setContextualToolbarPosition({ x: newToolbarX, y: newToolbarY });
     }
 
@@ -338,7 +348,7 @@ export default function AnnotationPage() {
       updateContextualToolbarPos(lineToUpdateForToolbar);
     }
 
-  }, [draggingPoint, movingLineId, dragStartCoords, lineBeingMovedOriginalState, getNormalizedCoordinates, updateContextualToolbarPos, isDraggingToolbar, toolbarDragStart, toolbarInitialPosition]);
+  }, [draggingPoint, movingLineId, dragStartCoords, lineBeingMovedOriginalState, getNormalizedCoordinates, updateContextualToolbarPos, isDraggingToolbar, toolbarDragStart, toolbarInitialPosition, uniqueComponentId]);
 
   const handleInteractionEnd = useCallback(() => {
     let lineForToolbarUpdate: LineAnnotation | null = null;
@@ -691,7 +701,7 @@ export default function AnnotationPage() {
               ref={chartAreaRef}
               className={cn(
                 "relative border rounded-md bg-muted/20",
-                isOverlayActive && anyAnnotationInteractionActive && "opacity-70 pointer-events-none"
+                 (isOverlayActive && anyAnnotationInteractionActive) && "opacity-70 pointer-events-none"
               )}
               style={{ height: `${ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT * 0.85}px` }}
             >
@@ -726,7 +736,7 @@ export default function AnnotationPage() {
                 >
                     <defs>
                         <marker id={`arrowheadEnd-${uniqueComponentId}`} markerWidth="3" markerHeight="3.5" refX="0" refY="1.75" orient="auto" fill="currentColor"><polygon points="0 0, 3 1.75, 0 3.5" /></marker>
-                        <marker id={`arrowheadStart-${uniqueComponentId}`} markerWidth="3" markerHeight="3.5" refX="0" refY="1.75" orient="auto-start-reverse" fill="currentColor"><polygon points="0 0, 3 1.75, 0 3.5" /></marker>
+                        <marker id={`arrowheadStart-${uniqueComponentId}`} markerWidth="3" markerHeight="3.5" refX="3" refY="1.75" orient="auto-start-reverse" fill="currentColor"><polygon points="0 1.75, 3 0, 3 3.5" /></marker>
                     </defs>
                     {lines.map(line => (
                         <g key={line.id} >
@@ -744,7 +754,7 @@ export default function AnnotationPage() {
                                 stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : (line.color || DEFAULT_LINE_COLOR)}
                                 strokeWidth={selectedLineId === line.id ? (line.strokeWidth || DEFAULT_STROKE_WIDTH) + SELECTED_STROKE_WIDTH_OFFSET : (line.strokeWidth || DEFAULT_STROKE_WIDTH)}
                                 strokeDasharray={getStrokeDasharray(line.lineStyle)}
-                                markerStart={(line.arrowStyle === 'start' || line.arrowStyle === 'both') ? `url(#arrowheadStart-${uniqueComponentId})` : undefined}
+                                markerStart={(line.arrowStyle === 'both') ? `url(#arrowheadStart-${uniqueComponentId})` : undefined}
                                 markerEnd={(line.arrowStyle === 'end' || line.arrowStyle === 'both') ? `url(#arrowheadEnd-${uniqueComponentId})` : undefined}
                                 style={{ pointerEvents: 'none' }} 
                             />
@@ -759,10 +769,17 @@ export default function AnnotationPage() {
                         </g>
                     ))}
                     {selectedLineId && contextualToolbarPosition && isOverlayActive && ( 
-                      <foreignObject x={contextualToolbarPosition.x - (TOOLBAR_APPROX_WIDTH_MIN / 2)} y={contextualToolbarPosition.y - (TOOLBAR_APPROX_HEIGHT / 2)} width={TOOLBAR_APPROX_WIDTH_MIN} height={TOOLBAR_APPROX_HEIGHT} style={{ pointerEvents: anyAnnotationInteractionActive ? 'none' : 'auto' }}>
+                      <foreignObject 
+                        id={`annotation-page-${uniqueComponentId}`}
+                        x={contextualToolbarPosition.x - ((document.querySelector(`#annotation-page-${uniqueComponentId} .contextual-toolbar`)?.clientWidth || TOOLBAR_APPROX_WIDTH_MIN) / 2)} 
+                        y={contextualToolbarPosition.y - (TOOLBAR_APPROX_HEIGHT / 2)} 
+                        width={((document.querySelector(`#annotation-page-${uniqueComponentId} .contextual-toolbar`)?.clientWidth || TOOLBAR_APPROX_WIDTH_MIN) + 10)} 
+                        height={TOOLBAR_APPROX_HEIGHT + 10} 
+                        style={{ pointerEvents: anyAnnotationInteractionActive ? 'none' : 'auto' }}
+                      >
                          <TooltipProvider delayDuration={0}>
                             <div
-                                className="flex items-center space-x-0.5 p-0.5 bg-card border shadow-xl rounded-md"
+                                className="contextual-toolbar flex items-center space-x-0.5 p-0.5 bg-card border shadow-xl rounded-md w-fit"
                                 onMouseDown={(e) => {e.stopPropagation(); handleToolbarDragStart(e); }}
                                 onTouchStart={(e) => {e.stopPropagation(); handleToolbarDragStart(e); }}
                             >
