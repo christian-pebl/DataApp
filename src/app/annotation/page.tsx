@@ -5,11 +5,9 @@ import type { CSSProperties, TouchEvent as ReactTouchEvent, MouseEvent as ReactM
 import React, { useState, useEffect, useRef, useCallback, useId, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import dynamic from 'next/dynamic'; // Import dynamic
+import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-// ChartDisplay will be dynamically imported
-// import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay"; 
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,24 +20,25 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import { Label as UiLabel } from "@/components/ui/label";
 import { 
     LayoutGrid, Waves, SunMoon, FilePenLine, Plus, Ban, PenLine, Spline, MoveRight, Palette, Copy, 
-    Trash2, Move as MoveIcon, GripVertical, ArrowUpRight, Highlighter
+    Trash2, Move as MoveIcon, GripVertical, ArrowUpRight, Highlighter, RotateCcw
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { format, addHours, subDays } from 'date-fns';
 
-// Dynamically import ChartDisplay with SSR turned off
 const ChartDisplayWithNoSSR = dynamic(
   () => import('@/components/dataflow/ChartDisplay').then(mod => mod.ChartDisplay),
   { 
     ssr: false,
-    loading: () => <div className="flex items-center justify-center h-[350px] text-muted-foreground">Loading chart...</div> 
+    loading: () => <div className="flex items-center justify-center h-[300px] text-muted-foreground">Loading chart...</div> 
   }
 );
 import type { YAxisConfig } from "@/components/dataflow/ChartDisplay";
-
 
 interface DummyDataPoint {
   time: string;
@@ -59,8 +58,7 @@ interface LineAnnotation {
 const DEFAULT_LINE_COLOR = 'hsl(var(--primary))';
 const DEFAULT_STROKE_WIDTH = 1.5;
 const SELECTED_STROKE_WIDTH_OFFSET = 1;
-
-const ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT = 350; 
+const ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT = 350;
 
 const LineStyleIcon = ({ style, className }: { style: 'solid' | 'dashed' | 'dotted', className?: string }) => {
   let strokeDasharray;
@@ -74,24 +72,31 @@ const LineStyleIcon = ({ style, className }: { style: 'solid' | 'dashed' | 'dott
 };
 
 const ArrowStyleIcon = ({ style, uniqueId, className }: { style: 'none' | 'end' | 'both', uniqueId: string, className?: string }) => {
-  const markerWidth = 3;
-  const markerHeight = 3.5;
-  const refY = markerHeight / 2;
+  const markerWidth = 4; // Matched to plot arrowhead
+  const markerHeight = 4; // Matched to plot arrowhead
+  const refY = markerHeight / 2; // 2
   const padding = 2;
   let x1 = padding;
-  let x2 = 24 - padding;
+  let x2 = 24 - padding; // 22
 
   const endMarkerId = `dropdown-arrow-end-preview-${uniqueId}-${style}`;
   const startMarkerId = `dropdown-arrow-start-preview-${uniqueId}-${style}`;
 
+  // Adjust line segment to make space for markers if they are present
   if (style === 'both') { x1 += markerWidth; x2 -= markerWidth; }
   else if (style === 'end') { x2 -= markerWidth; }
+  // No adjustment for 'start' preview icon, as 'start' only is not an option for drawn lines
 
   return (
     <svg width="24" height="16" viewBox="0 0 24 16" className={cn("h-4 w-6", className)}>
       <defs>
-        <marker id={endMarkerId} markerWidth={markerWidth} markerHeight={markerHeight} refX={markerWidth} refY={refY} orient="auto" fill="currentColor"><polygon points={`0 0, ${markerWidth} ${refY}, 0 ${markerHeight}`} /></marker>
-        <marker id={startMarkerId} markerWidth={markerWidth} markerHeight={markerHeight} refX="0" refY={refY} orient="auto-start-reverse" fill="currentColor"><polygon points={`0 0, ${markerWidth} ${refY}, 0 ${markerHeight}`} /></marker>
+        {/* Arrow pointing right: tip at (markerWidth, refY), base at (0, refY) */}
+        <marker id={endMarkerId} markerWidth={markerWidth} markerHeight={markerHeight} refX={markerWidth} refY={refY} orient="auto" fill="currentColor">
+            <polygon points={`0 0, ${markerWidth} ${refY}, 0 ${markerHeight}`} />
+        </marker>
+        <marker id={startMarkerId} markerWidth={markerWidth} markerHeight={markerHeight} refX="0" refY={refY} orient="auto-start-reverse" fill="currentColor">
+            <polygon points={`0 0, ${markerWidth} ${refY}, 0 ${markerHeight}`} />
+        </marker>
       </defs>
       <line
         x1={x1} y1="8" x2={x2} y2="8" stroke="currentColor" strokeWidth="2"
@@ -151,9 +156,9 @@ export default function AnnotationPage() {
 
   const svgCursor = useMemo(() => {
     if (isDraggingToolbar) return 'grabbing';
-    if (movingLineId) return 'grabbing';
-    if (draggingPoint) return 'grabbing';
-    if (selectedLineId && !anyAnnotationInteractionActive) return 'move';
+    if (movingLineId) return 'grabbing'; // Cursor for moving the whole line
+    if (draggingPoint) return 'grabbing'; // Cursor for dragging an endpoint
+    if (selectedLineId && !anyAnnotationInteractionActive) return 'move'; // Cursor for line hitbox when selectable
     return 'default';
   }, [selectedLineId, draggingPoint, movingLineId, isDraggingToolbar, anyAnnotationInteractionActive]);
 
@@ -174,7 +179,7 @@ export default function AnnotationPage() {
     return { clientX, clientY };
   }, []);
 
-  const TOOLBAR_APPROX_WIDTH_MIN = 130;
+  const TOOLBAR_APPROX_WIDTH_MIN = 130; 
   const TOOLBAR_APPROX_HEIGHT = 32;
   const HORIZONTAL_EDGE_BUFFER_TOOLBAR = 8;
   const VERTICAL_GAP_TOOLBAR = 8;
@@ -186,29 +191,26 @@ export default function AnnotationPage() {
       return;
     }
     const svgRect = svgOverlayRef.current.getBoundingClientRect();
-    let toolbarWidth = TOOLBAR_APPROX_WIDTH_MIN; // Default/min width
+    let toolbarWidth = TOOLBAR_APPROX_WIDTH_MIN; 
     const toolbarElement = document.querySelector(`#annotation-page-${uniqueComponentId} .contextual-toolbar`);
     if (toolbarElement) {
-      toolbarWidth = toolbarElement.clientWidth; // Actual width if rendered
+      toolbarWidth = toolbarElement.clientWidth; 
     }
     const toolbarHeight = TOOLBAR_APPROX_HEIGHT;
 
     const midX = (line.x1 + line.x2) / 2;
     let midY = (line.y1 + line.y2) / 2;
 
-    // Prefer above, but flip below if too close to top edge
     let finalToolbarCenterY = midY - TOOLBAR_OFFSET_FROM_LINE_Y - toolbarHeight / 2;
-    if (finalToolbarCenterY - toolbarHeight / 2 < VERTICAL_GAP_TOOLBAR) {
+    if (finalToolbarCenterY - toolbarHeight / 2 < VERTICAL_GAP_TOOLBAR || (svgRect.height - (midY + TOOLBAR_OFFSET_FROM_LINE_Y + toolbarHeight / 2)) < (finalToolbarCenterY - toolbarHeight / 2) && (midY + TOOLBAR_OFFSET_FROM_LINE_Y + toolbarHeight / 2 + toolbarHeight/2 < svgRect.height - VERTICAL_GAP_TOOLBAR) ) {
       finalToolbarCenterY = midY + TOOLBAR_OFFSET_FROM_LINE_Y + toolbarHeight / 2;
     }
     
-    // Clamp Y to stay within vertical bounds
     finalToolbarCenterY = Math.max(
       toolbarHeight / 2 + VERTICAL_GAP_TOOLBAR,
       Math.min(finalToolbarCenterY, svgRect.height - toolbarHeight / 2 - VERTICAL_GAP_TOOLBAR)
     );
 
-    // Clamp X to stay within horizontal bounds
     const finalToolbarCenterX = Math.max(
       toolbarWidth / 2 + HORIZONTAL_EDGE_BUFFER_TOOLBAR,
       Math.min(midX, svgRect.width - toolbarWidth / 2 - HORIZONTAL_EDGE_BUFFER_TOOLBAR)
@@ -220,15 +222,14 @@ export default function AnnotationPage() {
     const now = new Date();
     const oneWeekAgo = subDays(now, 7);
     const generatedData: DummyDataPoint[] = [];
-    for (let i = 0; i < 7 * 24; i++) { // 7 days, 24 hours each
+    for (let i = 0; i < 7 * 24; i++) { 
       const time = addHours(oneWeekAgo, i);
       generatedData.push({
         time: time.toISOString(),
-        temperature: 15 + Math.sin(i / 12) * 5 + Math.random() * 2, // Simple sine wave + noise
+        temperature: 15 + Math.sin(i / 12) * 5 + Math.random() * 2,
       });
     }
     setDummyData(generatedData);
-    // Default to full range for brush
     setBrushStartIndex(0);
     setBrushEndIndex(generatedData.length > 0 ? generatedData.length - 1 : undefined);
   }, []);
@@ -283,7 +284,7 @@ export default function AnnotationPage() {
       setContextualToolbarPosition(null);
     }
   }, [draggingPoint, movingLineId, isDraggingToolbar]);
-
+  
   const handleLineHitboxInteractionStart = useCallback((line: LineAnnotation, event: ReactMouseEvent<SVGGElement> | ReactTouchEvent<SVGGElement>) => {
     event.stopPropagation();
     if ('preventDefault' in event && event.type.startsWith('touch')) event.preventDefault();
@@ -292,6 +293,7 @@ export default function AnnotationPage() {
     updateContextualToolbarPos(line);
 
     if (!svgOverlayRef.current || anyAnnotationInteractionActive) return;
+    
     const { clientX, clientY } = getNormalizedCoordinates(event);
     const svgRect = svgOverlayRef.current.getBoundingClientRect();
     setDragStartCoords({ x: clientX - svgRect.left, y: clientY - svgRect.top });
@@ -305,9 +307,9 @@ export default function AnnotationPage() {
     if ('preventDefault' in event && event.type.startsWith('touch')) event.preventDefault();
     if (movingLineId || isDraggingToolbar) return;
 
-    setSelectedLineId(lineId);
+    setSelectedLineId(lineId); // Ensure the line is selected
     setDraggingPoint({ lineId, pointType });
-    updateContextualToolbarPos(lines.find(l => l.id === lineId) || null);
+    updateContextualToolbarPos(lines.find(l => l.id === lineId) || null); // Update toolbar for the selected line
   }, [movingLineId, isDraggingToolbar, lines, updateContextualToolbarPos]);
 
   const handleInteractionMove = useCallback((event: globalThis.MouseEvent | globalThis.TouchEvent) => {
@@ -337,10 +339,17 @@ export default function AnnotationPage() {
       const dy = svgY - dragStartCoords.y;
       setLines(prevLines => prevLines.map(l => {
         if (l.id === movingLineId) {
-          const newX1 = Math.max(0, Math.min(lineBeingMovedOriginalState.x1 + dx, svgRect.width));
-          const newY1 = Math.max(0, Math.min(lineBeingMovedOriginalState.y1 + dy, svgRect.height));
-          const newX2 = Math.max(0, Math.min(lineBeingMovedOriginalState.x2 + dx, svgRect.width));
-          const newY2 = Math.max(0, Math.min(lineBeingMovedOriginalState.y2 + dy, svgRect.height));
+          let newX1 = lineBeingMovedOriginalState.x1 + dx;
+          let newY1 = lineBeingMovedOriginalState.y1 + dy;
+          let newX2 = lineBeingMovedOriginalState.x2 + dx;
+          let newY2 = lineBeingMovedOriginalState.y2 + dy;
+          
+          // Clamp all points to stay within bounds
+          newX1 = Math.max(0, Math.min(newX1, svgRect.width));
+          newY1 = Math.max(0, Math.min(newY1, svgRect.height));
+          newX2 = Math.max(0, Math.min(newX2, svgRect.width));
+          newY2 = Math.max(0, Math.min(newY2, svgRect.height));
+
           const updatedLine = { ...l, x1: newX1, y1: newY1, x2: newX2, y2: newY2 };
           lineToUpdateForToolbar = updatedLine;
           return updatedLine;
@@ -444,14 +453,12 @@ export default function AnnotationPage() {
         let newX2 = lineToCopy.x2 + offsetX;
         let newY2 = lineToCopy.y2 + offsetY;
 
-        // If offset pushes it outside, try offsetting in the opposite direction
         if (newX2 > svgRect.width || newX1 < 0 || newY2 > svgRect.height || newY1 < 0) {
             offsetX = -10; offsetY = -10;
             newX1 = lineToCopy.x1 + offsetX; newY1 = lineToCopy.y1 + offsetY;
             newX2 = lineToCopy.x2 + offsetX; newY2 = lineToCopy.y2 + offsetY;
         }
 
-        // Clamp to ensure it stays within bounds after offsetting
         newX1 = Math.max(0, Math.min(newX1, svgRect.width));
         newY1 = Math.max(0, Math.min(newY1, svgRect.height));
         newX2 = Math.max(0, Math.min(newX2, svgRect.width));
@@ -462,7 +469,7 @@ export default function AnnotationPage() {
             id: `${Date.now()}-${uniqueComponentId}-line-copy`,
             x1: newX1, y1: newY1,
             x2: newX2, y2: newY2,
-            strokeWidth: lineToCopy.strokeWidth || DEFAULT_STROKE_WIDTH, // Ensure defaults are applied
+            strokeWidth: lineToCopy.strokeWidth || DEFAULT_STROKE_WIDTH, 
             color: lineToCopy.color || DEFAULT_LINE_COLOR,
         };
         setLines(prevLines => [...prevLines, newCopiedLine]);
@@ -492,12 +499,11 @@ export default function AnnotationPage() {
   const toggleAnnotationTools = () => {
     setIsOverlayActive(prev => {
       const nextState = !prev;
-      if (!nextState) { // If turning off
+      if (!nextState) { 
         setSelectedLineId(null);
         setDraggingPoint(null);
         setMovingLineId(null);
         setContextualToolbarPosition(null);
-        // Potentially reset other annotation states if needed
       }
       return nextState;
     });
@@ -593,7 +599,6 @@ export default function AnnotationPage() {
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="outline" size="icon" className="h-8 w-8" disabled={isMainToolbarButtonDisabled || !selectedLineId} aria-label="Line Style & Thickness Options">
-                            {/* Custom SVG Icon for Line Style/Thickness */}
                             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
                               <rect y="3" width="16" height="1.5" rx="0.5"/>
                               <rect y="6.25" width="16" height="2.5" rx="0.5"/>
@@ -608,7 +613,7 @@ export default function AnnotationPage() {
                             {(['solid', 'dashed', 'dotted'] as const).map(s =>
                                 <DropdownMenuRadioItem key={s} value={s} className="text-xs py-1 flex items-center">
                                     <LineStyleIcon style={s} className="mr-2"/>
-                                    {/* Text removed as per request */}
+                                    {/* Text removed as per previous request */}
                                 </DropdownMenuRadioItem>
                             )}
                            </DropdownMenuRadioGroup>
@@ -616,7 +621,6 @@ export default function AnnotationPage() {
                            <DropdownMenuLabel>Stroke Weight</DropdownMenuLabel>
                            <div className="px-2 py-1.5 flex items-center space-x-2">
                                 <Slider
-                                  defaultValue={[DEFAULT_STROKE_WIDTH]}
                                   value={[selectedLine?.strokeWidth || DEFAULT_STROKE_WIDTH]}
                                   onValueChange={handleStrokeWeightChange}
                                   min={1} max={10} step={0.5}
@@ -650,7 +654,7 @@ export default function AnnotationPage() {
                                     ].map((opt) =>
                                         <DropdownMenuRadioItem key={opt.value} value={opt.value} className="text-xs py-1 flex items-center">
                                             <ArrowStyleIcon style={opt.value as 'none' | 'end' | 'both'} uniqueId={`${uniqueComponentId}-${opt.value}`} className="mr-2"/>
-                                            {opt.label}
+                                            {/* Text label removed as requested */}
                                         </DropdownMenuRadioItem>
                                     )}
                                 </DropdownMenuRadioGroup>
@@ -688,7 +692,6 @@ export default function AnnotationPage() {
                     <TooltipContent><p>Line Color</p></TooltipContent>
                   </Tooltip>
                   
-                  {/* Copy and Delete buttons will now be in the contextual toolbar */}
                 </TooltipProvider>
               </div>
             )}
@@ -699,7 +702,7 @@ export default function AnnotationPage() {
                 "relative border rounded-md bg-muted/20",
                  (isOverlayActive && anyAnnotationInteractionActive) && "opacity-70 pointer-events-none"
               )}
-              style={{ height: `${ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT * 0.85}px` }} // Adjusted height
+              style={{ height: `${ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT * 0.85}px` }} 
             >
               {dummyData.length > 0 ? (
                 <ChartDisplayWithNoSSR
@@ -707,7 +710,7 @@ export default function AnnotationPage() {
                   plottableSeries={['temperature']}
                   yAxisConfigs={yAxisConfigs}
                   timeAxisLabel="Time (Hourly over 1 Week)"
-                  chartRenderHeight={ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT} // Pass base height
+                  chartRenderHeight={ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT} 
                   brushStartIndex={brushStartIndex}
                   brushEndIndex={brushEndIndex}
                   onBrushChange={handleBrushChange}
@@ -727,20 +730,24 @@ export default function AnnotationPage() {
                     onTouchStart={handleSvgBackgroundClick}
                     style={{
                         cursor: svgCursor,
-                        pointerEvents: (anyAnnotationInteractionActive || selectedLineId || isDraggingToolbar) ? 'auto' : 'none' // Allow events if toolbar is active or a line is selected for toolbar
+                        pointerEvents: (anyAnnotationInteractionActive || selectedLineId || isDraggingToolbar) ? 'auto' : 'none' 
                     }}
                 >
                     <defs>
-                        {/* Updated arrowhead definitions */}
-                        <marker id={`arrowheadEnd-${uniqueComponentId}`} markerWidth="3" markerHeight="3.5" refX="0" refY="1.75" orient="auto" fill="currentColor"><polygon points="0 0, 3 1.75, 0 3.5" /></marker>
-                        <marker id={`arrowheadStart-${uniqueComponentId}`} markerWidth="3" markerHeight="3.5" refX="3" refY="1.75" orient="auto-start-reverse" fill="currentColor"><polygon points="0 1.75, 3 0, 3 3.5" /></marker>
+                        {/* Arrowhead pointing right: tip at (4,2), base at (0,2) for a marker of width 4, height 4 */}
+                        <marker id={`arrowheadEnd-${uniqueComponentId}`} markerWidth="4" markerHeight="4" refX="4" refY="2" orient="auto" fill="currentColor">
+                            <polygon points="0 0, 4 2, 0 4" />
+                        </marker>
+                        <marker id={`arrowheadStart-${uniqueComponentId}`} markerWidth="4" markerHeight="4" refX="0" refY="2" orient="auto-start-reverse" fill="currentColor">
+                            <polygon points="0 0, 4 2, 0 4" />
+                        </marker>
                     </defs>
                     {lines.map(line => (
                         <g key={line.id} >
                             <line
                                 x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
                                 stroke="transparent"
-                                strokeWidth="20" // Hitbox size
+                                strokeWidth="20" 
                                 className={cn(selectedLineId === line.id && !anyAnnotationInteractionActive ? "cursor-move" : "cursor-pointer")}
                                 onMouseDown={(e) => handleLineHitboxInteractionStart(line, e)}
                                 onTouchStart={(e) => handleLineHitboxInteractionStart(line, e as unknown as ReactTouchEvent<SVGGElement>)}
@@ -751,7 +758,7 @@ export default function AnnotationPage() {
                                 stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : (line.color || DEFAULT_LINE_COLOR)}
                                 strokeWidth={selectedLineId === line.id ? (line.strokeWidth || DEFAULT_STROKE_WIDTH) + SELECTED_STROKE_WIDTH_OFFSET : (line.strokeWidth || DEFAULT_STROKE_WIDTH)}
                                 strokeDasharray={getStrokeDasharray(line.lineStyle)}
-                                markerStart={(line.arrowStyle === 'start' || line.arrowStyle === 'both') ? `url(#arrowheadStart-${uniqueComponentId})` : undefined}
+                                markerStart={line.arrowStyle === 'both' ? `url(#arrowheadStart-${uniqueComponentId})` : undefined}
                                 markerEnd={(line.arrowStyle === 'end' || line.arrowStyle === 'both') ? `url(#arrowheadEnd-${uniqueComponentId})` : undefined}
                                 style={{ pointerEvents: 'none' }} 
                             />
@@ -765,24 +772,21 @@ export default function AnnotationPage() {
                             )}
                         </g>
                     ))}
-                    {/* Contextual Toolbar */}
                     {selectedLineId && contextualToolbarPosition && isOverlayActive && ( 
                       <foreignObject 
-                        id={`annotation-page-${uniqueComponentId}`} // Unique ID for foreignObject
+                        id={`annotation-page-${uniqueComponentId}`} 
                         x={contextualToolbarPosition.x - ((document.querySelector(`#annotation-page-${uniqueComponentId} .contextual-toolbar`)?.clientWidth || TOOLBAR_APPROX_WIDTH_MIN) / 2)} 
                         y={contextualToolbarPosition.y - (TOOLBAR_APPROX_HEIGHT / 2)} 
-                        width={((document.querySelector(`#annotation-page-${uniqueComponentId} .contextual-toolbar`)?.clientWidth || TOOLBAR_APPROX_WIDTH_MIN) + 10)} // Add some buffer
-                        height={TOOLBAR_APPROX_HEIGHT + 10} // Add some buffer
-                        style={{ pointerEvents: anyAnnotationInteractionActive && !isDraggingToolbar ? 'none' : 'auto' }} // Events only for toolbar itself or when not dragging line/point
+                        width={((document.querySelector(`#annotation-page-${uniqueComponentId} .contextual-toolbar`)?.clientWidth || TOOLBAR_APPROX_WIDTH_MIN) + 10)} 
+                        height={TOOLBAR_APPROX_HEIGHT + 10} 
+                        style={{ pointerEvents: anyAnnotationInteractionActive && !isDraggingToolbar ? 'none' : 'auto' }} 
                       >
                          <TooltipProvider delayDuration={0}>
                             <div
                                 className="contextual-toolbar flex items-center space-x-0.5 p-0.5 bg-card border shadow-xl rounded-md w-fit"
-                                // Ensure clicks on toolbar don't deselect line, but allow drag handle to work
                                 onMouseDown={(e) => {e.stopPropagation(); handleToolbarDragStart(e); }}
                                 onTouchStart={(e) => {e.stopPropagation(); handleToolbarDragStart(e); }}
                             >
-                                {/* Draggable Grip Handle */}
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button
@@ -791,7 +795,6 @@ export default function AnnotationPage() {
                                         className="h-7 w-7 cursor-grab active:cursor-grabbing"
                                         disabled={isContextualToolbarButtonDisabled || isDraggingToolbar}
                                         aria-label="Move Toolbar"
-                                        // onMouseDown and onTouchStart are on the parent div to allow dragging the whole toolbar
                                     >
                                         <GripVertical className="h-4 w-4"/>
                                     </Button>
@@ -799,7 +802,6 @@ export default function AnnotationPage() {
                                   <TooltipContent side="bottom"><p>Move Toolbar</p></TooltipContent>
                                 </Tooltip>
                                 <Separator orientation="vertical" className="h-4 mx-0.5"/>
-                                {/* Copy and Delete buttons moved here */}
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopySelectedLine} disabled={isContextualToolbarButtonDisabled} aria-label="Copy Line">
@@ -837,3 +839,4 @@ export default function AnnotationPage() {
     </div>
   );
 }
+
