@@ -10,11 +10,13 @@ import { format, subDays, addDays } from 'date-fns'; // Added for DatePicker def
 
 import { Button } from "@/components/ui/button";
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
-import { PlusCircle, SunMoon, LayoutGrid, Waves, CloudSun, Anchor, MapPin, CalendarDays } from "lucide-react"; // Added MapPin, CalendarDays
+import { PlusCircle, SunMoon, LayoutGrid, Waves, CloudSun, Anchor, MapPin, CalendarDays, Search } from "lucide-react"; // Added MapPin, CalendarDays, Search
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"; // Added Card components
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range"; // Added DatePicker
+import { Input } from "@/components/ui/input"; // Added Input
+import { Label as UiLabel } from "@/components/ui/label"; // Added UiLabel
 import { useToast } from "@/hooks/use-toast"; // Added useToast
 import { cn } from "@/lib/utils"; // Added cn
 
@@ -55,7 +57,7 @@ export default function DataExplorerPage() {
   const pathname = usePathname();
   const { toast } = useToast(); // For map location selection toast
 
-  // State for new Location & Date section
+  // State for new Location & Date section (from om-marine-explorer)
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
     from: new Date("2025-05-17"), // Default copied from om-marine-explorer
     to: new Date("2025-05-20"),   // Default copied from om-marine-explorer
@@ -69,6 +71,10 @@ export default function DataExplorerPage() {
   const [currentLocationName, setCurrentLocationName] = useState<string>(
     knownLocations[defaultLocationKey]?.name || "Selected Location"
   );
+  const [searchTerm, setSearchTerm] = useState<string>(knownLocations[defaultLocationKey]?.name || "");
+  const [suggestions, setSuggestions] = useState<Array<{ key: string; name: string }>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
   const initialMapRenderDone = useRef(false); // To prevent re-centering map on every render
 
   useEffect(() => {
@@ -116,7 +122,7 @@ export default function DataExplorerPage() {
     }
   }, [addPlot, plots.length]);
 
-  // Logic for new Location & Date section
+  // Logic for new Location & Date section (from om-marine-explorer)
   const handleMapLocationSelect = useCallback((coords: { lat: number; lon: number }) => {
     setMapSelectedCoords(coords);
     let foundName = "Custom Location";
@@ -127,9 +133,46 @@ export default function DataExplorerPage() {
       }
     }
     setCurrentLocationName(foundName);
+    setSearchTerm(foundName); // Update search term when map is clicked
     toast({ title: "Location Selected on Map", description: `${foundName} (Lat: ${coords.lat.toFixed(3)}, Lon: ${coords.lon.toFixed(3)})` });
+    setShowSuggestions(false);
   }, [toast]);
 
+  const handleSuggestionClick = useCallback((locationKey: string) => {
+    const selectedLoc = knownLocations[locationKey];
+    if (selectedLoc) {
+      handleMapLocationSelect({ lat: selectedLoc.lat, lon: selectedLoc.lon });
+    }
+  }, [handleMapLocationSelect]);
+
+  useEffect(() => {
+    if (searchTerm === "") {
+      setSuggestions([]);
+      // Keep suggestions open if input is focused, even if empty
+      // setShowSuggestions(false); 
+      return;
+    }
+    const lowerSearchTerm = searchTerm.toLowerCase();
+    const filtered = Object.entries(knownLocations)
+      .filter(([key, loc]) => key.toLowerCase().includes(lowerSearchTerm) || loc.name.toLowerCase().includes(lowerSearchTerm))
+      .map(([key, loc]) => ({ key, name: loc.name }))
+      .slice(0, 5);
+    setSuggestions(filtered);
+    setShowSuggestions(true); // Always show if there are suggestions and search term is not empty
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+
+  // Ensure initialMapRenderDone logic for default map centering
   useEffect(() => {
     if (!mapSelectedCoords && !initialMapRenderDone.current && knownLocations[defaultLocationKey]) {
       setMapSelectedCoords({
@@ -137,6 +180,7 @@ export default function DataExplorerPage() {
         lon: knownLocations[defaultLocationKey].lon,
       });
       setCurrentLocationName(knownLocations[defaultLocationKey].name);
+      setSearchTerm(knownLocations[defaultLocationKey].name);
       initialMapRenderDone.current = true;
     }
   }, [mapSelectedCoords]);
@@ -147,7 +191,7 @@ export default function DataExplorerPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <TooltipProvider>
           <div className="container flex h-full items-center justify-between px-3 md:px-4">
-            <Link href="/om-marine-explorer" passHref>
+            <Link href="/data-explorer" passHref>
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
@@ -160,6 +204,16 @@ export default function DataExplorerPage() {
                   </Link>
                 </TooltipTrigger>
                 <TooltipContent><p>Data Explorer (CSV)</p></TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link href="/weather" passHref>
+                    <Button variant={pathname === '/weather' ? "secondary": "ghost"} size="icon" aria-label="Weather Page">
+                      <CloudSun className="h-5 w-5" />
+                    </Button>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent><p>Weather Page</p></TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -200,6 +254,33 @@ export default function DataExplorerPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 p-3">
+             <div className="relative" ref={suggestionsRef}>
+              <UiLabel htmlFor="location-search-data-explorer" className="text-xs font-medium mb-0.5 block">Search Location</UiLabel>
+              <div className="flex gap-1">
+                <Input
+                  id="location-search-data-explorer"
+                  type="text"
+                  placeholder="e.g., Milford Haven"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onFocus={() => { if(suggestions.length > 0 || searchTerm === "" || Object.values(knownLocations).some(loc => loc.name === searchTerm)) setShowSuggestions(true);}}
+                  className="h-9 text-xs flex-grow"
+                />
+              </div>
+              {showSuggestions && (
+                <div className="absolute top-full left-0 right-0 z-10 mt-1 border bg-card shadow-lg rounded-md max-h-60 overflow-y-auto">
+                  {suggestions.map(loc => (
+                    <button
+                      key={loc.key}
+                      onClick={() => handleSuggestionClick(loc.key)}
+                      className="block w-full text-left px-3 py-1.5 text-xs hover:bg-muted"
+                    >
+                      {loc.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <div>
               <p className="text-xs font-medium mb-1">Select Location on Map:</p>
               <div className="h-[200px] w-full rounded-md overflow-hidden border">
