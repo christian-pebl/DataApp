@@ -23,7 +23,7 @@ export interface YAxisConfig {
   unit?: string;
   orientation: 'left' | 'right';
   yAxisId: string;
-  color?: string;
+  color?: string; // e.g., '--chart-1', '--chart-2'
   tickFormatter?: (value: any) => string;
 }
 
@@ -43,7 +43,6 @@ interface ChartDisplayProps {
   brushStartIndex?: number;
   brushEndIndex?: number;
   onBrushChange?: (newIndex: { startIndex?: number; endIndex?: number }) => void;
-  // useShortDateFormat prop removed
 }
 
 export function ChartDisplay({
@@ -55,9 +54,7 @@ export function ChartDisplay({
   brushStartIndex,
   brushEndIndex,
   onBrushChange,
-  // useShortDateFormat removed from destructuring
 }: ChartDisplayProps) {
-
   const chartHeightToUse = chartRenderHeight || INTERNAL_DEFAULT_CHART_HEIGHT;
 
   const chartData = React.useMemo(() => {
@@ -69,7 +66,7 @@ export function ChartDisplay({
         if (value !== null && value !== undefined && !isNaN(Number(value))) {
           newPoint[seriesKey] = Number(value);
         } else {
-          newPoint[seriesKey] = null;
+          newPoint[seriesKey] = null; // Ensure non-numeric or missing values are null for Recharts
         }
       });
       return newPoint;
@@ -90,11 +87,13 @@ export function ChartDisplay({
     try {
       const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
       if (!isValid(dateObj)) {
-        return String(timeValue); 
+        // console.warn(`Invalid date encountered in XAxis: ${timeValue}`); // Keep for debugging if needed
+        return String(timeValue); // Fallback to original string
       }
       return format(dateObj, 'dd/MM/yy'); // Always "dd/MM/yy"
     } catch (e) {
-      return String(timeValue); 
+      // console.error(`Error formatting date in XAxis: ${timeValue}`, e); // Keep for debugging if needed
+      return String(timeValue); // Fallback
     }
   }, []);
 
@@ -102,7 +101,7 @@ export function ChartDisplay({
     try {
       const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
       if (!isValid(dateObj)) return String(timeValue);
-      return format(dateObj, 'dd/MM/yy'); // Always "dd/MM/yy" for brush too
+      return format(dateObj, 'dd/MM/yy'); // Always "dd/MM/yy"
     } catch (e) {
       return String(timeValue);
     }
@@ -134,119 +133,119 @@ export function ChartDisplay({
      return renderNoDataMessage(`No valid numeric data found for the selected series (${plottableSeries.join(', ')}) in the current view. Please check data or selected range.`);
   }
 
-
-  // Main chart rendering
   return (
-    <ResponsiveContainer width="100%" height={chartHeightToUse}>
-      <LineChart
-        data={chartData}
-        margin={{
-          top: 5,
-          right: yAxisConfigs.some(yc => yc.orientation === 'right' && plottableSeries.includes(yc.dataKey)) ? 20 : 5,
-          left: yAxisConfigs.some(yc => yc.orientation === 'left' && plottableSeries.includes(yc.dataKey)) ? 25 : 5,
-          bottom: 100, // Adjusted for angled labels, title, brush, and legend
-        }}
-      >
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-        <XAxis
-          dataKey="time"
-          tickFormatter={memoizedXAxisTickFormatter}
-          angle={-45}
-          textAnchor="end"
-          height={60} // Increased for angled labels
-          stroke="hsl(var(--muted-foreground))"
-          tick={{ fontSize: '0.7rem' }}
-          interval="preserveStartEnd"
-          label={{
-            value: timeAxisLabel,
-            position: 'insideBottom',
-            offset: 25, // Adjust offset to position below angled ticks
-            dy: 30, // Fine-tune vertical position
-            style: { textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--foreground))' }
+    <div style={{ height: `${chartHeightToUse}px`, width: '100%' }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart
+          data={chartData}
+          margin={{
+            top: 5,
+            right: yAxisConfigs.some(yc => yc.orientation === 'right' && plottableSeries.includes(yc.dataKey)) ? 20 : 5,
+            left: yAxisConfigs.some(yc => yc.orientation === 'left' && plottableSeries.includes(yc.dataKey)) ? 25 : 5,
+            bottom: 85, // Increased bottom margin to move brush lower
           }}
-        />
-
-        {yAxisConfigs.map(config => {
-          if (!plottableSeries.includes(config.dataKey)) return null;
-          return (
-            <YAxis
-              key={config.yAxisId}
-              yAxisId={config.yAxisId}
-              orientation={config.orientation}
-              stroke={config.color ? `hsl(var(${config.color}))` : "hsl(var(--muted-foreground))"}
-              tickFormatter={config.tickFormatter || ((value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value))}
-              tick={{ fontSize: '0.7rem' }}
-              width={config.orientation === 'left' ? 40 : 35}
-              domain={['dataMin', 'dataMax']}
-              label={
-                config.label ? (
-                  <RechartsYAxisLabel
-                    angle={config.orientation === 'left' ? -90 : 90}
-                    value={`${config.label}${config.unit ? ` (${config.unit})` : ''}`}
-                    position={config.orientation === 'left' ? 'insideLeft' : 'insideRight'}
-                    style={{ textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--foreground))' }}
-                    offset={config.orientation === 'left' ? -5 : 10}
-                  />
-                ) : undefined
-              }
-            />
-          );
-        })}
-
-        <RechartsTooltip
-          contentStyle={{
-            backgroundColor: 'hsl(var(--background))',
-            border: '1px solid hsl(var(--border))',
-            borderRadius: 'var(--radius)',
-            fontSize: '0.7rem',
-            boxShadow: '0 2px 8px hsla(var(--foreground) / 0.1)',
-          } as CSSProperties}
-          labelFormatter={(label) => {
-            try {
-              const date = typeof label === 'string' ? parseISO(label) : new Date(label);
-              return isValid(date) ? format(date, 'PPp') : String(label);
-            } catch { return String(label); }
-          }}
-          formatter={(value: number | null | undefined, name: string) => {
-            const config = yAxisConfigs.find(yc => yc.dataKey === name);
-            return [`${value !== null && value !== undefined && !isNaN(value) ? value.toFixed(2) : 'N/A'}${config?.unit ? ` ${config.unit}` : ''}`, config?.label || name];
-          }}
-          isAnimationActive={false}
-        />
-        <Legend wrapperStyle={{ paddingTop: '15px', fontSize: '0.75em' }} />
-
-        {plottableSeries.map(seriesKey => {
-          const yAxisConfigForLine = yAxisConfigs.find(yc => yc.dataKey === seriesKey) || yAxisConfigs[0];
-          if (!yAxisConfigForLine) return null;
-          return (
-            <Line
-              key={seriesKey}
-              type="monotone"
-              dataKey={seriesKey}
-              stroke={yAxisConfigForLine?.color ? `hsl(var(${yAxisConfigForLine.color}))` : "hsl(var(--chart-1))"}
-              strokeWidth={2}
-              yAxisId={yAxisConfigForLine?.yAxisId || (yAxisConfigs[0]?.yAxisId || "left-axis")}
-              dot={false}
-              connectNulls={true}
-              name={yAxisConfigForLine?.label || seriesKey}
-              isAnimationActive={false}
-            />
-          );
-        })}
-        {data.length > 1 && onBrushChange && (
-          <Brush
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+          <XAxis
             dataKey="time"
-            height={20} 
-            stroke="hsl(var(--primary))"
-            fill="transparent"
-            tickFormatter={formatDateTickBrush}
-            startIndex={brushStartIndex}
-            endIndex={brushEndIndex}
-            onChange={onBrushChange}
-            travellerWidth={10}
+            tickFormatter={memoizedXAxisTickFormatter}
+            angle={-45}
+            textAnchor="end"
+            height={60}
+            stroke="hsl(var(--muted-foreground))"
+            tick={{ fontSize: '0.6rem' }}
+            interval="preserveStartEnd"
+            label={{
+              value: timeAxisLabel,
+              position: 'insideBottom',
+              offset: 15, // Adjusted for spacing
+              dy: 15,    // Adjusted for spacing
+              style: { textAnchor: 'middle', fontSize: '0.6rem', fill: 'hsl(var(--foreground))' }
+            }}
           />
-        )}
-      </LineChart>
-    </ResponsiveContainer>
+
+          {yAxisConfigs.map(config => {
+            if (!plottableSeries.includes(config.dataKey)) return null;
+            return (
+              <YAxis
+                key={config.yAxisId}
+                yAxisId={config.yAxisId}
+                orientation={config.orientation}
+                stroke={config.color ? `hsl(var(${config.color}))` : "hsl(var(--muted-foreground))"}
+                tickFormatter={config.tickFormatter || ((value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value))}
+                tick={{ fontSize: '0.6rem' }}
+                width={config.orientation === 'left' ? 40 : 35}
+                domain={['dataMin', 'dataMax']} // Scales Y-axis to min/max of visible data
+                label={
+                  config.label ? (
+                    <RechartsYAxisLabel
+                      angle={config.orientation === 'left' ? -90 : 90}
+                      value={`${config.label}${config.unit ? ` (${config.unit})` : ''}`}
+                      position={config.orientation === 'left' ? 'insideLeft' : 'insideRight'}
+                      style={{ textAnchor: 'middle', fontSize: '0.6rem', fill: 'hsl(var(--foreground))' }}
+                      offset={config.orientation === 'left' ? -5 : 10} // Adjust offset for better label placement
+                    />
+                  ) : undefined
+                }
+              />
+            );
+          })}
+
+          <RechartsTooltip
+            contentStyle={{
+              backgroundColor: 'hsl(var(--background))',
+              border: '1px solid hsl(var(--border))',
+              borderRadius: 'var(--radius)',
+              fontSize: '0.6rem', // Smaller tooltip font
+              boxShadow: '0 2px 8px hsla(var(--foreground) / 0.1)',
+            } as CSSProperties}
+            labelFormatter={(label) => {
+              try {
+                const date = typeof label === 'string' ? parseISO(label) : new Date(label);
+                return isValid(date) ? format(date, 'PPp') : String(label); // Full date and time for tooltip
+              } catch { return String(label); }
+            }}
+            formatter={(value: number | null | undefined, name: string) => {
+              const config = yAxisConfigs.find(yc => yc.dataKey === name);
+              return [`${value !== null && value !== undefined && !isNaN(value) ? value.toFixed(2) : 'N/A'}${config?.unit ? ` ${config.unit}` : ''}`, config?.label || name];
+            }}
+            isAnimationActive={false}
+          />
+          <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '0.6rem' }} />
+
+          {plottableSeries.map(seriesKey => {
+            const yAxisConfigForLine = yAxisConfigs.find(yc => yc.dataKey === seriesKey) || (yAxisConfigs.length > 0 ? yAxisConfigs[0] : undefined);
+            if (!yAxisConfigForLine) return null;
+            return (
+              <Line
+                key={seriesKey}
+                type="monotone"
+                dataKey={seriesKey}
+                stroke={yAxisConfigForLine?.color ? `hsl(var(${yAxisConfigForLine.color}))` : "hsl(var(--chart-1))"}
+                strokeWidth={1.5} // Thinner lines
+                yAxisId={yAxisConfigForLine?.yAxisId}
+                dot={false}
+                connectNulls={true}
+                name={yAxisConfigForLine?.label || seriesKey}
+                isAnimationActive={false}
+              />
+            );
+          })}
+          {data.length > 1 && onBrushChange && (
+            <Brush
+              dataKey="time"
+              height={12} // Slimmer brush
+              stroke="hsl(var(--primary))"
+              fill="transparent"
+              tickFormatter={formatDateTickBrush}
+              startIndex={brushStartIndex}
+              endIndex={brushEndIndex}
+              onChange={onBrushChange}
+              travellerWidth={8} // Slimmer handles
+            />
+          )}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
