@@ -70,8 +70,6 @@ const SELECTED_STROKE_WIDTH_OFFSET = 1;
 const DEFAULT_PLOT_HEIGHT = 350;
 const EXPANDED_PLOT_HEIGHT = 600;
 
-const ANNOTATION_PLOT_HEIGHT = 350; // Standard height for annotation context
-
 const MAX_FILE_SIZE_MB = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
@@ -322,10 +320,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     
     actualVariableHeadersToProcess.forEach((originalVarHeader) => {
       let baseKey = (originalVarHeader || "Unnamed_Variable").trim();
-      let processedHeader: string; // Declare variable inside forEach loop
+      let processedHeader: string; 
       if (baseKey.toLowerCase() === "time") {
         let count = headerCounts.get("time_var") || 0;
-        baseKey = "time_var"; // always rename if it's 'time' to avoid clash
+        baseKey = "time_var"; 
         processedHeader = count > 0 ? `${baseKey}_(${count + 1})` : baseKey;
         headerCounts.set(baseKey, count + 1);
       } else {
@@ -421,19 +419,19 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       
       const newVisibleSeries: Record<string, boolean> = {};
       parsedResult.seriesNames.forEach((name, index) => {
-        newVisibleSeries[name] = index < 2; // Default to first 2 series visible
+        newVisibleSeries[name] = index < 4; // Default to first 4 series visible
       });
       setVisibleSeries(newVisibleSeries);
 
       setBrushStartIndex(0);
-      setBrushEndIndex(parsedResult.data.length > 0 ? parsedResult.data.length - 1 : undefined); // Default to full range
+      setBrushEndIndex(parsedResult.data.length > 0 ? parsedResult.data.length - 1 : undefined);
 
       setLines([]); setSelectedLineId(null); setContextualToolbarPosition(null);
       setDraggingPoint(null); setMovingLineId(null); setDragStartCoords(null);
       setLineBeingMovedOriginalState(null); setIsDraggingToolbar(false);
       setToolbarDragStart(null); setToolbarInitialPosition(null);
       
-      const successToast = toast({ title: "File Processed Successfully", description: `${fileName} processed.` });
+      const successToast = toast({ title: "Import complete", description: `${fileName} processed.` });
       if (successToast?.id) setTimeout(() => dismiss(successToast.id), 2000);
       return { success: true, seriesNames: parsedResult.seriesNames, timeHeader: parsedResult.timeHeader };
     }
@@ -466,7 +464,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         return step;
       }));
       toast({ variant: "destructive", title: title || "File Validation Error", description: `${file.name}: ${errorMsg}` });
-      setAccordionValue("validation-details-" + instanceId); // Open accordion on error
+      setAccordionValue("validation-details-" + instanceId); 
       return null;
     };
 
@@ -537,7 +535,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         updateStepStatus('fileType', 'error', errorMsg);
         initialValidationSteps.slice(initialValidationSteps.findIndex(s => s.id === 'fileType') + 1).forEach(s => updateStepStatus(s.id, 'error', 'Prerequisite step failed.'));
         toast({ variant: "destructive", title: "Load Error", description: errorMsg });
-        setAccordionValue("validation-details-" + instanceId); // Open on error
+        setAccordionValue("validation-details-" + instanceId); 
         setIsProcessing(false);
         if (event.target) event.target.value = "";
         return;
@@ -558,11 +556,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         setIsPlotExpanded(savedState.isPlotExpanded === true);
         setIsMinimalistView(savedState.isMinimalistView === true);
         
-        // Use saved brush state if available, otherwise default to full range
         if (savedState.brushStartIndex !== undefined && savedState.brushEndIndex !== undefined) {
             setBrushStartIndex(savedState.brushStartIndex);
             setBrushEndIndex(savedState.brushEndIndex);
-        } else if (parsedData.length > 0) { // parsedData is set by processCsvFileContent
+        } else if (parsedData.length > 0) { 
             setBrushStartIndex(0);
             setBrushEndIndex(parsedData.length - 1);
         }
@@ -585,7 +582,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         updateStepStatus('dataRowFormat', 'error', errorMsg); 
         initialValidationSteps.slice(initialValidationSteps.findIndex(s => s.id === 'dataRowFormat') + 1).forEach(s => updateStepStatus(s.id, 'error', 'Prerequisite step failed.'));
         toast({ variant: "destructive", title: "Load Error", description: errorMsg });
-        setAccordionValue("validation-details-" + instanceId); // Open on error
+        setAccordionValue("validation-details-" + instanceId); 
       }
 
     } catch (error: any) {
@@ -594,7 +591,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       updateStepStatus('fileRead', 'error', errorMsg);
       initialValidationSteps.slice(initialValidationSteps.findIndex(s => s.id === 'fileRead') + 1).forEach(s => updateStepStatus(s.id, 'error', 'Prerequisite step failed.'));
       toast({ variant: "destructive", title: "Load Failed", description: errorMsg });
-      setAccordionValue("validation-details-" + instanceId); // Open on error
+      setAccordionValue("validation-details-" + instanceId); 
     }
     setIsProcessing(false);
     if (jsonLoadInputRef.current) jsonLoadInputRef.current.value = "";
@@ -672,14 +669,16 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     if (firstError) return firstError;
     const dataReadySuccess = validationSteps.find(step => step.id === 'dataReady' && step.status === 'success');
     if (dataReadySuccess) return dataReadySuccess;
-    if (currentFileForValidation) {
+    
+    if (currentFileForValidation) { // Only show other statuses if a file has been processed or attempted
         const lastSignificantStep = [...validationSteps].reverse().find(step => step.status === 'success' || step.status === 'warning');
         if (lastSignificantStep && lastSignificantStep.id !== 'fileSelection') return lastSignificantStep;
-        const firstPending = validationSteps.find(step => step.status === 'pending');
-        if (firstPending && firstPending.id !== 'fileSelection') return { ...firstPending, label: `Status: ${firstPending.label}`};
+        // If only 'fileSelection' is success and others are pending, it means it's waiting for content processing.
+        // In this case, showing "pending" might be confusing if isProcessing is false. Best to show nothing specific or the default.
     }
     return null;
   }, [validationSteps, isProcessing, currentFileForValidation]);
+
 
   useEffect(() => {
     if (!isProcessing && validationSteps.length > 0) {
@@ -687,14 +686,10 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       if (hasError) {
         setAccordionValue("validation-details-" + instanceId);
       } else {
-        // Automatically close accordion on successful processing if it was opened due to file selection
-        // but only if it's the "validation-details" accordion.
-        // if (accordionValue.startsWith("validation-details-")) {
-        //   setAccordionValue("");
-        // }
+         // Keep it closed by default or if closed by user
       }
     }
-  }, [isProcessing, validationSteps, instanceId, accordionValue]);
+  }, [isProcessing, validationSteps, instanceId]);
   
   const allSeriesSelected = useMemo(() => dataSeries.length > 0 && dataSeries.every(series => visibleSeries[series]), [dataSeries, visibleSeries]);
   
@@ -794,6 +789,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
           x1: newX1, y1: newY1, x2: newX2, y2: newY2,
           strokeWidth: lineToCopy.strokeWidth || DEFAULT_STROKE_WIDTH,
           color: lineToCopy.color || DEFAULT_LINE_COLOR,
+          arrowStyle: lineToCopy.arrowStyle || 'none',
+          lineStyle: lineToCopy.lineStyle || 'solid',
       };
       setLines(prevLines => [...prevLines, newCopiedLine]);
       setSelectedLineId(newCopiedLine.id);
@@ -986,7 +983,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
           />
         </CardTitle>
         <div className="flex items-center gap-0.5">
-          <Button
+           <Button
             onClick={() => setIsOverlayActive(!isOverlayActive)}
             variant={isOverlayActive ? "default" : "outline"}
             className={cn(
@@ -1012,9 +1009,9 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
             </Tooltip>
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsPlotExpanded(!isPlotExpanded)} aria-label={isPlotExpanded ? "Collapse plot area" : "Expand plot area"} disabled={parsedData.length === 0 || anyAnnotationInteractionActive}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsPlotExpanded(!isPlotExpanded)} aria-label={isPlotExpanded ? "Collapse plot area" : "Expand plot area"} disabled={parsedData.length === 0 || anyAnnotationInteractionActive}>
                     {isPlotExpanded ? <ChevronsUp className="h-4 w-4" /> : <ChevronsDown className="h-4 w-4" />}
-                    </Button>
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom"><p>{isPlotExpanded ? "Collapse Plot" : "Expand Plot"}</p></TooltipContent>
             </Tooltip>
@@ -1035,15 +1032,15 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         <CardContent className={cn("p-2 pt-1", !isMinimalistView && "md:grid md:grid-cols-12 md:gap-2")}>
           {!isMinimalistView && (
             <>
-            <div className="md:col-span-3 space-y-1.5 flex flex-col"> 
-              <div className="space-y-1 border p-1.5 rounded-md flex flex-col flex-1 min-h-0">
+            <div className="md:col-span-2 space-y-1.5 flex flex-col"> 
+              <div className="space-y-1 border p-1 rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1">
                     <Settings2 className="h-3 w-3 text-[#2B7A78]" />
-                    <h3 className="text-xs font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
+                    <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Import & Validate</h3>
                 </div>
-                 <div className="px-1 py-0.5">
+                 <div className="px-1 py-0.5 flex justify-center">
                   <UiLabel htmlFor={fileInputId} className="cursor-pointer w-full">
-                    <Button asChild variant="outline" size="sm" className="w-full h-8 text-xs" disabled={isProcessing || anyAnnotationInteractionActive}>
+                    <Button asChild variant="outline" size="sm" className="w-full h-7 text-xs" disabled={isProcessing || anyAnnotationInteractionActive}>
                        <span>Choose file</span>
                     </Button>
                   </UiLabel>
@@ -1117,11 +1114,11 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                 </div>
               </div>
             </div>
-            <div className="md:col-span-3 space-y-1.5 flex flex-col">
-                <div className="space-y-1 p-1.5 border rounded-md flex flex-col h-32"> {/* Fixed height for 6 vars approx */}
+            <div className="md:col-span-2 space-y-1.5 flex flex-col">
+                <div className="space-y-1 p-1 border rounded-md flex flex-col flex-1 min-h-0"> {/* Reduced p-1.5 to p-1 */}
                     <div className="flex items-center gap-1">
                         <ListFilter className="h-3 w-3 text-[#2B7A78]" />
-                        <h3 className="text-xs font-semibold text-[#2B7A78]">Select Variables</h3>
+                        <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Select Variables</h3>
                     </div>
                     <div className="flex items-center space-x-1.5">
                         <Checkbox id={`select-all-rhs-${instanceId}-${uniqueComponentId}`} checked={allSeriesSelected} onCheckedChange={(checked) => handleSelectAllToggle(!!checked)} disabled={dataSeries.length === 0 || anyAnnotationInteractionActive} aria-label={allSeriesSelected ? "Deselect all series" : "Select all series"} className="h-3.5 w-3.5" />
@@ -1129,7 +1126,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                             {allSeriesSelected ? "Deselect All" : "Select All"} ({dataSeries.filter(s => visibleSeries[s]).length}/{dataSeries.length})
                         </UiLabel>
                     </div>
-                    <ScrollArea className="w-full rounded-md border p-1 flex-1"> {/* flex-1 to use available space */}
+                    <ScrollArea className="w-full rounded-md border p-1 h-28"> {/* Reduced height to h-28 */}
                         {dataSeries.length > 0 ? (
                             dataSeries.map((seriesName) => (
                             <div key={seriesName} className="flex items-center space-x-1.5 py-0.5">
@@ -1147,8 +1144,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
             </div>
             </>
           )}
-          <div className={cn(!isMinimalistView ? "md:col-span-6" : "col-span-full", !isMinimalistView && parsedData.length > 0 && "md:self-start")}>
-             <div ref={chartAreaRef} className={cn( "relative", (isOverlayActive && (anyAnnotationInteractionActive)) && "opacity-70 pointer-events-none" )}>
+          <div className={cn(!isMinimalistView ? "md:col-span-8" : "col-span-full", !isMinimalistView && parsedData.length > 0 && "md:self-start")}>
+             <div ref={chartAreaRef} className={cn("relative", (isOverlayActive && anyAnnotationInteractionActive) && "opacity-70 pointer-events-none" )}>
               {parsedData.length > 0 ? (
                 <ChartDisplay
                   data={parsedData}
@@ -1195,8 +1192,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                         stroke={selectedLineId === line.id ? "hsl(var(--destructive))" : (line.color || DEFAULT_LINE_COLOR)}
                         strokeWidth={selectedLineId === line.id ? (line.strokeWidth || DEFAULT_STROKE_WIDTH) + SELECTED_STROKE_WIDTH_OFFSET : (line.strokeWidth || DEFAULT_STROKE_WIDTH)}
                         strokeDasharray={getStrokeDasharray(line.lineStyle)}
-                        markerStart={(line.arrowStyle === 'both') ? `url(#arrowheadStart-${uniqueComponentId})` : undefined}
-                        markerEnd={(line.arrowStyle === 'end' || line.arrowStyle === 'both') ? `url(#arrowheadEnd-${uniqueComponentId})` : undefined}
+                        markerStart={ (line.arrowStyle === 'start' || line.arrowStyle === 'both') ? `url(#arrowheadStart-${uniqueComponentId})` : undefined }
+                        markerEnd={ (line.arrowStyle === 'end' || line.arrowStyle === 'both') ? `url(#arrowheadEnd-${uniqueComponentId})` : undefined }
                         style={{ pointerEvents: 'none' }}
                       />
                       {selectedLineId === line.id && !movingLineId && !isDraggingToolbar && ( 
@@ -1262,6 +1259,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                 </svg>
               )}
             </div>
+            {/* Expand/Collapse button for the chart height itself, moved outside the ChartDisplay wrapper but still controls its height prop */}
             {parsedData.length > 0 && !isMinimalistView && !isMinimized && (
                 <div className="flex justify-center pt-1">
                     <TooltipProvider delayDuration={100}>
@@ -1357,7 +1355,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                         { value: 'both', label: "Arrowhead on both sides" }
                       ].map((opt) =>
                         <DropdownMenuRadioItem key={opt.value} value={opt.value} className="text-xs py-1 flex items-center">
-                          <ArrowStyleIcon style={opt.value as 'none' | 'end' | 'both'} uniqueId={`${uniqueComponentId}-${opt.value}`} className="mr-2"/>
+                          <ArrowStyleIcon style={opt.value as 'none' | 'end' | 'both'} uniqueId={`${uniqueComponentId}-${instanceId}-${opt.value}`} className="mr-2"/>
                           {opt.label}
                         </DropdownMenuRadioItem>
                       )}

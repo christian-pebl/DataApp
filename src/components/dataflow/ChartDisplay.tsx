@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useMemo, useCallback } from 'react';
@@ -30,7 +31,7 @@ interface DataPoint {
   [key: string]: string | number | undefined | null;
 }
 
-const ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT = 350;
+const INTERNAL_DEFAULT_CHART_HEIGHT = 350;
 
 interface ChartDisplayProps {
   data: DataPoint[];
@@ -53,7 +54,7 @@ export function ChartDisplay({
   brushEndIndex,
   onBrushChange,
 }: ChartDisplayProps) {
-  const chartHeightToUse = chartRenderHeight || ANNOTATION_PAGE_CHART_RENDERING_BASE_HEIGHT;
+  const chartHeightToUse = chartRenderHeight || INTERNAL_DEFAULT_CHART_HEIGHT;
 
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -87,7 +88,7 @@ export function ChartDisplay({
       if (!isValid(dateObj)) {
         return String(timeValue);
       }
-      return format(dateObj, 'dd/MM/yy');
+      return format(dateObj, 'dd/MM/yy'); 
     } catch (e) {
       return String(timeValue);
     }
@@ -132,9 +133,9 @@ export function ChartDisplay({
           data={chartData}
           margin={{
             top: 5,
-            right: yAxisConfigs.some(yc => yc.orientation === 'right' && plottableSeries.includes(yc.dataKey)) ? 25 : 5,
-            left: yAxisConfigs.some(yc => yc.orientation === 'left' && plottableSeries.includes(yc.dataKey)) ? 25 : 5,
-            bottom: 100, 
+            right: yAxisConfigs.some(yc => yc.orientation === 'right' && plottableSeries.includes(yc.dataKey)) ? 20 : 5,
+            left: yAxisConfigs.some(yc => yc.orientation === 'left' && plottableSeries.includes(yc.dataKey)) ? 25 : 5, // Increased left margin for Y-axis
+            bottom: 60, // Compacted bottom margin
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -143,15 +144,15 @@ export function ChartDisplay({
             tickFormatter={memoizedXAxisTickFormatter}
             angle={-45}
             textAnchor="end"
-            height={60} 
+            height={60} // Maintained height for angled labels
             stroke="hsl(var(--muted-foreground))"
             tick={{ fontSize: '0.7rem' }}
             interval="preserveStartEnd"
             label={{
               value: timeAxisLabel,
               position: 'insideBottom',
-              offset: 30, 
-              dy: 20, 
+              offset: 15, 
+              dy: 15, 
               style: { textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--foreground))' }
             }}
           />
@@ -167,7 +168,7 @@ export function ChartDisplay({
                 stroke={config.color ? `hsl(var(${config.color}))` : "hsl(var(--muted-foreground))"}
                 tickFormatter={config.tickFormatter || ((value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value))}
                 tick={{ fontSize: '0.7rem' }}
-                width={config.orientation === 'left' ? 45 : 40} 
+                width={config.orientation === 'left' ? 40 : 35} 
                 label={
                   config.label ? (
                     <RechartsYAxisLabel
@@ -204,7 +205,7 @@ export function ChartDisplay({
             }}
             isAnimationActive={false}
           />
-          <Legend wrapperStyle={{ paddingTop: '15px', fontSize: '0.7rem' }} />
+          <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '0.7rem' }} />
 
           {plottableSeries.map(seriesKey => {
             const yAxisConfigForLine = yAxisConfigs.find(yc => yc.dataKey === seriesKey) || yAxisConfigs[0];
@@ -227,7 +228,7 @@ export function ChartDisplay({
           {data.length > 1 && onBrushChange && (
             <Brush
               dataKey="time"
-              height={20} 
+              height={12} 
               stroke="hsl(var(--primary))"
               fill="transparent"
               tickFormatter={formatDateTickBrush} 
@@ -242,3 +243,4 @@ export function ChartDisplay({
     </div>
   );
 }
+
