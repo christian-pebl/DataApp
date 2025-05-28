@@ -96,7 +96,7 @@ export default function DataExplorerPage() {
 
   const initialApiPlotVisibility = useMemo(() => {
     return Object.fromEntries(
-      ALL_PARAMETERS.map(key => [key, true])
+      ALL_PARAMETERS.map(key => [key, true]) // Default all to true
     ) as Record<CombinedParameterKey, boolean>;
   }, []);
   const [apiPlotVisibility, setApiPlotVisibility] = useState<Record<CombinedParameterKey, boolean>>(initialApiPlotVisibility);
@@ -118,7 +118,7 @@ export default function DataExplorerPage() {
       const config = PARAMETER_CONFIG[key as CombinedParameterKey];
       if (config && config.icon) {
         icons[key] = config.icon;
-      } else if (!icons[key]) {
+      } else { // Fallbacks if no icon is in PARAMETER_CONFIG
         if (key === 'seaLevelHeightMsl') icons[key] = Waves;
         else if (key === 'waveHeight') icons[key] = Sailboat;
         else if (key === 'waveDirection') icons[key] = CompassIcon;
@@ -128,7 +128,7 @@ export default function DataExplorerPage() {
         else if (key === 'windSpeed10m') icons[key] = WindIcon;
         else if (key === 'windDirection10m') icons[key] = CompassIcon;
         else if (key === 'ghi') icons[key] = SunMoon;
-        else icons[key] = Info; // Fallback
+        else icons[key] = Info; // Default fallback
       }
     });
     return icons as Record<CombinedParameterKey, LucideIcon | undefined>;
@@ -158,7 +158,7 @@ export default function DataExplorerPage() {
   const addPlot = useCallback(() => {
     setPlots((prevPlots) => [
       ...prevPlots,
-      { id: `plot-${Date.now()}-${prevPlots.length}`, title: `Device Plot ${prevPlots.length + 1}` },
+      { id: `plot-${Date.now()}-${prevPlots.length}`, title: `Device Data Plot ${prevPlots.length + 1}` },
     ]);
   }, []);
 
@@ -318,7 +318,7 @@ export default function DataExplorerPage() {
   useEffect(() => {
     if (!initialApiFetchDone.current) {
       const defaultLoc = knownOmLocations[defaultOmLocationKey];
-      if (defaultLoc && initialCoords && currentLocationName && dateRange?.from && dateRange?.to) {
+      if (defaultLoc && mapSelectedCoords && currentLocationName && dateRange?.from && dateRange?.to) {
         const selectedParamsOnInit = ALL_PARAMETERS.filter(key => initialApiPlotVisibility[key as CombinedParameterKey]);
         if (selectedParamsOnInit.length > 0) {
           handleFetchApiData(true);
@@ -326,7 +326,8 @@ export default function DataExplorerPage() {
         }
       }
     }
-  }, [initialCoords, currentLocationName, dateRange, handleFetchApiData, initialApiPlotVisibility]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapSelectedCoords, currentLocationName, dateRange, handleFetchApiData, initialApiPlotVisibility]);
 
 
   const handleApiPlotVisibilityChange = useCallback((key: CombinedParameterKey, checked: boolean) => {
