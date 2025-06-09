@@ -7,7 +7,7 @@ import Link from "next/link";
 import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import type { DateRange } from "react-day-picker";
-import { format, formatISO, subDays, addDays } from 'date-fns';
+import { format, formatISO, subDays, addDays, subMonths } from 'date-fns';
 
 import { Button } from "@/components/ui/button";
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
@@ -72,15 +72,18 @@ export default function DataExplorerPage() {
   const { toast, dismiss } = useToast();
   const instanceId = useId();
 
-  // CSV Plot State
+  // Device Data Plot State
   const [plots, setPlots] = useState<PlotConfig[]>([]);
   const plotsInitialized = useRef(false);
 
   // API Data State (Weather & Marine)
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
-    from: new Date("2025-05-17"),
-    to: new Date("2025-05-20"),
-  }));
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    const today = new Date();
+    return {
+      from: subMonths(today, 1),
+      to: today,
+    };
+  });
   const [mapSelectedCoords, setMapSelectedCoords] = useState<{ lat: number; lon: number } | null>(
     knownOmLocations[defaultOmLocationKey]
       ? { lat: knownOmLocations[defaultOmLocationKey].lat, lon: knownOmLocations[defaultOmLocationKey].lon }
@@ -96,7 +99,7 @@ export default function DataExplorerPage() {
 
   const initialApiPlotVisibility = useMemo(() => {
     return Object.fromEntries(
-      ALL_PARAMETERS.map(key => [key, true]) // Default all to true
+      ALL_PARAMETERS.map(key => [key, true])
     ) as Record<CombinedParameterKey, boolean>;
   }, []);
   const [apiPlotVisibility, setApiPlotVisibility] = useState<Record<CombinedParameterKey, boolean>>(initialApiPlotVisibility);
@@ -154,7 +157,7 @@ export default function DataExplorerPage() {
     setTheme(prevTheme => (prevTheme === "light" ? "dark" : "light"));
   }, []);
 
-  // CSV Plot Logic
+  // Device Data Plot Logic
   const addPlot = useCallback(() => {
     setPlots((prevPlots) => [
       ...prevPlots,
@@ -270,6 +273,7 @@ export default function DataExplorerPage() {
 
       if (result.success && result.data) {
         setApiData(result.data);
+        console.log("Client received apiData:", result.data);
         setApiDataLocationContext(result.dataLocationContext || `API Data for ${currentLocationName}`);
         if (result.data.length === 0 && !result.error) {
           toast({ variant: "default", title: "No API Data", description: "No data points found for the selected criteria.", duration: 4000 });
@@ -433,6 +437,9 @@ export default function DataExplorerPage() {
               <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
             </Link>
             <div className="flex items-center gap-1">
+              <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer</p></TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Link href="/annotation" passHref><Button variant={pathname === '/annotation' ? "secondary": "ghost"} size="icon" aria-label="Annotation Page"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Annotation Page</p></TooltipContent></Tooltip>
+              <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
           </div>
@@ -566,6 +573,7 @@ export default function DataExplorerPage() {
                         isLoading={isLoadingApiData}
                         error={errorApiData}
                         plotVisibility={apiPlotVisibility} 
+                        handlePlotVisibilityChange={handleApiPlotVisibilityChange}
                         />
                     </CardContent>
                 </Card>
@@ -613,3 +621,5 @@ export default function DataExplorerPage() {
   );
 }
 
+
+    
