@@ -14,7 +14,7 @@ import { PlotInstance } from "@/components/dataflow/PlotInstance";
 import {
   PlusCircle, SunMoon, LayoutGrid, Waves, MapPin, CalendarDays, Search,
   Loader2, Info, CheckCircle2, XCircle, Copy, CloudSun, Anchor,
-  Thermometer, Wind as WindIcon, Compass as CompassIcon, Sailboat, Timer as TimerIcon, ListChecks
+  Thermometer, Wind as WindIcon, Compass as CompassIcon, Sailboat, Timer as TimerIcon, ListChecks, FilePenLine
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -130,7 +130,7 @@ export default function DataExplorerPage() {
         else if (key === 'temperature2m') icons[key] = Thermometer;
         else if (key === 'windSpeed10m') icons[key] = WindIcon;
         else if (key === 'windDirection10m') icons[key] = CompassIcon;
-        else if (key === 'ghi') icons[key] = SunMoon;
+        else if (key === 'ghi') icons[key] = CloudSun; // Changed from SunMoon to CloudSun for GHI
         else icons[key] = Info; // Default fallback
       }
     });
@@ -438,7 +438,7 @@ export default function DataExplorerPage() {
             </Link>
             <div className="flex items-center gap-1">
               <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer</p></TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><Link href="/annotation" passHref><Button variant={pathname === '/annotation' ? "secondary": "ghost"} size="icon" aria-label="Annotation Page"><Waves className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Annotation Page</p></TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Link href="/annotation" passHref><Button variant={pathname === '/annotation' ? "secondary": "ghost"} size="icon" aria-label="Annotation Page"><FilePenLine className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Annotation Page</p></TooltipContent></Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
@@ -621,5 +621,7 @@ export default function DataExplorerPage() {
   );
 }
 
+
+    
 
     
