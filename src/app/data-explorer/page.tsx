@@ -22,13 +22,19 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
-import { Input } from "@/components/ui/input";
 import { Label as UiLabel } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import type { CombinedDataPoint, LogStep as ApiLogStep, CombinedParameterKey } from '../om-marine-explorer/shared';
 import { ALL_PARAMETERS, PARAMETER_CONFIG } from '../om-marine-explorer/shared';
@@ -54,16 +60,22 @@ const DEFAULT_OM_LATITUDE = 51.7128; // Milford Haven
 const DEFAULT_OM_LONGITUDE = -5.0341;
 const DEFAULT_OM_MAP_ZOOM = 9;
 
-const defaultOmLocationKey = "milfordhaven";
 const knownOmLocations: Record<string, { name: string; lat: number; lon: number }> = {
   milfordhaven: { name: "Milford Haven", lat: 51.7128, lon: -5.0341 },
-  newlyn: { name: "Newlyn", lat: 50.102, lon: -5.549 },
-  dover: { name: "Dover", lat: 51.123, lon: 1.317 },
-  liverpool: { name: "Liverpool", lat: 53.408, lon: -2.992 },
-  portsmouth: { name: "Portsmouth", lat: 50.819, lon: -1.088 },
-  aberdeen: { name: "Aberdeen", lat: 57.149, lon: -2.094 },
-  "stDavidsHead": { name: "St David's Head", lat: 52.0, lon: -5.3 },
+  ramseysound: { name: "Ramsey Sound", lat: 51.871645, lon: -5.313960 },
+  bidefordbay: { name: "Bideford Bay", lat: 51.067729, lon: -4.384352 },
+  blakeneyoverfalls: { name: "Blakeney Overfalls", lat: 53.034270, lon: 0.975421 },
+  pabayinnersound: { name: "Pabay Inner Sound", lat: 57.264780, lon: -5.853793 },
+  lochbay: { name: "Loch Bay", lat: 57.506498, lon: -6.620397 },
+  // Original known locations for reference (can be re-added if needed, ensure keys are unique)
+  // newlyn: { name: "Newlyn", lat: 50.102, lon: -5.549 },
+  // dover: { name: "Dover", lat: 51.123, lon: 1.317 },
+  // liverpool: { name: "Liverpool", lat: 53.408, lon: -2.992 },
+  // portsmouth: { name: "Portsmouth", lat: 50.819, lon: -1.088 },
+  // aberdeen: { name: "Aberdeen", lat: 57.149, lon: -2.094 },
+  // stDavidsHead: { name: "St David's Head", lat: 52.0, lon: -5.3 }, // Key was "stDavidsHead"
 };
+const defaultOmLocationKey = "milfordhaven";
 
 
 export default function DataExplorerPage() {
@@ -84,6 +96,9 @@ export default function DataExplorerPage() {
       to: today,
     };
   });
+
+  const [selectedLocationKey, setSelectedLocationKey] = useState<string>(defaultOmLocationKey);
+
   const [mapSelectedCoords, setMapSelectedCoords] = useState<{ lat: number; lon: number } | null>(
     knownOmLocations[defaultOmLocationKey]
       ? { lat: knownOmLocations[defaultOmLocationKey].lat, lon: knownOmLocations[defaultOmLocationKey].lon }
@@ -92,10 +107,6 @@ export default function DataExplorerPage() {
   const [currentLocationName, setCurrentLocationName] = useState<string>(
     knownOmLocations[defaultOmLocationKey]?.name || "Selected Location"
   );
-  const [searchTerm, setSearchTerm] = useState<string>(knownOmLocations[defaultOmLocationKey]?.name || "");
-  const [suggestions, setSuggestions] = useState<Array<{ key: string; name: string }>>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const initialApiPlotVisibility = useMemo(() => {
     return Object.fromEntries(
@@ -121,7 +132,7 @@ export default function DataExplorerPage() {
       const config = PARAMETER_CONFIG[key as CombinedParameterKey];
       if (config && config.icon) {
         icons[key] = config.icon;
-      } else { // Fallbacks if no icon is in PARAMETER_CONFIG
+      } else {
         if (key === 'seaLevelHeightMsl') icons[key] = Waves;
         else if (key === 'waveHeight') icons[key] = Sailboat;
         else if (key === 'waveDirection') icons[key] = CompassIcon;
@@ -130,8 +141,8 @@ export default function DataExplorerPage() {
         else if (key === 'temperature2m') icons[key] = Thermometer;
         else if (key === 'windSpeed10m') icons[key] = WindIcon;
         else if (key === 'windDirection10m') icons[key] = CompassIcon;
-        else if (key === 'ghi') icons[key] = CloudSun; // Changed from SunMoon to CloudSun for GHI
-        else icons[key] = Info; // Default fallback
+        else if (key === 'ghi') icons[key] = CloudSun;
+        else icons[key] = Info;
       }
     });
     return icons as Record<CombinedParameterKey, LucideIcon | undefined>;
@@ -177,61 +188,43 @@ export default function DataExplorerPage() {
   }, [addPlot, plots.length]);
 
   // API Location & Parameter Logic
+  const handleLocationChange = useCallback((newKey: string) => {
+    if (newKey === "__custom__") return; // Ignore if "Custom Location" is somehow selected
+
+    setSelectedLocationKey(newKey);
+    const selectedLoc = knownOmLocations[newKey];
+    if (selectedLoc) {
+      setMapSelectedCoords({ lat: selectedLoc.lat, lon: selectedLoc.lon });
+      setCurrentLocationName(selectedLoc.name);
+      toast({ title: "Location Selected", description: `${selectedLoc.name} (Lat: ${selectedLoc.lat.toFixed(3)}, Lon: ${selectedLoc.lon.toFixed(3)})`, duration: 3000 });
+    }
+  }, [toast]);
+
   const handleMapLocationSelect = useCallback((coords: { lat: number; lon: number }) => {
     setMapSelectedCoords(coords);
-    let foundName = "Custom Location";
+    let matchedKey = "";
     for (const key in knownOmLocations) {
       if (knownOmLocations[key].lat.toFixed(3) === coords.lat.toFixed(3) && knownOmLocations[key].lon.toFixed(3) === coords.lon.toFixed(3)) {
-        foundName = knownOmLocations[key].name;
+        matchedKey = key;
         break;
       }
     }
-    setCurrentLocationName(foundName);
-    setSearchTerm(foundName);
-    toast({ title: "Location Selected on Map", description: `${foundName} (Lat: ${coords.lat.toFixed(3)}, Lon: ${coords.lon.toFixed(3)})`, duration: 3000 });
-    setShowSuggestions(false);
+
+    if (matchedKey) {
+      setSelectedLocationKey(matchedKey);
+      setCurrentLocationName(knownOmLocations[matchedKey].name);
+      toast({ title: "Location Selected on Map", description: `${knownOmLocations[matchedKey].name} (Lat: ${coords.lat.toFixed(3)}, Lon: ${coords.lon.toFixed(3)})`, duration: 3000 });
+    } else {
+      setSelectedLocationKey("__custom__"); // Special key for custom map selection
+      setCurrentLocationName("Custom Location");
+      toast({ title: "Custom Location Selected on Map", description: `Lat: ${coords.lat.toFixed(3)}, Lon: ${coords.lon.toFixed(3)})`, duration: 3000 });
+    }
   }, [toast]);
 
-  const handleSuggestionClick = useCallback((locationKey: string) => {
-    const selectedLoc = knownOmLocations[locationKey];
-    if (selectedLoc) {
-      handleMapLocationSelect({ lat: selectedLoc.lat, lon: selectedLoc.lon });
-    }
-  }, [handleMapLocationSelect]);
-
-  useEffect(() => {
-    if (searchTerm === "") {
-      setSuggestions([]);
-      if(document.activeElement === document.getElementById(`om-location-search-${instanceId}`)) {
-        setSuggestions(Object.entries(knownOmLocations).map(([key, loc]) => ({ key, name: loc.name })).slice(0,5));
-        setShowSuggestions(true);
-      } else {
-        setShowSuggestions(false);
-      }
-      return;
-    }
-    const lowerSearchTerm = searchTerm.toLowerCase();
-    const filtered = Object.entries(knownOmLocations)
-      .filter(([key, loc]) => key.toLowerCase().includes(lowerSearchTerm) || loc.name.toLowerCase().includes(lowerSearchTerm))
-      .map(([key, loc]) => ({ key, name: loc.name }))
-      .slice(0, 5);
-    setSuggestions(filtered);
-    setShowSuggestions(true);
-  }, [searchTerm, instanceId]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
-        setShowSuggestions(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const handleFetchApiData = useCallback(async (isInitialLoad = false) => {
     if (!mapSelectedCoords) {
-      if (!isInitialLoad) toast({ variant: "destructive", title: "Missing Location", description: "Please select a location on the map." });
+      if (!isInitialLoad) toast({ variant: "destructive", title: "Missing Location", description: "Please select a location." });
       return;
     }
     if (!dateRange || !dateRange.from || !dateRange.to) {
@@ -285,7 +278,7 @@ export default function DataExplorerPage() {
           }
           setApiLogOverallStatus('success');
           if (result.log && result.log.every(l => l.status !== 'error' && l.status !== 'warning')) {
-            setShowApiFetchLogAccordion(""); // Close log if no errors/warnings
+            setShowApiFetchLogAccordion("");
           } else {
             setShowApiFetchLogAccordion("api-fetch-log-item");
           }
@@ -321,8 +314,7 @@ export default function DataExplorerPage() {
 
   useEffect(() => {
     if (!initialApiFetchDone.current) {
-      const defaultLoc = knownOmLocations[defaultOmLocationKey];
-      if (defaultLoc && mapSelectedCoords && currentLocationName && dateRange?.from && dateRange?.to) {
+      if (mapSelectedCoords && currentLocationName && dateRange?.from && dateRange?.to) {
         const selectedParamsOnInit = ALL_PARAMETERS.filter(key => initialApiPlotVisibility[key as CombinedParameterKey]);
         if (selectedParamsOnInit.length > 0) {
           handleFetchApiData(true);
@@ -344,7 +336,6 @@ export default function DataExplorerPage() {
     setApiPlotVisibility(Object.fromEntries(ALL_PARAMETERS.map(key => [key, checked])) as Record<CombinedParameterKey, boolean>);
   }, []);
 
-  // Log Accordion Renderer
   const getLogTriggerContent = useCallback((status: ApiLogOverallStatus, isLoading: boolean, defaultTitle: string, lastError?: string | null) => {
     if (isLoading) return <><Loader2 className="mr-2 h-3 w-3 animate-spin" />Fetching log...</>;
     if (status === 'success') return <><CheckCircle2 className="mr-2 h-3 w-3 text-green-500" />{defaultTitle}: Success</>;
@@ -448,7 +439,6 @@ export default function DataExplorerPage() {
 
       <main className="flex-grow container mx-auto p-2 md:p-3 space-y-3">
         
-        {/* API Data Section */}
         <Card className="shadow-sm">
           <CardHeader className="pb-2 pt-3">
             <CardTitle className="text-base flex items-center gap-1.5">
@@ -460,31 +450,29 @@ export default function DataExplorerPage() {
                 <Card>
                     <CardHeader className="pb-2 pt-3"><CardTitle className="text-sm flex items-center gap-1.5"><MapPin className="h-4 w-4 text-primary"/>Location & Date</CardTitle></CardHeader>
                     <CardContent className="space-y-2 p-3">
-                        <div className="relative" ref={suggestionsRef}>
-                        <UiLabel htmlFor={`om-location-search-${instanceId}`} className="text-xs font-medium mb-0.5 block">Search Location</UiLabel>
-                        <Input
-                            id={`om-location-search-${instanceId}`}
-                            type="text"
-                            placeholder="e.g., Milford Haven"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            onFocus={() => { if(suggestions.length > 0 || searchTerm==="" || Object.values(knownOmLocations).some(loc => loc.name === searchTerm)) setShowSuggestions(true);}}
-                            className="h-9 text-xs flex-grow"
-                            disabled={isLoadingApiData}
-                        />
-                        {showSuggestions && (
-                            <div className="absolute top-full left-0 right-0 z-20 mt-1 border bg-card shadow-lg rounded-md max-h-60 overflow-y-auto">
-                            {suggestions.map(loc => (
-                                <button
-                                key={loc.key}
-                                onClick={() => handleSuggestionClick(loc.key)}
-                                className="block w-full text-left px-3 py-1.5 text-xs hover:bg-muted"
-                                >
-                                {loc.name}
-                                </button>
-                            ))}
-                            </div>
-                        )}
+                        <div>
+                            <UiLabel htmlFor={`om-location-select-${instanceId}`} className="text-xs font-medium mb-0.5 block">Select Location</UiLabel>
+                            <Select
+                                value={selectedLocationKey}
+                                onValueChange={handleLocationChange}
+                                disabled={isLoadingApiData}
+                            >
+                                <SelectTrigger id={`om-location-select-${instanceId}`} className="h-9 text-xs">
+                                    <SelectValue placeholder="Select a location" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {Object.entries(knownOmLocations).map(([key, loc]) => (
+                                        <SelectItem key={key} value={key} className="text-xs">
+                                            {loc.name}
+                                        </SelectItem>
+                                    ))}
+                                    {selectedLocationKey === "__custom__" && (
+                                        <SelectItem value="__custom__" disabled className="text-xs font-medium">
+                                          {currentLocationName}
+                                        </SelectItem>
+                                    )}
+                                </SelectContent>
+                            </Select>
                         </div>
                         
                         <UiLabel htmlFor={`om-map-container-${instanceId}`} className="text-xs font-medium mb-0.5 block pt-1">Click Map to Select Location</UiLabel>
@@ -567,7 +555,7 @@ export default function DataExplorerPage() {
             <div className="md:col-span-8">
                  <Card className="shadow-sm h-full">
                     <CardHeader className="p-2 pt-3"><CardTitle className="text-sm">{apiDataLocationContext || "Weather & Marine API Data Plots"}</CardTitle></CardHeader>
-                    <CardContent className="p-1.5 h-[calc(100%-2.5rem)]"> {/* Adjust height for header */}
+                    <CardContent className="p-1.5 h-[calc(100%-2.5rem)]"> 
                         <MarinePlotsGrid
                         marineData={apiData} 
                         isLoading={isLoadingApiData}
@@ -583,7 +571,6 @@ export default function DataExplorerPage() {
         
         <Separator className="my-4" />
 
-        {/* Device Data Section */}
         <div className="flex justify-center mb-3">
           <Button onClick={addPlot} size="sm" className="h-8 text-xs">
             <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot (Device Data)
@@ -620,8 +607,3 @@ export default function DataExplorerPage() {
     </div>
   );
 }
-
-
-    
-
-    
