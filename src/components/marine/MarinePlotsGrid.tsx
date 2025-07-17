@@ -2,13 +2,13 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, Scatter } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip } from 'recharts';
 import type { CombinedDataPoint, CombinedParameterKey, ParameterConfigItem } from '@/app/om-marine-explorer/shared';
 import { PARAMETER_CONFIG, ALL_PARAMETERS, MPH_CONVERSION_FACTOR } from '@/app/om-marine-explorer/shared';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Loader2, CheckCircle2, XCircle, Info, ChevronUp, ChevronDown, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle, ArrowUp } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Info, ChevronUp, ChevronDown, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { format, parseISO, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -21,37 +21,6 @@ const formatDateTickBrush = (timeValue: string | number): string => {
   } catch (e) {
     return String(timeValue);
   }
-};
-
-const DirectionArrow = ({ degrees }: { degrees: number | null | undefined }) => {
-  if (typeof degrees !== 'number' || isNaN(degrees)) {
-    return <span className="text-xs text-muted-foreground">N/A</span>;
-  }
-  return (
-    <div className="flex items-center gap-1.5">
-      <ArrowUp
-        className="h-3 w-3 text-foreground transition-transform duration-150"
-        style={{ transform: `rotate(${degrees}deg)` }}
-      />
-      <span className="font-mono text-xs text-foreground">{degrees.toFixed(0)}°</span>
-    </div>
-  );
-};
-
-// Custom shape for the scatter plot arrows
-const DirectionArrowShape = ({ cx, cy, payload, dataKey }: { cx: number; cy: number; payload: any; dataKey: string }) => {
-  const degrees = payload[dataKey];
-  if (typeof degrees !== 'number' || isNaN(degrees) || cx === null || cy === null) {
-    return null;
-  }
-  // An arrow shape pointing up (0 degrees) that we can rotate
-  const path = "M 0 -10 L 0 10 M -7 4 L 0 10 L 7 4";
-  
-  return (
-    <g transform={`translate(${cx},${cy}) rotate(${degrees})`}>
-      <path d={path} stroke="hsl(var(--foreground))" strokeWidth="1.5" fill="none" />
-    </g>
-  );
 };
 
 type SeriesAvailabilityStatus = 'pending' | 'available' | 'unavailable';
@@ -84,8 +53,6 @@ const PlotRow = ({
   onMove
 }: PlotRowProps) => {
 
-  const isDirectional = config.dataKey.toLowerCase().includes('direction');
-
   const transformedDisplayData = useMemo(() => displayData.map(point => {
     const value = point[config.dataKey as keyof CombinedDataPoint];
     if (value === undefined || value === null || (typeof value === 'number' && isNaN(value))) {
@@ -97,20 +64,6 @@ const PlotRow = ({
     return point;
   }), [displayData, config.dataKey, config.dataTransform]);
 
-  // Downsample data for directional plots
-  const directionalScatterData = useMemo(() => {
-    if (!isDirectional || transformedDisplayData.length === 0) {
-      return [];
-    }
-    const maxArrows = 50;
-    const dataLength = transformedDisplayData.length;
-    if (dataLength <= maxArrows) {
-      return transformedDisplayData;
-    }
-    const step = Math.ceil(dataLength / maxArrows);
-    return transformedDisplayData.filter((_, i) => i % step === 0);
-  }, [isDirectional, transformedDisplayData]);
-  
   const hasValidDataForSeriesInView = useMemo(() => transformedDisplayData.some(p => {
     const val = p[config.dataKey as keyof CombinedDataPoint];
     return val !== undefined && val !== null && !isNaN(Number(val));
@@ -124,8 +77,8 @@ const PlotRow = ({
   const currentValue = lastDataPointWithValidValue ? lastDataPointWithValidValue[config.dataKey as keyof CombinedDataPoint] as number | undefined : undefined;
   
   let displayValue = "";
-  if (isPlotVisible && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue) && !isDirectional) {
-    displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits: 1})}${config.unit || ''}`;
+  if (isPlotVisible && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue)) {
+    displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits: 1})}${config.unit || ''}`;
   }
 
   const IconComponent = config.Icon;
@@ -153,8 +106,7 @@ const PlotRow = ({
           </div>
         </div>
         <div className="flex items-center flex-shrink-0">
-          {isDirectional && isPlotVisible && availabilityStatus === 'available' && hasValidDataForSeriesInView && <DirectionArrow degrees={currentValue} />}
-          {!isDirectional && displayValue && (
+          {displayValue && (
             <span className={cn("text-muted-foreground text-xs ml-auto pl-2 whitespace-nowrap")}>{displayValue}</span>
           )}
           <Button variant="ghost" size="icon" className="h-5 w-5 ml-1" onClick={() => onMove(index, 'up')} disabled={index === 0}>
@@ -172,38 +124,29 @@ const PlotRow = ({
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
-                {!isDirectional && (
-                  <YAxis
-                    yAxisId={config.dataKey}
-                    domain={['auto', 'auto']}
-                    tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
-                    tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
-                    stroke="hsl(var(--border))"
-                    width={35} 
-                    axisLine={false}
-                    tickLine={false}
-                    label={{ 
-                      value: `${config.unit || ''}`, 
-                      angle: -90, 
-                      position: 'insideLeft', 
-                      style: { textAnchor: 'middle', fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' } as React.CSSProperties,
-                      dy: 10,
-                      dx: -2,
-                    }}
-                  />
-                )}
-                {isDirectional && (
-                  <YAxis yAxisId={config.dataKey} domain={[0,360]} hide={true} />
-                )}
+                <YAxis
+                  yAxisId={config.dataKey}
+                  domain={['auto', 'auto']}
+                  tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
+                  tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
+                  stroke="hsl(var(--border))"
+                  width={35} 
+                  axisLine={false}
+                  tickLine={false}
+                  label={{ 
+                    value: `${config.unit || ''}`, 
+                    angle: -90, 
+                    position: 'insideLeft', 
+                    style: { textAnchor: 'middle', fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' } as React.CSSProperties,
+                    dy: 10,
+                    dx: -2,
+                  }}
+                />
                 <XAxis dataKey="time" hide />
                 <RechartsTooltip
                   contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', fontSize: '0.6rem' }}
                   itemStyle={{ color: 'hsl(var(--foreground))' }}
                   formatter={(value: number | null | undefined, name: string, props) => { 
-                    const isCurrentDirectional = name.toLowerCase().includes('direction');
-                    if (isCurrentDirectional) {
-                      return [<DirectionArrow degrees={value} />, name];
-                    }
                     const formattedValue = (value !== null && value !== undefined && typeof value === 'number' && !isNaN(value)) 
                       ? value.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) 
                       : 'N/A';
@@ -219,27 +162,17 @@ const PlotRow = ({
                   }}
                   isAnimationActive={false}
                 />
-                {!isDirectional ? (
-                  <Line
-                    yAxisId={config.dataKey}
-                    type="monotone"
-                    dataKey={config.dataKey as string}
-                    stroke={`hsl(var(${config.color || '--chart-1'}))`}
-                    strokeWidth={1.5}
-                    dot={false}
-                    connectNulls={true}
-                    name={config.name} 
-                    isAnimationActive={false}
-                  />
-                ) : (
-                  <Scatter
-                    yAxisId={config.dataKey}
-                    data={directionalScatterData}
-                    dataKey={config.dataKey as string}
-                    name={config.name}
-                    shape={(props) => <DirectionArrowShape {...props} dataKey={config.dataKey as string} />}
-                  />
-                )}
+                <Line
+                  yAxisId={config.dataKey}
+                  type="monotone"
+                  dataKey={config.dataKey as string}
+                  stroke={`hsl(var(${config.color || '--chart-1'}))`}
+                  strokeWidth={1.5}
+                  dot={false}
+                  connectNulls={true}
+                  name={config.name} 
+                  isAnimationActive={false}
+                />
               </LineChart>
             </ResponsiveContainer>
           ) : (
@@ -473,5 +406,3 @@ export function MarinePlotsGrid({
     </div>
   );
 }
-
-    
