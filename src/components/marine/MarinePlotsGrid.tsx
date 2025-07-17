@@ -4,12 +4,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip } from 'recharts';
 import type { CombinedDataPoint, CombinedParameterKey, ParameterConfigItem } from '@/app/om-marine-explorer/shared';
-// Ensure MPH_CONVERSION_FACTOR is correctly imported
 import { PARAMETER_CONFIG, ALL_PARAMETERS, MPH_CONVERSION_FACTOR } from '@/app/om-marine-explorer/shared';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Loader2, CheckCircle2, XCircle, Info, ChevronUp, ChevronDown, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Info, ChevronUp, ChevronDown, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle, ArrowUp } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { format, parseISO, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -22,6 +21,21 @@ const formatDateTickBrush = (timeValue: string | number): string => {
   } catch (e) {
     return String(timeValue);
   }
+};
+
+const DirectionArrow = ({ degrees }: { degrees: number | null | undefined }) => {
+  if (typeof degrees !== 'number' || isNaN(degrees)) {
+    return <span className="text-xs text-muted-foreground">N/A</span>;
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <ArrowUp
+        className="h-3 w-3 text-foreground transition-transform duration-150"
+        style={{ transform: `rotate(${degrees}deg)` }}
+      />
+      <span className="font-mono text-xs text-foreground">{degrees.toFixed(0)}°</span>
+    </div>
+  );
 };
 
 interface MarinePlotsGridProps {
@@ -39,6 +53,7 @@ export function MarinePlotsGrid({
   isLoading,
   error,
   plotVisibility,
+  handlePlotVisibilityChange,
 }: MarinePlotsGridProps) {
   
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
@@ -54,19 +69,16 @@ export function MarinePlotsGrid({
       let displayUnit = baseConfig.unit;
       let iconComp: LucideIcon = Info; // Default icon
 
-      if (baseConfig.icon) {
-        iconComp = baseConfig.icon;
-      } else { // Fallbacks if no icon is in PARAMETER_CONFIG
-        if (key === 'seaLevelHeightMsl') iconComp = Waves;
-        else if (key === 'waveHeight') iconComp = Sailboat;
-        else if (key === 'waveDirection') iconComp = CompassIcon;
-        else if (key === 'wavePeriod') iconComp = TimerIcon;
-        else if (key === 'seaSurfaceTemperature') iconComp = Thermometer;
-        else if (key === 'temperature2m') iconComp = Thermometer;
-        else if (key === 'windSpeed10m') iconComp = WindIcon;
-        else if (key === 'windDirection10m') iconComp = CompassIcon;
-        else if (key === 'ghi') iconComp = SunIcon;
-      }
+      // Fallbacks if no icon is in PARAMETER_CONFIG
+      if (key === 'seaLevelHeightMsl') iconComp = Waves;
+      else if (key === 'waveHeight') iconComp = Sailboat;
+      else if (key === 'waveDirection') iconComp = CompassIcon;
+      else if (key === 'wavePeriod') iconComp = TimerIcon;
+      else if (key === 'seaSurfaceTemperature') iconComp = Thermometer;
+      else if (key === 'temperature2m') iconComp = Thermometer;
+      else if (key === 'windSpeed10m') iconComp = WindIcon;
+      else if (key === 'windDirection10m') iconComp = CompassIcon;
+      else if (key === 'ghi') iconComp = SunIcon;
       
       if (key === 'windSpeed10m' && baseConfig.apiSource === 'weather') {
         displayUnit = 'mph'; 
@@ -199,6 +211,7 @@ export function MarinePlotsGrid({
           const IconComponent = config.Icon;
           const availabilityStatus = seriesDataAvailability[config.dataKey];
           const isPlotVisible = plotVisibility[config.dataKey] ?? false;
+          const isDirectional = config.dataKey.toLowerCase().includes('direction');
           
           const transformedDisplayData = displayData.map(point => {
             const value = point[config.dataKey as keyof CombinedDataPoint];
@@ -223,7 +236,7 @@ export function MarinePlotsGrid({
           const currentValue = lastDataPointWithValidValue ? lastDataPointWithValidValue[config.dataKey as keyof CombinedDataPoint] as number | undefined : undefined;
           
           let displayValue = "";
-          if (isPlotVisible && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue)) {
+          if (isPlotVisible && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue) && !isDirectional) {
             displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits: 1})}${config.unit || ''}`;
           }
           
@@ -234,7 +247,7 @@ export function MarinePlotsGrid({
                     <Checkbox
                         id={`visibility-${config.dataKey}-${index}`}
                         checked={isPlotVisible}
-                        onCheckedChange={(checked) => plotVisibility && handlePlotVisibilityChange(config.dataKey, !!checked)}
+                        onCheckedChange={(checked) => handlePlotVisibilityChange(config.dataKey, !!checked)}
                         className="h-3.5 w-3.5 flex-shrink-0"
                     />
                     <Label htmlFor={`visibility-${config.dataKey}-${index}`} className="flex items-center gap-1 cursor-pointer min-w-0">
@@ -250,7 +263,8 @@ export function MarinePlotsGrid({
                     </div>
                 </div>
                 <div className="flex items-center flex-shrink-0">
-                    {isPlotVisible && availabilityStatus === 'available' && hasValidDataForSeriesInView && displayValue && (
+                    {isDirectional && isPlotVisible && availabilityStatus === 'available' && hasValidDataForSeriesInView && <DirectionArrow degrees={currentValue} />}
+                    {!isDirectional && displayValue && (
                         <span className={cn("text-muted-foreground text-xs ml-auto pl-2 whitespace-nowrap")}>{displayValue}</span>
                     )}
                     <Button variant="ghost" size="icon" className="h-5 w-5 ml-1" onClick={() => handleMovePlot(index, 'up')} disabled={index === 0}>
@@ -270,7 +284,7 @@ export function MarinePlotsGrid({
                         <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
                         <YAxis
                           yAxisId={config.dataKey}
-                          domain={['auto', 'auto']}
+                          domain={isDirectional ? [0, 360] : ['auto', 'auto']}
                           tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
                           tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
                           stroke="hsl(var(--border))"
@@ -292,6 +306,12 @@ export function MarinePlotsGrid({
                             itemStyle={{ color: 'hsl(var(--foreground))' }}
                             formatter={(value: number | null | undefined, name: string, props) => { 
                                 const currentConfig = plotConfigsInternal.find(pc => pc.dataKey === name);
+                                const isCurrentDirectional = currentConfig?.dataKey.toLowerCase().includes('direction');
+
+                                if (isCurrentDirectional) {
+                                  return [<DirectionArrow degrees={value} />, currentConfig?.name || name];
+                                }
+
                                 const formattedValue = (value !== null && value !== undefined && typeof value === 'number' && !isNaN(value)) 
                                     ? value.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) 
                                     : 'N/A';
