@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, LabelList } from 'recharts';
 import type { CombinedDataPoint, CombinedParameterKey, ParameterConfigItem } from '@/app/om-marine-explorer/shared';
 import { PARAMETER_CONFIG, ALL_PARAMETERS, MPH_CONVERSION_FACTOR } from '@/app/om-marine-explorer/shared';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -12,6 +12,7 @@ import { Loader2, CheckCircle2, XCircle, Info, ChevronUp, ChevronDown, Thermomet
 import type { LucideIcon } from "lucide-react";
 import { format, parseISO, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
+
 
 const formatDateTickBrush = (timeValue: string | number): string => {
   try {
@@ -28,8 +29,44 @@ type SeriesAvailabilityStatus = 'pending' | 'available' | 'unavailable';
 type PlotConfigInternal = ParameterConfigItem & { 
   dataKey: CombinedParameterKey; 
   Icon: LucideIcon; 
+  isDirectional?: boolean;
   dataTransform?: (value: number | null | undefined) => number | null | undefined 
 };
+
+// A simple arrow shape for the data labels
+const DirectionArrow = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
+    <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        width="14" height="14" viewBox="0 0 24 24" 
+        fill="currentColor" stroke="hsl(var(--background))" 
+        strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" 
+        className={cn("lucide lucide-navigation", className)}
+        {...props}
+    >
+        <polygon points="12 2 19 21 12 17 5 21 12 2"></polygon>
+    </svg>
+);
+
+
+// Custom Label for Directional Plots
+const DirectionLabel = (props: any) => {
+    const { x, y, value, index } = props;
+
+    // Render a label only for every 20th data point to avoid clutter
+    if (index % 20 !== 0 || value === null || value === undefined) {
+        return null;
+    }
+
+    return (
+        <foreignObject x={x - 7} y={y - 7} width="14" height="14">
+            <DirectionArrow
+                style={{ transform: `rotate(${value}deg)`, transformOrigin: 'center center' }} 
+                className="text-foreground/80"
+            />
+        </foreignObject>
+    );
+};
+
 
 interface PlotRowProps {
   config: PlotConfigInternal;
@@ -42,7 +79,7 @@ interface PlotRowProps {
   onMove: (index: number, direction: 'up' | 'down') => void;
 }
 
-const PlotRow = ({
+const PlotRow = React.memo(({
   config,
   index,
   plotCount,
@@ -56,7 +93,7 @@ const PlotRow = ({
   const transformedDisplayData = useMemo(() => displayData.map(point => {
     const value = point[config.dataKey as keyof CombinedDataPoint];
     if (value === undefined || value === null || (typeof value === 'number' && isNaN(value))) {
-      return { ...point, [config.dataKey]: undefined };
+      return { ...point, [config.dataKey]: null };
     }
     if (typeof value === 'number' && config.dataTransform) {
       return { ...point, [config.dataKey]: config.dataTransform(value) };
@@ -66,12 +103,12 @@ const PlotRow = ({
 
   const hasValidDataForSeriesInView = useMemo(() => transformedDisplayData.some(p => {
     const val = p[config.dataKey as keyof CombinedDataPoint];
-    return val !== undefined && val !== null && !isNaN(Number(val));
+    return val !== null && !isNaN(Number(val));
   }), [transformedDisplayData, config.dataKey]);
 
   const lastDataPointWithValidValue = useMemo(() => [...transformedDisplayData].reverse().find(p => {
     const val = p[config.dataKey as keyof CombinedDataPoint];
-    return val !== undefined && val !== null && !isNaN(Number(val));
+    return val !== null && !isNaN(Number(val));
   }), [transformedDisplayData, config.dataKey]);
   
   const currentValue = lastDataPointWithValidValue ? lastDataPointWithValidValue[config.dataKey as keyof CombinedDataPoint] as number | undefined : undefined;
@@ -126,7 +163,8 @@ const PlotRow = ({
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
                 <YAxis
                   yAxisId={config.dataKey}
-                  domain={['auto', 'auto']}
+                  domain={config.isDirectional ? [0, 360] : ['auto', 'auto']}
+                  ticks={config.isDirectional ? [0, 90, 180, 270, 360] : undefined}
                   tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
                   tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
                   stroke="hsl(var(--border))"
@@ -172,7 +210,9 @@ const PlotRow = ({
                   connectNulls={true}
                   name={config.name} 
                   isAnimationActive={false}
-                />
+                >
+                   {config.isDirectional && <LabelList dataKey={config.dataKey} content={<DirectionLabel />} />}
+                </Line>
               </LineChart>
             </ResponsiveContainer>
           ) : (
@@ -188,7 +228,9 @@ const PlotRow = ({
       )}
     </div>
   );
-};
+});
+
+PlotRow.displayName = 'PlotRow';
 
 
 interface MarinePlotsGridProps {
@@ -219,6 +261,7 @@ export function MarinePlotsGrid({
       let dataTransformFunc: ((value: number | null | undefined) => number | null | undefined) | undefined = undefined;
       let displayUnit = baseConfig.unit;
       let iconComp: LucideIcon = Info; // Default icon
+      const isDirectional = key === 'waveDirection' || key === 'windDirection10m';
 
       // Fallbacks if no icon is in PARAMETER_CONFIG
       if (key === 'seaLevelHeightMsl') iconComp = Waves;
@@ -245,6 +288,7 @@ export function MarinePlotsGrid({
         unit: displayUnit,
         Icon: iconComp,
         color: baseConfig.color || '--chart-1',
+        isDirectional,
         dataTransform: dataTransformFunc,
       };
     });
