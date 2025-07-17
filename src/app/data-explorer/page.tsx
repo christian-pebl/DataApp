@@ -14,7 +14,8 @@ import { PlotInstance } from "@/components/dataflow/PlotInstance";
 import {
   PlusCircle, SunMoon, LayoutGrid, Waves, MapPin, CalendarDays, Search,
   Loader2, Info, CheckCircle2, XCircle, Copy, CloudSun, Anchor,
-  Thermometer, Wind as WindIcon, Compass as CompassIcon, Sailboat, Timer as TimerIcon, ListChecks, FilePenLine
+  Thermometer, Wind as WindIcon, Compass as CompassIcon, Sailboat, Timer as TimerIcon, ListChecks, FilePenLine,
+  ChevronsLeft, ChevronsRight
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -85,13 +86,15 @@ export default function DataExplorerPage() {
   // API Data State (Weather & Marine)
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
     const today = new Date();
+    const yesterday = subDays(today, 1);
     return {
-      from: subDays(today, 1),
-      to: addDays(today, 5),
+      from: yesterday,
+      to: addDays(yesterday, 6), // makes it a 7-day window
     };
   });
 
   const [selectedLocationKey, setSelectedLocationKey] = useState<string>(defaultOmLocationKey);
+  const [isApiPlotsExpanded, setIsApiPlotsExpanded] = useState(false);
 
   const [mapSelectedCoords, setMapSelectedCoords] = useState<{ lat: number; lon: number } | null>(
     knownOmLocations[defaultOmLocationKey]
@@ -371,7 +374,8 @@ export default function DataExplorerPage() {
     overallStatus: ApiLogOverallStatus, 
     title: string,
     lastError?: string | null
-  ) => (
+  ) => {
+    return (
     (isLoadingFlag || logSteps.length > 0 || overallStatus === 'error' || overallStatus === 'warning') && (
       <CardFooter className="p-0 pt-2 flex flex-col items-stretch">
         <Accordion type="single" collapsible value={accordionValue} onValueChange={onValueChange} className="w-full">
@@ -410,7 +414,7 @@ export default function DataExplorerPage() {
         </Accordion>
       </CardFooter>
     )
-  ), [getLogAccordionItemClass, getLogTriggerContent, handleCopyLog]);
+  )}, [getLogAccordionItemClass, getLogTriggerContent, handleCopyLog]);
 
 
   return (
@@ -425,7 +429,7 @@ export default function DataExplorerPage() {
               <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer</p></TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger asChild><Link href="/annotation" passHref><Button variant={pathname === '/annotation' ? "secondary": "ghost"} size="icon" aria-label="Annotation Page"><FilePenLine className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Annotation Page</p></TooltipContent></Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
-              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
           </div>
         </TooltipProvider>
@@ -440,115 +444,137 @@ export default function DataExplorerPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-3 grid grid-cols-1 md:grid-cols-12 gap-3">
-            <div className="md:col-span-4 space-y-3">
-                <Card>
-                    <CardHeader className="pb-2 pt-3"><CardTitle className="text-sm flex items-center gap-1.5"><MapPin className="h-4 w-4 text-primary"/>Location & Date</CardTitle></CardHeader>
-                    <CardContent className="space-y-2 p-3">
-                        <div>
-                            <UiLabel htmlFor={`om-location-select-${instanceId}`} className="text-xs font-medium mb-0.5 block">Select Location</UiLabel>
-                            <Select
-                                value={selectedLocationKey}
-                                onValueChange={handleLocationChange}
-                                disabled={isLoadingApiData}
-                            >
-                                <SelectTrigger id={`om-location-select-${instanceId}`} className="h-9 text-xs">
-                                    <SelectValue placeholder="Select a location" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {Object.entries(knownOmLocations).map(([key, loc]) => (
-                                        <SelectItem key={key} value={key} className="text-xs">
-                                            {loc.name}
-                                        </SelectItem>
-                                    ))}
-                                    {selectedLocationKey === "__custom__" && (
-                                        <SelectItem value="__custom__" disabled className="text-xs font-medium">
-                                          {currentLocationName}
-                                        </SelectItem>
-                                    )}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        
-                        <UiLabel htmlFor={`om-map-container-${instanceId}`} className="text-xs font-medium mb-0.5 block pt-1">Click Map to Select Location</UiLabel>
-                        <div id={`om-map-container-${instanceId}`} className="h-[180px] w-full rounded-md overflow-hidden border">
-                        <OpenLayersMapWithNoSSR
-                            initialCenter={mapSelectedCoords ? [mapSelectedCoords.lon, mapSelectedCoords.lat] : [DEFAULT_OM_LONGITUDE, DEFAULT_OM_LATITUDE]}
-                            initialZoom={DEFAULT_OM_MAP_ZOOM}
-                            selectedCoords={mapSelectedCoords}
-                            onLocationSelect={handleMapLocationSelect}
-                        />
-                        </div>
-                        {mapSelectedCoords && (
-                        <p className="text-xs text-muted-foreground text-center">
-                            {currentLocationName} (Lat: {mapSelectedCoords.lat.toFixed(3)}, Lon: {mapSelectedCoords.lon.toFixed(3)})
-                        </p>
-                        )}
+            {!isApiPlotsExpanded && (
+              <div className="md:col-span-4 space-y-3">
+                  <Card>
+                      <CardHeader className="pb-2 pt-3"><CardTitle className="text-sm flex items-center gap-1.5"><MapPin className="h-4 w-4 text-primary"/>Location & Date</CardTitle></CardHeader>
+                      <CardContent className="space-y-2 p-3">
+                          <div>
+                              <UiLabel htmlFor={`om-location-select-${instanceId}`} className="text-xs font-medium mb-0.5 block">Select Location</UiLabel>
+                              <Select
+                                  value={selectedLocationKey}
+                                  onValueChange={handleLocationChange}
+                                  disabled={isLoadingApiData}
+                              >
+                                  <SelectTrigger id={`om-location-select-${instanceId}`} className="h-9 text-xs">
+                                      <SelectValue placeholder="Select a location" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                      {Object.entries(knownOmLocations).map(([key, loc]) => (
+                                          <SelectItem key={key} value={key} className="text-xs">
+                                              {loc.name}
+                                          </SelectItem>
+                                      ))}
+                                      {selectedLocationKey === "__custom__" && (
+                                          <SelectItem value="__custom__" disabled className="text-xs font-medium">
+                                            {currentLocationName}
+                                          </SelectItem>
+                                      )}
+                                  </SelectContent>
+                              </Select>
+                          </div>
+                          
+                          <UiLabel htmlFor={`om-map-container-${instanceId}`} className="text-xs font-medium mb-0.5 block pt-1">Click Map to Select Location</UiLabel>
+                          <div id={`om-map-container-${instanceId}`} className="h-[180px] w-full rounded-md overflow-hidden border">
+                          <OpenLayersMapWithNoSSR
+                              initialCenter={mapSelectedCoords ? [mapSelectedCoords.lon, mapSelectedCoords.lat] : [DEFAULT_OM_LONGITUDE, DEFAULT_OM_LATITUDE]}
+                              initialZoom={DEFAULT_OM_MAP_ZOOM}
+                              selectedCoords={mapSelectedCoords}
+                              onLocationSelect={handleMapLocationSelect}
+                          />
+                          </div>
+                          {mapSelectedCoords && (
+                          <p className="text-xs text-muted-foreground text-center">
+                              {currentLocationName} (Lat: {mapSelectedCoords.lat.toFixed(3)}, Lon: {mapSelectedCoords.lon.toFixed(3)})
+                          </p>
+                          )}
 
-                        <div>
-                        <UiLabel htmlFor={`om-date-range-${instanceId}`} className="text-xs font-medium mb-0.5 block pt-1">Date Range</UiLabel>
-                        <DatePickerWithRange id={`om-date-range-${instanceId}`} date={dateRange} onDateChange={setDateRange} disabled={isLoadingApiData} />
-                        {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && <p className="text-xs text-destructive px-1 pt-1">Start date error.</p>}
-                        </div>
-                    </CardContent>
-                </Card>
-                 <Card>
-                    <CardHeader className="pb-2 pt-3 flex flex-row items-center justify-between">
-                        <CardTitle className="text-sm flex items-center gap-1.5"><ListChecks className="h-4 w-4 text-primary" />Select API Parameters</CardTitle>
-                        <div className="flex items-center space-x-1.5">
-                            <Checkbox
-                                id={`select-all-api-params-${instanceId}`}
-                                checked={allApiParamsSelected}
-                                onCheckedChange={(checked) => handleSelectAllApiParams(!!checked)}
-                                className="h-3.5 w-3.5"
-                                disabled={isLoadingApiData}
-                                aria-label={allApiParamsSelected ? "Deselect all API parameters" : "Select all API parameters"}
-                            />
-                            <UiLabel htmlFor={`select-all-api-params-${instanceId}`} className="text-xs font-medium cursor-pointer">
-                                {allApiParamsSelected ? "Deselect All" : "Select All"}
-                            </UiLabel>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="p-2">
-                        <ScrollArea className="h-48 w-full rounded-md border p-1">
-                            {ALL_PARAMETERS.map((key) => {
-                            const paramConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
-                            if (!paramConfig) return null;
-                            const IconComp = plotConfigIcons[key as CombinedParameterKey] || Info;
-                            const uniqueCheckboxId = `api-visibility-${key}-${instanceId}`;
-                            return (
-                                <div key={key} className="flex items-center space-x-1.5 py-0.5">
-                                <Checkbox
-                                    id={uniqueCheckboxId}
-                                    checked={apiPlotVisibility[key as CombinedParameterKey]}
-                                    onCheckedChange={(checked) => handleApiPlotVisibilityChange(key as CombinedParameterKey, !!checked)}
-                                    className="h-3.5 w-3.5"
-                                    disabled={isLoadingApiData}
-                                />
-                                <UiLabel htmlFor={uniqueCheckboxId} className="text-xs font-medium flex items-center gap-1 cursor-pointer">
-                                    <IconComp className="h-3.5 w-3.5 text-muted-foreground" />
-                                    {paramConfig.name}
-                                </UiLabel>
-                                </div>
-                            );
-                            })}
-                        </ScrollArea>
-                    </CardContent>
-                    <CardFooter className="p-3 pt-1">
-                        <Button 
-                            onClick={() => handleFetchApiData(false)} 
-                            disabled={isLoadingApiData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => apiPlotVisibility[key as CombinedParameterKey]).length === 0} 
-                            className="w-full h-9 text-xs"
-                        >
-                        {isLoadingApiData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
-                        {isLoadingApiData ? "Fetching API Data..." : "Fetch API Data"}
-                        </Button>
-                    </CardFooter>
-                    {renderLogAccordion(apiFetchLogSteps, showApiFetchLogAccordion, setShowApiFetchLogAccordion, isApiLogLoading, apiLogOverallStatus, "API Fetch Log", lastApiErrorRef.current)}
-                </Card>
-            </div>
-            <div className="md:col-span-8">
+                          <div>
+                          <UiLabel htmlFor={`om-date-range-${instanceId}`} className="text-xs font-medium mb-0.5 block pt-1">Date Range</UiLabel>
+                          <DatePickerWithRange id={`om-date-range-${instanceId}`} date={dateRange} onDateChange={setDateRange} disabled={isLoadingApiData} />
+                          {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && <p className="text-xs text-destructive px-1 pt-1">Start date error.</p>}
+                          </div>
+                      </CardContent>
+                  </Card>
+                   <Card>
+                      <CardHeader className="pb-2 pt-3 flex flex-row items-center justify-between">
+                          <CardTitle className="text-sm flex items-center gap-1.5"><ListChecks className="h-4 w-4 text-primary" />Select API Parameters</CardTitle>
+                          <div className="flex items-center space-x-1.5">
+                              <Checkbox
+                                  id={`select-all-api-params-${instanceId}`}
+                                  checked={allApiParamsSelected}
+                                  onCheckedChange={(checked) => handleSelectAllApiParams(!!checked)}
+                                  className="h-3.5 w-3.5"
+                                  disabled={isLoadingApiData}
+                                  aria-label={allApiParamsSelected ? "Deselect all API parameters" : "Select all API parameters"}
+                              />
+                              <UiLabel htmlFor={`select-all-api-params-${instanceId}`} className="text-xs font-medium cursor-pointer">
+                                  {allApiParamsSelected ? "Deselect All" : "Select All"}
+                              </UiLabel>
+                          </div>
+                      </CardHeader>
+                      <CardContent className="p-2">
+                          <ScrollArea className="h-48 w-full rounded-md border p-1">
+                              {ALL_PARAMETERS.map((key) => {
+                              const paramConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
+                              if (!paramConfig) return null;
+                              const IconComp = plotConfigIcons[key as CombinedParameterKey] || Info;
+                              const uniqueCheckboxId = `api-visibility-${key}-${instanceId}`;
+                              return (
+                                  <div key={key} className="flex items-center space-x-1.5 py-0.5">
+                                  <Checkbox
+                                      id={uniqueCheckboxId}
+                                      checked={apiPlotVisibility[key as CombinedParameterKey]}
+                                      onCheckedChange={(checked) => handleApiPlotVisibilityChange(key as CombinedParameterKey, !!checked)}
+                                      className="h-3.5 w-3.5"
+                                      disabled={isLoadingApiData}
+                                  />
+                                  <UiLabel htmlFor={uniqueCheckboxId} className="text-xs font-medium flex items-center gap-1 cursor-pointer">
+                                      <IconComp className="h-3.5 w-3.5 text-muted-foreground" />
+                                      {paramConfig.name}
+                                  </UiLabel>
+                                  </div>
+                              );
+                              })}
+                          </ScrollArea>
+                      </CardContent>
+                      <CardFooter className="p-3 pt-1">
+                          <Button 
+                              onClick={() => handleFetchApiData(false)} 
+                              disabled={isLoadingApiData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => apiPlotVisibility[key as CombinedParameterKey]).length === 0} 
+                              className="w-full h-9 text-xs"
+                          >
+                          {isLoadingApiData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
+                          {isLoadingApiData ? "Fetching API Data..." : "Fetch API Data"}
+                          </Button>
+                      </CardFooter>
+                      {renderLogAccordion(apiFetchLogSteps, showApiFetchLogAccordion, setShowApiFetchLogAccordion, isApiLogLoading, apiLogOverallStatus, "API Fetch Log", lastApiErrorRef.current)}
+                  </Card>
+              </div>
+            )}
+            <div className={cn("transition-all duration-300", isApiPlotsExpanded ? "md:col-span-12" : "md:col-span-8")}>
                  <Card className="shadow-sm h-full">
-                    <CardHeader className="p-2 pt-3"><CardTitle className="text-sm">{apiDataLocationContext || "Weather & Marine API Data Plots"}</CardTitle></CardHeader>
+                    <CardHeader className="p-2 pt-3 flex items-center justify-between">
+                      <CardTitle className="text-sm">{apiDataLocationContext || "Weather & Marine API Data Plots"}</CardTitle>
+                      <TooltipProvider delayDuration={100}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setIsApiPlotsExpanded(!isApiPlotsExpanded)}
+                              aria-label={isApiPlotsExpanded ? "Collapse plot view" : "Expand plot"}
+                              className="h-7 w-7"
+                            >
+                              {isApiPlotsExpanded ? <ChevronsLeft className="h-4 w-4" /> : <ChevronsRight className="h-4 w-4" />}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            <p>{isApiPlotsExpanded ? "Show Controls" : "Expand plot"}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </CardHeader>
                     <CardContent className="p-1.5 h-[calc(100%-2.5rem)]"> 
                         <MarinePlotsGrid
                         marineData={apiData} 
