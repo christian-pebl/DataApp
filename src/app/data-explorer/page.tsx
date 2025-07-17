@@ -85,11 +85,10 @@ export default function DataExplorerPage() {
 
   // API Data State (Weather & Marine)
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
-    const today = new Date();
-    const yesterday = subDays(today, 1);
+    const yesterday = subDays(new Date(), 1);
     return {
       from: yesterday,
-      to: addDays(yesterday, 6), // makes it a 7-day window
+      to: addDays(yesterday, 6), // 7-day window starting yesterday
     };
   });
 
@@ -414,7 +413,8 @@ export default function DataExplorerPage() {
         </CardFooter>
       )
     );
-  }, [getLogTriggerContent, getLogAccordionItemClass, handleCopyLog]);
+  }, [getLogAccordionItemClass, getLogTriggerContent, handleCopyLog]);
+
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
