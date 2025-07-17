@@ -63,17 +63,10 @@ const DEFAULT_OM_MAP_ZOOM = 9;
 const knownOmLocations: Record<string, { name: string; lat: number; lon: number }> = {
   milfordhaven: { name: "Milford Haven", lat: 51.7128, lon: -5.0341 },
   ramseysound: { name: "Ramsey Sound", lat: 51.871645, lon: -5.313960 },
-  bidefordbay: { name: "Bideford Bay", lat: 51.067729, lon: -4.384352 },
-  blakeneyoverfalls: { name: "Blakeney Overfalls", lat: 53.034270, lon: 0.975421 },
+  bidefordbay: { name: "Bideford Bay", lat: 51.052156, lon: -4.405961 },
+  blakeneyoverfalls: { name: "Blakeney Overfalls", lat: 53.028671, lon: 0.939562 },
   pabayinnersound: { name: "Pabay Inner Sound", lat: 57.264780, lon: -5.853793 },
   lochbay: { name: "Loch Bay", lat: 57.506498, lon: -6.620397 },
-  // Original known locations for reference (can be re-added if needed, ensure keys are unique)
-  // newlyn: { name: "Newlyn", lat: 50.102, lon: -5.549 },
-  // dover: { name: "Dover", lat: 51.123, lon: 1.317 },
-  // liverpool: { name: "Liverpool", lat: 53.408, lon: -2.992 },
-  // portsmouth: { name: "Portsmouth", lat: 50.819, lon: -1.088 },
-  // aberdeen: { name: "Aberdeen", lat: 57.149, lon: -2.094 },
-  // stDavidsHead: { name: "St David's Head", lat: 52.0, lon: -5.3 }, // Key was "stDavidsHead"
 };
 const defaultOmLocationKey = "milfordhaven";
 
