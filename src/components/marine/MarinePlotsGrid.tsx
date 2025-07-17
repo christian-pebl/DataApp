@@ -46,7 +46,8 @@ const DirectionArrowShape = ({ cx, cy, payload, dataKey }: { cx: number; cy: num
   }
   // An arrow shape pointing up (0 degrees) that we can rotate
   // Centered at (0,0) so rotation works as expected around the center point
-  const path = "M 0 -6 L 0 6 M -4 2 L 0 6 L 4 2";
+  // Original path: "M 0 -6 L 0 6 M -4 2 L 0 6 L 4 2"
+  const path = "M 0 -8 L 0 8 M -6 3 L 0 8 L 6 3";
   
   return (
     <g transform={`translate(${cx},${cy}) rotate(${degrees})`}>
@@ -421,4 +422,5 @@ export function MarinePlotsGrid({
     </div>
   );
 }
+
 
