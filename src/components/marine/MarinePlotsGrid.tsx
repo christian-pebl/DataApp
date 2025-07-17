@@ -37,7 +37,7 @@ type PlotConfigInternal = ParameterConfigItem & {
 const DirectionArrow = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
     <svg 
         xmlns="http://www.w3.org/2000/svg" 
-        width="14" height="14" viewBox="0 0 24 24" 
+        width="18" height="18" viewBox="0 0 24 24" 
         fill="currentColor" stroke="hsl(var(--background))" 
         strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" 
         className={cn("lucide lucide-navigation", className)}
@@ -58,7 +58,7 @@ const DirectionLabel = (props: any) => {
     }
 
     return (
-        <foreignObject x={x - 7} y={y - 7} width="14" height="14">
+        <foreignObject x={x - 9} y={y - 9} width="18" height="18">
             <DirectionArrow
                 style={{ transform: `rotate(${value}deg)`, transformOrigin: 'center center' }} 
                 className="text-foreground/80"
@@ -156,7 +156,7 @@ const PlotRow = React.memo(({
       </div>
 
       {isPlotVisible && (
-        <div className="flex-grow h-[100px] mt-1">
+        <div className="flex-grow h-[80px] mt-1">
           {(availabilityStatus === 'available' && hasValidDataForSeriesInView) ? (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
@@ -211,7 +211,7 @@ const PlotRow = React.memo(({
                   name={config.name} 
                   isAnimationActive={false}
                 >
-                   {config.isDirectional && <LabelList dataKey={config.dataKey} content={<DirectionLabel />} />}
+                   {config.isDirectional && <LabelList dataKey={config.dataKey as string} content={<DirectionLabel />} />}
                 </Line>
               </LineChart>
             </ResponsiveContainer>
