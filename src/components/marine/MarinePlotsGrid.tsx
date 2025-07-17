@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, LabelList, Scatter } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, LabelList } from 'recharts';
 import type { CombinedDataPoint, CombinedParameterKey, ParameterConfigItem } from '@/app/om-marine-explorer/shared';
 import { PARAMETER_CONFIG, ALL_PARAMETERS, KNOTS_CONVERSION_FACTOR } from '@/app/om-marine-explorer/shared';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -52,12 +52,13 @@ const DirectionArrow = ({ className, ...props }: React.SVGProps<SVGSVGElement>) 
 const DirectionLabel = (props: any) => {
     const { x, y, value, index } = props;
 
-    if (value === null || value === undefined) {
+    // Only render for every 20th item to prevent clutter
+    if (index % 20 !== 0 || value === null || value === undefined) {
         return null;
     }
 
     return (
-        <foreignObject x={x - 9} y={y - 9} width="18" height="18">
+        <foreignObject x={x - 9} y={y - 12} width="18" height="18">
             <DirectionArrow
                 style={{ transform: `rotate(${value}deg)`, transformOrigin: 'center center' }} 
                 className="text-foreground/80"
@@ -116,33 +117,10 @@ const PlotRow = React.memo(({
   
   let displayValue = "";
   if (isPlotVisible && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue)) {
-    displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits: 1})}${config.unit || ''}`;
+    displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits: 1})}${isDirectional ? '' : config.unit || ''}`;
   }
 
   const IconComponent = config.Icon;
-
-  // Downsample data for directional plots
-  const directionalScatterData = useMemo(() => {
-      if (!isDirectional || transformedDisplayData.length === 0) {
-          return [];
-      }
-      
-      const maxArrows = 50; 
-      const totalPoints = transformedDisplayData.length;
-      if (totalPoints <= maxArrows) {
-          return transformedDisplayData.filter(p => p[config.dataKey] !== null);
-      }
-      
-      const step = Math.floor(totalPoints / maxArrows);
-      const sampledData = [];
-      for (let i = 0; i < totalPoints; i += step) {
-          const point = transformedDisplayData[i];
-          if (point && point[config.dataKey] !== null) {
-              sampledData.push(point);
-          }
-      }
-      return sampledData;
-  }, [transformedDisplayData, isDirectional, config.dataKey]);
 
   return (
     <div key={config.dataKey as string} className="border rounded-md p-1.5 shadow-sm bg-card flex-shrink-0 flex flex-col">
@@ -168,7 +146,9 @@ const PlotRow = React.memo(({
         </div>
         <div className="flex items-center flex-shrink-0">
           {displayValue && (
-            <span className={cn("text-muted-foreground text-xs ml-auto pl-2 whitespace-nowrap")}>{displayValue}</span>
+            <span className={cn("text-muted-foreground text-xs ml-auto pl-2 whitespace-nowrap")}>{displayValue}
+             {isDirectional && <DirectionArrow style={{ display: 'inline-block', transform: `rotate(${currentValue}deg)`, height: '1em', width: '1em', marginLeft: '0.25em', verticalAlign: 'middle' }} />}
+            </span>
           )}
           <Button variant="ghost" size="icon" className="h-5 w-5 ml-1" onClick={() => onMove(index, 'up')} disabled={index === 0}>
             <ChevronUp className="h-3.5 w-3.5" />
@@ -193,9 +173,6 @@ const PlotRow = React.memo(({
                   tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
                   stroke="hsl(var(--border))"
                   width={35} 
-                  axisLine={isDirectional ? false : true}
-                  tickLine={isDirectional ? false : true}
-                  hide={isDirectional}
                 />
                 <XAxis dataKey="time" hide />
                 <RechartsTooltip
@@ -205,7 +182,13 @@ const PlotRow = React.memo(({
                     const formattedValue = (value !== null && value !== undefined && typeof value === 'number' && !isNaN(value)) 
                       ? value.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) 
                       : 'N/A';
-                    return [`${formattedValue}${config.unit || ''}`, name];
+                    return [
+                       <div key="val" style={{ display: 'flex', alignItems: 'center' }}>
+                         {`${formattedValue}${isDirectional ? '' : (config.unit || '')}`}
+                         {isDirectional && typeof value === 'number' && <DirectionArrow style={{ transform: `rotate(${value}deg)`, height: '1em', width: '1em', marginLeft: '0.5em' }} />}
+                       </div>,
+                       name
+                    ];
                   }}
                   labelFormatter={(label) => {
                     try {
@@ -217,27 +200,19 @@ const PlotRow = React.memo(({
                   }}
                   isAnimationActive={false}
                 />
-                 {!isDirectional && (
-                   <Line
-                      yAxisId={config.dataKey}
-                      type="monotone"
-                      dataKey={config.dataKey as string}
-                      stroke={`hsl(var(${config.color || '--chart-1'}))`}
-                      strokeWidth={1.5}
-                      dot={false}
-                      connectNulls={true}
-                      name={config.name} 
-                      isAnimationActive={false}
-                    />
-                 )}
-                 {isDirectional && (
-                    <Scatter
-                        yAxisId={config.dataKey}
-                        data={directionalScatterData}
-                        shape={<DirectionArrowShape />}
-                        isAnimationActive={false}
-                    />
-                 )}
+                 <Line
+                    yAxisId={config.dataKey}
+                    type="monotone"
+                    dataKey={config.dataKey as string}
+                    stroke={`hsl(var(${config.color || '--chart-1'}))`}
+                    strokeWidth={1.5}
+                    dot={false}
+                    connectNulls={true}
+                    name={config.name} 
+                    isAnimationActive={false}
+                  >
+                    {isDirectional && <LabelList dataKey={config.dataKey} content={<DirectionLabel />} />}
+                  </Line>
               </LineChart>
             </ResponsiveContainer>
           ) : (
@@ -256,32 +231,6 @@ const PlotRow = React.memo(({
 });
 
 PlotRow.displayName = 'PlotRow';
-
-const DirectionArrowShape = (props: any) => {
-    const { cx, cy, payload } = props;
-    if (payload.value === null || payload.value === undefined) {
-        return null;
-    }
-    const angle = payload.value;
-
-    const size = 10; // Increased from 8
-    const points = `
-        ${cx},${cy - size / 2} 
-        ${cx + size / 2},${cy + size / 2} 
-        ${cx},${cy + size / 4} 
-        ${cx - size / 2},${cy + size / 2}
-    `;
-
-    return (
-        <g transform={`rotate(${angle}, ${cx}, ${cy})`}>
-            <polygon 
-                points={points}
-                fill="hsl(var(--foreground))"
-                opacity={0.8}
-            />
-        </g>
-    );
-};
 
 
 interface MarinePlotsGridProps {
