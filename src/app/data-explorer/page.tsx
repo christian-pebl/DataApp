@@ -67,6 +67,7 @@ const knownOmLocations: Record<string, { name: string; lat: number; lon: number 
   blakeneyoverfalls: { name: "Blakeney Overfalls", lat: 53.028671, lon: 0.939562 },
   pabayinnersound: { name: "Pabay Inner Sound", lat: 57.264780, lon: -5.853793 },
   lochbay: { name: "Loch Bay", lat: 57.506498, lon: -6.620397 },
+  lochsunart: { name: "Loch Sunart", lat: 56.666195, lon: -5.917401 },
 };
 const defaultOmLocationKey = "milfordhaven";
 
