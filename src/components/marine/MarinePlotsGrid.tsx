@@ -156,7 +156,7 @@ const PlotRow = React.memo(({
       </div>
 
       {isPlotVisible && (
-        <div className="flex-grow h-[80px] mt-1">
+        <div className="flex-grow h-[56px] mt-1">
           {(availabilityStatus === 'available' && hasValidDataForSeriesInView) ? (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
@@ -418,7 +418,7 @@ export function MarinePlotsGrid({
       </div>
 
       {marineData && marineData.length > 0 && (
-        <div className="h-[60px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
+        <div className="h-[42px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={marineData} margin={{ top: 5, right: 25, left: 25, bottom: 5 }}>
               <XAxis
@@ -426,7 +426,7 @@ export function MarinePlotsGrid({
                 tickFormatter={formatDateTickBrush}
                 stroke="hsl(var(--muted-foreground))"
                 tick={{ fontSize: '0.6rem', angle: -45, textAnchor: 'end' }}
-                height={50} 
+                height={35} 
                 dy={5} 
                 interval="preserveStartEnd"
               />
@@ -441,7 +441,7 @@ export function MarinePlotsGrid({
                 startIndex={brushStartIndex}
                 endIndex={brushEndIndex}
                 onChange={handleBrushChangeLocal}
-                y={5} 
+                y={-5} 
               />
             </LineChart>
           </ResponsiveContainer>
