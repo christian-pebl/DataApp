@@ -49,15 +49,15 @@ export type CombinedParameterKey =
   | 'ghi';
 
 export const ALL_PARAMETERS: CombinedParameterKey[] = [
-  'temperature2m',
   'windSpeed10m',
   'windDirection10m',
+  'waveHeight',
+  'wavePeriod',
+  'waveDirection',
+  'temperature2m',
+  'seaSurfaceTemperature',
   'ghi',
   'seaLevelHeightMsl',
-  'waveHeight',
-  'waveDirection',
-  'wavePeriod',
-  'seaSurfaceTemperature',
 ];
 
 export interface ParameterConfigItem {
@@ -71,7 +71,7 @@ export interface ParameterConfigItem {
 
 export const PARAMETER_CONFIG: Record<CombinedParameterKey, ParameterConfigItem> = {
   // Weather Parameters
-  temperature2m: { name: "Temperature (2m)", apiParam: "temperature_2m", unit: "°C", apiSource: 'weather', color: '--chart-1' },
+  temperature2m: { name: "Air Temperature", apiParam: "temperature_2m", unit: "°C", apiSource: 'weather', color: '--chart-1' },
   windSpeed10m: { name: "Wind Speed (10m)", apiParam: "windspeed_10m", unit: "m/s", apiSource: 'weather', color: '--chart-2' },
   windDirection10m: { name: "Wind Direction (10m)", apiParam: "winddirection_10m", unit: "°", apiSource: 'weather', color: '--chart-3' },
   ghi: { name: "Global Horizontal Irradiance (GHI)", apiParam: "shortwave_radiation", unit: "W/m²", apiSource: 'weather', color: '--chart-4' },
