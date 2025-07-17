@@ -363,7 +363,7 @@ export default function DataExplorerPage() {
         toast({ variant: "destructive", title: "Copy Failed", description: "Could not copy log to clipboard.", duration: 3000 });
       });
   }, [toast]);
-
+  
   const renderLogAccordion = useCallback((
     logSteps: ApiLogStep[],
     accordionValue: string,
@@ -413,8 +413,7 @@ export default function DataExplorerPage() {
         </CardFooter>
       )
     );
-  }, [getLogAccordionItemClass, getLogTriggerContent, handleCopyLog]);
-
+  }, [getLogTriggerContent, getLogAccordionItemClass, handleCopyLog, toast]);
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
