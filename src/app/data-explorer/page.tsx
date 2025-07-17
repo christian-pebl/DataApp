@@ -263,7 +263,6 @@ export default function DataExplorerPage() {
 
       if (result.success && result.data) {
         setApiData(result.data);
-        console.log("Client received apiData:", result.data);
         setApiDataLocationContext(result.dataLocationContext || `API Data for ${currentLocationName}`);
         if (result.data.length === 0 && !result.error) {
           toast({ variant: "default", title: "No API Data", description: "No data points found for the selected criteria.", duration: 4000 });
@@ -367,55 +366,55 @@ export default function DataExplorerPage() {
   }, [toast]);
 
   const renderLogAccordion = useCallback((
-    logSteps: ApiLogStep[], 
-    accordionValue: string, 
-    onValueChange: (value: string) => void, 
-    isLoadingFlag: boolean, 
-    overallStatus: ApiLogOverallStatus, 
+    logSteps: ApiLogStep[],
+    accordionValue: string,
+    onValueChange: (value: string) => void,
+    isLoadingFlag: boolean,
+    overallStatus: ApiLogOverallStatus,
     title: string,
     lastError?: string | null
   ) => {
     return (
-    (isLoadingFlag || logSteps.length > 0 || overallStatus === 'error' || overallStatus === 'warning') && (
-      <CardFooter className="p-0 pt-2 flex flex-col items-stretch">
-        <Accordion type="single" collapsible value={accordionValue} onValueChange={onValueChange} className="w-full">
-          <AccordionItem value={title.toLowerCase().replace(/\s+/g, '-') + "-log-item"} className={cn("border rounded-md", getLogAccordionItemClass(overallStatus))}>
-            <AccordionTrigger className="px-3 py-1.5 text-xs hover:no-underline [&_svg.lucide-chevron-down]:h-3 [&_svg.lucide-chevron-down]:w-3">
-              {getLogTriggerContent(overallStatus, isLoadingFlag, title, lastError)}
-            </AccordionTrigger>
-            <AccordionContent className="px-2 pb-1 pt-0">
-              <ScrollArea className="max-h-[35rem] h-auto w-full rounded-md border bg-muted/30 dark:bg-muted/10 p-1.5 mt-1">
-                <ul className="space-y-1 text-[0.7rem]">
-                  {logSteps.map((step, index) => (
-                    <li key={index} className="flex items-start gap-1.5">
-                      {step.status === 'pending' && <Loader2 className="h-3 w-3 mt-0.5 text-blue-500 animate-spin flex-shrink-0" />}
-                      {step.status === 'success' && <CheckCircle2 className="h-3 w-3 mt-0.5 text-green-500 flex-shrink-0" />}
-                      {step.status === 'error' && <XCircle className="h-3 w-3 mt-0.5 text-destructive flex-shrink-0" />}
-                      {step.status === 'info' && <Info className="h-3 w-3 mt-0.5 text-muted-foreground flex-shrink-0" />}
-                      {step.status === 'warning' && <Info className="h-3 w-3 mt-0.5 text-yellow-500 flex-shrink-0" />}
-                      <div className="min-w-0">
-                        <p className={cn("break-words", step.status === 'error' && "text-destructive font-semibold", step.status === 'warning' && "text-yellow-600 dark:text-yellow-400")}>{step.message}</p>
-                        {step.details && <p className="text-muted-foreground text-[0.6rem] whitespace-pre-wrap break-all">{step.details}</p>}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-                {logSteps.length === 0 && !isLoadingFlag && <p className="text-center text-muted-foreground text-[0.65rem] py-2">No log details for this operation.</p>}
-              </ScrollArea>
-              {logSteps.length > 0 && !isLoadingFlag && (
-                <div className="w-full flex justify-end mt-2">
-                  <Button variant="outline" size="sm" onClick={() => handleCopyLog(logSteps)} className="h-7 text-xs">
-                    <Copy className="mr-1.5 h-3 w-3" /> Copy Log
-                  </Button>
-                </div>
-              )}
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-      </CardFooter>
-    )
-  )}, [getLogAccordionItemClass, getLogTriggerContent, handleCopyLog]);
-
+      (isLoadingFlag || logSteps.length > 0 || overallStatus === 'error' || overallStatus === 'warning') && (
+        <CardFooter className="p-0 pt-2 flex flex-col items-stretch">
+          <Accordion type="single" collapsible value={accordionValue} onValueChange={onValueChange} className="w-full">
+            <AccordionItem value={title.toLowerCase().replace(/\s+/g, '-') + "-log-item"} className={cn("border rounded-md", getLogAccordionItemClass(overallStatus))}>
+              <AccordionTrigger className="px-3 py-1.5 text-xs hover:no-underline [&_svg.lucide-chevron-down]:h-3 [&_svg.lucide-chevron-down]:w-3">
+                {getLogTriggerContent(overallStatus, isLoadingFlag, title, lastError)}
+              </AccordionTrigger>
+              <AccordionContent className="px-2 pb-1 pt-0">
+                <ScrollArea className="max-h-[35rem] h-auto w-full rounded-md border bg-muted/30 dark:bg-muted/10 p-1.5 mt-1">
+                  <ul className="space-y-1 text-[0.7rem]">
+                    {logSteps.map((step, index) => (
+                      <li key={index} className="flex items-start gap-1.5">
+                        {step.status === 'pending' && <Loader2 className="h-3 w-3 mt-0.5 text-blue-500 animate-spin flex-shrink-0" />}
+                        {step.status === 'success' && <CheckCircle2 className="h-3 w-3 mt-0.5 text-green-500 flex-shrink-0" />}
+                        {step.status === 'error' && <XCircle className="h-3 w-3 mt-0.5 text-destructive flex-shrink-0" />}
+                        {step.status === 'info' && <Info className="h-3 w-3 mt-0.5 text-muted-foreground flex-shrink-0" />}
+                        {step.status === 'warning' && <Info className="h-3 w-3 mt-0.5 text-yellow-500 flex-shrink-0" />}
+                        <div className="min-w-0">
+                          <p className={cn("break-words", step.status === 'error' && "text-destructive font-semibold", step.status === 'warning' && "text-yellow-600 dark:text-yellow-400")}>{step.message}</p>
+                          {step.details && <p className="text-muted-foreground text-[0.6rem] whitespace-pre-wrap break-all">{step.details}</p>}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  {logSteps.length === 0 && !isLoadingFlag && <p className="text-center text-muted-foreground text-[0.65rem] py-2">No log details for this operation.</p>}
+                </ScrollArea>
+                {logSteps.length > 0 && !isLoadingFlag && (
+                  <div className="w-full flex justify-end mt-2">
+                    <Button variant="outline" size="sm" onClick={() => handleCopyLog(logSteps)} className="h-7 text-xs">
+                      <Copy className="mr-1.5 h-3 w-3" /> Copy Log
+                    </Button>
+                  </div>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </CardFooter>
+      )
+    );
+  }, [getLogTriggerContent, getLogAccordionItemClass, handleCopyLog]);
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -554,7 +553,7 @@ export default function DataExplorerPage() {
             )}
             <div className={cn("transition-all duration-300", isApiPlotsExpanded ? "md:col-span-12" : "md:col-span-8")}>
                  <Card className="shadow-sm h-full">
-                    <CardHeader className="p-2 pt-3 flex items-center justify-between">
+                    <CardHeader className="p-2 pt-3 flex flex-row items-center justify-between">
                       <CardTitle className="text-sm">{apiDataLocationContext || "Weather & Marine API Data Plots"}</CardTitle>
                       <TooltipProvider delayDuration={100}>
                         <Tooltip>
