@@ -2,9 +2,9 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, LabelList } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, LabelList, Scatter } from 'recharts';
 import type { CombinedDataPoint, CombinedParameterKey, ParameterConfigItem } from '@/app/om-marine-explorer/shared';
-import { PARAMETER_CONFIG, ALL_PARAMETERS, MPH_CONVERSION_FACTOR } from '@/app/om-marine-explorer/shared';
+import { PARAMETER_CONFIG, ALL_PARAMETERS, KNOTS_CONVERSION_FACTOR } from '@/app/om-marine-explorer/shared';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -52,8 +52,7 @@ const DirectionArrow = ({ className, ...props }: React.SVGProps<SVGSVGElement>) 
 const DirectionLabel = (props: any) => {
     const { x, y, value, index } = props;
 
-    // Render a label only for every 20th data point to avoid clutter
-    if (index % 20 !== 0 || value === null || value === undefined) {
+    if (value === null || value === undefined) {
         return null;
     }
 
@@ -90,6 +89,8 @@ const PlotRow = React.memo(({
   onMove
 }: PlotRowProps) => {
 
+  const isDirectional = config.isDirectional;
+
   const transformedDisplayData = useMemo(() => displayData.map(point => {
     const value = point[config.dataKey as keyof CombinedDataPoint];
     if (value === undefined || value === null || (typeof value === 'number' && isNaN(value))) {
@@ -119,6 +120,29 @@ const PlotRow = React.memo(({
   }
 
   const IconComponent = config.Icon;
+
+  // Downsample data for directional plots
+  const directionalScatterData = useMemo(() => {
+      if (!isDirectional || transformedDisplayData.length === 0) {
+          return [];
+      }
+      
+      const maxArrows = 50; 
+      const totalPoints = transformedDisplayData.length;
+      if (totalPoints <= maxArrows) {
+          return transformedDisplayData.filter(p => p[config.dataKey] !== null);
+      }
+      
+      const step = Math.floor(totalPoints / maxArrows);
+      const sampledData = [];
+      for (let i = 0; i < totalPoints; i += step) {
+          const point = transformedDisplayData[i];
+          if (point && point[config.dataKey] !== null) {
+              sampledData.push(point);
+          }
+      }
+      return sampledData;
+  }, [transformedDisplayData, isDirectional, config.dataKey]);
 
   return (
     <div key={config.dataKey as string} className="border rounded-md p-1.5 shadow-sm bg-card flex-shrink-0 flex flex-col">
@@ -163,22 +187,15 @@ const PlotRow = React.memo(({
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
                 <YAxis
                   yAxisId={config.dataKey}
-                  domain={config.isDirectional ? [0, 360] : ['auto', 'auto']}
-                  ticks={config.isDirectional ? [0, 90, 180, 270, 360] : undefined}
+                  domain={isDirectional ? [0, 360] : ['auto', 'auto']}
+                  ticks={isDirectional ? [0, 90, 180, 270, 360] : undefined}
                   tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
                   tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
                   stroke="hsl(var(--border))"
                   width={35} 
-                  axisLine={false}
-                  tickLine={false}
-                  label={{ 
-                    value: `${config.unit || ''}`, 
-                    angle: -90, 
-                    position: 'insideLeft', 
-                    style: { textAnchor: 'middle', fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' } as React.CSSProperties,
-                    dy: 10,
-                    dx: -2,
-                  }}
+                  axisLine={isDirectional ? false : true}
+                  tickLine={isDirectional ? false : true}
+                  hide={isDirectional}
                 />
                 <XAxis dataKey="time" hide />
                 <RechartsTooltip
@@ -200,19 +217,27 @@ const PlotRow = React.memo(({
                   }}
                   isAnimationActive={false}
                 />
-                <Line
-                  yAxisId={config.dataKey}
-                  type="monotone"
-                  dataKey={config.dataKey as string}
-                  stroke={`hsl(var(${config.color || '--chart-1'}))`}
-                  strokeWidth={1.5}
-                  dot={false}
-                  connectNulls={true}
-                  name={config.name} 
-                  isAnimationActive={false}
-                >
-                   {config.isDirectional && <LabelList dataKey={config.dataKey as string} content={<DirectionLabel />} />}
-                </Line>
+                 {!isDirectional && (
+                   <Line
+                      yAxisId={config.dataKey}
+                      type="monotone"
+                      dataKey={config.dataKey as string}
+                      stroke={`hsl(var(${config.color || '--chart-1'}))`}
+                      strokeWidth={1.5}
+                      dot={false}
+                      connectNulls={true}
+                      name={config.name} 
+                      isAnimationActive={false}
+                    />
+                 )}
+                 {isDirectional && (
+                    <Scatter
+                        yAxisId={config.dataKey}
+                        data={directionalScatterData}
+                        shape={<DirectionArrowShape />}
+                        isAnimationActive={false}
+                    />
+                 )}
               </LineChart>
             </ResponsiveContainer>
           ) : (
@@ -231,6 +256,32 @@ const PlotRow = React.memo(({
 });
 
 PlotRow.displayName = 'PlotRow';
+
+const DirectionArrowShape = (props: any) => {
+    const { cx, cy, payload } = props;
+    if (payload.value === null || payload.value === undefined) {
+        return null;
+    }
+    const angle = payload.value;
+
+    const size = 10; // Increased from 8
+    const points = `
+        ${cx},${cy - size / 2} 
+        ${cx + size / 2},${cy + size / 2} 
+        ${cx},${cy + size / 4} 
+        ${cx - size / 2},${cy + size / 2}
+    `;
+
+    return (
+        <g transform={`rotate(${angle}, ${cx}, ${cy})`}>
+            <polygon 
+                points={points}
+                fill="hsl(var(--foreground))"
+                opacity={0.8}
+            />
+        </g>
+    );
+};
 
 
 interface MarinePlotsGridProps {
@@ -275,10 +326,10 @@ export function MarinePlotsGrid({
       else if (key === 'ghi') iconComp = SunIcon;
       
       if (key === 'windSpeed10m' && baseConfig.apiSource === 'weather') {
-        displayUnit = 'mph'; 
+        displayUnit = 'knots'; 
         dataTransformFunc = (value) => {
           if (typeof value !== 'number' || isNaN(value)) return undefined; 
-          return parseFloat((value * MPH_CONVERSION_FACTOR).toFixed(1));
+          return parseFloat((value * KNOTS_CONVERSION_FACTOR).toFixed(1));
         }
       }
       

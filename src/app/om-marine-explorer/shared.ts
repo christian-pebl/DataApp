@@ -3,8 +3,8 @@ import type { LucideIcon } from "lucide-react";
 import { z } from 'zod';
 import { isValidDateString } from '@/lib/utils'; // Ensure this path is correct and lib/utils.ts is fine
 
-// Conversion Factor - Ensuring this is clearly exported
-export const MPH_CONVERSION_FACTOR = 2.23694; // m/s to mph
+// Conversion Factor - 1 m/s to knots
+export const KNOTS_CONVERSION_FACTOR = 1.94384; 
 
 // Main data point structure for combined weather and marine data
 export interface CombinedDataPoint {
@@ -17,7 +17,7 @@ export interface CombinedDataPoint {
   seaLevelHeightMsl?: number; // Tide Height
   // Weather
   temperature2m?: number;
-  windSpeed10m?: number; // This will be in m/s from API, converted to mph in grid for display
+  windSpeed10m?: number; // This will be in m/s from API, converted to knots in grid for display
   windDirection10m?: number;
   ghi?: number; // Global Horizontal Irradiance from weather API
 }
@@ -72,7 +72,7 @@ export interface ParameterConfigItem {
 export const PARAMETER_CONFIG: Record<CombinedParameterKey, ParameterConfigItem> = {
   // Weather Parameters
   temperature2m: { name: "Air Temperature", apiParam: "temperature_2m", unit: "°C", apiSource: 'weather', color: '--chart-1' },
-  windSpeed10m: { name: "Wind Speed (10m)", apiParam: "windspeed_10m", unit: "m/s", apiSource: 'weather', color: '--chart-2' },
+  windSpeed10m: { name: "Wind Speed (10m)", apiParam: "windspeed_10m", unit: "knots", apiSource: 'weather', color: '--chart-2' },
   windDirection10m: { name: "Wind Direction (10m)", apiParam: "winddirection_10m", unit: "°", apiSource: 'weather', color: '--chart-3' },
   ghi: { name: "Global Horizontal Irradiance (GHI)", apiParam: "shortwave_radiation", unit: "W/m²", apiSource: 'weather', color: '--chart-4' },
   // Marine Parameters
