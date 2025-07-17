@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, Scatter } from 'recharts';
 import type { CombinedDataPoint, CombinedParameterKey, ParameterConfigItem } from '@/app/om-marine-explorer/shared';
 import { PARAMETER_CONFIG, ALL_PARAMETERS, MPH_CONVERSION_FACTOR } from '@/app/om-marine-explorer/shared';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -37,6 +37,24 @@ const DirectionArrow = ({ degrees }: { degrees: number | null | undefined }) => 
     </div>
   );
 };
+
+// Custom shape for the scatter plot arrows
+const DirectionArrowShape = ({ cx, cy, payload, dataKey }: { cx: number; cy: number; payload: any; dataKey: string }) => {
+  const degrees = payload[dataKey];
+  if (typeof degrees !== 'number' || isNaN(degrees) || cx === null || cy === null) {
+    return null;
+  }
+  // An arrow shape pointing up (0 degrees) that we can rotate
+  // Centered at (0,0) so rotation works as expected around the center point
+  const path = "M 0 -6 L 0 6 M -4 2 L 0 6 L 4 2";
+  
+  return (
+    <g transform={`translate(${cx},${cy}) rotate(${degrees})`}>
+      <path d={path} stroke="hsl(var(--foreground))" strokeWidth="1.5" fill="none" />
+    </g>
+  );
+};
+
 
 interface MarinePlotsGridProps {
   marineData: CombinedDataPoint[] | null;
@@ -282,24 +300,29 @@ export function MarinePlotsGrid({
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
-                        <YAxis
-                          yAxisId={config.dataKey}
-                          domain={isDirectional ? [0, 360] : ['auto', 'auto']}
-                          tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
-                          tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
-                          stroke="hsl(var(--border))"
-                          width={35} 
-                          axisLine={false}
-                          tickLine={false}
-                          label={{ 
-                            value: `${config.unit || ''}`, 
-                            angle: -90, 
-                            position: 'insideLeft', 
-                            style: { textAnchor: 'middle', fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' } as React.CSSProperties,
-                            dy: 10,
-                            dx: -2,
-                          }}
-                        />
+                        {!isDirectional && (
+                            <YAxis
+                              yAxisId={config.dataKey}
+                              domain={['auto', 'auto']}
+                              tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
+                              tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
+                              stroke="hsl(var(--border))"
+                              width={35} 
+                              axisLine={false}
+                              tickLine={false}
+                              label={{ 
+                                value: `${config.unit || ''}`, 
+                                angle: -90, 
+                                position: 'insideLeft', 
+                                style: { textAnchor: 'middle', fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' } as React.CSSProperties,
+                                dy: 10,
+                                dx: -2,
+                              }}
+                            />
+                        )}
+                        {isDirectional && (
+                            <YAxis yAxisId={config.dataKey} domain={[0,360]} hide={true} />
+                        )}
                         <XAxis dataKey="time" hide />
                          <RechartsTooltip
                             contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', fontSize: '0.6rem' }}
@@ -327,17 +350,26 @@ export function MarinePlotsGrid({
                             }}
                             isAnimationActive={false}
                         />
-                        <Line
-                          yAxisId={config.dataKey}
-                          type="monotone"
-                          dataKey={config.dataKey as string}
-                          stroke={`hsl(var(${config.color || '--chart-1'}))`}
-                          strokeWidth={1.5}
-                          dot={false}
-                          connectNulls={true}
-                          name={config.name} 
-                          isAnimationActive={false}
-                        />
+                        {!isDirectional ? (
+                            <Line
+                              yAxisId={config.dataKey}
+                              type="monotone"
+                              dataKey={config.dataKey as string}
+                              stroke={`hsl(var(${config.color || '--chart-1'}))`}
+                              strokeWidth={1.5}
+                              dot={false}
+                              connectNulls={true}
+                              name={config.name} 
+                              isAnimationActive={false}
+                            />
+                        ) : (
+                           <Scatter
+                              yAxisId={config.dataKey}
+                              dataKey={config.dataKey as string}
+                              name={config.name}
+                              shape={(props) => <DirectionArrowShape {...props} dataKey={config.dataKey as string} />}
+                            />
+                        )}
                       </LineChart>
                     </ResponsiveContainer>
                   ) : (
@@ -389,3 +421,4 @@ export function MarinePlotsGrid({
     </div>
   );
 }
+
