@@ -86,8 +86,8 @@ export default function DataExplorerPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
     const today = new Date();
     return {
-      from: subMonths(today, 1),
-      to: today,
+      from: subDays(today, 1),
+      to: addDays(today, 5),
     };
   });
 
