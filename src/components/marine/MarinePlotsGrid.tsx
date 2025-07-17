@@ -37,7 +37,7 @@ type PlotConfigInternal = ParameterConfigItem & {
 const DirectionArrow = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
     <svg 
         xmlns="http://www.w3.org/2000/svg" 
-        width="18" height="18" viewBox="0 0 24 24" 
+        width="14" height="14" viewBox="0 0 24 24" 
         fill="currentColor" stroke="hsl(var(--background))" 
         strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" 
         className={cn("lucide lucide-navigation", className)}
@@ -52,13 +52,13 @@ const DirectionArrow = ({ className, ...props }: React.SVGProps<SVGSVGElement>) 
 const DirectionLabel = (props: any) => {
     const { x, y, value, index } = props;
 
-    // Only render for every 20th item to prevent clutter
-    if (index % 20 !== 0 || value === null || value === undefined) {
+    // Only render for every 10th item to prevent clutter
+    if (index % 10 !== 0 || value === null || value === undefined) {
         return null;
     }
 
     return (
-        <foreignObject x={x - 9} y={y - 12} width="18" height="18">
+        <foreignObject x={x - 7} y={y - 7} width="14" height="14">
             <DirectionArrow
                 style={{ transform: `rotate(${value}deg)`, transformOrigin: 'center center' }} 
                 className="text-foreground/80"
@@ -67,17 +67,6 @@ const DirectionLabel = (props: any) => {
     );
 };
 
-
-interface PlotRowProps {
-  config: PlotConfigInternal;
-  index: number;
-  plotCount: number;
-  displayData: CombinedDataPoint[];
-  isPlotVisible: boolean;
-  availabilityStatus: SeriesAvailabilityStatus;
-  onVisibilityChange: (key: CombinedParameterKey, checked: boolean) => void;
-  onMove: (index: number, direction: 'up' | 'down') => void;
-}
 
 const PlotRow = React.memo(({
   config,
@@ -211,7 +200,7 @@ const PlotRow = React.memo(({
                     name={config.name} 
                     isAnimationActive={false}
                   >
-                    {isDirectional && <LabelList dataKey={config.dataKey} content={<DirectionLabel />} />}
+                    {isDirectional && <LabelList dataKey={config.dataKey as string} content={<DirectionLabel />} />}
                   </Line>
               </LineChart>
             </ResponsiveContainer>
