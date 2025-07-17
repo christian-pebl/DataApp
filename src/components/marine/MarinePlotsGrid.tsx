@@ -45,9 +45,7 @@ const DirectionArrowShape = ({ cx, cy, payload, dataKey }: { cx: number; cy: num
     return null;
   }
   // An arrow shape pointing up (0 degrees) that we can rotate
-  // Centered at (0,0) so rotation works as expected around the center point
-  // Original path: "M 0 -6 L 0 6 M -4 2 L 0 6 L 4 2"
-  const path = "M 0 -8 L 0 8 M -6 3 L 0 8 L 6 3";
+  const path = "M 0 -10 L 0 10 M -7 4 L 0 10 L 7 4";
   
   return (
     <g transform={`translate(${cx},${cy}) rotate(${degrees})`}>
@@ -242,6 +240,20 @@ export function MarinePlotsGrid({
             }
             return point;
           });
+
+          // Downsample data for directional plots
+          const directionalScatterData = useMemo(() => {
+              if (!isDirectional || transformedDisplayData.length === 0) {
+                  return [];
+              }
+              const maxArrows = 50;
+              const dataLength = transformedDisplayData.length;
+              if (dataLength <= maxArrows) {
+                  return transformedDisplayData;
+              }
+              const step = Math.ceil(dataLength / maxArrows);
+              return transformedDisplayData.filter((_, i) => i % step === 0);
+          }, [isDirectional, transformedDisplayData]);
           
           const hasValidDataForSeriesInView = transformedDisplayData.some(p => {
             const val = p[config.dataKey as keyof CombinedDataPoint];
@@ -366,6 +378,7 @@ export function MarinePlotsGrid({
                         ) : (
                            <Scatter
                               yAxisId={config.dataKey}
+                              data={directionalScatterData}
                               dataKey={config.dataKey as string}
                               name={config.name}
                               shape={(props) => <DirectionArrowShape {...props} dataKey={config.dataKey as string} />}
@@ -422,5 +435,6 @@ export function MarinePlotsGrid({
     </div>
   );
 }
+
 
 
