@@ -54,6 +54,209 @@ const DirectionArrowShape = ({ cx, cy, payload, dataKey }: { cx: number; cy: num
   );
 };
 
+type SeriesAvailabilityStatus = 'pending' | 'available' | 'unavailable';
+
+type PlotConfigInternal = ParameterConfigItem & { 
+  dataKey: CombinedParameterKey; 
+  Icon: LucideIcon; 
+  dataTransform?: (value: number | null | undefined) => number | null | undefined 
+};
+
+interface PlotRowProps {
+  config: PlotConfigInternal;
+  index: number;
+  plotCount: number;
+  displayData: CombinedDataPoint[];
+  isPlotVisible: boolean;
+  availabilityStatus: SeriesAvailabilityStatus;
+  onVisibilityChange: (key: CombinedParameterKey, checked: boolean) => void;
+  onMove: (index: number, direction: 'up' | 'down') => void;
+}
+
+const PlotRow = ({
+  config,
+  index,
+  plotCount,
+  displayData,
+  isPlotVisible,
+  availabilityStatus,
+  onVisibilityChange,
+  onMove
+}: PlotRowProps) => {
+
+  const isDirectional = config.dataKey.toLowerCase().includes('direction');
+
+  const transformedDisplayData = useMemo(() => displayData.map(point => {
+    const value = point[config.dataKey as keyof CombinedDataPoint];
+    if (value === undefined || value === null || (typeof value === 'number' && isNaN(value))) {
+      return { ...point, [config.dataKey]: undefined };
+    }
+    if (typeof value === 'number' && config.dataTransform) {
+      return { ...point, [config.dataKey]: config.dataTransform(value) };
+    }
+    return point;
+  }), [displayData, config.dataKey, config.dataTransform]);
+
+  // Downsample data for directional plots
+  const directionalScatterData = useMemo(() => {
+    if (!isDirectional || transformedDisplayData.length === 0) {
+      return [];
+    }
+    const maxArrows = 50;
+    const dataLength = transformedDisplayData.length;
+    if (dataLength <= maxArrows) {
+      return transformedDisplayData;
+    }
+    const step = Math.ceil(dataLength / maxArrows);
+    return transformedDisplayData.filter((_, i) => i % step === 0);
+  }, [isDirectional, transformedDisplayData]);
+  
+  const hasValidDataForSeriesInView = useMemo(() => transformedDisplayData.some(p => {
+    const val = p[config.dataKey as keyof CombinedDataPoint];
+    return val !== undefined && val !== null && !isNaN(Number(val));
+  }), [transformedDisplayData, config.dataKey]);
+
+  const lastDataPointWithValidValue = useMemo(() => [...transformedDisplayData].reverse().find(p => {
+    const val = p[config.dataKey as keyof CombinedDataPoint];
+    return val !== undefined && val !== null && !isNaN(Number(val));
+  }), [transformedDisplayData, config.dataKey]);
+  
+  const currentValue = lastDataPointWithValidValue ? lastDataPointWithValidValue[config.dataKey as keyof CombinedDataPoint] as number | undefined : undefined;
+  
+  let displayValue = "";
+  if (isPlotVisible && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue) && !isDirectional) {
+    displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits: 1})}${config.unit || ''}`;
+  }
+
+  const IconComponent = config.Icon;
+
+  return (
+    <div key={config.dataKey as string} className="border rounded-md p-1.5 shadow-sm bg-card flex-shrink-0 flex flex-col">
+      <div className="flex items-center justify-between px-1 pt-0.5 text-xs">
+        <div className="flex flex-1 items-center gap-1.5 min-w-0">
+          <Checkbox
+            id={`visibility-${config.dataKey}-${index}`}
+            checked={isPlotVisible}
+            onCheckedChange={(checked) => onVisibilityChange(config.dataKey, !!checked)}
+            className="h-3.5 w-3.5 flex-shrink-0"
+          />
+          <Label htmlFor={`visibility-${config.dataKey}-${index}`} className="flex items-center gap-1 cursor-pointer min-w-0">
+            <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            <span className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis" title={config.name}>
+              {config.name}
+            </span>
+          </Label>
+          <div className="flex-shrink-0 flex items-center ml-1">
+            {availabilityStatus === 'pending' && <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />}
+            {availabilityStatus === 'available' && isPlotVisible && hasValidDataForSeriesInView && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+            {availabilityStatus !== 'pending' && isPlotVisible && (!hasValidDataForSeriesInView || availabilityStatus === 'unavailable') && <XCircle className="h-3.5 w-3.5 text-red-500" />}
+          </div>
+        </div>
+        <div className="flex items-center flex-shrink-0">
+          {isDirectional && isPlotVisible && availabilityStatus === 'available' && hasValidDataForSeriesInView && <DirectionArrow degrees={currentValue} />}
+          {!isDirectional && displayValue && (
+            <span className={cn("text-muted-foreground text-xs ml-auto pl-2 whitespace-nowrap")}>{displayValue}</span>
+          )}
+          <Button variant="ghost" size="icon" className="h-5 w-5 ml-1" onClick={() => onMove(index, 'up')} disabled={index === 0}>
+            <ChevronUp className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => onMove(index, 'down')} disabled={index === plotCount - 1}>
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {isPlotVisible && (
+        <div className="flex-grow h-[100px] mt-1">
+          {(availabilityStatus === 'available' && hasValidDataForSeriesInView) ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
+                {!isDirectional && (
+                  <YAxis
+                    yAxisId={config.dataKey}
+                    domain={['auto', 'auto']}
+                    tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
+                    tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
+                    stroke="hsl(var(--border))"
+                    width={35} 
+                    axisLine={false}
+                    tickLine={false}
+                    label={{ 
+                      value: `${config.unit || ''}`, 
+                      angle: -90, 
+                      position: 'insideLeft', 
+                      style: { textAnchor: 'middle', fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' } as React.CSSProperties,
+                      dy: 10,
+                      dx: -2,
+                    }}
+                  />
+                )}
+                {isDirectional && (
+                  <YAxis yAxisId={config.dataKey} domain={[0,360]} hide={true} />
+                )}
+                <XAxis dataKey="time" hide />
+                <RechartsTooltip
+                  contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', fontSize: '0.6rem' }}
+                  itemStyle={{ color: 'hsl(var(--foreground))' }}
+                  formatter={(value: number | null | undefined, name: string, props) => { 
+                    const isCurrentDirectional = name.toLowerCase().includes('direction');
+                    if (isCurrentDirectional) {
+                      return [<DirectionArrow degrees={value} />, name];
+                    }
+                    const formattedValue = (value !== null && value !== undefined && typeof value === 'number' && !isNaN(value)) 
+                      ? value.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) 
+                      : 'N/A';
+                    return [`${formattedValue}${config.unit || ''}`, name];
+                  }}
+                  labelFormatter={(label) => {
+                    try {
+                      const date = parseISO(String(label));
+                      return isValid(date) ? format(date, 'MMM dd, HH:mm') : String(label);
+                    } catch {
+                      return String(label);
+                    }
+                  }}
+                  isAnimationActive={false}
+                />
+                {!isDirectional ? (
+                  <Line
+                    yAxisId={config.dataKey}
+                    type="monotone"
+                    dataKey={config.dataKey as string}
+                    stroke={`hsl(var(${config.color || '--chart-1'}))`}
+                    strokeWidth={1.5}
+                    dot={false}
+                    connectNulls={true}
+                    name={config.name} 
+                    isAnimationActive={false}
+                  />
+                ) : (
+                  <Scatter
+                    yAxisId={config.dataKey}
+                    data={directionalScatterData}
+                    dataKey={config.dataKey as string}
+                    name={config.name}
+                    shape={(props) => <DirectionArrowShape {...props} dataKey={config.dataKey as string} />}
+                  />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-full text-xs text-muted-foreground italic">
+              {availabilityStatus === 'pending' ? "Loading plot data..." : 
+               availabilityStatus === 'unavailable' ? "Data unavailable for this parameter." : 
+               availabilityStatus === 'available' && !hasValidDataForSeriesInView ? "No data points in selected range." :
+               "Checking data..."
+              }
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 
 interface MarinePlotsGridProps {
   marineData: CombinedDataPoint[] | null;
@@ -62,8 +265,6 @@ interface MarinePlotsGridProps {
   plotVisibility: Record<CombinedParameterKey, boolean>;
   handlePlotVisibilityChange: (key: CombinedParameterKey, checked: boolean) => void;
 }
-
-type SeriesAvailabilityStatus = 'pending' | 'available' | 'unavailable';
 
 export function MarinePlotsGrid({
   marineData,
@@ -76,11 +277,11 @@ export function MarinePlotsGrid({
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
   
-  const [plotConfigsInternal, setPlotConfigsInternal] = useState<Array<ParameterConfigItem & { dataKey: CombinedParameterKey; Icon: LucideIcon; dataTransform?: (value: number | null | undefined) => number | null | undefined }>>([]);
+  const [plotConfigsInternal, setPlotConfigsInternal] = useState<PlotConfigInternal[]>([]);
   const [seriesDataAvailability, setSeriesDataAvailability] = useState<Record<CombinedParameterKey, SeriesAvailabilityStatus>>({});
 
   useEffect(() => {
-    const configs = ALL_PARAMETERS.map(key => {
+    const configs: PlotConfigInternal[] = ALL_PARAMETERS.map(key => {
       const baseConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
       let dataTransformFunc: ((value: number | null | undefined) => number | null | undefined) | undefined = undefined;
       let displayUnit = baseConfig.unit;
@@ -224,182 +425,19 @@ export function MarinePlotsGrid({
   return (
     <div className="w-full h-full flex flex-col">
       <div className="flex-grow flex flex-col space-y-1 overflow-y-auto pr-1">
-        {plotConfigsInternal.map((config, index) => {
-          const IconComponent = config.Icon;
-          const availabilityStatus = seriesDataAvailability[config.dataKey];
-          const isPlotVisible = plotVisibility[config.dataKey] ?? false;
-          const isDirectional = config.dataKey.toLowerCase().includes('direction');
-          
-          const transformedDisplayData = displayData.map(point => {
-            const value = point[config.dataKey as keyof CombinedDataPoint];
-            if (value === undefined || value === null || (typeof value === 'number' && isNaN(value))) {
-              return { ...point, [config.dataKey]: undefined };
-            }
-            if (typeof value === 'number' && config.dataTransform) {
-              return { ...point, [config.dataKey]: config.dataTransform(value) };
-            }
-            return point;
-          });
-
-          // Downsample data for directional plots
-          const directionalScatterData = useMemo(() => {
-              if (!isDirectional || transformedDisplayData.length === 0) {
-                  return [];
-              }
-              const maxArrows = 50;
-              const dataLength = transformedDisplayData.length;
-              if (dataLength <= maxArrows) {
-                  return transformedDisplayData;
-              }
-              const step = Math.ceil(dataLength / maxArrows);
-              return transformedDisplayData.filter((_, i) => i % step === 0);
-          }, [isDirectional, transformedDisplayData]);
-          
-          const hasValidDataForSeriesInView = transformedDisplayData.some(p => {
-            const val = p[config.dataKey as keyof CombinedDataPoint];
-            return val !== undefined && val !== null && !isNaN(Number(val));
-          });
-
-          const lastDataPointWithValidValue = [...transformedDisplayData].reverse().find(p => {
-            const val = p[config.dataKey as keyof CombinedDataPoint];
-            return val !== undefined && val !== null && !isNaN(Number(val));
-          });
-          const currentValue = lastDataPointWithValidValue ? lastDataPointWithValidValue[config.dataKey as keyof CombinedDataPoint] as number | undefined : undefined;
-          
-          let displayValue = "";
-          if (isPlotVisible && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue) && !isDirectional) {
-            displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits: 1})}${config.unit || ''}`;
-          }
-          
-          return (
-            <div key={config.dataKey as string} className="border rounded-md p-1.5 shadow-sm bg-card flex-shrink-0 flex flex-col">
-              <div className="flex items-center justify-between px-1 pt-0.5 text-xs">
-                <div className="flex flex-1 items-center gap-1.5 min-w-0">
-                    <Checkbox
-                        id={`visibility-${config.dataKey}-${index}`}
-                        checked={isPlotVisible}
-                        onCheckedChange={(checked) => handlePlotVisibilityChange(config.dataKey, !!checked)}
-                        className="h-3.5 w-3.5 flex-shrink-0"
-                    />
-                    <Label htmlFor={`visibility-${config.dataKey}-${index}`} className="flex items-center gap-1 cursor-pointer min-w-0">
-                        <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                        <span className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis" title={config.name}>
-                            {config.name}
-                        </span>
-                    </Label>
-                    <div className="flex-shrink-0 flex items-center ml-1">
-                        {(isLoading && availabilityStatus === 'pending') && <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />}
-                        {(!isLoading && availabilityStatus === 'available' && isPlotVisible && hasValidDataForSeriesInView) && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
-                        {(!isLoading && (availabilityStatus === 'unavailable' || (availabilityStatus === 'available' && !hasValidDataForSeriesInView)) && isPlotVisible) && <XCircle className="h-3.5 w-3.5 text-red-500" />}
-                    </div>
-                </div>
-                <div className="flex items-center flex-shrink-0">
-                    {isDirectional && isPlotVisible && availabilityStatus === 'available' && hasValidDataForSeriesInView && <DirectionArrow degrees={currentValue} />}
-                    {!isDirectional && displayValue && (
-                        <span className={cn("text-muted-foreground text-xs ml-auto pl-2 whitespace-nowrap")}>{displayValue}</span>
-                    )}
-                    <Button variant="ghost" size="icon" className="h-5 w-5 ml-1" onClick={() => handleMovePlot(index, 'up')} disabled={index === 0}>
-                        <ChevronUp className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleMovePlot(index, 'down')} disabled={index === plotConfigsInternal.length - 1}>
-                        <ChevronDown className="h-3.5 w-3.5" />
-                    </Button>
-                </div>
-              </div>
-
-              {isPlotVisible && (
-                <div className="flex-grow h-[100px] mt-1">
-                  {(availabilityStatus === 'available' && hasValidDataForSeriesInView) ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
-                        {!isDirectional && (
-                            <YAxis
-                              yAxisId={config.dataKey}
-                              domain={['auto', 'auto']}
-                              tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
-                              tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
-                              stroke="hsl(var(--border))"
-                              width={35} 
-                              axisLine={false}
-                              tickLine={false}
-                              label={{ 
-                                value: `${config.unit || ''}`, 
-                                angle: -90, 
-                                position: 'insideLeft', 
-                                style: { textAnchor: 'middle', fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' } as React.CSSProperties,
-                                dy: 10,
-                                dx: -2,
-                              }}
-                            />
-                        )}
-                        {isDirectional && (
-                            <YAxis yAxisId={config.dataKey} domain={[0,360]} hide={true} />
-                        )}
-                        <XAxis dataKey="time" hide />
-                         <RechartsTooltip
-                            contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', fontSize: '0.6rem' }}
-                            itemStyle={{ color: 'hsl(var(--foreground))' }}
-                            formatter={(value: number | null | undefined, name: string, props) => { 
-                                const currentConfig = plotConfigsInternal.find(pc => pc.dataKey === name);
-                                const isCurrentDirectional = currentConfig?.dataKey.toLowerCase().includes('direction');
-
-                                if (isCurrentDirectional) {
-                                  return [<DirectionArrow degrees={value} />, currentConfig?.name || name];
-                                }
-
-                                const formattedValue = (value !== null && value !== undefined && typeof value === 'number' && !isNaN(value)) 
-                                    ? value.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) 
-                                    : 'N/A';
-                                return [`${formattedValue}${currentConfig?.unit || ''}`, currentConfig?.name || name];
-                            }}
-                            labelFormatter={(label) => {
-                                try {
-                                    const date = parseISO(String(label));
-                                    return isValid(date) ? format(date, 'MMM dd, HH:mm') : String(label);
-                                } catch {
-                                    return String(label);
-                                }
-                            }}
-                            isAnimationActive={false}
-                        />
-                        {!isDirectional ? (
-                            <Line
-                              yAxisId={config.dataKey}
-                              type="monotone"
-                              dataKey={config.dataKey as string}
-                              stroke={`hsl(var(${config.color || '--chart-1'}))`}
-                              strokeWidth={1.5}
-                              dot={false}
-                              connectNulls={true}
-                              name={config.name} 
-                              isAnimationActive={false}
-                            />
-                        ) : (
-                           <Scatter
-                              yAxisId={config.dataKey}
-                              data={directionalScatterData}
-                              dataKey={config.dataKey as string}
-                              name={config.name}
-                              shape={(props) => <DirectionArrowShape {...props} dataKey={config.dataKey as string} />}
-                            />
-                        )}
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-xs text-muted-foreground italic">
-                      {isLoading && availabilityStatus === 'pending' ? "Loading plot data..." : 
-                       !isLoading && availabilityStatus === 'unavailable' ? "Data unavailable for this parameter." : 
-                       !isLoading && availabilityStatus === 'available' && !hasValidDataForSeriesInView ? "No data points in selected range." :
-                       "Checking data..."
-                      }
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {plotConfigsInternal.map((config, index) => (
+          <PlotRow
+            key={config.dataKey}
+            config={config}
+            index={index}
+            plotCount={plotConfigsInternal.length}
+            displayData={displayData}
+            isPlotVisible={plotVisibility[config.dataKey] ?? false}
+            availabilityStatus={seriesDataAvailability[config.dataKey] || 'pending'}
+            onVisibilityChange={handlePlotVisibilityChange}
+            onMove={handleMovePlot}
+          />
+        ))}
       </div>
 
       {marineData && marineData.length > 0 && (
@@ -436,5 +474,4 @@ export function MarinePlotsGrid({
   );
 }
 
-
-
+    
