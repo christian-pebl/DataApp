@@ -60,7 +60,7 @@ const DirectionLabel = (props: any) => {
     return (
         <foreignObject x={x - 7} y={y - 7} width="14" height="14">
             <DirectionArrow
-                style={{ transform: `rotate(${value}deg)`, transformOrigin: 'center center' }} 
+                style={{ transform: `rotate(${value + 180}deg)`, transformOrigin: 'center center' }} 
                 className="text-foreground/80"
             />
         </foreignObject>
@@ -130,11 +130,11 @@ const PlotRow = React.memo(({
             id={`visibility-${config.dataKey}-${index}`}
             checked={isPlotVisible}
             onCheckedChange={(checked) => onVisibilityChange(config.dataKey, !!checked)}
-            className="h-3.5 w-3.5 flex-shrink-0"
+            className="h-3.5 w-3.5 flex-shrink-0 border-muted-foreground/50"
           />
-          <Label htmlFor={`visibility-${config.dataKey}-${index}`} className="flex items-center gap-1 cursor-pointer min-w-0">
+          <Label htmlFor={`visibility-${config.dataKey}-${index}`} className="flex items-center gap-1 cursor-pointer min-w-0 text-muted-foreground">
             <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-            <span className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis" title={config.name}>
+            <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={config.name}>
               {config.name}
             </span>
           </Label>
@@ -147,7 +147,7 @@ const PlotRow = React.memo(({
         <div className="flex items-center flex-shrink-0">
           {displayValue && (
             <span className={cn("text-muted-foreground text-xs ml-auto pl-2 whitespace-nowrap")}>{displayValue}
-             {isDirectional && typeof currentValue === 'number' && <DirectionArrow style={{ display: 'inline-block', transform: `rotate(${currentValue}deg)`, height: '1em', width: '1em', marginLeft: '0.25em', verticalAlign: 'middle' }} />}
+             {isDirectional && typeof currentValue === 'number' && <DirectionArrow style={{ display: 'inline-block', transform: `rotate(${currentValue + 180}deg)`, height: '1em', width: '1em', marginLeft: '0.25em', verticalAlign: 'middle' }} />}
             </span>
           )}
           <Button variant="ghost" size="icon" className="h-5 w-5 ml-1" onClick={() => onMove(index, 'up')} disabled={index === 0}>
@@ -188,7 +188,7 @@ const PlotRow = React.memo(({
                     return [
                        <div key="val" style={{ display: 'flex', alignItems: 'center' }}>
                          {`${formattedValue}${isDirectional ? '' : (config.unit || '')}`}
-                         {isDirectional && typeof value === 'number' && <DirectionArrow style={{ transform: `rotate(${value}deg)`, height: '1em', width: '1em', marginLeft: '0.5em' }} />}
+                         {isDirectional && typeof value === 'number' && <DirectionArrow style={{ transform: `rotate(${value + 180}deg)`, height: '1em', width: '1em', marginLeft: '0.5em' }} />}
                        </div>,
                        name
                     ];

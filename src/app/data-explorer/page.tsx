@@ -15,7 +15,7 @@ import {
   PlusCircle, SunMoon, LayoutGrid, Waves, MapPin, CalendarDays, Search,
   Loader2, Info, CheckCircle2, XCircle, Copy, CloudSun, Anchor,
   Thermometer, Wind as WindIcon, Compass as CompassIcon, Sailboat, Timer as TimerIcon, ListChecks, FilePenLine,
-  ChevronsLeft, ChevronsRight
+  ChevronsLeft, ChevronsRight, Home
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -95,14 +95,8 @@ export default function DataExplorerPage() {
   const [isApiPlotsExpanded, setIsApiPlotsExpanded] = useState(false);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
 
-  const [mapSelectedCoords, setMapSelectedCoords] = useState<{ lat: number; lon: number } | null>(
-    knownOmLocations[defaultOmLocationKey]
-      ? { lat: knownOmLocations[defaultOmLocationKey].lat, lon: knownOmLocations[defaultOmLocationKey].lon }
-      : { lat: DEFAULT_OM_LATITUDE, lon: DEFAULT_OM_LONGITUDE }
-  );
-  const [currentLocationName, setCurrentLocationName] = useState<string>(
-    knownOmLocations[defaultOmLocationKey]?.name || "Selected Location"
-  );
+  const [mapSelectedCoords, setMapSelectedCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [currentLocationName, setCurrentLocationName] = useState<string>("");
 
   const initialApiPlotVisibility = useMemo(() => {
     return Object.fromEntries(
@@ -121,6 +115,50 @@ export default function DataExplorerPage() {
   const [apiLogOverallStatus, setApiLogOverallStatus] = useState<ApiLogOverallStatus>('idle');
   const lastApiErrorRef = useRef<string | null>(null);
   const initialApiFetchDone = useRef(false);
+
+  // Home Location Logic
+  useEffect(() => {
+    try {
+      const savedHome = localStorage.getItem('pebl-home-location');
+      if (savedHome) {
+        const { key, name, lat, lon } = JSON.parse(savedHome);
+        setSelectedLocationKey(key);
+        setCurrentLocationName(name);
+        setMapSelectedCoords({ lat, lon });
+      } else {
+        // Set default if no home location
+        const defaultLoc = knownOmLocations[defaultOmLocationKey];
+        setSelectedLocationKey(defaultOmLocationKey);
+        setCurrentLocationName(defaultLoc.name);
+        setMapSelectedCoords({ lat: defaultLoc.lat, lon: defaultLoc.lon });
+      }
+    } catch (e) {
+        console.error("Could not read home location from localStorage", e);
+        // Fallback to default
+        const defaultLoc = knownOmLocations[defaultOmLocationKey];
+        setSelectedLocationKey(defaultOmLocationKey);
+        setCurrentLocationName(defaultLoc.name);
+        setMapSelectedCoords({ lat: defaultLoc.lat, lon: defaultLoc.lon });
+    }
+  }, []);
+
+  const setHomeLocation = useCallback(() => {
+    if (mapSelectedCoords) {
+      const homeLocation = {
+        key: selectedLocationKey,
+        name: currentLocationName,
+        lat: mapSelectedCoords.lat,
+        lon: mapSelectedCoords.lon,
+      };
+      try {
+        localStorage.setItem('pebl-home-location', JSON.stringify(homeLocation));
+        toast({ title: "Home Location Set", description: `${currentLocationName} is now your default location.` });
+      } catch (e) {
+        console.error("Could not save home location to localStorage", e);
+        toast({ variant: "destructive", title: "Could Not Set Home", description: "Your browser may be blocking local storage." });
+      }
+    }
+  }, [mapSelectedCoords, selectedLocationKey, currentLocationName, toast]);
 
   const plotConfigIcons: Record<CombinedParameterKey, LucideIcon | undefined> = useMemo(() => {
     const icons: Partial<Record<CombinedParameterKey, LucideIcon>> = {};
@@ -449,37 +487,47 @@ export default function DataExplorerPage() {
                       <CardContent className="space-y-2 p-3">
                           <div>
                               <UiLabel htmlFor={`om-location-select-${instanceId}`} className="text-xs font-medium mb-0.5 block">Select Location</UiLabel>
-                              <Select
-                                  value={selectedLocationKey}
-                                  onValueChange={handleLocationChange}
-                                  disabled={isLoadingApiData}
-                              >
-                                  <SelectTrigger id={`om-location-select-${instanceId}`} className="h-9 text-xs">
-                                      <SelectValue placeholder="Select a location" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                      {Object.entries(knownOmLocations).map(([key, loc]) => (
-                                          <SelectItem key={key} value={key} className="text-xs">
-                                              {loc.name}
-                                          </SelectItem>
-                                      ))}
-                                      {selectedLocationKey === "__custom__" && (
-                                          <SelectItem value="__custom__" disabled className="text-xs font-medium">
-                                            {currentLocationName}
-                                          </SelectItem>
-                                      )}
-                                  </SelectContent>
-                              </Select>
+                              <div className="flex items-center gap-1.5">
+                                <Select
+                                    value={selectedLocationKey}
+                                    onValueChange={handleLocationChange}
+                                    disabled={isLoadingApiData}
+                                >
+                                    <SelectTrigger id={`om-location-select-${instanceId}`} className="h-9 text-xs">
+                                        <SelectValue placeholder="Select a location" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {Object.entries(knownOmLocations).map(([key, loc]) => (
+                                            <SelectItem key={key} value={key} className="text-xs">
+                                                {loc.name}
+                                            </SelectItem>
+                                        ))}
+                                        {selectedLocationKey === "__custom__" && (
+                                            <SelectItem value="__custom__" disabled className="text-xs font-medium">
+                                              {currentLocationName}
+                                            </SelectItem>
+                                        )}
+                                    </SelectContent>
+                                </Select>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button variant="outline" size="icon" className="h-9 w-9 flex-shrink-0" onClick={setHomeLocation} disabled={!mapSelectedCoords} aria-label="Set as Home Location">
+                                          <Home className="h-4 w-4"/>
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent><p>Set as Home Location</p></TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                <Button 
+                                  variant="outline" 
+                                  onClick={() => setIsMapExpanded(!isMapExpanded)}
+                                  className="h-9 text-xs flex-shrink-0"
+                                >
+                                  Custom
+                                </Button>
+                              </div>
                           </div>
-                          
-                          <Button 
-                            variant="outline" 
-                            onClick={() => setIsMapExpanded(!isMapExpanded)}
-                            className="w-full h-9 text-xs"
-                          >
-                            Custom Location
-                            <ChevronsRight className={cn("h-4 w-4 ml-2 transition-transform", isMapExpanded && "rotate-90")}/>
-                          </Button>
 
                           {isMapExpanded && (
                             <div className="space-y-2 pt-2">
