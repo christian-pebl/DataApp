@@ -407,30 +407,28 @@ export function MarinePlotsGrid({
       </div>
 
       {marineData && marineData.length > 0 && (
-        <div className="h-[42px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
+        <div className="h-[48px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={marineData} margin={{ top: 5, right: 25, left: 25, bottom: 5 }}>
+            <LineChart data={marineData} margin={{ top: 5, right: 25, left: 25, bottom: 0 }}>
               <XAxis
                 dataKey="time"
                 tickFormatter={formatDateTickBrush}
                 stroke="hsl(var(--muted-foreground))"
-                tick={{ fontSize: '0.6rem', angle: -45, textAnchor: 'end' }}
-                height={35} 
-                dy={5} 
+                tick={{ fontSize: '0.65rem' }}
+                height={15}
                 interval="preserveStartEnd"
               />
-               <Line dataKey={plotConfigsInternal.find(p => plotVisibility[p.dataKey] && seriesDataAvailability[p.dataKey] === 'available')?.dataKey || plotConfigsInternal[0]?.dataKey} stroke="transparent" dot={false} isAnimationActive={false} />
               <Brush
                 dataKey="time"
-                height={14}
+                height={20}
                 stroke="hsl(var(--primary))"
                 fill="transparent"
-                tickFormatter={formatDateTickBrush}
+                tickFormatter={() => ""} // Hide labels on brush itself
                 travellerWidth={8}
                 startIndex={brushStartIndex}
                 endIndex={brushEndIndex}
                 onChange={handleBrushChangeLocal}
-                y={-5} 
+                y={20} 
               />
             </LineChart>
           </ResponsiveContainer>
