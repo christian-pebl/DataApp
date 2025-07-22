@@ -78,7 +78,17 @@ const PlotRow = React.memo(({
   dailyReferenceLines,
   onVisibilityChange,
   onMove
-}: PlotRowProps) => {
+}: {
+  config: PlotConfigInternal;
+  index: number;
+  plotCount: number;
+  displayData: CombinedDataPoint[];
+  isPlotVisible: boolean;
+  availabilityStatus: SeriesAvailabilityStatus;
+  dailyReferenceLines: string[];
+  onVisibilityChange: (key: CombinedParameterKey, checked: boolean) => void;
+  onMove: (index: number, direction: 'up' | 'down') => void;
+}) => {
 
   const isDirectional = config.isDirectional;
 
@@ -156,7 +166,7 @@ const PlotRow = React.memo(({
               <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
                 {dailyReferenceLines.map(time => (
-                  <ReferenceLine key={time} x={time} stroke="hsl(var(--border))" strokeDasharray="3 3" />
+                  <ReferenceLine key={time} yAxisId={config.dataKey} x={time} stroke="hsl(var(--border))" strokeDasharray="3 3" />
                 ))}
                 <YAxis
                   yAxisId={config.dataKey}
