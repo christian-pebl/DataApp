@@ -491,60 +491,17 @@ export default function DataExplorerPage() {
                           <DatePickerWithRange id={`om-date-range-${instanceId}`} date={dateRange} onDateChange={setDateRange} disabled={isLoadingApiData} />
                           {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && <p className="text-xs text-destructive px-1 pt-1">Start date error.</p>}
                           </div>
-                      </CardContent>
-                  </Card>
-                   <Card>
-                      <CardHeader className="pb-2 pt-3 flex flex-row items-center justify-between">
-                          <CardTitle className="text-sm flex items-center gap-1.5"><ListChecks className="h-4 w-4 text-primary" />Select API Parameters</CardTitle>
-                          <div className="flex items-center space-x-1.5">
-                              <Checkbox
-                                  id={`select-all-api-params-${instanceId}`}
-                                  checked={allApiParamsSelected}
-                                  onCheckedChange={(checked) => handleSelectAllApiParams(!!checked)}
-                                  className="h-3.5 w-3.5"
-                                  disabled={isLoadingApiData}
-                                  aria-label={allApiParamsSelected ? "Deselect all API parameters" : "Select all API parameters"}
-                              />
-                              <UiLabel htmlFor={`select-all-api-params-${instanceId}`} className="text-xs font-medium cursor-pointer">
-                                  {allApiParamsSelected ? "Deselect All" : "Select All"}
-                              </UiLabel>
+                          <div className="pt-2">
+                            <Button 
+                                onClick={() => handleFetchApiData(false)} 
+                                disabled={isLoadingApiData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => apiPlotVisibility[key as CombinedParameterKey]).length === 0} 
+                                className="w-full h-9 text-xs"
+                            >
+                            {isLoadingApiData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
+                            {isLoadingApiData ? "Fetching API Data..." : "Fetch API Data"}
+                            </Button>
                           </div>
-                      </CardHeader>
-                      <CardContent className="p-2">
-                          <ScrollArea className="h-48 w-full rounded-md border p-1">
-                              {ALL_PARAMETERS.map((key) => {
-                              const paramConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
-                              if (!paramConfig) return null;
-                              const IconComp = plotConfigIcons[key as CombinedParameterKey] || Info;
-                              const uniqueCheckboxId = `api-visibility-${key}-${instanceId}`;
-                              return (
-                                  <div key={key} className="flex items-center space-x-1.5 py-0.5">
-                                  <Checkbox
-                                      id={uniqueCheckboxId}
-                                      checked={apiPlotVisibility[key as CombinedParameterKey]}
-                                      onCheckedChange={(checked) => handleApiPlotVisibilityChange(key as CombinedParameterKey, !!checked)}
-                                      className="h-3.5 w-3.5"
-                                      disabled={isLoadingApiData}
-                                  />
-                                  <UiLabel htmlFor={uniqueCheckboxId} className="text-xs font-medium flex items-center gap-1 cursor-pointer">
-                                      <IconComp className="h-3.5 w-3.5 text-muted-foreground" />
-                                      {paramConfig.name}
-                                  </UiLabel>
-                                  </div>
-                              );
-                              })}
-                          </ScrollArea>
                       </CardContent>
-                      <CardFooter className="p-3 pt-1">
-                          <Button 
-                              onClick={() => handleFetchApiData(false)} 
-                              disabled={isLoadingApiData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => apiPlotVisibility[key as CombinedParameterKey]).length === 0} 
-                              className="w-full h-9 text-xs"
-                          >
-                          {isLoadingApiData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
-                          {isLoadingApiData ? "Fetching API Data..." : "Fetch API Data"}
-                          </Button>
-                      </CardFooter>
                       {renderLogAccordion(apiFetchLogSteps, showApiFetchLogAccordion, setShowApiFetchLogAccordion, isApiLogLoading, apiLogOverallStatus, "API Fetch Log", lastApiErrorRef.current)}
                   </Card>
               </div>
