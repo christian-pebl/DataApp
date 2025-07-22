@@ -86,10 +86,9 @@ export default function DataExplorerPage() {
   // API Data State (Weather & Marine)
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
     const yesterday = subDays(new Date(), 1);
-    return {
-      from: yesterday,
-      to: addDays(yesterday, 6), // 7-day window starting yesterday
-    };
+    const from = yesterday;
+    const to = addDays(from, 6);
+    return { from, to };
   });
 
   const [selectedLocationKey, setSelectedLocationKey] = useState<string>(defaultOmLocationKey);
@@ -413,7 +412,7 @@ export default function DataExplorerPage() {
         </CardFooter>
       )
     );
-  }, [getLogTriggerContent, getLogAccordionItemClass, handleCopyLog, toast]);
+  }, [getLogTriggerContent, getLogAccordionItemClass, handleCopyLog]);
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -427,7 +426,7 @@ export default function DataExplorerPage() {
               <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer</p></TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger asChild><Link href="/annotation" passHref><Button variant={pathname === '/annotation' ? "secondary": "ghost"} size="icon" aria-label="Annotation Page"><FilePenLine className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Annotation Page</p></TooltipContent></Tooltip>
               <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
-              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
             </div>
           </div>
         </TooltipProvider>
