@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, LabelList } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, LabelList, ReferenceLine } from 'recharts';
 import type { CombinedDataPoint, CombinedParameterKey, ParameterConfigItem } from '@/app/om-marine-explorer/shared';
 import { PARAMETER_CONFIG, ALL_PARAMETERS, KNOTS_CONVERSION_FACTOR } from '@/app/om-marine-explorer/shared';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Loader2, CheckCircle2, XCircle, Info, ChevronUp, ChevronDown, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { format, parseISO, isValid } from 'date-fns';
+import { format, parseISO, isValid, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 
@@ -75,6 +75,7 @@ const PlotRow = React.memo(({
   displayData,
   isPlotVisible,
   availabilityStatus,
+  dailyReferenceLines,
   onVisibilityChange,
   onMove
 }: PlotRowProps) => {
@@ -154,6 +155,9 @@ const PlotRow = React.memo(({
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
+                {dailyReferenceLines.map(time => (
+                  <ReferenceLine key={time} x={time} stroke="hsl(var(--border))" strokeDasharray="3 3" />
+                ))}
                 <YAxis
                   yAxisId={config.dataKey}
                   domain={isDirectional ? [0, 360] : ['auto', 'auto']}
@@ -338,6 +342,31 @@ export function MarinePlotsGrid({
     return slicedData;
   }, [marineData, brushStartIndex, brushEndIndex]);
 
+  const dailyReferenceLines = useMemo(() => {
+    if (!marineData || marineData.length === 0) return [];
+    const dailyTimestamps = new Set<string>();
+
+    marineData.forEach(point => {
+      try {
+        const date = parseISO(point.time);
+        if (isValid(date)) {
+          // Get the ISO string for the start of the day
+          const dayStartISO = startOfDay(date).toISOString();
+          dailyTimestamps.add(dayStartISO);
+        }
+      } catch (e) {
+        // ignore invalid time format
+      }
+    });
+
+    // The reference lines need to match exact timestamps in the data.
+    // We find the first timestamp for each day.
+    return Array.from(dailyTimestamps).map(dayStartISO => {
+        return marineData.find(p => p.time.startsWith(dayStartISO.substring(0, 10)))?.time;
+    }).filter((t): t is string => !!t);
+
+  }, [marineData]);
+
   const handleMovePlot = useCallback((index: number, direction: 'up' | 'down') => {
     setPlotConfigsInternal(prevConfigs => {
       const newConfigs = [...prevConfigs];
@@ -400,6 +429,7 @@ export function MarinePlotsGrid({
             displayData={displayData}
             isPlotVisible={plotVisibility[config.dataKey] ?? false}
             availabilityStatus={seriesDataAvailability[config.dataKey] || 'pending'}
+            dailyReferenceLines={dailyReferenceLines}
             onVisibilityChange={handlePlotVisibilityChange}
             onMove={handleMovePlot}
           />
