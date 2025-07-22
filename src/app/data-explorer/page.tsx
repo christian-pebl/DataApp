@@ -93,6 +93,7 @@ export default function DataExplorerPage() {
 
   const [selectedLocationKey, setSelectedLocationKey] = useState<string>(defaultOmLocationKey);
   const [isApiPlotsExpanded, setIsApiPlotsExpanded] = useState(false);
+  const [isMapExpanded, setIsMapExpanded] = useState(false);
 
   const [mapSelectedCoords, setMapSelectedCoords] = useState<{ lat: number; lon: number } | null>(
     knownOmLocations[defaultOmLocationKey]
@@ -471,30 +472,43 @@ export default function DataExplorerPage() {
                               </Select>
                           </div>
                           
-                          <UiLabel htmlFor={`om-map-container-${instanceId}`} className="text-xs font-medium mb-0.5 block pt-1">Click Map to Select Location</UiLabel>
-                          <div id={`om-map-container-${instanceId}`} className="h-[180px] w-full rounded-md overflow-hidden border">
-                          <OpenLayersMapWithNoSSR
-                              initialCenter={mapSelectedCoords ? [mapSelectedCoords.lon, mapSelectedCoords.lat] : [DEFAULT_OM_LONGITUDE, DEFAULT_OM_LATITUDE]}
-                              initialZoom={DEFAULT_OM_MAP_ZOOM}
-                              selectedCoords={mapSelectedCoords}
-                              onLocationSelect={handleMapLocationSelect}
-                          />
-                          </div>
-                          {mapSelectedCoords && (
-                          <p className="text-xs text-muted-foreground text-center">
-                              {currentLocationName} (Lat: {mapSelectedCoords.lat.toFixed(3)}, Lon: {mapSelectedCoords.lon.toFixed(3)})
-                          </p>
-                          )}
+                          <Button 
+                            variant="outline" 
+                            onClick={() => setIsMapExpanded(!isMapExpanded)}
+                            className="w-full h-9 text-xs"
+                          >
+                            Custom Location
+                            <ChevronsRight className={cn("h-4 w-4 ml-2 transition-transform", isMapExpanded && "rotate-90")}/>
+                          </Button>
 
-                          <div>
-                          <UiLabel htmlFor={`om-date-range-${instanceId}`} className="text-xs font-medium mb-0.5 block pt-1">Date Range</UiLabel>
-                          <DatePickerWithRange id={`om-date-range-${instanceId}`} date={dateRange} onDateChange={setDateRange} disabled={isLoadingApiData} />
-                          {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && <p className="text-xs text-destructive px-1 pt-1">Start date error.</p>}
+                          {isMapExpanded && (
+                            <div className="space-y-2 pt-2">
+                                <UiLabel htmlFor={`om-map-container-${instanceId}`} className="text-xs font-medium mb-0.5 block pt-1">Click Map to Select Location</UiLabel>
+                                <div id={`om-map-container-${instanceId}`} className="h-[180px] w-full rounded-md overflow-hidden border">
+                                <OpenLayersMapWithNoSSR
+                                    initialCenter={mapSelectedCoords ? [mapSelectedCoords.lon, mapSelectedCoords.lat] : [DEFAULT_OM_LONGITUDE, DEFAULT_OM_LATITUDE]}
+                                    initialZoom={DEFAULT_OM_MAP_ZOOM}
+                                    selectedCoords={mapSelectedCoords}
+                                    onLocationSelect={handleMapLocationSelect}
+                                />
+                                </div>
+                                {mapSelectedCoords && (
+                                <p className="text-xs text-muted-foreground text-center">
+                                    {currentLocationName} (Lat: {mapSelectedCoords.lat.toFixed(3)}, Lon: {mapSelectedCoords.lon.toFixed(3)})
+                                </p>
+                                )}
+                            </div>
+                           )}
+
+                          <div className="pt-2">
+                            <UiLabel htmlFor={`om-date-range-${instanceId}`} className="text-xs font-medium mb-0.5 block">Date Range</UiLabel>
+                            <DatePickerWithRange id={`om-date-range-${instanceId}`} date={dateRange} onDateChange={setDateRange} disabled={isLoadingApiData} />
+                            {dateRange?.from && dateRange?.to && dateRange.from > dateRange.to && <p className="text-xs text-destructive px-1 pt-1">Start date error.</p>}
                           </div>
                           <div className="pt-2">
                             <Button 
                                 onClick={() => handleFetchApiData(false)} 
-                                disabled={isLoadingApiData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to || ALL_PARAMETERS.filter(key => apiPlotVisibility[key as CombinedParameterKey]).length === 0} 
+                                disabled={isLoadingApiData || !mapSelectedCoords || !dateRange?.from || !dateRange?.to} 
                                 className="w-full h-9 text-xs"
                             >
                             {isLoadingApiData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4"/>}
