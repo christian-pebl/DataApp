@@ -18,7 +18,7 @@ const formatDateTickBrush = (timeValue: string | number): string => {
   try {
     const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
     if (!isValid(dateObj)) return String(timeValue);
-    return format(dateObj, 'dd/MM/yy');
+    return format(dateObj, 'EEE, dd/MM');
   } catch (e) {
     return String(timeValue);
   }
@@ -147,7 +147,7 @@ const PlotRow = React.memo(({
         <div className="flex items-center flex-shrink-0">
           {displayValue && (
             <span className={cn("text-muted-foreground text-xs ml-auto pl-2 whitespace-nowrap")}>{displayValue}
-             {isDirectional && <DirectionArrow style={{ display: 'inline-block', transform: `rotate(${currentValue}deg)`, height: '1em', width: '1em', marginLeft: '0.25em', verticalAlign: 'middle' }} />}
+             {isDirectional && typeof currentValue === 'number' && <DirectionArrow style={{ display: 'inline-block', transform: `rotate(${currentValue}deg)`, height: '1em', width: '1em', marginLeft: '0.25em', verticalAlign: 'middle' }} />}
             </span>
           )}
           <Button variant="ghost" size="icon" className="h-5 w-5 ml-1" onClick={() => onMove(index, 'up')} disabled={index === 0}>
@@ -477,3 +477,5 @@ export function MarinePlotsGrid({
     </div>
   );
 }
+
+    
