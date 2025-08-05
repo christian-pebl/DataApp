@@ -29,8 +29,8 @@ import {
   Settings2, X, Maximize2, Minimize2, Plus, Palette, Copy, Trash2, UploadCloud,
   Hourglass, CheckCircle2, XCircle as XCircleIcon, ListFilter, Info,
   ChevronsDown, ChevronsUp, GripVertical, MoveRight, Spline, ArrowUpRight, FilePenLine,
-  Move as MoveIcon, Ban, Save, ChevronsLeft, ChevronsRight, RotateCcw,
-  PenLine as PenLineIcon, BarChart, Sun, Clock
+  Save, ChevronsLeft, ChevronsRight, RotateCcw,
+  BarChart, Sun, Clock
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
