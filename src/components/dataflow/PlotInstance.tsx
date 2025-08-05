@@ -735,7 +735,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
               <div className="space-y-1 p-1 border rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1">
                   <Settings2 className="h-3 w-3 text-[#2B7A78]" />
-                  <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Import & Validate</h3>
+                  <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
                 </div>
                 <div className="px-1 py-1.5 flex justify-center">
                   <Button asChild variant="outline" size="sm" className="h-8 text-xs w-full" disabled={isProcessing}>
@@ -775,6 +775,19 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                     </div>
                 </div>
                 
+                <div className="flex items-center justify-between p-1">
+                  <UiLabel htmlFor={`time-format-switch-${instanceId}-${uniqueComponentId}`} className="text-xs flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground"/>
+                    Time Format
+                  </UiLabel>
+                  <Switch 
+                    id={`time-format-switch-${instanceId}-${uniqueComponentId}`}
+                    checked={timeFormat === 'full'}
+                    onCheckedChange={(checked) => setTimeFormat(checked ? 'full' : 'short')}
+                    disabled={parsedData.length === 0}
+                  />
+                </div>
+
                 {summaryStep && (
                   <div className="px-1">
                   <Accordion type="single" collapsible value={accordionValue} onValueChange={setAccordionValue} className="w-full">
@@ -858,19 +871,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                             <p className="text-xs text-center text-muted-foreground py-2">No variables loaded.</p>
                         )}
                     </ScrollArea>
-                    <Separator className="my-1"/>
-                    <div className="flex items-center justify-between p-1">
-                      <UiLabel htmlFor={`time-format-switch-${instanceId}-${uniqueComponentId}`} className="text-xs flex items-center gap-1.5">
-                        <Clock className="h-3.5 w-3.5 text-muted-foreground"/>
-                        Full time format
-                      </UiLabel>
-                      <Switch 
-                        id={`time-format-switch-${instanceId}-${uniqueComponentId}`}
-                        checked={timeFormat === 'full'}
-                        onCheckedChange={(checked) => setTimeFormat(checked ? 'full' : 'short')}
-                        disabled={parsedData.length === 0}
-                      />
-                    </div>
                 </div>
             </div>
             </>
@@ -909,3 +909,5 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     </Card>
   );
 }
+
+    
