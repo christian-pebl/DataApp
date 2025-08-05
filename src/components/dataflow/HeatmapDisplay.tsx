@@ -50,7 +50,7 @@ export function HeatmapDisplay({
 
   const BRUSH_CHART_HEIGHT = 50;
   const heatmapHeight = containerHeight - BRUSH_CHART_HEIGHT;
-  const margin = { top: 20, right: 20, bottom: 50, left: 150 };
+  const margin = { top: 20, right: 20, bottom: 60, left: 150 };
 
   useEffect(() => {
     if (svgRef.current) {
