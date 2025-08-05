@@ -43,6 +43,7 @@ interface ChartDisplayProps {
   brushStartIndex?: number;
   brushEndIndex?: number;
   onBrushChange?: (newIndex: { startIndex?: number; endIndex?: number }) => void;
+  timeFormat?: 'short' | 'full';
 }
 
 export function ChartDisplay({
@@ -54,6 +55,7 @@ export function ChartDisplay({
   brushStartIndex,
   brushEndIndex,
   onBrushChange,
+  timeFormat = 'short',
 }: ChartDisplayProps) {
   const chartHeightToUse = chartRenderHeight || INTERNAL_DEFAULT_CHART_HEIGHT;
 
@@ -82,29 +84,30 @@ export function ChartDisplay({
       })
     );
   }, [chartData, plottableSeries]);
+  
+  const currentDateFormat = useMemo(() => timeFormat === 'full' ? 'dd/MM/yy HH:mm' : 'dd/MM/yy', [timeFormat]);
 
   const memoizedXAxisTickFormatter = React.useCallback((timeValue: string | number): string => {
     try {
-      // All dates should be ISO strings from parsing, so parseISO is reliable here
       const dateObj = parseISO(String(timeValue));
       if (!isValid(dateObj)) {
         return String(timeValue); 
       }
-      return format(dateObj, 'dd/MM/yy'); 
+      return format(dateObj, currentDateFormat); 
     } catch (e) {
       return String(timeValue); 
     }
-  }, []);
+  }, [currentDateFormat]);
 
   const formatDateTickBrush = useCallback((timeValue: string | number): string => {
     try {
       const dateObj = parseISO(String(timeValue));
       if (!isValid(dateObj)) return String(timeValue);
-      return format(dateObj, 'dd/MM/yy'); 
+      return format(dateObj, currentDateFormat); 
     } catch (e) {
       return String(timeValue);
     }
-  }, []);
+  }, [currentDateFormat]);
 
   const yAxisLabelText = React.useMemo(() => {
     if (yAxisConfigs.length === 1 && yAxisConfigs[0]) {
@@ -203,7 +206,7 @@ export function ChartDisplay({
             labelFormatter={(label) => {
               try {
                 const date = parseISO(String(label));
-                return isValid(date) ? format(date, 'dd/MM/yy HH:mm') : String(label);
+                return isValid(date) ? format(date, currentDateFormat) : String(label);
               } catch { return String(label); }
             }}
             formatter={(value: number | null | undefined, name: string) => {

@@ -30,7 +30,7 @@ import {
   Hourglass, CheckCircle2, XCircle as XCircleIcon, ListFilter, Info,
   ChevronsDown, ChevronsUp, GripVertical, MoveRight, Spline, ArrowUpRight, FilePenLine,
   Move as MoveIcon, Ban, Save, ChevronsLeft, ChevronsRight, RotateCcw,
-  PenLine as PenLineIcon, BarChart, Sun
+  PenLine as PenLineIcon, BarChart, Sun, Clock
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -68,6 +68,7 @@ interface SavedPlotState {
   lines?: LineAnnotation[];
   isOverlayActive?: boolean;
   activeTool?: 'line' | 'move' | null;
+  timeFormat?: 'short' | 'full';
 }
 
 const DEFAULT_LINE_COLOR = 'hsl(var(--primary))';
@@ -168,6 +169,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
   const [isPlotExpanded, setIsPlotExpanded] = useState(false);
   const [plotType, setPlotType] = useState<PlotType>('line');
+  const [timeFormat, setTimeFormat] = useState<'short' | 'full'>('short');
 
   // Validation and UI State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -608,6 +610,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       if (successfullyProcessed && actualSeriesInLoadedCsv) {
         setPlotTitle(savedState.plotTitle);
         setPlotType(savedState.plotType || 'line');
+        setTimeFormat(savedState.timeFormat || 'short');
 
         const restoredVisibleSeries: Record<string, boolean> = {};
         actualSeriesInLoadedCsv.forEach(name => {
@@ -677,6 +680,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       lines: lines || [],
       isOverlayActive: isOverlayActive || false,
       activeTool: activeTool || null,
+      timeFormat,
     };
     const jsonString = JSON.stringify(stateToSave, null, 2);
     const blob = new Blob([jsonString], { type: "application/json" });
@@ -686,13 +690,13 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     a.download = `${plotTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'plot_save'}.json`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     toast({ title: "Plot State Saved", description: `Configuration saved as ${a.download}.` });
-  }, [rawCsvText, currentFileName, plotTitle, plotType, timeAxisLabel, dataSeries, visibleSeries, isPlotExpanded, isMinimalistView, brushStartIndex, brushEndIndex, lines, isOverlayActive, activeTool, toast]);
+  }, [rawCsvText, currentFileName, plotTitle, plotType, timeAxisLabel, dataSeries, visibleSeries, isPlotExpanded, isMinimalistView, brushStartIndex, brushEndIndex, lines, isOverlayActive, activeTool, timeFormat, toast]);
 
 
   const handleClearDataInstance = useCallback(() => {
     setRawCsvText(null); setParsedData([]); setCurrentFileName(undefined);
     setPlotTitle(initialPlotTitle); setDataSeries([]); setVisibleSeries({});
-    setTimeAxisLabel(undefined); setPlotType('line');
+    setTimeAxisLabel(undefined); setPlotType('line'); setTimeFormat('short');
     setValidationSteps(initialValidationSteps.map(s => ({ ...s })));
     setCurrentFileForValidation(null); setAccordionValue("");
     setIsPlotExpanded(false); setIsMinimalistView(false);
@@ -1263,6 +1267,19 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                             <p className="text-xs text-center text-muted-foreground py-2">No variables loaded.</p>
                         )}
                     </ScrollArea>
+                    <Separator className="my-1"/>
+                    <div className="flex items-center justify-between p-1">
+                      <UiLabel htmlFor={`time-format-switch-${instanceId}-${uniqueComponentId}`} className="text-xs flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-muted-foreground"/>
+                        Full time format
+                      </UiLabel>
+                      <Switch 
+                        id={`time-format-switch-${instanceId}-${uniqueComponentId}`}
+                        checked={timeFormat === 'full'}
+                        onCheckedChange={(checked) => setTimeFormat(checked ? 'full' : 'short')}
+                        disabled={parsedData.length === 0}
+                      />
+                    </div>
                 </div>
             </div>
             </>
@@ -1272,14 +1289,15 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
               {parsedData.length > 0 ? (
                 plotType === 'line' ? (
                     <ChartDisplay
-                    data={parsedData}
-                    plottableSeries={plottableSeries}
-                    yAxisConfigs={yAxisConfigsForChartDisplay}
-                    timeAxisLabel={timeAxisLabel}
-                    chartRenderHeight={currentPlotHeight}
-                    brushStartIndex={brushStartIndex}
-                    brushEndIndex={brushEndIndex}
-                    onBrushChange={handleBrushChange}
+                      data={parsedData}
+                      plottableSeries={plottableSeries}
+                      yAxisConfigs={yAxisConfigsForChartDisplay}
+                      timeAxisLabel={timeAxisLabel}
+                      chartRenderHeight={currentPlotHeight}
+                      brushStartIndex={brushStartIndex}
+                      brushEndIndex={brushEndIndex}
+                      onBrushChange={handleBrushChange}
+                      timeFormat={timeFormat}
                     />
                 ) : (
                     <HeatmapDisplay
