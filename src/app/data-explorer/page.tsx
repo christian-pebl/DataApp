@@ -607,30 +607,36 @@ export default function DataExplorerPage() {
         
         <Separator className="my-4" />
 
-        <div className="flex justify-center mb-3">
-          <Button onClick={addPlot} size="sm" className="h-8 text-xs">
-            <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot (Device Data)
-          </Button>
-        </div>
-
-        {plots.length === 0 ? (
-          <div className="flex flex-col items-center justify-center text-muted-foreground h-40 p-2 border rounded-md bg-muted/20">
-            <LayoutGrid className="w-8 h-8 mb-2 text-muted" />
-            <p className="text-xs">No device data plots to display.</p>
-            <p className="text-[0.7rem]">Click "Add New Plot (Device Data)" to get started.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {plots.map((plot) => (
-              <PlotInstance
-                key={plot.id}
-                instanceId={plot.id}
-                initialPlotTitle={plot.title}
-                onRemovePlot={removePlot}
-              />
-            ))}
-          </div>
-        )}
+        <Card className="shadow-sm">
+           <CardHeader className="pb-2 pt-3 flex flex-row items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-1.5">
+               Device Data
+            </CardTitle>
+            <Button onClick={addPlot} size="sm" className="h-8 text-xs">
+              <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot
+            </Button>
+          </CardHeader>
+          <CardContent className="p-3">
+             {plots.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-muted-foreground h-40 p-2 border rounded-md bg-muted/20">
+                <LayoutGrid className="w-8 h-8 mb-2 text-muted" />
+                <p className="text-xs">No device data plots to display.</p>
+                <p className="text-[0.7rem]">Click "Add New Plot" to get started.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {plots.map((plot) => (
+                  <PlotInstance
+                    key={plot.id}
+                    instanceId={plot.id}
+                    initialPlotTitle={plot.title}
+                    onRemovePlot={removePlot}
+                  />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </main>
 
       <footer className="py-2 md:px-3 md:py-0 border-t">
