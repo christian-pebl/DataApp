@@ -909,5 +909,3 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     </Card>
   );
 }
-
-    
