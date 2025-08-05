@@ -45,7 +45,7 @@ export function HeatmapDisplay({
     onBrushChange,
     timeFormat = 'short'
 }: HeatmapDisplayProps) {
-  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [svgDimensions, setSvgDimensions] = useState({ width: 0, height: 0 });
 
   const BRUSH_CHART_HEIGHT = 50;
@@ -53,19 +53,34 @@ export function HeatmapDisplay({
   const margin = { top: 20, right: 20, bottom: 60, left: 150 };
 
   useEffect(() => {
-    if (svgRef.current) {
-      const { width } = svgRef.current.getBoundingClientRect();
+    const resizeObserver = new ResizeObserver(entries => {
+      if (!entries || entries.length === 0) {
+        return;
+      }
+      const { width } = entries[0].contentRect;
       setSvgDimensions({ width, height: heatmapHeight });
+    });
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
     }
+
+    return () => {
+      if (containerRef.current) {
+        resizeObserver.unobserve(containerRef.current);
+      }
+    };
   }, [heatmapHeight]);
 
   const { processedData } = useMemo(() => {
-    if (!data || data.length === 0) return { 
-        processedData: { cells: [], uniqueDays: [], series: [], minValue: 0, maxValue: 0, dateInterval: null },
-    };
+    if (!data || data.length === 0 || brushStartIndex === undefined || brushEndIndex === undefined) { 
+        return { 
+            processedData: { cells: [], uniqueDays: [], series: [], minValue: 0, maxValue: 0, dateInterval: null },
+        };
+    }
 
-    const start = brushStartIndex !== undefined ? Math.max(0, brushStartIndex) : 0;
-    const end = brushEndIndex !== undefined ? Math.min(data.length - 1, brushEndIndex) : data.length -1;
+    const start = Math.max(0, brushStartIndex);
+    const end = Math.min(data.length - 1, brushEndIndex);
     const visibleData = data.slice(start, end + 1);
 
     const dailyData = new Map<string, { sum: number; count: number }>();
@@ -165,11 +180,12 @@ export function HeatmapDisplay({
   return (
     <div className="w-full h-full">
         <div 
+          ref={containerRef}
           style={{ height: `${heatmapHeight}px` }} 
           className="w-full h-full border rounded-md p-2 bg-muted/20"
         >
           <TooltipProvider>
-            <svg ref={svgRef} width="100%" height="100%">
+            <svg width="100%" height="100%">
               {plotWidth > 0 && plotHeight > 0 && (
               <g transform={`translate(${margin.left},${margin.top})`}>
                 {/* Y-axis */}
