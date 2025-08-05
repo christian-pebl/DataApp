@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useMemo, useRef, useEffect, useState } from 'react';
-import { parseISO, startOfDay, format, isValid, eachDayOfInterval, differenceInDays } from 'date-fns';
+import { parseISO, startOfDay, format, isValid, eachDayOfInterval } from 'date-fns';
 import { scaleLinear, scaleBand } from 'd3-scale';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -58,20 +58,21 @@ export function HeatmapDisplay({
     }
   }, [heatmapHeight]);
 
-  const { processedData, overviewData } = useMemo(() => {
+  const { processedData } = useMemo(() => {
     if (!data || data.length === 0) return { 
         processedData: { cells: [], uniqueDays: [], series: [], minValue: 0, maxValue: 0, dateInterval: null },
-        overviewData: []
     };
+
+    const start = brushStartIndex !== undefined ? Math.max(0, brushStartIndex) : 0;
+    const end = brushEndIndex !== undefined ? Math.min(data.length - 1, brushEndIndex) : data.length -1;
+    const visibleData = data.slice(start, end + 1);
 
     const dailyData = new Map<string, { sum: number; count: number }>();
     const allValues: number[] = [];
     let minDate: Date | null = null;
     let maxDate: Date | null = null;
 
-    const overviewDataMap = new Map<string, { sum: number; count: number; }>();
-
-    data.forEach(point => {
+    visibleData.forEach(point => {
       const date = parseISO(point.time as string);
       if (!isValid(date)) return;
 
@@ -80,9 +81,6 @@ export function HeatmapDisplay({
 
       const dayKey = format(startOfDay(date), 'yyyy-MM-dd');
       
-      let totalValueInPoint = 0;
-      let validSeriesCount = 0;
-
       series.forEach(s => {
         const value = point[s];
         if (value !== null && value !== undefined && typeof value === 'number' && !isNaN(value)) {
@@ -91,27 +89,12 @@ export function HeatmapDisplay({
           existing.sum += value;
           existing.count++;
           dailyData.set(cellKey, existing);
-          totalValueInPoint += value;
-          validSeriesCount++;
         }
       });
-      
-      if(validSeriesCount > 0){
-        const overviewPoint = overviewDataMap.get(point.time as string) || { sum: 0, count: 0};
-        overviewPoint.sum += totalValueInPoint;
-        overviewPoint.count += validSeriesCount;
-        overviewDataMap.set(point.time as string, overviewPoint);
-      }
     });
 
-    const overviewPoints: OverviewDataPoint[] = Array.from(overviewDataMap.entries()).map(([time, {sum, count}]) => ({
-        time,
-        value: sum / count
-    })).sort((a,b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-
-
     const dateInterval = minDate && maxDate ? eachDayOfInterval({ start: minDate, end: maxDate }) : [];
-    if (dateInterval.length > 150) { // Limit number of days to prevent performance issues
+    if (dateInterval.length > 150) {
         const limitedEndDate = dateInterval[149];
         if(limitedEndDate) maxDate = limitedEndDate;
     }
@@ -132,9 +115,9 @@ export function HeatmapDisplay({
     const maxValue = Math.max(...allValues);
 
     const processedResult = { cells, uniqueDays, series, minValue, maxValue, dateInterval: finalInterval };
-    return { processedData: processedResult, overviewData: overviewPoints };
+    return { processedData: processedResult };
 
-  }, [data, series]);
+  }, [data, series, brushStartIndex, brushEndIndex]);
 
   const colorScale = useMemo(() => {
     return scaleLinear<string>()
@@ -146,7 +129,7 @@ export function HeatmapDisplay({
   if (!data || data.length === 0 || series.length === 0 || processedData.uniqueDays.length === 0) {
     return (
       <div style={{ height: `${containerHeight}px` }} className="flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-muted/20">
-        No data available for heatmap view.
+        No data available for heatmap view. Check selected range.
       </div>
     );
   }
@@ -301,4 +284,3 @@ export function HeatmapDisplay({
     </div>
   );
 }
-
