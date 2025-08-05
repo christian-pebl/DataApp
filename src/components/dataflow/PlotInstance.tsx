@@ -26,9 +26,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import {
-  Settings2, X, Maximize2, Minimize2, Plus, Palette, Copy, Trash2, UploadCloud,
+  Settings2, X, Maximize2, Minimize2, Plus, Copy, Trash2, UploadCloud,
   Hourglass, CheckCircle2, XCircle as XCircleIcon, ListFilter, Info,
-  ChevronsDown, ChevronsUp, GripVertical, MoveRight, Spline, ArrowUpRight, FilePenLine,
+  ChevronsDown, ChevronsUp,
   Save, ChevronsLeft, ChevronsRight, RotateCcw,
   BarChart, Sun, Clock
 } from "lucide-react";
@@ -142,10 +142,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     if (newType === plotType) return;
   
     if (newType === 'heatmap') {
-      // Save current line plot visibility settings
       linePlotVisibleSeriesRef.current = { ...visibleSeries };
   
-      // Automatically select variables for the heatmap by excluding certain keywords
       const newHeatmapVisible: Record<string, boolean> = {};
       dataSeries.forEach(name => {
         newHeatmapVisible[name] = isFilteredForHeatmap(name);
@@ -153,11 +151,9 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       setVisibleSeries(newHeatmapVisible);
   
     } else if (newType === 'line') {
-      // Restore previous line plot visibility settings
       if (Object.keys(linePlotVisibleSeriesRef.current).length > 0) {
         setVisibleSeries(linePlotVisibleSeriesRef.current);
       } else {
-        // Fallback if no previous state is saved
         const newVisible: Record<string, boolean> = {};
         dataSeries.forEach((name, index) => {
           newVisible[name] = index < 4;
@@ -913,3 +909,5 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     </Card>
   );
 }
+
+    
