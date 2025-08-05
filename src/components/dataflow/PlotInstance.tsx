@@ -360,6 +360,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       'dd/MM/yyyy HH:mm:ss', 'dd/MM/yyyy HH:mm',
       'MM/dd/yyyy HH:mm:ss', 'MM/dd/yyyy HH:mm',
       'yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd HH:mm',
+      'yyyy/MM/dd HH:mm:ss', 'yyyy/MM/dd HH:mm',
       'dd-MM-yyyy HH:mm:ss', 'dd-MM-yyyy HH:mm',
       'dd/MM/yy HH:mm:ss', 'dd/MM/yy HH:mm',
       'MM/dd/yy HH:mm:ss', 'MM/dd/yy HH:mm',
@@ -378,9 +379,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         for (const fmt of dateFormatsToTry) {
             date = parse(dateString, fmt, new Date());
             if (isValid(date)) {
-                // Heuristic to avoid matching short formats too greedily
-                // e.g. 'dd/MM/yy' matching 'dd/MM/yyyy' but getting the wrong year.
-                // This is tricky, so we'll rely on the user providing somewhat consistent formats.
                 return date;
             }
         }
@@ -1158,8 +1156,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                   <Input id={jsonLoadInputId} ref={jsonLoadInputRef} type="file" accept=".json" onChange={handleLoadSavedPlotFileChange} className="sr-only"/>
                 </div>
 
-                <div className="px-1 pt-1">
-                  <div className="flex items-center space-x-1">
+                <div className="space-y-1 px-1 pt-1">
+                    <div className="flex items-center space-x-1">
                       <TooltipProvider delayDuration={100}>
                           <Tooltip>
                               <TooltipTrigger asChild>
@@ -1178,7 +1176,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                               <TooltipContent side="bottom"><p>Heatmap</p></TooltipContent>
                           </Tooltip>
                       </TooltipProvider>
-                  </div>
+                    </div>
                 </div>
                 
                 {summaryStep && (

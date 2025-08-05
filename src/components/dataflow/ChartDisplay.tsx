@@ -85,21 +85,20 @@ export function ChartDisplay({
 
   const memoizedXAxisTickFormatter = React.useCallback((timeValue: string | number): string => {
     try {
-      const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
+      // All dates should be ISO strings from parsing, so parseISO is reliable here
+      const dateObj = parseISO(String(timeValue));
       if (!isValid(dateObj)) {
-        console.warn(`Invalid date encountered in XAxis: ${timeValue}`);
         return String(timeValue); 
       }
       return format(dateObj, 'dd/MM/yy'); 
     } catch (e) {
-      console.error(`Error formatting date in XAxis: ${timeValue}`, e);
       return String(timeValue); 
     }
   }, []);
 
   const formatDateTickBrush = useCallback((timeValue: string | number): string => {
     try {
-      const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
+      const dateObj = parseISO(String(timeValue));
       if (!isValid(dateObj)) return String(timeValue);
       return format(dateObj, 'dd/MM/yy'); 
     } catch (e) {
@@ -203,8 +202,8 @@ export function ChartDisplay({
             } as CSSProperties}
             labelFormatter={(label) => {
               try {
-                const date = typeof label === 'string' ? parseISO(label) : new Date(label);
-                return isValid(date) ? format(date, 'dd/MM/yy') : String(label);
+                const date = parseISO(String(label));
+                return isValid(date) ? format(date, 'dd/MM/yy HH:mm') : String(label);
               } catch { return String(label); }
             }}
             formatter={(value: number | null | undefined, name: string) => {
@@ -251,4 +250,3 @@ export function ChartDisplay({
     </div>
   );
 }
-
