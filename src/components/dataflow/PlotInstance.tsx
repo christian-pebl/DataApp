@@ -836,7 +836,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                   </Accordion>
                   </div>
                 )}
-                {(!summaryStep && !isProcessing) && (<p className="text-[0.6rem] text-muted-foreground px-1 pb-0.5">Upload CSV or Load Plot.</p>)}
+                {(!summaryStep && !isProcessing && !rawCsvText) && (<p className="text-[0.6rem] text-muted-foreground px-1 pb-0.5"></p>)}
                 <div className="px-1 pb-0.5 pt-1 space-y-1">
                   <Button onClick={handleClearDataInstance} variant="outline" size="sm" className="w-full h-7 text-xs" disabled={isProcessing || (!currentFileName && !rawCsvText)}>Clear Data</Button>
                 </div>
