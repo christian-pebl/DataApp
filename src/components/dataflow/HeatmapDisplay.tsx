@@ -59,19 +59,22 @@ export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplay
     });
 
     const uniqueDays = [...new Set(cells.map(c => c.date))].sort();
-    const minValue = Math.min(...allValues);
+    const minValue = Math.min(0, ...allValues); // Ensure 0 is included in domain for transparency
     const maxValue = Math.max(...allValues);
 
     return { cells, uniqueDays, series, minValue, maxValue };
   }, [data, series]);
 
   const colorScale = useMemo(() => {
-    const minColor = 'hsl(var(--muted))';
+    // Use a transparent-to-primary color scale.
+    // Values <= 0 will be transparent.
+    const minColor = 'transparent'; 
     const maxColor = 'hsl(var(--primary))';
     
     return scaleLinear<string>()
-      .domain([processedData.minValue, processedData.maxValue])
-      .range([minColor, maxColor]);
+      .domain([Math.min(0, processedData.minValue), processedData.maxValue])
+      .range([minColor, maxColor])
+      .clamp(true); // Clamp ensures values outside domain get min/max color
   }, [processedData.minValue, processedData.maxValue]);
   
   if (!data || data.length === 0 || series.length === 0) {
@@ -109,15 +112,19 @@ export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplay
               <div className="p-1 text-xs font-medium text-foreground truncate sticky left-0 bg-background/95 backdrop-blur-sm" title={s}>{s}</div>
               {uniqueDays.map(day => {
                 const cell = cellMap.get(`${day}__${s}`);
-                const cellStyle = cell ? { backgroundColor: colorScale(cell.value) } : {};
+                // Determine cell style based on value
+                const cellStyle = cell && cell.value > 0 ? { backgroundColor: colorScale(cell.value) } : { backgroundColor: 'transparent' };
+                // Determine text color based on background lightness for readability
+                const textColorClass = cell && cell.value > (processedData.maxValue / 2) ? 'text-primary-foreground' : 'text-foreground';
                 
                 return (
                   <Tooltip key={`${s}-${day}`} delayDuration={100}>
                     <TooltipTrigger asChild>
                       <div 
                         className={cn(
-                          "w-full h-10 flex items-center justify-center rounded-sm text-xs",
-                          cell ? 'text-primary-foreground' : 'bg-muted/30'
+                          "w-full h-10 flex items-center justify-center rounded-sm text-xs border border-transparent", // Use transparent border to maintain layout
+                          cell ? textColorClass : 'text-muted-foreground',
+                          !cell && 'bg-muted/30'
                         )}
                         style={cellStyle}
                       >
