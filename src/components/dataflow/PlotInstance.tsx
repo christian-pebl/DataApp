@@ -1090,33 +1090,9 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
             <>
             <div className="md:col-span-2 space-y-1.5 flex flex-col">
               <div className="space-y-1 p-1 border rounded-md flex flex-col flex-1 min-h-0">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      <Settings2 className="h-3 w-3 text-[#2B7A78]" />
-                      <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                        <TooltipProvider delayDuration={100}>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon" onClick={() => setPlotType('line')} disabled={plotType === 'line' || parsedData.length === 0} className={cn("h-6 w-6", plotType === 'line' && "bg-accent text-accent-foreground")}>
-                                        <BarChart className="h-3.5 w-3.5" />
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom"><p>Line Plot</p></TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                        <TooltipProvider delayDuration={100}>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon" onClick={() => setPlotType('heatmap')} disabled={plotType === 'heatmap' || parsedData.length === 0} className={cn("h-6 w-6", plotType === 'heatmap' && "bg-accent text-accent-foreground")}>
-                                        <Sun className="h-3.5 w-3.5" />
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom"><p>Heatmap</p></TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                    </div>
+                <div className="flex items-center gap-1">
+                  <Settings2 className="h-3 w-3 text-[#2B7A78]" />
+                  <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
                 </div>
                 <div className="px-1 py-1.5 flex justify-center">
                   <Button asChild variant="outline" size="sm" className="h-8 text-xs w-full" disabled={isProcessing || anyAnnotationInteractionActive}>
@@ -1132,6 +1108,28 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                   </Button>
                   <Input id={jsonLoadInputId} ref={jsonLoadInputRef} type="file" accept=".json" onChange={handleLoadSavedPlotFileChange} className="sr-only"/>
                 </div>
+
+                <div className="flex items-center space-x-1 px-1 py-1">
+                    <TooltipProvider delayDuration={100}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button variant="outline" size="icon" onClick={() => setPlotType('line')} disabled={plotType === 'line' || parsedData.length === 0} className={cn("h-6 w-6 flex-1", plotType === 'line' && "bg-accent text-accent-foreground")}>
+                                    <BarChart className="h-3.5 w-3.5" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom"><p>Line Plot</p></TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button variant="outline" size="icon" onClick={() => setPlotType('heatmap')} disabled={plotType === 'heatmap' || parsedData.length === 0} className={cn("h-6 w-6 flex-1", plotType === 'heatmap' && "bg-accent text-accent-foreground")}>
+                                    <Sun className="h-3.5 w-3.5" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom"><p>Heatmap</p></TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </div>
+                
                 {summaryStep && (
                   <div className="px-1">
                   <Accordion type="single" collapsible value={accordionValue} onValueChange={setAccordionValue} className="w-full">
@@ -1482,4 +1480,3 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     </Card>
   );
 }
-

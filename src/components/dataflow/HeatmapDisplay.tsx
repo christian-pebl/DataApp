@@ -66,9 +66,6 @@ export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplay
   }, [data, series]);
 
   const colorScale = useMemo(() => {
-    // Using CSS variables for theme-aware colors.
-    // Ensure these are available in your globals.css
-    // Using a light gray for min, and primary color for max.
     const minColor = 'hsl(var(--muted))';
     const maxColor = 'hsl(var(--primary))';
     
@@ -94,52 +91,50 @@ export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplay
       className="overflow-auto border rounded-md p-2 bg-muted/20"
     >
       <TooltipProvider>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b">
-              <th className="sticky top-0 bg-background/95 backdrop-blur-sm p-1 text-xs font-medium text-muted-foreground text-left w-24">Series</th>
-              {uniqueDays.map(day => (
-                <th key={day} className="sticky top-0 bg-background/95 backdrop-blur-sm p-1 text-xs font-medium text-muted-foreground">
-                  {format(parseISO(day), 'dd MMM')}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {visibleSeries.map(s => (
-              <tr key={s} className="border-b last:border-b-0">
-                <td className="p-1 text-xs font-medium text-foreground w-24 truncate" title={s}>{s}</td>
-                {uniqueDays.map(day => {
-                  const cell = cellMap.get(`${day}__${s}`);
-                  const cellStyle = cell ? { backgroundColor: colorScale(cell.value) } : {};
-                  
-                  return (
-                    <td key={`${s}-${day}`} className="p-0.5">
-                      <Tooltip delayDuration={100}>
-                        <TooltipTrigger asChild>
-                          <div 
-                            className={cn(
-                              "w-full h-8 flex items-center justify-center rounded-sm text-xs",
-                              cell ? 'text-primary-foreground' : 'bg-muted/30'
-                            )}
-                            style={cellStyle}
-                          >
-                            {cell ? cell.value.toFixed(1) : '-'}
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p className="font-bold">{format(parseISO(day), 'PPP')}</p>
-                          <p>{s}: {cell ? cell.value.toFixed(2) : 'No data'}</p>
-                          {cell && <p className="text-muted-foreground text-xs">({cell.count} records)</p>}
-                        </TooltipContent>
-                      </Tooltip>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div 
+          className="grid gap-px"
+          style={{ gridTemplateColumns: `minmax(120px, 1fr) repeat(${uniqueDays.length}, minmax(40px, 1fr))`}}
+        >
+          {/* Header Row */}
+          <div className="sticky top-0 bg-background/95 backdrop-blur-sm p-1 text-xs font-medium text-muted-foreground text-left z-10">Series</div>
+          {uniqueDays.map(day => (
+            <div key={day} className="sticky top-0 bg-background/95 backdrop-blur-sm p-1 text-xs font-medium text-muted-foreground text-center z-10">
+              {format(parseISO(day), 'dd MMM')}
+            </div>
+          ))}
+
+          {/* Data Rows */}
+          {visibleSeries.map(s => (
+            <React.Fragment key={s}>
+              <div className="p-1 text-xs font-medium text-foreground truncate sticky left-0 bg-background/95 backdrop-blur-sm" title={s}>{s}</div>
+              {uniqueDays.map(day => {
+                const cell = cellMap.get(`${day}__${s}`);
+                const cellStyle = cell ? { backgroundColor: colorScale(cell.value) } : {};
+                
+                return (
+                  <Tooltip key={`${s}-${day}`} delayDuration={100}>
+                    <TooltipTrigger asChild>
+                      <div 
+                        className={cn(
+                          "w-full h-10 flex items-center justify-center rounded-sm text-xs",
+                          cell ? 'text-primary-foreground' : 'bg-muted/30'
+                        )}
+                        style={cellStyle}
+                      >
+                        {cell ? cell.value.toFixed(1) : '-'}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="font-bold">{format(parseISO(day), 'PPP')}</p>
+                      <p>{s}: {cell ? cell.value.toFixed(2) : 'No data'}</p>
+                      {cell && <p className="text-muted-foreground text-xs">({cell.count} records)</p>}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </div>
       </TooltipProvider>
     </div>
   );
