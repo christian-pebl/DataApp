@@ -1090,9 +1090,33 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
             <>
             <div className="md:col-span-2 space-y-1.5 flex flex-col">
               <div className="space-y-1 p-1 border rounded-md flex flex-col flex-1 min-h-0">
-                <div className="flex items-center gap-1">
-                    <Settings2 className="h-3 w-3 text-[#2B7A78]" />
-                    <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Import & Validate</h3>
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <Settings2 className="h-3 w-3 text-[#2B7A78]" />
+                      <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                        <TooltipProvider delayDuration={100}>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="icon" onClick={() => setPlotType('line')} disabled={plotType === 'line' || parsedData.length === 0} className={cn("h-6 w-6", plotType === 'line' && "bg-accent text-accent-foreground")}>
+                                        <BarChart className="h-3.5 w-3.5" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom"><p>Line Plot</p></TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider delayDuration={100}>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="icon" onClick={() => setPlotType('heatmap')} disabled={plotType === 'heatmap' || parsedData.length === 0} className={cn("h-6 w-6", plotType === 'heatmap' && "bg-accent text-accent-foreground")}>
+                                        <Sun className="h-3.5 w-3.5" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom"><p>Heatmap</p></TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    </div>
                 </div>
                 <div className="px-1 py-1.5 flex justify-center">
                   <Button asChild variant="outline" size="sm" className="h-8 text-xs w-full" disabled={isProcessing || anyAnnotationInteractionActive}>
@@ -1169,18 +1193,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                          <div className="flex items-center gap-1">
                             <ListFilter className="h-3 w-3 text-[#2B7A78]" />
                             <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Controls</h3>
-                        </div>
-                        <div className="flex items-center space-x-1">
-                            <TooltipProvider delayDuration={100}><Tooltip><TooltipTrigger asChild>
-                               <Button variant="ghost" size="icon" onClick={() => setPlotType('line')} disabled={plotType === 'line'} className={cn("h-6 w-6", plotType === 'line' && "bg-accent text-accent-foreground")}>
-                                   <BarChart className="h-3.5 w-3.5" />
-                               </Button>
-                            </TooltipTrigger><TooltipContent side="bottom"><p>Line Plot</p></TooltipContent></Tooltip></TooltipProvider>
-                             <TooltipProvider delayDuration={100}><Tooltip><TooltipTrigger asChild>
-                               <Button variant="ghost" size="icon" onClick={() => setPlotType('heatmap')} disabled={plotType === 'heatmap'} className={cn("h-6 w-6", plotType === 'heatmap' && "bg-accent text-accent-foreground")}>
-                                   <Sun className="h-3.5 w-3.5" />
-                               </Button>
-                            </TooltipTrigger><TooltipContent side="bottom"><p>Heatmap</p></TooltipContent></Tooltip></TooltipProvider>
                         </div>
                     </div>
                     <Separator className="my-1"/>
@@ -1373,7 +1385,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
               <TooltipTrigger asChild>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon" className="h-8 w-8" disabled={isMainToolbarButtonDisabled || !selectedLineId} aria-label="Line Style & Thickness Options">
+                    <Button variant="outline" size="icon" className="h-8 w-8" disabled={isMainToolbarButtonDisabled || !selectedLineId} aria-label="Line Style &amp; Thickness Options">
                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
                           <rect y="3" width="16" height="1.5" rx="0.5"/>
                           <rect y="6.25" width="16" height="2.5" rx="0.5"/>
@@ -1407,7 +1419,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TooltipTrigger>
-              <TooltipContent><p>Line Style & Thickness</p></TooltipContent>
+              <TooltipContent><p>Line Style &amp; Thickness</p></TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1470,3 +1482,4 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     </Card>
   );
 }
+
