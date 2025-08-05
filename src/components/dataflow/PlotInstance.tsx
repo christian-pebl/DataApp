@@ -289,26 +289,26 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     return 'default';
   }, [activeTool, selectedLineId, draggingPoint, movingLineId, isDraggingToolbar]);
 
-  const isLatinName = (name: string): boolean => {
-    // Basic regex for binomial nomenclature: Capitalized word, then a space, then a lowercase word.
-    // This can be expanded for more complex cases (e.g., subspecies, authorities) if needed.
-    return /^[A-Z][a-z]+ [a-z]+$/.test(name);
+  const isFilteredForHeatmap = (name: string): boolean => {
+    const keywordsToExclude = ['total', 'cumulative', 'unique'];
+    const lowerCaseName = name.toLowerCase();
+    return !keywordsToExclude.some(keyword => lowerCaseName.includes(keyword));
   };
-
+  
   const handlePlotTypeChange = useCallback((newType: PlotType) => {
     if (newType === plotType) return;
-
+  
     if (newType === 'heatmap') {
       // Save current line plot visibility settings
       linePlotVisibleSeriesRef.current = { ...visibleSeries };
-
-      // Automatically select species names for the heatmap
+  
+      // Automatically select variables for the heatmap by excluding certain keywords
       const newHeatmapVisible: Record<string, boolean> = {};
       dataSeries.forEach(name => {
-        newHeatmapVisible[name] = isLatinName(name);
+        newHeatmapVisible[name] = isFilteredForHeatmap(name);
       });
       setVisibleSeries(newHeatmapVisible);
-
+  
     } else if (newType === 'line') {
       // Restore previous line plot visibility settings
       if (Object.keys(linePlotVisibleSeriesRef.current).length > 0) {
@@ -322,7 +322,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         setVisibleSeries(newVisible);
       }
     }
-
+  
     setPlotType(newType);
   }, [plotType, visibleSeries, dataSeries]);
 
