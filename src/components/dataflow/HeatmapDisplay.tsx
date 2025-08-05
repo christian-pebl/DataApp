@@ -11,7 +11,7 @@ import { ResponsiveContainer, LineChart, Line, XAxis, Brush } from 'recharts';
 
 interface DataPoint {
   time: string | number;
-  [key: string]: string | number | undefined | null;
+  [key:string]: string | number | undefined | null;
 }
 
 interface HeatmapDisplayProps {
@@ -48,8 +48,8 @@ export function HeatmapDisplay({
   const containerRef = useRef<HTMLDivElement>(null);
   const [svgDimensions, setSvgDimensions] = useState({ width: 0, height: 0 });
 
-  const BRUSH_CHART_HEIGHT = 50;
-  const heatmapHeight = containerHeight - BRUSH_CHART_HEIGHT;
+  const BRUSH_CHART_HEIGHT = 60;
+  const heatmapHeight = onBrushChange ? containerHeight - BRUSH_CHART_HEIGHT : containerHeight;
   const margin = { top: 20, right: 20, bottom: 60, left: 150 };
 
   useEffect(() => {
@@ -166,12 +166,11 @@ export function HeatmapDisplay({
     return uniqueDays.filter((_, i) => i % tickInterval === 0);
   }, [uniqueDays]);
   
-  const currentDateFormat = timeFormat === 'full' ? 'dd/MM/yy HH:mm' : 'dd/MM/yy';
   const formatDateTickBrush = (timeValue: string | number): string => {
     try {
       const dateObj = parseISO(String(timeValue));
       if (!isValid(dateObj)) return String(timeValue);
-      return format(dateObj, currentDateFormat); 
+      return format(dateObj, 'dd MMM'); 
     } catch (e) {
       return String(timeValue);
     }
@@ -274,24 +273,32 @@ export function HeatmapDisplay({
           </TooltipProvider>
         </div>
         {onBrushChange && data.length > 0 && (
-             <div style={{ height: `${BRUSH_CHART_HEIGHT}px`}} className="w-full mt-1">
+             <div style={{ height: `${BRUSH_CHART_HEIGHT}px`}} className="w-full mt-1 border rounded-md p-1 shadow-sm bg-card">
                  <ResponsiveContainer width="100%" height="100%">
                      <LineChart
                          data={data}
                          syncId={`brush-sync-${React.useId()}`}
                          margin={{ top: 5, right: margin.right, left: margin.left, bottom: 5 }}
                      >
-                         <XAxis dataKey="time" hide />
+                         <XAxis 
+                            dataKey="time"
+                            tickFormatter={formatDateTickBrush}
+                            stroke="hsl(var(--muted-foreground))"
+                            tick={{ fontSize: '0.65rem' }}
+                            height={15}
+                            interval="preserveStartEnd"
+                          />
                          <Line type="monotone" dataKey={() => 0} stroke="transparent" dot={false} />
                          <Brush 
                              dataKey="time"
                              height={20}
                              stroke="hsl(var(--primary))"
-                             tickFormatter={formatDateTickBrush}
+                             tickFormatter={() => ""}
                              startIndex={brushStartIndex}
                              endIndex={brushEndIndex}
                              onChange={onBrushChange}
                              travellerWidth={10}
+                             y={25}
                          />
                      </LineChart>
                  </ResponsiveContainer>

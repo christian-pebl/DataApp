@@ -33,6 +33,7 @@ interface DataPoint {
 }
 
 const INTERNAL_DEFAULT_CHART_HEIGHT = 350;
+const BRUSH_CHART_HEIGHT = 60;
 
 interface ChartDisplayProps {
   data: DataPoint[];
@@ -57,7 +58,9 @@ export function ChartDisplay({
   onBrushChange,
   timeFormat = 'short',
 }: ChartDisplayProps) {
-  const chartHeightToUse = chartRenderHeight || INTERNAL_DEFAULT_CHART_HEIGHT;
+  const plotHeight = chartRenderHeight || INTERNAL_DEFAULT_CHART_HEIGHT;
+  const mainChartHeight = onBrushChange ? plotHeight - BRUSH_CHART_HEIGHT : plotHeight;
+
 
   const chartData = React.useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -121,7 +124,7 @@ export function ChartDisplay({
   const renderNoDataMessage = (message: string) => (
     <div
       className="flex items-center justify-center h-full text-muted-foreground text-sm p-4"
-      style={{ height: `${chartHeightToUse}px` }}
+      style={{ height: `${plotHeight}px` }}
     >
       {message}
     </div>
@@ -138,15 +141,15 @@ export function ChartDisplay({
   }
 
   return (
-    <div style={{ height: `${chartHeightToUse}px`, width: '100%' }}>
-      <ResponsiveContainer width="100%" height="100%">
+    <div style={{ height: `${plotHeight}px`, width: '100%' }}>
+      <ResponsiveContainer width="100%" height={mainChartHeight}>
         <LineChart
           data={chartData}
           margin={{
             top: 5,
             right: yAxisConfigs.some(yc => yc.orientation === 'right' && plottableSeries.includes(yc.dataKey)) ? 20 : 5,
             left: yAxisConfigs.some(yc => yc.orientation === 'left' && plottableSeries.includes(yc.dataKey)) ? 25 : 5,
-            bottom: 85, 
+            bottom: 25, 
           }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -162,8 +165,7 @@ export function ChartDisplay({
             label={{
               value: timeAxisLabel,
               position: 'insideBottom',
-              offset: 15, 
-              dy: 25,    
+              offset: -5,
               style: { textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--foreground))' } as CSSProperties
             }}
           />
@@ -235,21 +237,44 @@ export function ChartDisplay({
               />
             );
           })}
-          {data.length > 1 && onBrushChange && (
-            <Brush
-              dataKey="time"
-              height={20} 
-              stroke="hsl(var(--primary))"
-              fill="transparent"
-              tickFormatter={formatDateTickBrush}
-              startIndex={brushStartIndex}
-              endIndex={brushEndIndex}
-              onChange={onBrushChange}
-              travellerWidth={10} 
-            />
-          )}
         </LineChart>
       </ResponsiveContainer>
+      {onBrushChange && data.length > 1 && (
+        <div className="h-[60px] w-full border rounded-md p-1 shadow-sm bg-card mt-1">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={chartData}
+              margin={{
+                top: 5,
+                right: yAxisConfigs.some(yc => yc.orientation === 'right' && plottableSeries.includes(yc.dataKey)) ? 20 : 5,
+                left: yAxisConfigs.some(yc => yc.orientation === 'left' && plottableSeries.includes(yc.dataKey)) ? 25 : 5,
+                bottom: 0,
+              }}
+            >
+              <XAxis
+                dataKey="time"
+                tickFormatter={formatDateTickBrush}
+                stroke="hsl(var(--muted-foreground))"
+                tick={{ fontSize: '0.65rem' }}
+                height={15}
+                interval="preserveStartEnd"
+              />
+              <Brush
+                dataKey="time"
+                height={20}
+                stroke="hsl(var(--primary))"
+                fill="transparent"
+                tickFormatter={() => ""}
+                startIndex={brushStartIndex}
+                endIndex={brushEndIndex}
+                onChange={onBrushChange}
+                travellerWidth={10}
+                y={25}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }
