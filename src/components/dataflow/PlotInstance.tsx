@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { format } from 'date-fns';
+import { format, parse, isValid, parseISO } from 'date-fns';
 
 interface DataPoint {
   time: string | number;
@@ -354,8 +354,43 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         updateStepStatus('yAxisFirstVarIdentified', 'success', `CSV Column 2 (original header: "${firstVarOriginalHeader}") provides data for the first variable. It will be plotted using data key: "${firstVarPlotKey}". Total plottable variables: ${uniqueSeriesNamesForDropdown.length}.`);
     }
 
+    // --- Start of new date parsing logic ---
+    const dateFormatsToTry = [
+      "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", "yyyy-MM-dd'T'HH:mm:ss'Z'", // ISO formats
+      'dd/MM/yyyy HH:mm:ss', 'dd/MM/yyyy HH:mm',
+      'MM/dd/yyyy HH:mm:ss', 'MM/dd/yyyy HH:mm',
+      'yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd HH:mm',
+      'dd-MM-yyyy HH:mm:ss', 'dd-MM-yyyy HH:mm',
+      'dd/MM/yy HH:mm:ss', 'dd/MM/yy HH:mm',
+      'MM/dd/yy HH:mm:ss', 'MM/dd/yy HH:mm',
+      'dd/MM/yyyy', 'MM/dd/yyyy', 'yyyy-MM-dd',
+      'dd-MM-yyyy', 'dd/MM/yy', 'MM/dd/yy',
+    ];
+
+    const parseDateString = (dateString: string): Date | null => {
+        if (!dateString || !dateString.trim()) return null;
+        
+        // First try ISO parsing, as it's the most common and standardized
+        let date = parseISO(dateString);
+        if (isValid(date)) return date;
+
+        // Then try other formats
+        for (const fmt of dateFormatsToTry) {
+            date = parse(dateString, fmt, new Date());
+            if (isValid(date)) {
+                // Heuristic to avoid matching short formats too greedily
+                // e.g. 'dd/MM/yy' matching 'dd/MM/yyyy' but getting the wrong year.
+                // This is tricky, so we'll rely on the user providing somewhat consistent formats.
+                return date;
+            }
+        }
+        return null;
+    };
+    // --- End of new date parsing logic ---
+
     const data: DataPoint[] = [];
     let someRowsHadNonNumericData = false;
+    let someRowsHadInvalidDate = false;
     let validDataRowsCount = 0;
 
     for (let i = 1; i < localLines.length; i++) {
@@ -364,13 +399,22 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       if (!trimmedLine) continue;
 
       const values = trimmedLine.split(delimiterRegex).map(v => v.trim());
-      const timeValue = values[0];
+      const rawTimeValue = values[0];
+      const parsedDate = parseDateString(rawTimeValue);
+      let isoTimeValue;
 
-      if (!timeValue && values.slice(1, 1 + uniqueSeriesNamesForDropdown.length).every(v => !v || v.trim() === "")) {
-        continue;
+      if (parsedDate) {
+        isoTimeValue = parsedDate.toISOString();
+      } else {
+        isoTimeValue = rawTimeValue || "N/A"; // Keep original if unparsable
+        if (rawTimeValue) someRowsHadInvalidDate = true;
       }
 
-      const dataPoint: DataPoint = { time: timeValue || "N/A" };
+      if (!rawTimeValue && values.slice(1, 1 + uniqueSeriesNamesForDropdown.length).every(v => !v || v.trim() === "")) {
+        continue;
+      }
+      
+      const dataPoint: DataPoint = { time: isoTimeValue };
       let hasNumericValueInRow = false;
       let rowHasParsingIssue = false;
 
@@ -396,9 +440,9 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         dataPoint[uniqueKey] = numericValue;
       });
 
-      if (timeValue || hasNumericValueInRow) {
+      if (rawTimeValue || hasNumericValueInRow) {
         data.push(dataPoint);
-        if (!rowHasParsingIssue && hasNumericValueInRow) {
+        if (!rowHasParsingIssue && hasNumericValueInRow && parsedDate) {
           validDataRowsCount++;
         }
       }
@@ -409,14 +453,19 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       initialValidationSteps.slice(initialValidationSteps.findIndex(s => s.id === 'dataRowFormat') + 1).forEach(s => updateStepStatus(s.id, 'error', 'Prerequisite step failed.'));
       return { success: false };
     }
-
+    
     let dataRowMessage = `Processed ${data.length} data rows. ${validDataRowsCount} rows contained valid numeric data.`;
+    let dataRowStatus: 'success' | 'warning' = 'success';
     if (someRowsHadNonNumericData) {
       dataRowMessage += " Some non-numeric/empty values encountered and treated as missing (null) for plotting.";
-      updateStepStatus('dataRowFormat', 'warning', dataRowMessage);
-    } else {
-      updateStepStatus('dataRowFormat', 'success', dataRowMessage);
+      dataRowStatus = 'warning';
     }
+    if (someRowsHadInvalidDate) {
+        dataRowMessage += " Some time values were in an unrecognized format and could not be parsed.";
+        dataRowStatus = 'warning';
+    }
+    updateStepStatus('dataRowFormat', dataRowStatus, dataRowMessage);
+
     updateStepStatus('dataReady', 'success', "Import complete");
     return { data, seriesNames: uniqueSeriesNamesForDropdown, timeHeader, success: true };
   }, [updateStepStatus, initialValidationSteps]);
@@ -1109,25 +1158,27 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                   <Input id={jsonLoadInputId} ref={jsonLoadInputRef} type="file" accept=".json" onChange={handleLoadSavedPlotFileChange} className="sr-only"/>
                 </div>
 
-                <div className="flex items-center space-x-1 px-1 py-1">
-                    <TooltipProvider delayDuration={100}>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button variant="outline" size="icon" onClick={() => setPlotType('line')} disabled={plotType === 'line' || parsedData.length === 0} className={cn("h-6 w-6 flex-1", plotType === 'line' && "bg-accent text-accent-foreground")}>
-                                    <BarChart className="h-3.5 w-3.5" />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom"><p>Line Plot</p></TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button variant="outline" size="icon" onClick={() => setPlotType('heatmap')} disabled={plotType === 'heatmap' || parsedData.length === 0} className={cn("h-6 w-6 flex-1", plotType === 'heatmap' && "bg-accent text-accent-foreground")}>
-                                    <Sun className="h-3.5 w-3.5" />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom"><p>Heatmap</p></TooltipContent>
-                        </Tooltip>
-                    </TooltipProvider>
+                <div className="px-1 pt-1">
+                  <div className="flex items-center space-x-1">
+                      <TooltipProvider delayDuration={100}>
+                          <Tooltip>
+                              <TooltipTrigger asChild>
+                                  <Button variant="outline" size="icon" onClick={() => setPlotType('line')} disabled={plotType === 'line' || parsedData.length === 0} className={cn("h-6 w-6 flex-1", plotType === 'line' && "bg-accent text-accent-foreground")}>
+                                      <BarChart className="h-3.5 w-3.5" />
+                                  </Button>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom"><p>Line Plot</p></TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                              <TooltipTrigger asChild>
+                                  <Button variant="outline" size="icon" onClick={() => setPlotType('heatmap')} disabled={plotType === 'heatmap' || parsedData.length === 0} className={cn("h-6 w-6 flex-1", plotType === 'heatmap' && "bg-accent text-accent-foreground")}>
+                                      <Sun className="h-3.5 w-3.5" />
+                                  </Button>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom"><p>Heatmap</p></TooltipContent>
+                          </Tooltip>
+                      </TooltipProvider>
+                  </div>
                 </div>
                 
                 {summaryStep && (
