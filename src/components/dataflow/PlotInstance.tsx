@@ -735,7 +735,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
               <div className="space-y-1 p-1 border rounded-md flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-1">
                   <Settings2 className="h-3 w-3 text-[#2B7A78]" />
-                  <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
+                  <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Import & Validate</h3>
                 </div>
                 <div className="px-1 py-1.5 flex justify-center">
                   <Button asChild variant="outline" size="sm" className="h-8 text-xs w-full" disabled={isProcessing}>
