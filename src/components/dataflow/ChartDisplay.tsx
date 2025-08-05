@@ -269,7 +269,7 @@ export function ChartDisplay({
                 endIndex={brushEndIndex}
                 onChange={onBrushChange}
                 travellerWidth={10}
-                y={25}
+                y={30}
               />
             </LineChart>
           </ResponsiveContainer>
