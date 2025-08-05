@@ -123,7 +123,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
   const jsonLoadInputRef = useRef<HTMLInputElement>(null);
 
   const { toast, dismiss } = useToast();
-  
+
   const updateStepStatus = useCallback((stepId: string, status: 'success' | 'error' | 'pending' | 'warning', message?: string) => {
     setValidationSteps(prevSteps =>
       prevSteps.map(step =>
@@ -778,13 +778,14 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                 <div className="flex items-center justify-between p-1">
                   <UiLabel htmlFor={`time-format-switch-${instanceId}-${uniqueComponentId}`} className="text-xs flex items-center gap-1.5">
                     <Clock className="h-3.5 w-3.5 text-muted-foreground"/>
-                    Time Format
+                    Time format
                   </UiLabel>
-                  <Switch 
+                  <Switch
                     id={`time-format-switch-${instanceId}-${uniqueComponentId}`}
                     checked={timeFormat === 'full'}
                     onCheckedChange={(checked) => setTimeFormat(checked ? 'full' : 'short')}
                     disabled={parsedData.length === 0}
+                    className="h-5"
                   />
                 </div>
 
@@ -836,7 +837,6 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                   </Accordion>
                   </div>
                 )}
-                {(!summaryStep && !isProcessing && !rawCsvText) && (<p className="text-[0.6rem] text-muted-foreground px-1 pb-0.5"></p>)}
                 <div className="px-1 pb-0.5 pt-1 space-y-1">
                   <Button onClick={handleClearDataInstance} variant="outline" size="sm" className="w-full h-7 text-xs" disabled={isProcessing || (!currentFileName && !rawCsvText)}>Clear Data</Button>
                 </div>
@@ -899,7 +899,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                 )
               ) : (
                 <div style={{ height: `${DEFAULT_PLOT_HEIGHT}px` }} className="flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-muted/20">
-                  {currentFileName ? "No data to display for " + currentFileName : "Upload a CSV file or load a saved plot to visualize data."}
+                  {currentFileName ? "No data to display for " + currentFileName : "Choose a file, or load a plot to get started."}
                 </div>
               )}
             </div>
@@ -909,5 +909,3 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     </Card>
   );
 }
-
-    
