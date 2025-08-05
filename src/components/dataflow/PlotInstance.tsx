@@ -11,6 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay";
+import { HeatmapDisplay } from "@/components/dataflow/HeatmapDisplay";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,7 +30,7 @@ import {
   Hourglass, CheckCircle2, XCircle as XCircleIcon, ListFilter, Info,
   ChevronsDown, ChevronsUp, GripVertical, MoveRight, Spline, ArrowUpRight, FilePenLine,
   Move as MoveIcon, Ban, Save, ChevronsLeft, ChevronsRight, RotateCcw,
-  PenLine as PenLineIcon // Renamed PenLine to PenLineIcon to avoid conflict
+  PenLine as PenLineIcon, BarChart, Sun
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -50,10 +51,13 @@ interface LineAnnotation {
   color?: string;
 }
 
+type PlotType = 'line' | 'heatmap';
+
 interface SavedPlotState {
   rawCsvText: string;
   currentFileName: string;
   plotTitle: string;
+  plotType?: PlotType;
   timeAxisLabel?: string;
   dataSeries: string[];
   visibleSeries: Record<string, boolean>;
@@ -163,6 +167,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
   const [brushStartIndex, setBrushStartIndex] = useState<number | undefined>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
   const [isPlotExpanded, setIsPlotExpanded] = useState(false);
+  const [plotType, setPlotType] = useState<PlotType>('line');
 
   // Validation and UI State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -555,6 +560,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
 
       if (successfullyProcessed && actualSeriesInLoadedCsv) {
         setPlotTitle(savedState.plotTitle);
+        setPlotType(savedState.plotType || 'line');
 
         const restoredVisibleSeries: Record<string, boolean> = {};
         actualSeriesInLoadedCsv.forEach(name => {
@@ -613,6 +619,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       rawCsvText,
       currentFileName,
       plotTitle,
+      plotType,
       timeAxisLabel,
       dataSeries,
       visibleSeries,
@@ -632,13 +639,13 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     a.download = `${plotTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'plot_save'}.json`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     toast({ title: "Plot State Saved", description: `Configuration saved as ${a.download}.` });
-  }, [rawCsvText, currentFileName, plotTitle, timeAxisLabel, dataSeries, visibleSeries, isPlotExpanded, isMinimalistView, brushStartIndex, brushEndIndex, lines, isOverlayActive, activeTool, toast]);
+  }, [rawCsvText, currentFileName, plotTitle, plotType, timeAxisLabel, dataSeries, visibleSeries, isPlotExpanded, isMinimalistView, brushStartIndex, brushEndIndex, lines, isOverlayActive, activeTool, toast]);
 
 
   const handleClearDataInstance = useCallback(() => {
     setRawCsvText(null); setParsedData([]); setCurrentFileName(undefined);
     setPlotTitle(initialPlotTitle); setDataSeries([]); setVisibleSeries({});
-    setTimeAxisLabel(undefined);
+    setTimeAxisLabel(undefined); setPlotType('line');
     setValidationSteps(initialValidationSteps.map(s => ({ ...s })));
     setCurrentFileForValidation(null); setAccordionValue("");
     setIsPlotExpanded(false); setIsMinimalistView(false);
@@ -1010,6 +1017,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
       }));
   }, [dataSeries, visibleSeries, instanceId]);
 
+  const showAnnotationToolbar = useMemo(() => isOverlayActive && !isMinimized && parsedData.length > 0 && plotType === 'line', [isOverlayActive, isMinimized, parsedData, plotType]);
+
   return (
     <Card className="shadow-lg">
       <CardHeader className="flex flex-row items-center justify-between p-3">
@@ -1030,9 +1039,9 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                 checked={isOverlayActive}
                 onCheckedChange={setIsOverlayActive}
                 className="data-[state=unchecked]:bg-input data-[state=unchecked]:border-border data-[state=unchecked]:hover:bg-muted/80"
-                disabled={parsedData.length === 0 || isProcessing || anyAnnotationInteractionActive}
+                disabled={parsedData.length === 0 || isProcessing || anyAnnotationInteractionActive || plotType !== 'line'}
               />
-              <UiLabel htmlFor={`annotate-switch-${instanceId}-${uniqueComponentId}`} className="text-sm font-medium text-foreground">
+              <UiLabel htmlFor={`annotate-switch-${instanceId}-${uniqueComponentId}`} className={cn("text-sm font-medium text-foreground", (plotType !== 'line') && "text-muted-foreground")}>
                 Annotate
               </UiLabel>
             </div>
@@ -1156,10 +1165,25 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
             </div>
             <div className="md:col-span-2 space-y-1.5 flex flex-col">
                 <div className="space-y-1 p-1 border rounded-md flex flex-col flex-1 min-h-0"> 
-                    <div className="flex items-center gap-1">
-                        <ListFilter className="h-3 w-3 text-[#2B7A78]" />
-                        <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Select Variables</h3>
+                    <div className="flex items-center justify-between">
+                         <div className="flex items-center gap-1">
+                            <ListFilter className="h-3 w-3 text-[#2B7A78]" />
+                            <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Controls</h3>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                            <TooltipProvider delayDuration={100}><Tooltip><TooltipTrigger asChild>
+                               <Button variant="ghost" size="icon" onClick={() => setPlotType('line')} disabled={plotType === 'line'} className={cn("h-6 w-6", plotType === 'line' && "bg-accent text-accent-foreground")}>
+                                   <BarChart className="h-3.5 w-3.5" />
+                               </Button>
+                            </TooltipTrigger><TooltipContent side="bottom"><p>Line Plot</p></TooltipContent></Tooltip></TooltipProvider>
+                             <TooltipProvider delayDuration={100}><Tooltip><TooltipTrigger asChild>
+                               <Button variant="ghost" size="icon" onClick={() => setPlotType('heatmap')} disabled={plotType === 'heatmap'} className={cn("h-6 w-6", plotType === 'heatmap' && "bg-accent text-accent-foreground")}>
+                                   <Sun className="h-3.5 w-3.5" />
+                               </Button>
+                            </TooltipTrigger><TooltipContent side="bottom"><p>Heatmap</p></TooltipContent></Tooltip></TooltipProvider>
+                        </div>
                     </div>
+                    <Separator className="my-1"/>
                     <div className="flex items-center space-x-1.5">
                         <Checkbox id={`select-all-rhs-${instanceId}-${uniqueComponentId}`} checked={allSeriesSelected} onCheckedChange={(checked) => handleSelectAllToggle(!!checked)} disabled={dataSeries.length === 0 || anyAnnotationInteractionActive} aria-label={allSeriesSelected ? "Deselect all series" : "Select all series"} className="h-3.5 w-3.5" />
                         <UiLabel htmlFor={`select-all-rhs-${instanceId}-${uniqueComponentId}`} className="text-xs font-medium leading-snug peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
@@ -1187,23 +1211,31 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
             <div className={cn(!isMinimalistView ? "md:col-span-8" : "col-span-full", isMinimalistView ? "" : "")}>
               <div ref={chartAreaRef} className={cn("relative", (isOverlayActive && anyAnnotationInteractionActive) && "opacity-70 pointer-events-none" )}>
               {parsedData.length > 0 ? (
-                <ChartDisplay
-                  data={parsedData}
-                  plottableSeries={plottableSeries}
-                  yAxisConfigs={yAxisConfigsForChartDisplay}
-                  timeAxisLabel={timeAxisLabel}
-                  chartRenderHeight={currentPlotHeight}
-                  brushStartIndex={brushStartIndex}
-                  brushEndIndex={brushEndIndex}
-                  onBrushChange={handleBrushChange}
-                />
+                plotType === 'line' ? (
+                    <ChartDisplay
+                    data={parsedData}
+                    plottableSeries={plottableSeries}
+                    yAxisConfigs={yAxisConfigsForChartDisplay}
+                    timeAxisLabel={timeAxisLabel}
+                    chartRenderHeight={currentPlotHeight}
+                    brushStartIndex={brushStartIndex}
+                    brushEndIndex={brushEndIndex}
+                    onBrushChange={handleBrushChange}
+                    />
+                ) : (
+                    <HeatmapDisplay
+                    data={parsedData}
+                    series={plottableSeries}
+                    containerHeight={currentPlotHeight}
+                    />
+                )
               ) : (
                 <div style={{ height: `${DEFAULT_PLOT_HEIGHT}px` }} className="flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-muted/20">
                   {currentFileName ? "No data to display for " + currentFileName : "Upload a CSV file or load a saved plot to visualize data."}
                 </div>
               )}
 
-              {isOverlayActive && parsedData.length > 0 && (
+              {isOverlayActive && parsedData.length > 0 && plotType === 'line' && (
                 <svg
                   ref={svgOverlayRef}
                   width="100%"
@@ -1318,7 +1350,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         </CardContent>
       )}
 
-      {isOverlayActive && !isMinimized && parsedData.length > 0 && (
+      {showAnnotationToolbar && (
         <div className="p-2 border-t bg-card flex items-center space-x-1 flex-wrap shadow sticky bottom-0 z-20">
           <TooltipProvider delayDuration={0}>
             <Tooltip>

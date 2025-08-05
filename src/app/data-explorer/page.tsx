@@ -607,10 +607,6 @@ export default function DataExplorerPage() {
         
         <Separator className="my-4" />
 
-        <CardTitle className="text-base flex items-center gap-1.5">
-          Device Data
-        </CardTitle>
-
         <div className="flex justify-center mb-3">
           <Button onClick={addPlot} size="sm" className="h-8 text-xs">
             <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot (Device Data)
