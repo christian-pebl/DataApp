@@ -50,6 +50,7 @@ export function HeatmapDisplay({
 
   const BRUSH_CHART_HEIGHT = 50;
   const heatmapHeight = containerHeight - BRUSH_CHART_HEIGHT;
+  const margin = { top: 20, right: 20, bottom: 50, left: 150 };
 
   useEffect(() => {
     if (svgRef.current) {
@@ -137,7 +138,6 @@ export function HeatmapDisplay({
   const { cells, uniqueDays, series: visibleSeries } = processedData;
   const cellMap = new Map<string, ProcessedCell>(cells.map(c => [`${c.date}__${c.series}`, c]));
   
-  const margin = { top: 20, right: 20, bottom: 50, left: 150 };
   const { width, height } = svgDimensions;
   const plotWidth = width > 0 ? width - margin.left - margin.right : 0;
   const plotHeight = height > 0 ? height - margin.top - margin.bottom : 0;
@@ -263,7 +263,7 @@ export function HeatmapDisplay({
                      <LineChart
                          data={data}
                          syncId={`brush-sync-${React.useId()}`}
-                         margin={{ top: 5, right: 30, left: 30, bottom: 5 }}
+                         margin={{ top: 5, right: margin.right, left: margin.left, bottom: 5 }}
                      >
                          <XAxis dataKey="time" hide />
                          <Line type="monotone" dataKey={() => 0} stroke="transparent" dot={false} />
