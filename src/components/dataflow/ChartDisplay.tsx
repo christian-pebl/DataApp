@@ -204,7 +204,7 @@ export function ChartDisplay({
             labelFormatter={(label) => {
               try {
                 const date = typeof label === 'string' ? parseISO(label) : new Date(label);
-                return isValid(date) ? format(date, 'PPp') : String(label);
+                return isValid(date) ? format(date, 'dd/MM/yy') : String(label);
               } catch { return String(label); }
             }}
             formatter={(value: number | null | undefined, name: string) => {
