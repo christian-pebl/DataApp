@@ -170,6 +170,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
   const [isPlotExpanded, setIsPlotExpanded] = useState(false);
   const [plotType, setPlotType] = useState<PlotType>('line');
   const [timeFormat, setTimeFormat] = useState<'short' | 'full'>('short');
+  const linePlotVisibleSeriesRef = useRef<Record<string, boolean>>({});
 
   // Validation and UI State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -288,6 +289,43 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     return 'default';
   }, [activeTool, selectedLineId, draggingPoint, movingLineId, isDraggingToolbar]);
 
+  const isLatinName = (name: string): boolean => {
+    // Basic regex for binomial nomenclature: Capitalized word, then a space, then a lowercase word.
+    // This can be expanded for more complex cases (e.g., subspecies, authorities) if needed.
+    return /^[A-Z][a-z]+ [a-z]+$/.test(name);
+  };
+
+  const handlePlotTypeChange = useCallback((newType: PlotType) => {
+    if (newType === plotType) return;
+
+    if (newType === 'heatmap') {
+      // Save current line plot visibility settings
+      linePlotVisibleSeriesRef.current = { ...visibleSeries };
+
+      // Automatically select species names for the heatmap
+      const newHeatmapVisible: Record<string, boolean> = {};
+      dataSeries.forEach(name => {
+        newHeatmapVisible[name] = isLatinName(name);
+      });
+      setVisibleSeries(newHeatmapVisible);
+
+    } else if (newType === 'line') {
+      // Restore previous line plot visibility settings
+      if (Object.keys(linePlotVisibleSeriesRef.current).length > 0) {
+        setVisibleSeries(linePlotVisibleSeriesRef.current);
+      } else {
+        // Fallback if no previous state is saved
+        const newVisible: Record<string, boolean> = {};
+        dataSeries.forEach((name, index) => {
+          newVisible[name] = index < 4;
+        });
+        setVisibleSeries(newVisible);
+      }
+    }
+
+    setPlotType(newType);
+  }, [plotType, visibleSeries, dataSeries]);
+
   const parseAndValidateCsv = useCallback((csvText: string, fileName: string): { success: boolean; data?: DataPoint[], seriesNames?: string[], timeHeader?: string } => {
     const freshValidationSteps = initialValidationSteps.map(step => ({ ...step, status: 'pending' as const, message: undefined }));
     setValidationSteps(freshValidationSteps);
@@ -359,7 +397,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     // --- Start of new date parsing logic ---
     const dateFormatsToTry = [
       "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", "yyyy-MM-dd'T'HH:mm:ss'Z'", // ISO formats
-      'dd/MM/yyyy HH:mm:ss', 'dd/MM/yyyy HH:mm',
+      'dd/MM/yyyy HH:mm:ss', 'dd/MM/yyyy HH:mm', 'yyyy/MM/dd HH:mm:ss',
       'MM/dd/yyyy HH:mm:ss', 'MM/dd/yyyy HH:mm',
       'yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd HH:mm',
       'yyyy/MM/dd HH:mm:ss', 'yyyy/MM/dd HH:mm',
@@ -373,11 +411,9 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     const parseDateString = (dateString: string): Date | null => {
         if (!dateString || !dateString.trim()) return null;
         
-        // First try ISO parsing, as it's the most common and standardized
         let date = parseISO(dateString);
         if (isValid(date)) return date;
 
-        // Then try other formats
         for (const fmt of dateFormatsToTry) {
             date = parse(dateString, fmt, new Date());
             if (isValid(date)) {
@@ -485,6 +521,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
         newVisibleSeries[name] = index < 4; // Default to first 4 series visible
       });
       setVisibleSeries(newVisibleSeries);
+      linePlotVisibleSeriesRef.current = { ...newVisibleSeries };
+
 
       setBrushStartIndex(0);
       setBrushEndIndex(parsedResult.data.length > 0 ? parsedResult.data.length - 1 : undefined);
@@ -609,14 +647,21 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
 
       if (successfullyProcessed && actualSeriesInLoadedCsv) {
         setPlotTitle(savedState.plotTitle);
-        setPlotType(savedState.plotType || 'line');
+        
+        const newPlotType = savedState.plotType || 'line';
+        if (newPlotType === 'heatmap') {
+          handlePlotTypeChange('heatmap');
+        } else {
+          const restoredVisibleSeries: Record<string, boolean> = {};
+          actualSeriesInLoadedCsv.forEach(name => {
+            restoredVisibleSeries[name] = savedState.visibleSeries[name] === true; 
+          });
+          setVisibleSeries(restoredVisibleSeries);
+        }
+        setPlotType(newPlotType);
+
         setTimeFormat(savedState.timeFormat || 'short');
 
-        const restoredVisibleSeries: Record<string, boolean> = {};
-        actualSeriesInLoadedCsv.forEach(name => {
-          restoredVisibleSeries[name] = savedState.visibleSeries[name] === true; 
-        });
-        setVisibleSeries(restoredVisibleSeries);
 
         setIsPlotExpanded(savedState.isPlotExpanded === true);
         setIsMinimalistView(savedState.isMinimalistView === true);
@@ -658,7 +703,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     }
     setIsProcessing(false);
     if (jsonLoadInputRef.current) jsonLoadInputRef.current.value = "";
-  }, [instanceId, processCsvFileContent, toast, initialValidationSteps, updateStepStatus, parsedData.length]);
+  }, [instanceId, processCsvFileContent, toast, initialValidationSteps, updateStepStatus, parsedData.length, handlePlotTypeChange]);
 
   const handleSavePlot = useCallback(() => {
     if (!rawCsvText || !currentFileName) {
@@ -1165,7 +1210,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                       <TooltipProvider delayDuration={100}>
                           <Tooltip>
                               <TooltipTrigger asChild>
-                                  <Button variant="outline" size="icon" onClick={() => setPlotType('line')} disabled={plotType === 'line' || parsedData.length === 0} className={cn("h-6 w-6 flex-1", plotType === 'line' && "bg-accent text-accent-foreground")}>
+                                  <Button variant="outline" size="icon" onClick={() => handlePlotTypeChange('line')} disabled={plotType === 'line' || parsedData.length === 0} className={cn("h-6 w-6 flex-1", plotType === 'line' && "bg-accent text-accent-foreground")}>
                                       <BarChart className="h-3.5 w-3.5" />
                                   </Button>
                               </TooltipTrigger>
@@ -1173,7 +1218,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                           </Tooltip>
                           <Tooltip>
                               <TooltipTrigger asChild>
-                                  <Button variant="outline" size="icon" onClick={() => setPlotType('heatmap')} disabled={plotType === 'heatmap' || parsedData.length === 0} className={cn("h-6 w-6 flex-1", plotType === 'heatmap' && "bg-accent text-accent-foreground")}>
+                                  <Button variant="outline" size="icon" onClick={() => handlePlotTypeChange('heatmap')} disabled={plotType === 'heatmap' || parsedData.length === 0} className={cn("h-6 w-6 flex-1", plotType === 'heatmap' && "bg-accent text-accent-foreground")}>
                                       <Sun className="h-3.5 w-3.5" />
                                   </Button>
                               </TooltipTrigger>
