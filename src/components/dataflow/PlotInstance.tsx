@@ -776,8 +776,8 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                 </div>
                 
                 <div className="flex items-center justify-between p-1">
-                  <UiLabel htmlFor={`time-format-switch-${instanceId}-${uniqueComponentId}`} className="text-xs flex items-center gap-1.5">
-                    <Clock className="h-3.5 w-3.5 text-muted-foreground"/>
+                  <UiLabel htmlFor={`time-format-switch-${instanceId}-${uniqueComponentId}`} className="text-xs flex items-center gap-1">
+                    <Clock className="h-3 w-3 text-muted-foreground"/>
                     Time format
                   </UiLabel>
                   <Switch
@@ -785,7 +785,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                     checked={timeFormat === 'full'}
                     onCheckedChange={(checked) => setTimeFormat(checked ? 'full' : 'short')}
                     disabled={parsedData.length === 0}
-                    className="h-5"
+                    className="h-4 w-8 [&>span]:h-3 [&>span]:w-3 [&>span[data-state=checked]]:translate-x-4"
                   />
                 </div>
 
