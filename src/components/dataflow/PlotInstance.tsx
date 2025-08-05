@@ -290,7 +290,7 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
   }, [activeTool, selectedLineId, draggingPoint, movingLineId, isDraggingToolbar]);
 
   const isFilteredForHeatmap = (name: string): boolean => {
-    const keywordsToExclude = ['total', 'cumulative', 'unique'];
+    const keywordsToExclude = ['total', 'cumulative', 'unique', 'recording'];
     const lowerCaseName = name.toLowerCase();
     return !keywordsToExclude.some(keyword => lowerCaseName.includes(keyword));
   };
