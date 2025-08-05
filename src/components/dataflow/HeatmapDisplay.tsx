@@ -6,6 +6,8 @@ import { parseISO, startOfDay, format, isValid, eachDayOfInterval, differenceInD
 import { scaleLinear, scaleBand } from 'd3-scale';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { ResponsiveContainer, LineChart, Line, XAxis, Brush } from 'recharts';
+
 
 interface DataPoint {
   time: string | number;
@@ -16,6 +18,10 @@ interface HeatmapDisplayProps {
   data: DataPoint[];
   series: string[];
   containerHeight: number;
+  brushStartIndex?: number;
+  brushEndIndex?: number;
+  onBrushChange?: (newIndex: { startIndex?: number; endIndex?: number }) => void;
+  timeFormat?: 'short' | 'full';
 }
 
 interface ProcessedCell {
@@ -25,24 +31,45 @@ interface ProcessedCell {
   count: number;
 }
 
-export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplayProps) {
+interface OverviewDataPoint {
+    time: string;
+    value: number;
+}
+
+export function HeatmapDisplay({ 
+    data, 
+    series, 
+    containerHeight,
+    brushStartIndex,
+    brushEndIndex,
+    onBrushChange,
+    timeFormat = 'short'
+}: HeatmapDisplayProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [svgDimensions, setSvgDimensions] = useState({ width: 0, height: 0 });
 
+  const BRUSH_CHART_HEIGHT = 50;
+  const heatmapHeight = containerHeight - BRUSH_CHART_HEIGHT;
+
   useEffect(() => {
     if (svgRef.current) {
-      const { width, height } = svgRef.current.getBoundingClientRect();
-      setSvgDimensions({ width, height });
+      const { width } = svgRef.current.getBoundingClientRect();
+      setSvgDimensions({ width, height: heatmapHeight });
     }
-  }, [containerHeight]);
+  }, [heatmapHeight]);
 
-  const processedData = useMemo(() => {
-    if (!data || data.length === 0) return { cells: [], uniqueDays: [], series: [], minValue: 0, maxValue: 0, dateInterval: null };
+  const { processedData, overviewData } = useMemo(() => {
+    if (!data || data.length === 0) return { 
+        processedData: { cells: [], uniqueDays: [], series: [], minValue: 0, maxValue: 0, dateInterval: null },
+        overviewData: []
+    };
 
     const dailyData = new Map<string, { sum: number; count: number }>();
     const allValues: number[] = [];
     let minDate: Date | null = null;
     let maxDate: Date | null = null;
+
+    const overviewDataMap = new Map<string, { sum: number; count: number; }>();
 
     data.forEach(point => {
       const date = parseISO(point.time as string);
@@ -52,6 +79,9 @@ export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplay
       if (!maxDate || date > maxDate) maxDate = date;
 
       const dayKey = format(startOfDay(date), 'yyyy-MM-dd');
+      
+      let totalValueInPoint = 0;
+      let validSeriesCount = 0;
 
       series.forEach(s => {
         const value = point[s];
@@ -61,9 +91,24 @@ export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplay
           existing.sum += value;
           existing.count++;
           dailyData.set(cellKey, existing);
+          totalValueInPoint += value;
+          validSeriesCount++;
         }
       });
+      
+      if(validSeriesCount > 0){
+        const overviewPoint = overviewDataMap.get(point.time as string) || { sum: 0, count: 0};
+        overviewPoint.sum += totalValueInPoint;
+        overviewPoint.count += validSeriesCount;
+        overviewDataMap.set(point.time as string, overviewPoint);
+      }
     });
+
+    const overviewPoints: OverviewDataPoint[] = Array.from(overviewDataMap.entries()).map(([time, {sum, count}]) => ({
+        time,
+        value: sum / count
+    })).sort((a,b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
 
     const dateInterval = minDate && maxDate ? eachDayOfInterval({ start: minDate, end: maxDate }) : [];
     if (dateInterval.length > 150) { // Limit number of days to prevent performance issues
@@ -75,7 +120,6 @@ export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplay
     const cells: ProcessedCell[] = [];
     dailyData.forEach((stats, key) => {
       const [dateStr, seriesName] = key.split('__');
-      const dateObj = parseISO(dateStr);
       if (stats.count > 0 && finalInterval.some(d => format(d, 'yyyy-MM-dd') === dateStr)) {
         const avg = stats.sum / stats.count;
         cells.push({ date: dateStr, series: seriesName, value: avg, count: stats.count });
@@ -87,7 +131,9 @@ export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplay
     const minValue = Math.min(0, ...allValues);
     const maxValue = Math.max(...allValues);
 
-    return { cells, uniqueDays, series, minValue, maxValue, dateInterval: finalInterval };
+    const processedResult = { cells, uniqueDays, series, minValue, maxValue, dateInterval: finalInterval };
+    return { processedData: processedResult, overviewData: overviewPoints };
+
   }, [data, series]);
 
   const colorScale = useMemo(() => {
@@ -110,8 +156,8 @@ export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplay
   
   const margin = { top: 20, right: 20, bottom: 50, left: 150 };
   const { width, height } = svgDimensions;
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
+  const plotWidth = width > 0 ? width - margin.left - margin.right : 0;
+  const plotHeight = height > 0 ? height - margin.top - margin.bottom : 0;
 
   const xScale = scaleBand<string>().domain(uniqueDays).range([0, plotWidth]).padding(0.05);
   const yScale = scaleBand<string>().domain(visibleSeries).range([0, plotHeight]).padding(0.05);
@@ -121,98 +167,138 @@ export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplay
     const tickInterval = Math.ceil(uniqueDays.length / 10);
     return uniqueDays.filter((_, i) => i % tickInterval === 0);
   }, [uniqueDays]);
+  
+  const currentDateFormat = timeFormat === 'full' ? 'dd/MM/yy HH:mm' : 'dd/MM/yy';
+  const formatDateTickBrush = (timeValue: string | number): string => {
+    try {
+      const dateObj = parseISO(String(timeValue));
+      if (!isValid(dateObj)) return String(timeValue);
+      return format(dateObj, currentDateFormat); 
+    } catch (e) {
+      return String(timeValue);
+    }
+  };
 
   return (
-    <div 
-      style={{ height: `${containerHeight}px` }} 
-      className="w-full h-full border rounded-md p-2 bg-muted/20"
-    >
-      <TooltipProvider>
-        <svg ref={svgRef} width="100%" height="100%">
-          <g transform={`translate(${margin.left},${margin.top})`}>
-            {/* Y-axis */}
-            <g className="y-axis">
-              {yScale.domain().map(seriesName => (
-                <text
-                  key={seriesName}
-                  x={-10}
-                  y={(yScale(seriesName) ?? 0) + yScale.bandwidth() / 2}
-                  textAnchor="end"
-                  dominantBaseline="middle"
-                  className="text-xs fill-current text-muted-foreground"
-                  title={seriesName}
-                >
-                  {seriesName.length > 20 ? `${seriesName.substring(0, 18)}...` : seriesName}
-                </text>
-              ))}
-            </g>
-            
-            {/* X-axis */}
-            <g className="x-axis" transform={`translate(0, ${plotHeight})`}>
-              {tickValues.map(day => (
-                <g key={day} transform={`translate(${(xScale(day) ?? 0) + xScale.bandwidth() / 2}, 0)`}>
+    <div className="w-full h-full">
+        <div 
+          style={{ height: `${heatmapHeight}px` }} 
+          className="w-full h-full border rounded-md p-2 bg-muted/20"
+        >
+          <TooltipProvider>
+            <svg ref={svgRef} width="100%" height="100%">
+              {plotWidth > 0 && plotHeight > 0 && (
+              <g transform={`translate(${margin.left},${margin.top})`}>
+                {/* Y-axis */}
+                <g className="y-axis">
+                  {yScale.domain().map(seriesName => (
                     <text
-                        transform="rotate(-45)"
-                        y={10}
-                        x={-5}
-                        textAnchor="end"
-                        dominantBaseline="middle"
-                        className="text-xs fill-current text-muted-foreground"
+                      key={seriesName}
+                      x={-10}
+                      y={(yScale(seriesName) ?? 0) + yScale.bandwidth() / 2}
+                      textAnchor="end"
+                      dominantBaseline="middle"
+                      className="text-xs fill-current text-muted-foreground"
+                      title={seriesName}
                     >
-                        {format(parseISO(day), 'dd MMM')}
+                      {seriesName.length > 20 ? `${seriesName.substring(0, 18)}...` : seriesName}
                     </text>
+                  ))}
                 </g>
-              ))}
-            </g>
+                
+                {/* X-axis */}
+                <g className="x-axis" transform={`translate(0, ${plotHeight})`}>
+                  {tickValues.map(day => (
+                    <g key={day} transform={`translate(${(xScale(day) ?? 0) + xScale.bandwidth() / 2}, 0)`}>
+                        <text
+                            transform="rotate(-45)"
+                            y={10}
+                            x={-5}
+                            textAnchor="end"
+                            dominantBaseline="middle"
+                            className="text-xs fill-current text-muted-foreground"
+                        >
+                            {format(parseISO(day), 'dd MMM')}
+                        </text>
+                    </g>
+                  ))}
+                </g>
 
-            {/* Heatmap Cells */}
-            <g className="cells">
-              {visibleSeries.map(s => (
-                <React.Fragment key={s}>
-                  {uniqueDays.map(day => {
-                    const cell = cellMap.get(`${day}__${s}`);
-                    const cellValue = cell?.value ?? 0;
-                    const fillColor = cellValue > 0 ? colorScale(cellValue) : 'hsl(var(--muted)/0.3)';
-                    const textColorClass = cellValue > (processedData.maxValue / 1.5) ? 'fill-primary-foreground' : 'fill-foreground';
-                    
-                    return (
-                      <Tooltip key={`${s}-${day}`} delayDuration={100}>
-                        <TooltipTrigger asChild>
-                          <g transform={`translate(${xScale(day)}, ${yScale(s)})`}>
-                            <rect
-                              width={xScale.bandwidth()}
-                              height={yScale.bandwidth()}
-                              fill={fillColor}
-                              className="stroke-background/50"
-                              strokeWidth={1}
-                            />
-                            {cell && xScale.bandwidth() > 30 && (
-                               <text
-                                x={xScale.bandwidth() / 2}
-                                y={yScale.bandwidth() / 2}
-                                textAnchor="middle"
-                                dominantBaseline="middle"
-                                className={cn("text-[0.6rem] pointer-events-none", textColorClass)}
-                              >
-                                {cell.value.toFixed(1)}
-                              </text>
-                            )}
-                          </g>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p className="font-bold">{format(parseISO(day), 'PPP')}</p>
-                          <p>{s}: {cell ? cell.value.toFixed(2) : 'No data'}</p>
-                          {cell && <p className="text-muted-foreground text-xs">({cell.count} records)</p>}
-                        </TooltipContent>
-                      </Tooltip>
-                    );
-                  })}
-                </React.Fragment>
-              ))}
-            </g>
-          </g>
-        </svg>
-      </TooltipProvider>
+                {/* Heatmap Cells */}
+                <g className="cells">
+                  {visibleSeries.map(s => (
+                    <React.Fragment key={s}>
+                      {uniqueDays.map(day => {
+                        const cell = cellMap.get(`${day}__${s}`);
+                        const cellValue = cell?.value ?? 0;
+                        const fillColor = cellValue > 0 ? colorScale(cellValue) : 'hsl(var(--muted)/0.3)';
+                        const textColorClass = cellValue > (processedData.maxValue / 1.5) ? 'fill-primary-foreground' : 'fill-foreground';
+                        
+                        return (
+                          <Tooltip key={`${s}-${day}`} delayDuration={100}>
+                            <TooltipTrigger asChild>
+                              <g transform={`translate(${xScale(day)}, ${yScale(s)})`}>
+                                <rect
+                                  width={xScale.bandwidth()}
+                                  height={yScale.bandwidth()}
+                                  fill={fillColor}
+                                  className="stroke-background/50"
+                                  strokeWidth={1}
+                                />
+                                {cell && xScale.bandwidth() > 30 && (
+                                   <text
+                                    x={xScale.bandwidth() / 2}
+                                    y={yScale.bandwidth() / 2}
+                                    textAnchor="middle"
+                                    dominantBaseline="middle"
+                                    className={cn("text-[0.6rem] pointer-events-none", textColorClass)}
+                                  >
+                                    {cell.value.toFixed(1)}
+                                  </text>
+                                )}
+                              </g>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="font-bold">{format(parseISO(day), 'PPP')}</p>
+                              <p>{s}: {cell ? cell.value.toFixed(2) : 'No data'}</p>
+                              {cell && <p className="text-muted-foreground text-xs">({cell.count} records)</p>}
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
+                </g>
+              </g>
+              )}
+            </svg>
+          </TooltipProvider>
+        </div>
+        {onBrushChange && data.length > 0 && (
+             <div style={{ height: `${BRUSH_CHART_HEIGHT}px`}} className="w-full mt-1">
+                 <ResponsiveContainer width="100%" height="100%">
+                     <LineChart
+                         data={data}
+                         syncId={`brush-sync-${React.useId()}`}
+                         margin={{ top: 5, right: 30, left: 30, bottom: 5 }}
+                     >
+                         <XAxis dataKey="time" hide />
+                         <Line type="monotone" dataKey={() => 0} stroke="transparent" dot={false} />
+                         <Brush 
+                             dataKey="time"
+                             height={20}
+                             stroke="hsl(var(--primary))"
+                             tickFormatter={formatDateTickBrush}
+                             startIndex={brushStartIndex}
+                             endIndex={brushEndIndex}
+                             onChange={onBrushChange}
+                             travellerWidth={10}
+                         />
+                     </LineChart>
+                 </ResponsiveContainer>
+             </div>
+        )}
     </div>
   );
 }
+

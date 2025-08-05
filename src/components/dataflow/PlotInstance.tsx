@@ -892,9 +892,13 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                     />
                 ) : (
                     <HeatmapDisplay
-                    data={parsedData}
-                    series={plottableSeries}
-                    containerHeight={currentPlotHeight}
+                        data={parsedData}
+                        series={plottableSeries}
+                        containerHeight={currentPlotHeight}
+                        brushStartIndex={brushStartIndex}
+                        brushEndIndex={brushEndIndex}
+                        onBrushChange={handleBrushChange}
+                        timeFormat={timeFormat}
                     />
                 )
               ) : (
@@ -909,3 +913,4 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     </Card>
   );
 }
+
