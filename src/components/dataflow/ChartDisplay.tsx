@@ -62,7 +62,7 @@ export function ChartDisplay({
   const mainChartHeight = onBrushChange ? plotHeight - BRUSH_CHART_HEIGHT : plotHeight;
 
 
-  const chartData = React.useMemo(() => {
+  const processedData = React.useMemo(() => {
     if (!data || data.length === 0) return [];
     return data.map(point => {
       const newPoint: DataPoint = { time: point.time };
@@ -77,6 +77,16 @@ export function ChartDisplay({
       return newPoint;
     });
   }, [data, plottableSeries]);
+  
+  const chartData = useMemo(() => {
+    if (onBrushChange && brushStartIndex !== undefined && brushEndIndex !== undefined) {
+      const start = Math.max(0, brushStartIndex);
+      const end = Math.min(processedData.length - 1, brushEndIndex);
+      return processedData.slice(start, end + 1);
+    }
+    return processedData;
+  }, [processedData, brushStartIndex, brushEndIndex, onBrushChange]);
+
 
   const hasAnyNumericDataForSelectedSeries = React.useMemo(() => {
     if (!chartData || chartData.length === 0) return false;
@@ -243,7 +253,7 @@ export function ChartDisplay({
         <div className="h-[60px] w-full border rounded-md p-1 shadow-sm bg-card mt-1">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
-              data={chartData}
+              data={processedData}
               margin={{
                 top: 5,
                 right: yAxisConfigs.some(yc => yc.orientation === 'right' && plottableSeries.includes(yc.dataKey)) ? 20 : 5,
