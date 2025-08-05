@@ -1,9 +1,9 @@
 
 "use client";
 
-import React, { useMemo } from 'react';
-import { parseISO, startOfDay, format, isValid } from 'date-fns';
-import { scaleLinear } from 'd3-scale';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
+import { parseISO, startOfDay, format, isValid, eachDayOfInterval, differenceInDays } from 'date-fns';
+import { scaleLinear, scaleBand } from 'd3-scale';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -26,14 +26,31 @@ interface ProcessedCell {
 }
 
 export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplayProps) {
-  
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [svgDimensions, setSvgDimensions] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (svgRef.current) {
+      const { width, height } = svgRef.current.getBoundingClientRect();
+      setSvgDimensions({ width, height });
+    }
+  }, [containerHeight]);
+
   const processedData = useMemo(() => {
+    if (!data || data.length === 0) return { cells: [], uniqueDays: [], series: [], minValue: 0, maxValue: 0, dateInterval: null };
+
     const dailyData = new Map<string, { sum: number; count: number }>();
     const allValues: number[] = [];
+    let minDate: Date | null = null;
+    let maxDate: Date | null = null;
 
     data.forEach(point => {
       const date = parseISO(point.time as string);
       if (!isValid(date)) return;
+
+      if (!minDate || date < minDate) minDate = date;
+      if (!maxDate || date > maxDate) maxDate = date;
+
       const dayKey = format(startOfDay(date), 'yyyy-MM-dd');
 
       series.forEach(s => {
@@ -48,36 +65,39 @@ export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplay
       });
     });
 
+    const dateInterval = minDate && maxDate ? eachDayOfInterval({ start: minDate, end: maxDate }) : [];
+    if (dateInterval.length > 150) { // Limit number of days to prevent performance issues
+        const limitedEndDate = dateInterval[149];
+        if(limitedEndDate) maxDate = limitedEndDate;
+    }
+    const finalInterval = minDate && maxDate ? eachDayOfInterval({ start: minDate, end: maxDate }) : [];
+
     const cells: ProcessedCell[] = [];
     dailyData.forEach((stats, key) => {
-      const [date, seriesName] = key.split('__');
-      if (stats.count > 0) {
+      const [dateStr, seriesName] = key.split('__');
+      const dateObj = parseISO(dateStr);
+      if (stats.count > 0 && finalInterval.some(d => format(d, 'yyyy-MM-dd') === dateStr)) {
         const avg = stats.sum / stats.count;
-        cells.push({ date, series: seriesName, value: avg, count: stats.count });
+        cells.push({ date: dateStr, series: seriesName, value: avg, count: stats.count });
         allValues.push(avg);
       }
     });
 
-    const uniqueDays = [...new Set(cells.map(c => c.date))].sort();
-    const minValue = Math.min(0, ...allValues); // Ensure 0 is included in domain for transparency
+    const uniqueDays = finalInterval.map(d => format(d, 'yyyy-MM-dd')).sort();
+    const minValue = Math.min(0, ...allValues);
     const maxValue = Math.max(...allValues);
 
-    return { cells, uniqueDays, series, minValue, maxValue };
+    return { cells, uniqueDays, series, minValue, maxValue, dateInterval: finalInterval };
   }, [data, series]);
 
   const colorScale = useMemo(() => {
-    // Use a transparent-to-primary color scale.
-    // Values <= 0 will be transparent.
-    const minColor = 'transparent'; 
-    const maxColor = 'hsl(var(--primary))';
-    
     return scaleLinear<string>()
-      .domain([Math.min(0, processedData.minValue), processedData.maxValue])
-      .range([minColor, maxColor])
-      .clamp(true); // Clamp ensures values outside domain get min/max color
+      .domain([Math.max(0.001, processedData.minValue), processedData.maxValue])
+      .range(["hsla(var(--primary) / 0.1)", "hsla(var(--primary) / 1.0)"])
+      .clamp(true);
   }, [processedData.minValue, processedData.maxValue]);
   
-  if (!data || data.length === 0 || series.length === 0) {
+  if (!data || data.length === 0 || series.length === 0 || processedData.uniqueDays.length === 0) {
     return (
       <div style={{ height: `${containerHeight}px` }} className="flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-muted/20">
         No data available for heatmap view.
@@ -87,61 +107,111 @@ export function HeatmapDisplay({ data, series, containerHeight }: HeatmapDisplay
 
   const { cells, uniqueDays, series: visibleSeries } = processedData;
   const cellMap = new Map<string, ProcessedCell>(cells.map(c => [`${c.date}__${c.series}`, c]));
+  
+  const margin = { top: 20, right: 20, bottom: 50, left: 150 };
+  const { width, height } = svgDimensions;
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+
+  const xScale = scaleBand<string>().domain(uniqueDays).range([0, plotWidth]).padding(0.05);
+  const yScale = scaleBand<string>().domain(visibleSeries).range([0, plotHeight]).padding(0.05);
+  
+  const tickValues = useMemo(() => {
+    if (uniqueDays.length <= 10) return uniqueDays;
+    const tickInterval = Math.ceil(uniqueDays.length / 10);
+    return uniqueDays.filter((_, i) => i % tickInterval === 0);
+  }, [uniqueDays]);
 
   return (
     <div 
       style={{ height: `${containerHeight}px` }} 
-      className="overflow-auto border rounded-md p-2 bg-muted/20"
+      className="w-full h-full border rounded-md p-2 bg-muted/20"
     >
       <TooltipProvider>
-        <div 
-          className="grid gap-px"
-          style={{ gridTemplateColumns: `minmax(120px, 1fr) repeat(${uniqueDays.length}, minmax(40px, 1fr))`}}
-        >
-          {/* Header Row */}
-          <div className="sticky top-0 bg-background/95 backdrop-blur-sm p-1 text-xs font-medium text-muted-foreground text-left z-10">Series</div>
-          {uniqueDays.map(day => (
-            <div key={day} className="sticky top-0 bg-background/95 backdrop-blur-sm p-1 text-xs font-medium text-muted-foreground text-center z-10">
-              {format(parseISO(day), 'dd MMM')}
-            </div>
-          ))}
+        <svg ref={svgRef} width="100%" height="100%">
+          <g transform={`translate(${margin.left},${margin.top})`}>
+            {/* Y-axis */}
+            <g className="y-axis">
+              {yScale.domain().map(seriesName => (
+                <text
+                  key={seriesName}
+                  x={-10}
+                  y={(yScale(seriesName) ?? 0) + yScale.bandwidth() / 2}
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                  className="text-xs fill-current text-muted-foreground"
+                  title={seriesName}
+                >
+                  {seriesName.length > 20 ? `${seriesName.substring(0, 18)}...` : seriesName}
+                </text>
+              ))}
+            </g>
+            
+            {/* X-axis */}
+            <g className="x-axis" transform={`translate(0, ${plotHeight})`}>
+              {tickValues.map(day => (
+                <g key={day} transform={`translate(${(xScale(day) ?? 0) + xScale.bandwidth() / 2}, 0)`}>
+                    <text
+                        transform="rotate(-45)"
+                        y={10}
+                        x={-5}
+                        textAnchor="end"
+                        dominantBaseline="middle"
+                        className="text-xs fill-current text-muted-foreground"
+                    >
+                        {format(parseISO(day), 'dd MMM')}
+                    </text>
+                </g>
+              ))}
+            </g>
 
-          {/* Data Rows */}
-          {visibleSeries.map(s => (
-            <React.Fragment key={s}>
-              <div className="p-1 text-xs font-medium text-foreground truncate sticky left-0 bg-background/95 backdrop-blur-sm" title={s}>{s}</div>
-              {uniqueDays.map(day => {
-                const cell = cellMap.get(`${day}__${s}`);
-                // Determine cell style based on value
-                const cellStyle = cell && cell.value > 0 ? { backgroundColor: colorScale(cell.value) } : { backgroundColor: 'transparent' };
-                // Determine text color based on background lightness for readability
-                const textColorClass = cell && cell.value > (processedData.maxValue / 2) ? 'text-primary-foreground' : 'text-foreground';
-                
-                return (
-                  <Tooltip key={`${s}-${day}`} delayDuration={100}>
-                    <TooltipTrigger asChild>
-                      <div 
-                        className={cn(
-                          "w-full h-10 flex items-center justify-center rounded-sm text-xs border border-transparent", // Use transparent border to maintain layout
-                          cell ? textColorClass : 'text-muted-foreground',
-                          !cell && 'bg-muted/30'
-                        )}
-                        style={cellStyle}
-                      >
-                        {cell ? cell.value.toFixed(1) : '-'}
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="font-bold">{format(parseISO(day), 'PPP')}</p>
-                      <p>{s}: {cell ? cell.value.toFixed(2) : 'No data'}</p>
-                      {cell && <p className="text-muted-foreground text-xs">({cell.count} records)</p>}
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })}
-            </React.Fragment>
-          ))}
-        </div>
+            {/* Heatmap Cells */}
+            <g className="cells">
+              {visibleSeries.map(s => (
+                <React.Fragment key={s}>
+                  {uniqueDays.map(day => {
+                    const cell = cellMap.get(`${day}__${s}`);
+                    const cellValue = cell?.value ?? 0;
+                    const fillColor = cellValue > 0 ? colorScale(cellValue) : 'hsl(var(--muted)/0.3)';
+                    const textColorClass = cellValue > (processedData.maxValue / 1.5) ? 'fill-primary-foreground' : 'fill-foreground';
+                    
+                    return (
+                      <Tooltip key={`${s}-${day}`} delayDuration={100}>
+                        <TooltipTrigger asChild>
+                          <g transform={`translate(${xScale(day)}, ${yScale(s)})`}>
+                            <rect
+                              width={xScale.bandwidth()}
+                              height={yScale.bandwidth()}
+                              fill={fillColor}
+                              className="stroke-background/50"
+                              strokeWidth={1}
+                            />
+                            {cell && xScale.bandwidth() > 30 && (
+                               <text
+                                x={xScale.bandwidth() / 2}
+                                y={yScale.bandwidth() / 2}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                className={cn("text-[0.6rem] pointer-events-none", textColorClass)}
+                              >
+                                {cell.value.toFixed(1)}
+                              </text>
+                            )}
+                          </g>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="font-bold">{format(parseISO(day), 'PPP')}</p>
+                          <p>{s}: {cell ? cell.value.toFixed(2) : 'No data'}</p>
+                          {cell && <p className="text-muted-foreground text-xs">({cell.count} records)</p>}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </React.Fragment>
+              ))}
+            </g>
+          </g>
+        </svg>
       </TooltipProvider>
     </div>
   );
