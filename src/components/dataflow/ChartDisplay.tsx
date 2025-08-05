@@ -103,11 +103,11 @@ export function ChartDisplay({
     try {
       const dateObj = parseISO(String(timeValue));
       if (!isValid(dateObj)) return String(timeValue);
-      return format(dateObj, currentDateFormat); 
+      return format(dateObj, 'dd MMM'); 
     } catch (e) {
       return String(timeValue);
     }
-  }, [currentDateFormat]);
+  }, []);
 
   const yAxisLabelText = React.useMemo(() => {
     if (yAxisConfigs.length === 1 && yAxisConfigs[0]) {
