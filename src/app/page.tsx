@@ -1,21 +1,17 @@
-"use client";
+import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 
-import React, { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+export default async function HomePage() {
+  const supabase = await createClient();
+  
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-export default function RedirectToDefaultPage() {
-  const router = useRouter();
+  if (!user) {
+    redirect('/auth');
+  }
 
-  useEffect(() => {
-    // The default page is now /data-explorer
-    router.replace('/data-explorer');
-  }, [router]);
-
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
-      <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-      <p className="text-lg text-muted-foreground">Redirecting to Data Explorer...</p>
-    </div>
-  );
+  // If user is authenticated, redirect to data explorer
+  redirect('/data-explorer');
 }

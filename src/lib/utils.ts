@@ -15,9 +15,18 @@ export const isValidDateString = (val: string | undefined | null): boolean => {
   }
   try {
     const date = parseISO(val);
-    // Check if parsing results in a valid date and the original string is not just 'Invalid Date' or similar
-    // Also ensure the date parts match to avoid parseISO being too lenient with partial matches
-    return isValid(date) && date.toISOString().startsWith(val);
+    // Check if parsing results in a valid date
+    if (!isValid(date)) {
+      return false;
+    }
+    
+    // Verify the date components match what was parsed to avoid invalid dates like 2025-02-30
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const reconstructed = `${year}-${month}-${day}`;
+    
+    return reconstructed === val;
   } catch (e) {
     return false;
   }

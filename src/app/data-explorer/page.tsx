@@ -85,9 +85,9 @@ export default function DataExplorerPage() {
 
   // API Data State (Weather & Marine)
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
-    const yesterday = subDays(new Date(), 1);
-    const from = yesterday;
-    const to = addDays(from, 6);
+    const today = new Date();
+    const from = subDays(today, 7); // 7 days ago
+    const to = subDays(today, 1);   // yesterday
     return { from, to };
   });
 
