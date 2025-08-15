@@ -3,8 +3,8 @@
 
 import type { CSSProperties } from "react";
 import React, { useState, useEffect, useCallback, useRef, useMemo, useId } from "react";
-import Link from "next/link";
-import { usePathname } from 'next/navigation';
+
+
 import dynamic from 'next/dynamic';
 import type { DateRange } from "react-day-picker";
 import { format, formatISO, subDays, addDays, subMonths } from 'date-fns';
@@ -12,10 +12,10 @@ import { format, formatISO, subDays, addDays, subMonths } from 'date-fns';
 import { Button } from "@/components/ui/button";
 import { PlotInstance } from "@/components/dataflow/PlotInstance";
 import {
-  PlusCircle, SunMoon, LayoutGrid, Waves, MapPin, CalendarDays, Search,
+  PlusCircle, Waves, MapPin, CalendarDays, Search,
   Loader2, Info, CheckCircle2, XCircle, Copy, CloudSun, Anchor,
   Thermometer, Wind as WindIcon, Compass as CompassIcon, Sailboat, Timer as TimerIcon, ListChecks, FilePenLine,
-  ChevronsLeft, ChevronsRight, Home
+  ChevronsLeft, ChevronsRight, Home, LayoutGrid
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -74,8 +74,6 @@ const defaultOmLocationKey = "milfordhaven";
 
 
 export default function DataExplorerPage() {
-  const [theme, setTheme] = useState("light");
-  const pathname = usePathname();
   const { toast, dismiss } = useToast();
   const instanceId = useId();
 
@@ -183,24 +181,7 @@ export default function DataExplorerPage() {
   }, []);
 
 
-  // Theme
-  useEffect(() => {
-    const storedTheme = typeof window !== 'undefined' ? localStorage.getItem("theme") : null;
-    if (storedTheme) setTheme(storedTheme);
-    else if (typeof window !== 'undefined' && window.matchMedia("(prefers-color-scheme: dark)").matches) setTheme("dark");
-  }, []);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (theme === "dark") document.documentElement.classList.add("dark");
-      else document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", theme);
-    }
-  }, [theme]);
-
-  const toggleTheme = useCallback(() => {
-    setTheme(prevTheme => (prevTheme === "light" ? "dark" : "light"));
-  }, []);
 
   // Device Data Plot Logic
   const addPlot = useCallback(() => {
@@ -455,21 +436,6 @@ export default function DataExplorerPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
-        <TooltipProvider>
-          <div className="container flex h-full items-center justify-between px-3 md:px-4">
-            <Link href="/data-explorer" passHref>
-              <h1 className="text-xl font-sans text-foreground cursor-pointer dark:text-2xl">PEBL data app</h1>
-            </Link>
-            <div className="flex items-center gap-1">
-              <Tooltip><TooltipTrigger asChild><Link href="/data-explorer" passHref><Button variant={pathname === '/data-explorer' ? "secondary": "ghost"} size="icon" aria-label="Data Explorer"><LayoutGrid className="h-5 w-5" /></Button></Link></TooltipTrigger><TooltipContent><p>Data Explorer</p></TooltipContent></Tooltip>
-              <Separator orientation="vertical" className="h-6 mx-1 text-muted-foreground/50" />
-              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme"><SunMoon className="h-5 w-5" /></Button></TooltipTrigger><TooltipContent><p>Toggle Theme</p></TooltipContent></Tooltip>
-            </div>
-          </div>
-        </TooltipProvider>
-      </header>
-
       <main className="flex-grow container mx-auto p-2 md:p-3 space-y-3">
         
         <Card className="shadow-sm">

@@ -29,7 +29,7 @@ export default function AuthForm() {
         appearance={{ theme: ThemeSupa }}
         theme="default"
         providers={[]}
-        redirectTo={`${location.origin}/auth/callback`}
+        redirectTo={`${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback`}
       />
     </div>
   )

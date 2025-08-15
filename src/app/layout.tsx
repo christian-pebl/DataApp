@@ -4,7 +4,7 @@ import { Inter, Roboto_Mono } from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { createClient } from '@/lib/supabase/server';
-import UserMenu from '@/components/auth/UserMenu';
+import TopNavigation from '@/components/layout/TopNavigation';
 
 
 const inter = Inter({
@@ -28,22 +28,29 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  
+  // In development, create a mock user to bypass auth
+  if (process.env.NODE_ENV === 'development') {
+    user = {
+      id: 'dev-user',
+      email: 'developer@localhost',
+      user_metadata: {
+        full_name: 'Development User'
+      }
+    };
+  } else {
+    const supabase = await createClient();
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+    user = authUser;
+  }
 
   return (
     <html lang="en">
       <body className={`${inter.variable} ${robotoMono.variable} font-sans antialiased`}>
-        {user && (
-          <nav className="border-b bg-white px-4 py-2">
-            <div className="max-w-7xl mx-auto flex justify-between items-center">
-              <h1 className="text-xl font-semibold">DataApp</h1>
-              <UserMenu user={user} />
-            </div>
-          </nav>
-        )}
+        {user && <TopNavigation user={user} />}
         {children}
         <Toaster />
       </body>
