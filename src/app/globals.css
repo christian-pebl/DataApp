@@ -4,8 +4,42 @@
 @tailwind utilities;
 
 body {
-  /* font-family: Arial, Helvetica, sans-serif; */ /* Replaced with CSS variable for next/font */
-  font-family: var(--font-sans); /* Use the CSS variable defined by next/font for the sans-serif font */
+  font-family: var(--font-roboto), 'Roboto', Arial, sans-serif; /* PEBL Brand: Roboto for body text */
+}
+
+/* PEBL Brand Typography Classes */
+.font-futura {
+  font-family: 'Futura', 'Trebuchet MS', 'Avenir Next', 'Helvetica Neue', Arial, sans-serif;
+}
+
+.font-roboto {
+  font-family: var(--font-roboto), 'Roboto', Arial, sans-serif;
+}
+
+/* PEBL Typography Hierarchy */
+.pebl-heading {
+  font-family: 'Futura', 'Trebuchet MS', 'Avenir Next', 'Helvetica Neue', Arial, sans-serif;
+  font-weight: bold;
+}
+
+.pebl-subheading {
+  font-family: 'Futura', 'Trebuchet MS', 'Avenir Next', 'Helvetica Neue', Arial, sans-serif;
+  font-weight: bold;
+}
+
+.pebl-sub-subheading {
+  font-family: 'Futura', 'Trebuchet MS', 'Avenir Next', 'Helvetica Neue', Arial, sans-serif;
+  font-weight: 500;
+}
+
+.pebl-body-main {
+  font-family: var(--font-roboto), 'Roboto', Arial, sans-serif;
+  font-weight: 300;
+}
+
+.pebl-body-italic {
+  font-family: var(--font-roboto), 'Roboto', Arial, sans-serif;
+  font-style: italic;
 }
 
 @layer base {
@@ -19,16 +53,16 @@ body {
     --popover: 0 0% 100%; /* White */
     --popover-foreground: 240 10% 3.9%; /* Dark slate gray */
     
-    --primary: 231 48% 48%; /* Deep Blue #3F51B5 */
+    --primary: 178 48% 32%; /* PEBL Deep Teal #2B7A78 */
     --primary-foreground: 0 0% 98%; /* White */
     
-    --secondary: 0 0% 92%; /* Slightly darker gray for secondary elements */
-    --secondary-foreground: 240 10% 3.9%; /* Dark slate gray */
+    --secondary: 173 85% 87%; /* PEBL Pale Aqua #DEF2F1 */
+    --secondary-foreground: 195 66% 15%; /* PEBL Dark Navy #17252A */
     
-    --muted: 0 0% 90%; /* Even more muted gray */
-    --muted-foreground: 240 5% 45.1%; /* Muted text color */
+    --muted: 173 85% 87%; /* PEBL Pale Aqua for muted elements */
+    --muted-foreground: 195 66% 15%; /* PEBL Dark Navy for muted text */
     
-    --accent: 174 100% 29%; /* Teal #009688 */
+    --accent: 178 61% 44%; /* PEBL Bright Teal #3AAFA9 */
     --accent-foreground: 0 0% 98%; /* White */
     
     --destructive: 0 84.2% 60.2%; /* Default destructive red */
@@ -36,13 +70,13 @@ body {
     
     --border: 0 0% 89.8%; /* Light gray border */
     --input: 0 0% 89.8%; /* Light gray input background */
-    --ring: 231 48% 48%; /* Primary color for focus rings (Deep Blue) */
+    --ring: 178 48% 32%; /* PEBL Deep Teal for focus rings */
     
-    --chart-1: 231 48% 48%; /* Primary color for charts */
-    --chart-2: 174 100% 29%; /* Accent color for charts */
-    --chart-3: 210 40% 50%; /* A lighter blue */
-    --chart-4: 30 80% 55%;   /* An orange */
-    --chart-5: 120 40% 45%;  /* A green */
+    --chart-1: 178 48% 32%; /* PEBL Deep Teal #2B7A78 */
+    --chart-2: 178 61% 44%; /* PEBL Bright Teal #3AAFA9 */
+    --chart-3: 195 66% 15%; /* PEBL Dark Navy #17252A */
+    --chart-4: 173 85% 87%; /* PEBL Pale Aqua #DEF2F1 */
+    --chart-5: 142 76% 36%; /* Complementary sea green */
 
     --radius: 0.5rem;
 
@@ -67,16 +101,16 @@ body {
     --popover: 240 10% 10%; /* Dark popover background */
     --popover-foreground: 0 0% 96.1%; /* Light Gray text on popover */
 
-    --primary: 231 48% 58%; /* Lighter Deep Blue for dark mode */
+    --primary: 178 61% 44%; /* PEBL Bright Teal for dark mode #3AAFA9 */
     --primary-foreground: 0 0% 98%; /* White text on primary */
 
-    --secondary: 240 10% 20%; /* Dark secondary background */
-    --secondary-foreground: 0 0% 96.1%; /* Light Gray text on secondary */
+    --secondary: 195 66% 15%; /* PEBL Dark Navy #17252A */
+    --secondary-foreground: 173 85% 87%; /* PEBL Pale Aqua text */
 
-    --muted: 240 10% 25%; /* Dark muted background */
-    --muted-foreground: 0 0% 63.9%; /* Muted text color for dark mode */
+    --muted: 195 66% 15%; /* PEBL Dark Navy for muted background */
+    --muted-foreground: 173 85% 87%; /* PEBL Pale Aqua for muted text */
 
-    --accent: 174 100% 39%; /* Slightly lighter Teal for dark mode */
+    --accent: 178 48% 32%; /* PEBL Deep Teal for dark mode #2B7A78 */
     --accent-foreground: 0 0% 98%; /* White text on accent */
 
     --destructive: 0 62.8% 40.6%; /* Dark mode destructive red */
@@ -84,13 +118,13 @@ body {
 
     --border: 240 10% 25%; /* Dark border */
     --input: 240 10% 25%; /* Dark input background */
-    --ring: 231 48% 58%; /* Lighter primary for ring in dark mode */
+    --ring: 178 61% 44%; /* PEBL Bright Teal for ring in dark mode */
 
-    --chart-1: 231 48% 58%;
-    --chart-2: 174 100% 39%;
-    --chart-3: 210 50% 60%;
-    --chart-4: 30 90% 65%;
-    --chart-5: 120 50% 55%;
+    --chart-1: 178 61% 44%; /* PEBL Bright Teal #3AAFA9 */
+    --chart-2: 178 48% 32%; /* PEBL Deep Teal #2B7A78 */
+    --chart-3: 173 85% 87%; /* PEBL Pale Aqua #DEF2F1 */
+    --chart-4: 195 66% 15%; /* PEBL Dark Navy #17252A */
+    --chart-5: 142 76% 46%; /* Complementary sea green */
 
     /* Dark Sidebar variables - derived */
     --sidebar-background: 240 8% 12%;

@@ -436,29 +436,32 @@ export default function DataExplorerPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
-      <main className="flex-grow container mx-auto p-2 md:p-3 space-y-3">
+      <main className="flex-grow container mx-auto p-2 sm:p-3 space-y-3">
         
         <Card className="shadow-sm">
           <CardHeader className="pb-2 pt-3">
-            <CardTitle className="text-base flex items-center gap-1.5">
-               Open Data
+            <CardTitle className="text-base flex items-center gap-1.5 font-futura">
+               Marine & Meteorological Data
             </CardTitle>
+            <p className="text-xs text-muted-foreground pebl-body-main">
+              Advanced ocean data visualization for ecological monitoring
+            </p>
           </CardHeader>
-          <CardContent className="p-3 grid grid-cols-1 md:grid-cols-12 gap-3">
+          <CardContent className="p-3 grid grid-cols-1 lg:grid-cols-12 gap-3">
             {!isApiPlotsExpanded && (
-              <div className="md:col-span-4 space-y-3">
+              <div className="lg:col-span-4 space-y-3">
                   <Card>
-                      <CardHeader className="pb-2 pt-3"><CardTitle className="text-sm flex items-center gap-1.5"><MapPin className="h-4 w-4 text-primary"/>Location & Date</CardTitle></CardHeader>
+                      <CardHeader className="pb-2 pt-3"><CardTitle className="text-sm flex items-center gap-1.5 font-futura font-semibold"><MapPin className="h-4 w-4 text-primary"/>Marine Location & Data Range</CardTitle></CardHeader>
                       <CardContent className="space-y-2 p-3">
                           <div>
                               <UiLabel htmlFor={`om-location-select-${instanceId}`} className="text-xs font-medium mb-0.5 block">Select Location</UiLabel>
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                                 <Select
                                     value={selectedLocationKey}
                                     onValueChange={handleLocationChange}
                                     disabled={isLoadingApiData}
                                 >
-                                    <SelectTrigger id={`om-location-select-${instanceId}`} className="h-9 text-xs">
+                                    <SelectTrigger id={`om-location-select-${instanceId}`} className="h-9 text-xs flex-1">
                                         <SelectValue placeholder="Select a location" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -474,30 +477,32 @@ export default function DataExplorerPage() {
                                         )}
                                     </SelectContent>
                                 </Select>
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button variant="outline" size="icon" className="h-9 w-9 flex-shrink-0" onClick={setHomeLocation} disabled={!mapSelectedCoords} aria-label="Set as Home Location">
-                                          <Home className="h-4 w-4"/>
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent><p>Set as Home Location</p></TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                                <Button 
-                                  variant="outline" 
-                                  onClick={() => setIsMapExpanded(!isMapExpanded)}
-                                  className="h-9 text-xs flex-shrink-0"
-                                >
-                                  Custom
-                                </Button>
+                                <div className="flex gap-2 flex-shrink-0">
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={setHomeLocation} disabled={!mapSelectedCoords} aria-label="Set as Home Location">
+                                            <Home className="h-4 w-4"/>
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent><p>Set as Home Location</p></TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                  <Button 
+                                    variant="outline" 
+                                    onClick={() => setIsMapExpanded(!isMapExpanded)}
+                                    className="h-9 text-xs whitespace-nowrap"
+                                  >
+                                    Custom
+                                  </Button>
+                                </div>
                               </div>
                           </div>
 
                           {isMapExpanded && (
                             <div className="space-y-2 pt-2">
                                 <UiLabel htmlFor={`om-map-container-${instanceId}`} className="text-xs font-medium mb-0.5 block pt-1">Click Map to Select Location</UiLabel>
-                                <div id={`om-map-container-${instanceId}`} className="h-[180px] w-full rounded-md overflow-hidden border">
+                                <div id={`om-map-container-${instanceId}`} className="h-[240px] sm:h-[180px] w-full rounded-md overflow-hidden border">
                                 <OpenLayersMapWithNoSSR
                                     initialCenter={mapSelectedCoords ? [mapSelectedCoords.lon, mapSelectedCoords.lat] : [DEFAULT_OM_LONGITUDE, DEFAULT_OM_LATITUDE]}
                                     initialZoom={DEFAULT_OM_MAP_ZOOM}
@@ -533,7 +538,7 @@ export default function DataExplorerPage() {
                   </Card>
               </div>
             )}
-            <div className={cn("transition-all duration-300", isApiPlotsExpanded ? "md:col-span-12" : "md:col-span-8")}>
+            <div className={cn("transition-all duration-300", isApiPlotsExpanded ? "lg:col-span-12" : "lg:col-span-8")}>
                  <Card className="shadow-sm h-full">
                     <CardHeader className="p-2 pt-3 flex flex-row items-center justify-between">
                       <CardTitle className="text-sm">{apiDataLocationContext || "Weather & Marine API Data Plots"}</CardTitle>
@@ -574,8 +579,8 @@ export default function DataExplorerPage() {
 
         <Card className="shadow-sm">
            <CardHeader className="pb-2 pt-3 flex flex-row items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-1.5">
-               Device Data
+            <CardTitle className="text-base flex items-center gap-1.5 font-futura font-semibold">
+               Marine Device Data
             </CardTitle>
             <Button onClick={addPlot} size="sm" className="h-8 text-xs">
               <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot
@@ -604,11 +609,23 @@ export default function DataExplorerPage() {
         </Card>
       </main>
 
-      <footer className="py-2 md:px-3 md:py-0 border-t">
-        <div className="container flex flex-col items-center justify-center gap-1 md:h-10 md:flex-row">
-          <p className="text-balance text-center text-[0.7rem] leading-loose text-muted-foreground">
-            PEBL data app - Data Explorer. API data from Open-Meteo.
+      <footer className="py-3 sm:px-3 sm:py-2 border-t bg-secondary/50">
+        <div className="container flex flex-col items-center justify-center gap-2 sm:h-14 sm:flex-row sm:justify-between">
+          <div className="flex flex-col items-center sm:items-start gap-1">
+            <div className="flex items-center gap-2">
+              <div className="text-xs font-futura font-bold text-primary">PEBL</div>
+              <div className="text-xs text-muted-foreground pebl-body-main">Ocean Data Platform</div>
+            </div>
+            <div className="text-[0.6rem] text-primary font-futura font-medium">
+              Protecting Ecology Beyond Land
+            </div>
+          </div>
+          <p className="text-balance text-center text-[0.65rem] leading-relaxed text-muted-foreground pebl-body-main">
+            Marine & meteorological data visualization • Sustainable ocean monitoring solutions
           </p>
+          <div className="text-xs text-muted-foreground pebl-body-main">
+            © 2024 PEBL
+          </div>
         </div>
       </footer>
     </div>

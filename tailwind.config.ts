@@ -12,6 +12,14 @@ export default {
   		colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
+  			// Authentic PEBL Brand Colors from Guidelines
+  			'pebl': {
+  				'deep-teal': '#2B7A78',     // Primary brand colour
+  				'dark-navy': '#17252A',     // Dark navy/black (supportive, strong contrast)
+  				'pale-aqua': '#DEF2F1',     // Light background tone
+  				'bright-teal': '#3AAFA9',   // Highlight/accent
+  				'white': '#FFFFFF',         // Neutral background, clarity, and balance
+  			},
   			card: {
   				DEFAULT: 'hsl(var(--card))',
   				foreground: 'hsl(var(--card-foreground))'
@@ -60,6 +68,10 @@ export default {
   				border: 'hsl(var(--sidebar-border))',
   				ring: 'hsl(var(--sidebar-ring))'
   			}
+  		},
+  		fontFamily: {
+  			'futura': ['Futura', 'Trebuchet MS', 'Avenir Next', 'Helvetica Neue', 'Arial', 'sans-serif'],
+  			'roboto': ['var(--font-roboto)', 'Roboto', 'Arial', 'sans-serif'],
   		},
   		borderRadius: {
   			lg: 'var(--radius)',

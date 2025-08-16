@@ -248,7 +248,9 @@ const LeafletMap = ({
             const layer = pinLayerRef.current;
             layer.clearLayers();
 
-            pins.forEach(pin => {
+            pins.filter(pin => typeof pin.lat === 'number' && typeof pin.lng === 'number' && 
+                               !isNaN(pin.lat) && !isNaN(pin.lng) &&
+                               isFinite(pin.lat) && isFinite(pin.lng)).forEach(pin => {
                 const color = '#3b82f6'; // Default blue color
                 const markerIcon = createCustomIcon(color);
                 const marker = L.marker([pin.lat, pin.lng], { icon: markerIcon }).addTo(layer);
@@ -318,7 +320,11 @@ const LeafletMap = ({
             layer.clearLayers();
 
             lines.forEach(line => {
-                const lineCoords = line.path.map(p => [p.lat, p.lng] as [number, number]);
+                const lineCoords = line.path
+                    .filter(p => typeof p.lat === 'number' && typeof p.lng === 'number' && 
+                                !isNaN(p.lat) && !isNaN(p.lng) &&
+                                isFinite(p.lat) && isFinite(p.lng))
+                    .map(p => [p.lat, p.lng] as [number, number]);
                 if (lineCoords.length >= 2) {
                     const polyline = L.polyline(lineCoords, {
                         color: '#10b981',
@@ -363,14 +369,18 @@ const LeafletMap = ({
                         }
                         
                         // Create a permanent tooltip at the true geometric center
-                        L.tooltip({
-                            permanent: true,
-                            direction: 'center',
-                            className: 'line-label-tooltip'
-                        })
-                        .setContent(line.label)
-                        .setLatLng([centerPoint[0], centerPoint[1]])
-                        .addTo(layer);
+                        if (centerPoint && centerPoint.length === 2 && 
+                            !isNaN(centerPoint[0]) && !isNaN(centerPoint[1]) &&
+                            isFinite(centerPoint[0]) && isFinite(centerPoint[1])) {
+                            L.tooltip({
+                                permanent: true,
+                                direction: 'center',
+                                className: 'line-label-tooltip'
+                            })
+                            .setContent(line.label)
+                            .setLatLng([centerPoint[0], centerPoint[1]])
+                            .addTo(layer);
+                        }
                     }
                 }
             });
@@ -384,7 +394,11 @@ const LeafletMap = ({
             layer.clearLayers();
 
             areas.forEach(area => {
-                const areaCoords = area.path.map(p => [p.lat, p.lng] as [number, number]);
+                const areaCoords = area.path
+                    .filter(p => typeof p.lat === 'number' && typeof p.lng === 'number' && 
+                                !isNaN(p.lat) && !isNaN(p.lng) &&
+                                isFinite(p.lat) && isFinite(p.lng))
+                    .map(p => [p.lat, p.lng] as [number, number]);
                 if (areaCoords.length >= 3) {
                     const polygon = L.polygon(areaCoords, {
                         color: '#8b5cf6',

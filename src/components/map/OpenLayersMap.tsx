@@ -65,11 +65,32 @@ export function OpenLayersMap({
         view: new View({
           center: fromLonLat(initialCenter),
           zoom: initialZoom,
+          // Mobile-friendly constraints
+          maxZoom: 18,
+          minZoom: 3,
         }),
+        // Improve mobile interactions
+        controls: [],
+        interactions: undefined, // Use default interactions but we'll modify below
       });
 
+      // Enhanced click/touch handling for mobile
+      let touchStartTime = 0;
+      let isDragging = false;
+      
+      olMap.on('pointerdown' as any, () => {
+        touchStartTime = Date.now();
+        isDragging = false;
+      });
+      
+      olMap.on('pointerdrag' as any, () => {
+        isDragging = true;
+      });
+      
       olMap.on('click', (evt) => {
-        if (onLocationSelect) {
+        const touchDuration = Date.now() - touchStartTime;
+        // Only trigger location select if it's a quick tap (not a drag) and under 300ms
+        if (onLocationSelect && !isDragging && touchDuration < 300) {
           const [lon, lat] = toLonLat(evt.coordinate);
           onLocationSelect({ lat, lon });
         }
@@ -106,7 +127,19 @@ export function OpenLayersMap({
     }
   }, [selectedCoords]);
 
-  return <div ref={mapElementRef} style={{ width: '100%', height: '100%', cursor: 'pointer' }} />;
+  return (
+    <div 
+      ref={mapElementRef} 
+      style={{ 
+        width: '100%', 
+        height: '100%', 
+        cursor: 'pointer',
+        touchAction: 'none', // Prevent default touch behaviors that might interfere
+        userSelect: 'none',   // Prevent text selection on touch
+      }} 
+      className="relative"
+    />
+  );
 }
 
 export default OpenLayersMap;

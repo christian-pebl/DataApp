@@ -12,6 +12,8 @@ import { Loader2, CheckCircle2, XCircle, Info, ChevronUp, ChevronDown, Thermomet
 import type { LucideIcon } from "lucide-react";
 import { format, parseISO, isValid, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { LoadingSkeleton, EmptyState } from '@/components/common/LoadingStates';
 
 
 const formatDateTickBrush = (timeValue: string | number): string => {
@@ -160,10 +162,10 @@ const PlotRow = React.memo(({
       </div>
 
       {isPlotVisible && (
-        <div className="flex-grow h-[56px] mt-1">
+        <div className="flex-grow h-[64px] sm:h-[56px] mt-1">
           {(availabilityStatus === 'available' && hasValidDataForSeriesInView) ? (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={transformedDisplayData} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
+              <LineChart data={transformedDisplayData} margin={{ top: 5, right: 12, left: 5, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
                 {dailyReferenceLines.map(time => (
                   <ReferenceLine key={time} yAxisId={config.dataKey} x={time} stroke="hsl(var(--border))" strokeDasharray="3 3" />
@@ -173,13 +175,20 @@ const PlotRow = React.memo(({
                   domain={isDirectional ? [0, 360] : ['auto', 'auto']}
                   ticks={isDirectional ? [0, 90, 180, 270, 360] : undefined}
                   tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
-                  tick={{ fontSize: '0.6rem', fill: 'hsl(var(--muted-foreground))' }}
+                  tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }}
                   stroke="hsl(var(--border))"
-                  width={35} 
+                  width={38} 
                 />
                 <XAxis dataKey="time" hide />
                 <RechartsTooltip
-                  contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', fontSize: '0.6rem' }}
+                  contentStyle={{ 
+                    backgroundColor: 'hsl(var(--background))', 
+                    border: '1px solid hsl(var(--border))', 
+                    fontSize: '0.7rem',
+                    padding: '8px',
+                    borderRadius: '6px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                  }}
                   itemStyle={{ color: 'hsl(var(--foreground))' }}
                   formatter={(value: number | null | undefined, name: string, props) => { 
                     const formattedValue = (value !== null && value !== undefined && typeof value === 'number' && !isNaN(value)) 
@@ -244,7 +253,7 @@ interface MarinePlotsGridProps {
   handlePlotVisibilityChange: (key: CombinedParameterKey, checked: boolean) => void;
 }
 
-export function MarinePlotsGrid({
+function MarinePlotsGridInner({
   marineData,
   isLoading,
   error,
@@ -390,21 +399,16 @@ export function MarinePlotsGrid({
   }, []);
   
   if (isLoading && (!marineData || marineData.length === 0)) { 
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground p-4">
-        <Loader2 className="animate-spin h-8 w-8 text-primary mr-2" />
-        Fetching data...
-      </div>
-    );
+    return <LoadingSkeleton type="chart" className="p-4" />;
   }
 
   if (error && (!marineData || marineData.length === 0)) { 
     return (
-      <div className="flex flex-col items-center justify-center h-full text-destructive p-4 text-center">
-        <AlertCircle className="h-10 w-10 mb-2" />
-        <p className="font-semibold">Error Fetching Data</p>
-        <p className="text-sm">{error}</p>
-      </div>
+      <EmptyState
+        title="Error Fetching Data"
+        description={error}
+        icon={<AlertCircle className="h-6 w-6 text-destructive" />}
+      />
     );
   }
   
@@ -419,11 +423,11 @@ export function MarinePlotsGrid({
   
   if ((!marineData || marineData.length === 0) && !isLoading && !error) {
      return (
-        <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
-          <Info className="h-10 w-10 mb-2" />
-          <p>No data available for the selected criteria.</p>
-          <p className="text-sm">Try adjusting the location or date range.</p>
-        </div>
+        <EmptyState
+          title="No Data Available"
+          description="No data available for the selected criteria. Try adjusting the location or date range."
+          icon={<Info className="h-6 w-6 text-muted-foreground" />}
+        />
       );
   }
   
@@ -447,9 +451,9 @@ export function MarinePlotsGrid({
       </div>
 
       {marineData && marineData.length > 0 && (
-        <div className="h-[48px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
+        <div className="h-[52px] sm:h-[48px] w-full border rounded-md p-1 shadow-sm bg-card mt-2 flex-shrink-0">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={marineData} margin={{ top: 5, right: 25, left: 25, bottom: 0 }}>
+            <LineChart data={marineData} margin={{ top: 5, right: 15, left: 15, bottom: 0 }}>
               <XAxis
                 dataKey="time"
                 tickFormatter={formatDateTickBrush}
@@ -460,21 +464,29 @@ export function MarinePlotsGrid({
               />
               <Brush
                 dataKey="time"
-                height={20}
+                height={22}
                 stroke="hsl(var(--primary))"
                 fill="transparent"
                 tickFormatter={() => ""} // Hide labels on brush itself
-                travellerWidth={8}
+                travellerWidth={12} // Larger for easier touch interaction
                 startIndex={brushStartIndex}
                 endIndex={brushEndIndex}
                 onChange={handleBrushChangeLocal}
-                y={20} 
+                y={18} 
               />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
     </div>
+  );
+}
+
+export function MarinePlotsGrid(props: MarinePlotsGridProps) {
+  return (
+    <ErrorBoundary>
+      <MarinePlotsGridInner {...props} />
+    </ErrorBoundary>
   );
 }
 
