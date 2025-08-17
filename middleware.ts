@@ -2,11 +2,6 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 
 export async function middleware(request: NextRequest) {
-  // Skip authentication for local development
-  if (process.env.NODE_ENV === 'development') {
-    return NextResponse.next()
-  }
-  
   return await updateSession(request)
 }
 

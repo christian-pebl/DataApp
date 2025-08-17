@@ -40,24 +40,10 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  let user = null;
-  
-  // In development, create a mock user to bypass auth
-  if (process.env.NODE_ENV === 'development') {
-    user = {
-      id: 'dev-user',
-      email: 'developer@localhost',
-      user_metadata: {
-        full_name: 'Development User'
-      }
-    };
-  } else {
-    const supabase = await createClient();
-    const {
-      data: { user: authUser },
-    } = await supabase.auth.getUser();
-    user = authUser;
-  }
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   return (
     <html lang="en">

@@ -14,9 +14,10 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { SunMoon, Settings, LogOut } from 'lucide-react'
+import { SunMoon, Settings, LogOut, Ruler } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import { useSettings } from '@/hooks/use-settings'
 
 interface UserMenuProps {
   user: User
@@ -26,6 +27,7 @@ export default function UserMenu({ user }: UserMenuProps) {
   const supabase = createClient()
   const router = useRouter()
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
+  const { settings, setSettings } = useSettings()
 
   // Theme management
   useEffect(() => {
@@ -46,14 +48,19 @@ export default function UserMenu({ user }: UserMenuProps) {
     setTheme(prevTheme => (prevTheme === "light" ? "dark" : "light"))
   }
 
-  const handleSignOut = async () => {
-    if (process.env.NODE_ENV === 'development') {
-      // In development, just refresh the page
-      router.refresh()
-    } else {
-      await supabase.auth.signOut()
-      router.refresh()
+  const toggleUnits = () => {
+    if (settings) {
+      setSettings({
+        ...settings,
+        units: settings.units === 'metric' ? 'imperial' : 'metric'
+      })
     }
+  }
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    router.push('/auth')
+    router.refresh()
   }
 
   return (
@@ -91,6 +98,20 @@ export default function UserMenu({ user }: UserMenuProps) {
             id="theme-toggle"
             checked={theme === 'dark'}
             onCheckedChange={toggleTheme}
+          />
+        </div>
+        
+        {/* Units Toggle */}
+        <div className="flex items-center justify-between px-2 py-1.5">
+          <div className="flex items-center space-x-2">
+            <Ruler className="h-4 w-4" />
+            <Label htmlFor="units-toggle" className="text-sm">Imperial Units</Label>
+          </div>
+          <Switch
+            id="units-toggle"
+            checked={settings?.units === 'imperial'}
+            onCheckedChange={toggleUnits}
+            disabled={!settings}
           />
         </div>
         
