@@ -78,6 +78,10 @@ export function PEBLLogo({
         height={dimensions.height}
         priority={priority}
         className="object-contain"
+        style={{
+          filter: 'brightness(0) saturate(100%) invert(60%) sepia(8%) saturate(348%) hue-rotate(190deg) brightness(95%) contrast(87%)',
+          // This filter converts the logo to a light grey color (#6B7280 - tailwind gray-500)
+        }}
       />
     </div>
   )

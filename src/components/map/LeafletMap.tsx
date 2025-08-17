@@ -57,6 +57,7 @@ interface LeafletMapProps {
     itemToEdit: Pin | Line | Area | null;
     onEditItem: (item: Pin | Line | Area | null) => void;
     activeProjectId: string | null;
+    projectVisibility: Record<string, boolean>;
     editingGeometry: Line | Area | null;
     onEditGeometry: (item: Line | Area | null) => void;
     onUpdateGeometry: (itemId: string, newPath: {lat: number, lng: number}[]) => void;
@@ -134,7 +135,7 @@ const LeafletMap = ({
     pendingLine, onLineSave, onLineCancel,
     pendingArea, onAreaSave, onAreaCancel,
     onUpdatePin, onDeletePin, onUpdateLine, onDeleteLine, onUpdateArea, onDeleteArea, onToggleLabel, onToggleFill,
-    itemToEdit, onEditItem, activeProjectId,
+    itemToEdit, onEditItem, activeProjectId, projectVisibility,
     editingGeometry, onEditGeometry, onUpdateGeometry
 }: LeafletMapProps) => {
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -259,27 +260,41 @@ const LeafletMap = ({
                 marker.on('click', (e) => {
                     e.originalEvent.stopPropagation(); // Prevent map click
                     
-                    // Show deletion confirmation popup
-                    const deleteContent = `
+                    // Show edit/delete options popup
+                    const actionContent = `
                         <div style="padding: 8px; text-align: center;">
-                            <p style="margin: 0 0 8px 0; font-weight: bold;">Delete Pin?</p>
+                            <p style="margin: 0 0 8px 0; font-weight: bold;">Pin Options</p>
                             <p style="margin: 0 0 12px 0; font-size: 12px; color: #666;">${pin.label}</p>
-                            <div style="display: flex; gap: 8px; justify-content: center;">
+                            <div style="display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;">
+                                <button id="edit-pin-${pin.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #3b82f6; color: white; border: none; cursor: pointer;">Edit</button>
+                                <button id="toggle-label-pin-${pin.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #10b981; color: white; border: none; cursor: pointer;">${pin.labelVisible !== false ? 'Hide Label' : 'Show Label'}</button>
                                 <button id="delete-pin-${pin.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #ef4444; color: white; border: none; cursor: pointer;">Delete</button>
-                                <button id="cancel-delete-${pin.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #f3f4f6; border: 1px solid #d1d5db; cursor: pointer;">Cancel</button>
+                                <button id="cancel-pin-${pin.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #f3f4f6; border: 1px solid #d1d5db; cursor: pointer;">Cancel</button>
                             </div>
                         </div>
                     `;
                     
                     const popup = L.popup({ closeButton: false, closeOnClick: false })
                         .setLatLng([pin.lat, pin.lng])
-                        .setContent(deleteContent)
+                        .setContent(actionContent)
                         .openOn(mapRef.current!);
                     
                     // Add event listeners after popup is added to DOM
                     setTimeout(() => {
+                        const editBtn = document.getElementById(`edit-pin-${pin.id}`);
+                        const toggleLabelBtn = document.getElementById(`toggle-label-pin-${pin.id}`);
                         const deleteBtn = document.getElementById(`delete-pin-${pin.id}`);
-                        const cancelBtn = document.getElementById(`cancel-delete-${pin.id}`);
+                        const cancelBtn = document.getElementById(`cancel-pin-${pin.id}`);
+                        
+                        editBtn?.addEventListener('click', () => {
+                            onEditItem(pin);
+                            mapRef.current?.closePopup();
+                        });
+                        
+                        toggleLabelBtn?.addEventListener('click', () => {
+                            onToggleLabel(pin.id, 'pin');
+                            mapRef.current?.closePopup();
+                        });
                         
                         deleteBtn?.addEventListener('click', () => {
                             onDeletePin(pin.id);
@@ -331,6 +346,62 @@ const LeafletMap = ({
                         weight: 3,
                         opacity: 0.8
                     }).addTo(layer);
+                    
+                    // Add click handler for line edit/delete
+                    polyline.on('click', (e) => {
+                        e.originalEvent.stopPropagation(); // Prevent map click
+                        
+                        // Show edit/delete options popup
+                        const actionContent = `
+                            <div style="padding: 8px; text-align: center;">
+                                <p style="margin: 0 0 8px 0; font-weight: bold;">Line Options</p>
+                                <p style="margin: 0 0 12px 0; font-size: 12px; color: #666;">${line.label}</p>
+                                <div style="display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;">
+                                    <button id="edit-line-${line.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #3b82f6; color: white; border: none; cursor: pointer;">Edit</button>
+                                    <button id="toggle-label-line-${line.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #10b981; color: white; border: none; cursor: pointer;">${line.labelVisible !== false ? 'Hide Label' : 'Show Label'}</button>
+                                    <button id="delete-line-${line.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #ef4444; color: white; border: none; cursor: pointer;">Delete</button>
+                                    <button id="cancel-line-${line.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #f3f4f6; border: 1px solid #d1d5db; cursor: pointer;">Cancel</button>
+                                </div>
+                            </div>
+                        `;
+                        
+                        const midPoint = L.latLng(
+                            lineCoords.reduce((sum, coord) => sum + coord[0], 0) / lineCoords.length,
+                            lineCoords.reduce((sum, coord) => sum + coord[1], 0) / lineCoords.length
+                        );
+                        
+                        const popup = L.popup({ closeButton: false, closeOnClick: false })
+                            .setLatLng(midPoint)
+                            .setContent(actionContent)
+                            .openOn(mapRef.current!);
+                        
+                        // Add event listeners after popup is added to DOM
+                        setTimeout(() => {
+                            const editBtn = document.getElementById(`edit-line-${line.id}`);
+                            const toggleLabelBtn = document.getElementById(`toggle-label-line-${line.id}`);
+                            const deleteBtn = document.getElementById(`delete-line-${line.id}`);
+                            const cancelBtn = document.getElementById(`cancel-line-${line.id}`);
+                            
+                            editBtn?.addEventListener('click', () => {
+                                onEditItem(line);
+                                mapRef.current?.closePopup();
+                            });
+                            
+                            toggleLabelBtn?.addEventListener('click', () => {
+                                onToggleLabel(line.id, 'line');
+                                mapRef.current?.closePopup();
+                            });
+                            
+                            deleteBtn?.addEventListener('click', () => {
+                                onDeleteLine(line.id);
+                                mapRef.current?.closePopup();
+                            });
+                            
+                            cancelBtn?.addEventListener('click', () => {
+                                mapRef.current?.closePopup();
+                            });
+                        }, 0);
+                    });
                     
                     if (line.labelVisible !== false && line.label) {
                         // Calculate the true geometric center of the line
@@ -406,6 +477,62 @@ const LeafletMap = ({
                         fillColor: '#8b5cf6',
                         fillOpacity: area.fillVisible !== false ? 0.2 : 0
                     }).addTo(layer);
+                    
+                    // Add click handler for area edit/delete
+                    polygon.on('click', (e) => {
+                        e.originalEvent.stopPropagation(); // Prevent map click
+                        
+                        // Show edit/delete options popup
+                        const actionContent = `
+                            <div style="padding: 8px; text-align: center;">
+                                <p style="margin: 0 0 8px 0; font-weight: bold;">Area Options</p>
+                                <p style="margin: 0 0 12px 0; font-size: 12px; color: #666;">${area.label}</p>
+                                <div style="display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;">
+                                    <button id="edit-area-${area.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #3b82f6; color: white; border: none; cursor: pointer;">Edit</button>
+                                    <button id="toggle-label-area-${area.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #10b981; color: white; border: none; cursor: pointer;">${area.labelVisible !== false ? 'Hide Label' : 'Show Label'}</button>
+                                    <button id="delete-area-${area.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #ef4444; color: white; border: none; cursor: pointer;">Delete</button>
+                                    <button id="cancel-area-${area.id}" style="padding: 4px 8px; font-size: 12px; border-radius: 3px; background: #f3f4f6; border: 1px solid #d1d5db; cursor: pointer;">Cancel</button>
+                                </div>
+                            </div>
+                        `;
+                        
+                        const centerPoint = L.latLng(
+                            areaCoords.reduce((sum, coord) => sum + coord[0], 0) / areaCoords.length,
+                            areaCoords.reduce((sum, coord) => sum + coord[1], 0) / areaCoords.length
+                        );
+                        
+                        const popup = L.popup({ closeButton: false, closeOnClick: false })
+                            .setLatLng(centerPoint)
+                            .setContent(actionContent)
+                            .openOn(mapRef.current!);
+                        
+                        // Add event listeners after popup is added to DOM
+                        setTimeout(() => {
+                            const editBtn = document.getElementById(`edit-area-${area.id}`);
+                            const toggleLabelBtn = document.getElementById(`toggle-label-area-${area.id}`);
+                            const deleteBtn = document.getElementById(`delete-area-${area.id}`);
+                            const cancelBtn = document.getElementById(`cancel-area-${area.id}`);
+                            
+                            editBtn?.addEventListener('click', () => {
+                                onEditItem(area);
+                                mapRef.current?.closePopup();
+                            });
+                            
+                            toggleLabelBtn?.addEventListener('click', () => {
+                                onToggleLabel(area.id, 'area');
+                                mapRef.current?.closePopup();
+                            });
+                            
+                            deleteBtn?.addEventListener('click', () => {
+                                onDeleteArea(area.id);
+                                mapRef.current?.closePopup();
+                            });
+                            
+                            cancelBtn?.addEventListener('click', () => {
+                                mapRef.current?.closePopup();
+                            });
+                        }, 0);
+                    });
                     
                     if (area.labelVisible !== false && area.label) {
                         polygon.bindTooltip(area.label, { 

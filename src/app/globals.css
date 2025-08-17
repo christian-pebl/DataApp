@@ -72,11 +72,15 @@ body {
     --input: 0 0% 89.8%; /* Light gray input background */
     --ring: 178 48% 32%; /* PEBL Deep Teal for focus rings */
     
-    --chart-1: 178 48% 32%; /* PEBL Deep Teal #2B7A78 */
-    --chart-2: 178 61% 44%; /* PEBL Bright Teal #3AAFA9 */
-    --chart-3: 195 66% 15%; /* PEBL Dark Navy #17252A */
-    --chart-4: 173 85% 87%; /* PEBL Pale Aqua #DEF2F1 */
-    --chart-5: 142 76% 36%; /* Complementary sea green */
+    --chart-1: 220 70% 50%; /* Vibrant Blue #3B82F6 */
+    --chart-2: 16 85% 55%; /* Vibrant Orange #FF6B35 */
+    --chart-3: 142 69% 45%; /* Emerald Green #10B981 */
+    --chart-4: 280 70% 55%; /* Vibrant Purple #A855F7 */
+    --chart-5: 345 75% 55%; /* Rose Pink #F43F5E */
+    --chart-6: 25 95% 53%; /* Amber #F59E0B */
+    --chart-7: 195 100% 50%; /* Cyan #06B6D4 */
+    --chart-8: 120 60% 40%; /* Forest Green #22C55E */
+    --chart-9: 0 84% 60%; /* Red #EF4444 */
 
     --radius: 0.5rem;
 
@@ -120,11 +124,15 @@ body {
     --input: 240 10% 25%; /* Dark input background */
     --ring: 178 61% 44%; /* PEBL Bright Teal for ring in dark mode */
 
-    --chart-1: 178 61% 44%; /* PEBL Bright Teal #3AAFA9 */
-    --chart-2: 178 48% 32%; /* PEBL Deep Teal #2B7A78 */
-    --chart-3: 173 85% 87%; /* PEBL Pale Aqua #DEF2F1 */
-    --chart-4: 195 66% 15%; /* PEBL Dark Navy #17252A */
-    --chart-5: 142 76% 46%; /* Complementary sea green */
+    --chart-1: 220 70% 60%; /* Lighter Vibrant Blue #60A5FA */
+    --chart-2: 16 85% 65%; /* Lighter Orange #FF8A65 */
+    --chart-3: 142 69% 55%; /* Lighter Emerald #34D399 */
+    --chart-4: 280 70% 65%; /* Lighter Purple #C084FC */
+    --chart-5: 345 75% 65%; /* Lighter Rose #FB7185 */
+    --chart-6: 25 95% 63%; /* Lighter Amber #FCD34D */
+    --chart-7: 195 100% 60%; /* Lighter Cyan #22D3EE */
+    --chart-8: 120 60% 50%; /* Lighter Forest Green #4ADE80 */
+    --chart-9: 0 84% 70%; /* Lighter Red #F87171 */
 
     /* Dark Sidebar variables - derived */
     --sidebar-background: 240 8% 12%;

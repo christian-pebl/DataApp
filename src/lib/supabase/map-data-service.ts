@@ -29,15 +29,15 @@ export class MapDataService {
   }
 
   async createProject(project: Omit<Project, 'id' | 'createdAt'>): Promise<Project> {
-    const { data: user } = await this.supabase.auth.getUser()
-    if (!user.user) throw new Error('User not authenticated')
+    // Use admin user ID for shared data
+    const ADMIN_USER_ID = 'admin-shared-data'
 
     const { data, error } = await this.supabase
       .from('projects')
       .insert({
         name: project.name,
         description: project.description || null,
-        user_id: user.user.id
+        user_id: ADMIN_USER_ID
       })
       .select()
       .single()
@@ -104,8 +104,8 @@ export class MapDataService {
   }
 
   async createTag(tag: Omit<Tag, 'id'>): Promise<Tag> {
-    const { data: user } = await this.supabase.auth.getUser()
-    if (!user.user) throw new Error('User not authenticated')
+    // Use admin user ID for shared data
+    const ADMIN_USER_ID = 'admin-shared-data'
 
     const { data, error } = await this.supabase
       .from('tags')
@@ -113,7 +113,7 @@ export class MapDataService {
         name: tag.name,
         color: tag.color,
         project_id: tag.projectId,
-        user_id: user.user.id
+        user_id: ADMIN_USER_ID
       })
       .select()
       .single()
@@ -158,8 +158,8 @@ export class MapDataService {
   }
 
   async createPin(pin: Omit<Pin, 'id'>): Promise<Pin> {
-    const { data: user } = await this.supabase.auth.getUser()
-    if (!user.user) throw new Error('User not authenticated')
+    // Use admin user ID for shared data
+    const ADMIN_USER_ID = 'admin-shared-data'
 
     const { data, error } = await this.supabase
       .from('pins')
@@ -170,7 +170,7 @@ export class MapDataService {
         notes: pin.notes || null,
         label_visible: pin.labelVisible ?? true,
         project_id: pin.projectId || null,
-        user_id: user.user.id
+        user_id: ADMIN_USER_ID
       })
       .select()
       .single()
@@ -294,21 +294,17 @@ export class MapDataService {
   async createLine(line: Omit<Line, 'id'>): Promise<Line> {
     console.log('MapDataService: Creating line with data:', line)
     
-    const { data: user, error: userError } = await this.supabase.auth.getUser()
-    if (userError) {
-      console.error('MapDataService: Auth error:', userError)
-      throw new Error(`Authentication error: ${userError.message}`)
-    }
-    if (!user.user) throw new Error('User not authenticated')
+    // Use admin user ID for shared data
+    const ADMIN_USER_ID = 'admin-shared-data'
 
-    console.log('MapDataService: User authenticated, inserting line...')
+    console.log('MapDataService: Using admin user ID, inserting line...')
     const insertData = {
       path: line.path,
       label: line.label,
       notes: line.notes || null,
       label_visible: line.labelVisible ?? true,
       project_id: line.projectId || null,
-      user_id: user.user.id
+      user_id: ADMIN_USER_ID
     }
     console.log('MapDataService: Insert data:', insertData)
 
@@ -436,8 +432,8 @@ export class MapDataService {
   }
 
   async createArea(area: Omit<Area, 'id'>): Promise<Area> {
-    const { data: user } = await this.supabase.auth.getUser()
-    if (!user.user) throw new Error('User not authenticated')
+    // Use admin user ID for shared data
+    const ADMIN_USER_ID = 'admin-shared-data'
 
     const { data, error } = await this.supabase
       .from('areas')
@@ -448,7 +444,7 @@ export class MapDataService {
         label_visible: area.labelVisible ?? true,
         fill_visible: area.fillVisible ?? true,
         project_id: area.projectId || null,
-        user_id: user.user.id
+        user_id: ADMIN_USER_ID
       })
       .select()
       .single()

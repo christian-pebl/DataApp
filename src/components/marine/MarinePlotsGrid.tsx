@@ -5,6 +5,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, LabelList, ReferenceLine } from 'recharts';
 import type { CombinedDataPoint, CombinedParameterKey, ParameterConfigItem } from '@/app/om-marine-explorer/shared';
 import { PARAMETER_CONFIG, ALL_PARAMETERS, KNOTS_CONVERSION_FACTOR } from '@/app/om-marine-explorer/shared';
+import { useUnitConversion } from '@/hooks/use-unit-conversion';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -266,12 +267,12 @@ function MarinePlotsGridInner({
   
   const [plotConfigsInternal, setPlotConfigsInternal] = useState<PlotConfigInternal[]>([]);
   const [seriesDataAvailability, setSeriesDataAvailability] = useState<Record<CombinedParameterKey, SeriesAvailabilityStatus>>({});
+  
+  const { getParameterUnit, createParameterTransform } = useUnitConversion();
 
   useEffect(() => {
     const configs: PlotConfigInternal[] = ALL_PARAMETERS.map(key => {
       const baseConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
-      let dataTransformFunc: ((value: number | null | undefined) => number | null | undefined) | undefined = undefined;
-      let displayUnit = baseConfig.unit;
       let iconComp: LucideIcon = Info; // Default icon
       const isDirectional = key === 'waveDirection' || key === 'windDirection10m';
 
@@ -286,12 +287,20 @@ function MarinePlotsGridInner({
       else if (key === 'windDirection10m') iconComp = CompassIcon;
       else if (key === 'ghi') iconComp = SunIcon;
       
+      // Get unit and transform based on user settings
+      const displayUnit = getParameterUnit(key);
+      let dataTransformFunc = createParameterTransform(key);
+      
+      // Handle special case for wind speed conversion from m/s to knots first, then unit conversion
       if (key === 'windSpeed10m' && baseConfig.apiSource === 'weather') {
-        displayUnit = 'knots'; 
+        const unitTransform = dataTransformFunc;
         dataTransformFunc = (value) => {
-          if (typeof value !== 'number' || isNaN(value)) return undefined; 
-          return parseFloat((value * KNOTS_CONVERSION_FACTOR).toFixed(1));
-        }
+          if (typeof value !== 'number' || isNaN(value)) return undefined;
+          // First convert from m/s to knots (for marine compatibility)
+          const knots = parseFloat((value * KNOTS_CONVERSION_FACTOR).toFixed(1));
+          // Then apply unit conversion if needed
+          return unitTransform ? unitTransform(knots) : knots;
+        };
       }
       
       return {
@@ -305,7 +314,7 @@ function MarinePlotsGridInner({
       };
     });
     setPlotConfigsInternal(configs);
-  }, []);
+  }, [getParameterUnit, createParameterTransform]);
 
   useEffect(() => {
     if (isLoading) {

@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map } from 'lucide-react';
+import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target } from 'lucide-react';
 
 import { Separator } from '@/components/ui/separator';
 import {
@@ -26,10 +26,29 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useMapView } from '@/hooks/use-map-view';
 import { useSettings } from '@/hooks/use-settings';
 import { useMapData } from '@/hooks/use-map-data';
-import { LatLng, LeafletMouseEvent } from 'leaflet';
-import type { Map as LeafletMap } from 'leaflet';
+// Define types locally to avoid SSR issues with Leaflet
+interface LatLng {
+  lat: number;
+  lng: number;
+}
 
-const LeafletMap = dynamic(() => import('@/components/map/LeafletMap'), {
+interface LeafletMouseEvent {
+  latlng: LatLng;
+  originalEvent: MouseEvent;
+}
+
+interface LeafletMap {
+  setView: (center: [number, number], zoom: number, options?: any) => void;
+  getCenter: () => LatLng;
+  getZoom: () => number;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  invalidateSize: () => void;
+  closePopup: () => void;
+  eachLayer: (fn: (layer: any) => void) => void;
+}
+
+const LeafletMap = dynamic(() => import('@/components/map/LeafletMap').then(mod => ({ default: mod.default })), {
   ssr: false,
   loading: () => (
     <div className="w-full h-full bg-muted flex items-center justify-center min-h-[500px]">
@@ -44,6 +63,17 @@ const LeafletMap = dynamic(() => import('@/components/map/LeafletMap'), {
 import { Project, Tag, Pin, Line, Area } from '@/lib/supabase/types';
 
 type DrawingMode = 'none' | 'pin' | 'line' | 'area';
+
+// Predefined project locations from DataApp
+const PROJECT_LOCATIONS = {
+  milfordhaven: { name: "Milford Haven", lat: 51.7128, lon: -5.0341 },
+  ramseysound: { name: "Ramsey Sound", lat: 51.871645, lon: -5.313960 },
+  bidefordbay: { name: "Bideford Bay", lat: 51.052156, lon: -4.405961 },
+  blakeneyoverfalls: { name: "Blakeney Overfalls", lat: 53.028671, lon: 0.939562 },
+  pabayinnersound: { name: "Pabay Inner Sound", lat: 57.264780, lon: -5.853793 },
+  lochbay: { name: "Loch Bay", lat: 57.506498, lon: -6.620397 },
+  lochsunart: { name: "Loch Sunart", lat: 56.666195, lon: -5.917401 },
+};
 
 export default function MapDrawingPage() {
   const { view, setView } = useMapView('dev-user');
@@ -79,6 +109,22 @@ export default function MapDrawingPage() {
   // Map state
   const mapRef = useRef<LeafletMap | null>(null);
   const [currentLocation, setCurrentLocation] = useState<LatLng | null>(null);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [locationPermission, setLocationPermission] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown');
+  const [showProjectsDialog, setShowProjectsDialog] = useState(false);
+  
+  // Project management state
+  const [projectVisibility, setProjectVisibility] = useState<Record<string, boolean>>(() => {
+    // Initialize all projects as visible
+    return Object.keys(PROJECT_LOCATIONS).reduce((acc, key) => {
+      acc[key] = true;
+      return acc;
+    }, {} as Record<string, boolean>);
+  });
+  const [activeProjectId, setActiveProjectId] = useState<string>(() => {
+    // Set the first project (milfordhaven) as default active
+    return Object.keys(PROJECT_LOCATIONS)[0] || 'milfordhaven';
+  });
   
   // Drawing state
   const [drawingMode, setDrawingMode] = useState<DrawingMode>('none');
@@ -97,8 +143,31 @@ export default function MapDrawingPage() {
   
   // Refs to prevent duplicate operations
   const lineConfirmInProgressRef = useRef<boolean>(false);
+
+  // Check GPS permission status on mount
+  useEffect(() => {
+    const checkLocationPermission = async () => {
+      if ('permissions' in navigator) {
+        try {
+          const permission = await navigator.permissions.query({ name: 'geolocation' });
+          setLocationPermission(permission.state);
+          
+          // Listen for permission changes
+          permission.addEventListener('change', () => {
+            setLocationPermission(permission.state);
+          });
+        } catch (error) {
+          console.log('Permissions API not supported, will use geolocation directly');
+          setLocationPermission('unknown');
+        }
+      } else {
+        setLocationPermission('unknown');
+      }
+    };
+
+    checkLocationPermission();
+  }, []);
   
-  const [activeProjectId] = useState<string>('default');
   const [itemToEdit, setItemToEdit] = useState<Pin | Line | Area | null>(null);
   const [editingGeometry, setEditingGeometry] = useState<Line | Area | null>(null);
   
@@ -506,23 +575,125 @@ export default function MapDrawingPage() {
     }
   };
 
-  const centerOnLocation = useCallback(() => {
-    if (mapRef.current) {
-      // Center on default location (Milford Haven)
-      const defaultLocation: [number, number] = [51.7128, -5.0341];
-      mapRef.current.setView(defaultLocation, 12);
-      toast({
-        title: "Map Centered",
-        description: "Centered on Milford Haven"
-      });
-    } else {
+  const centerOnCurrentLocation = useCallback(async () => {
+    if (!mapRef.current) {
       toast({
         variant: "destructive",
         title: "Map Not Ready",
         description: "Map is not yet initialized."
       });
+      return;
     }
-  }, [toast]);
+
+    if (!navigator.geolocation) {
+      toast({
+        variant: "destructive",
+        title: "GPS Not Supported",
+        description: "Your browser doesn't support GPS location."
+      });
+      return;
+    }
+
+    console.log('🗺️ GPS Request:', {
+      currentPermission: locationPermission,
+      timestamp: new Date().toISOString()
+    });
+
+    setIsGettingLocation(true);
+
+    // First, explicitly check if we need to request permission
+    if (locationPermission === 'denied') {
+      setIsGettingLocation(false);
+      toast({
+        variant: "destructive",
+        title: "Location Permission Denied",
+        description: "Please enable location access in your browser settings and refresh the page."
+      });
+      return;
+    }
+
+    // Request location with detailed logging
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        
+        console.log('📍 GPS Success:', {
+          latitude,
+          longitude,
+          accuracy,
+          timestamp: new Date().toISOString()
+        });
+
+        const newLocation = { lat: latitude, lng: longitude } as LatLng;
+        setCurrentLocation(newLocation);
+        
+        if (mapRef.current) {
+          // Center on actual GPS location with higher zoom
+          mapRef.current.setView([latitude, longitude], 16);
+          toast({
+            title: "Location Found",
+            description: `Lat: ${latitude.toFixed(6)}, Lng: ${longitude.toFixed(6)}`,
+            duration: 3000
+          });
+        }
+        setIsGettingLocation(false);
+        
+        // Update permission state after successful location
+        setLocationPermission('granted');
+      },
+      (error) => {
+        setIsGettingLocation(false);
+        
+        console.error('🚫 GPS Error:', {
+          code: error.code,
+          message: error.message,
+          timestamp: new Date().toISOString()
+        });
+
+        let errorMessage = "Could not get your location.";
+        let titleMessage = "Location Error";
+        
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            setLocationPermission('denied');
+            titleMessage = "Permission Denied";
+            errorMessage = "Location access was denied. Please enable location permissions in your browser and try again.";
+            break;
+          case error.POSITION_UNAVAILABLE:
+            titleMessage = "Location Unavailable";
+            errorMessage = "Your location information is unavailable. Make sure GPS is enabled on your device.";
+            break;
+          case error.TIMEOUT:
+            titleMessage = "Location Timeout";
+            errorMessage = "Location request timed out. Please try again.";
+            break;
+        }
+        
+        toast({
+          variant: "destructive",
+          title: titleMessage,
+          description: errorMessage,
+          duration: 5000
+        });
+
+        // Show instructions for enabling location
+        if (error.code === error.PERMISSION_DENIED) {
+          setTimeout(() => {
+            toast({
+              title: "How to Enable Location",
+              description: "Click the location icon in your browser's address bar, or check browser settings > Privacy & Security > Location.",
+              duration: 8000
+            });
+          }, 2000);
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 30000 // Shorter cache to get fresher location
+      }
+    );
+  }, [toast, locationPermission]);
 
   const zoomIn = useCallback(() => {
     if (mapRef.current) {
@@ -535,6 +706,36 @@ export default function MapDrawingPage() {
       mapRef.current.zoomOut();
     }
   }, []);
+
+  const goToProjectLocation = useCallback((locationKey: string) => {
+    const location = PROJECT_LOCATIONS[locationKey as keyof typeof PROJECT_LOCATIONS];
+    if (location && mapRef.current) {
+      mapRef.current.setView([location.lat, location.lon], 12);
+      setShowProjectsDialog(false);
+      toast({
+        title: `Navigated to ${location.name}`,
+        description: `Lat: ${location.lat.toFixed(6)}, Lng: ${location.lon.toFixed(6)}`,
+        duration: 3000
+      });
+    }
+  }, [toast]);
+
+  // Project management handlers
+  const toggleProjectVisibility = useCallback((projectKey: string) => {
+    setProjectVisibility(prev => ({
+      ...prev,
+      [projectKey]: !prev[projectKey]
+    }));
+  }, []);
+
+  const setActiveProject = useCallback((projectKey: string) => {
+    setActiveProjectId(projectKey);
+    toast({
+      title: "Active Project Changed",
+      description: `${PROJECT_LOCATIONS[projectKey as keyof typeof PROJECT_LOCATIONS]?.name} is now the active project`,
+      duration: 3000
+    });
+  }, [toast]);
 
 
 
@@ -566,7 +767,7 @@ export default function MapDrawingPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-background text-foreground">
+    <>
 
 
 
@@ -581,7 +782,7 @@ export default function MapDrawingPage() {
 
 
       {/* Map Container - Account for top navigation height (h-14 = 3.5rem) */}
-      <main className="flex-1 relative overflow-hidden" style={{ height: 'calc(100vh - 3.5rem)' }}>
+      <main className="relative overflow-hidden bg-background text-foreground" style={{ height: 'calc(100vh - 3.5rem)' }}>
         <div className="h-full w-full relative" style={{ minHeight: '500px', cursor: drawingMode === 'none' ? 'default' : 'crosshair' }}>
           
           {/* Always-visible smaller crosshairs */}
@@ -643,21 +844,40 @@ export default function MapDrawingPage() {
             itemToEdit={itemToEdit}
             onEditItem={setItemToEdit}
             activeProjectId={activeProjectId}
+            projectVisibility={projectVisibility}
             editingGeometry={editingGeometry}
             onEditGeometry={setEditingGeometry}
             onUpdateGeometry={(itemId, newPath) => {}}
           />
           
           {/* Drawing Tools */}
-          <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-2">
+          <div className="absolute top-8 left-4 z-[1000] flex flex-col gap-2">
             <TooltipProvider>
+              {/* Projects Button */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button 
                     variant="ghost"
                     size="icon" 
-                    className="h-10 w-10 rounded-full shadow-lg text-white border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
-                    style={{ backgroundColor: drawingMode === 'pin' ? '#059669' : '#374151' }}
+                    onClick={() => setShowProjectsDialog(true)}
+                    className="h-10 w-10 rounded-full shadow-lg bg-primary/90 hover:bg-primary text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
+                  >
+                    <FolderOpen className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Project Locations</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost"
+                    size="icon" 
+                    className={`h-10 w-10 rounded-full shadow-lg text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 ${
+                      drawingMode === 'pin' ? 'bg-accent/90 hover:bg-accent' : 'bg-primary/90 hover:bg-primary'
+                    }`}
                     onClick={() => {
                       if (mapRef.current) {
                         // Get the center of the map (where crosshairs are)
@@ -680,8 +900,9 @@ export default function MapDrawingPage() {
                   <Button 
                     variant="ghost"
                     size="icon" 
-                    className="h-10 w-10 rounded-full shadow-lg text-white border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
-                    style={{ backgroundColor: isDrawingLine ? '#dc2626' : '#374151' }}
+                    className={`h-10 w-10 rounded-full shadow-lg text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 ${
+                      isDrawingLine ? 'bg-accent/90 hover:bg-accent' : 'bg-primary/90 hover:bg-primary'
+                    }`}
                     onClick={() => {
                       if (mapRef.current) {
                         if (isDrawingLine) {
@@ -709,8 +930,9 @@ export default function MapDrawingPage() {
                   <Button 
                     variant="ghost"
                     size="icon" 
-                    className="h-10 w-10 rounded-full shadow-lg text-white border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
-                    style={{ backgroundColor: isDrawingArea ? '#dc2626' : '#374151' }}
+                    className={`h-10 w-10 rounded-full shadow-lg text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 ${
+                      isDrawingArea ? 'bg-accent/90 hover:bg-accent' : 'bg-primary/90 hover:bg-primary'
+                    }`}
                     onClick={() => {
                       if (isDrawingArea) {
                         handleAreaCancelDrawing();
@@ -733,7 +955,7 @@ export default function MapDrawingPage() {
 
 
           {/* Zoom Controls - Top Right */}
-          <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
+          <div className="absolute top-8 right-4 z-[1000] flex flex-col gap-2">
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -741,7 +963,7 @@ export default function MapDrawingPage() {
                     variant="ghost"
                     size="icon" 
                     onClick={zoomIn}
-                    className="h-10 w-10 rounded-full shadow-lg bg-black/80 hover:bg-black text-white border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
+                    className="h-10 w-10 rounded-full shadow-lg bg-primary/90 hover:bg-primary text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
                   >
                     <ZoomIn className="h-5 w-5" />
                   </Button>
@@ -757,7 +979,7 @@ export default function MapDrawingPage() {
                     variant="ghost"
                     size="icon" 
                     onClick={zoomOut}
-                    className="h-10 w-10 rounded-full shadow-lg bg-black/80 hover:bg-black text-white border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
+                    className="h-10 w-10 rounded-full shadow-lg bg-primary/90 hover:bg-primary text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
                   >
                     <ZoomOut className="h-5 w-5" />
                   </Button>
@@ -777,32 +999,38 @@ export default function MapDrawingPage() {
                   <Button 
                     variant="ghost"
                     size="icon" 
-                    onClick={centerOnLocation}
-                    className="h-10 w-10 rounded-full shadow-lg bg-black/80 hover:bg-black text-white border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
+                    onClick={centerOnCurrentLocation}
+                    disabled={isGettingLocation}
+                    className={`h-10 w-10 rounded-full shadow-lg text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed ${
+                      locationPermission === 'denied' 
+                        ? 'bg-destructive/90 hover:bg-destructive' 
+                        : locationPermission === 'granted'
+                        ? 'bg-accent/90 hover:bg-accent'
+                        : 'bg-primary/90 hover:bg-primary'
+                    }`}
                   >
-                    <Navigation className="h-5 w-5" />
+                    {isGettingLocation ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <Crosshair className="h-5 w-5" />
+                    )}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="left">
-                  <p>Center on Location</p>
+                  <p>
+                    {isGettingLocation 
+                      ? 'Getting Location...' 
+                      : locationPermission === 'denied'
+                      ? 'Location Denied - Click to Enable'
+                      : locationPermission === 'granted'
+                      ? 'Center on Current Location'
+                      : 'Get Current Location'
+                    }
+                  </p>
                 </TooltipContent>
               </Tooltip>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="ghost"
-                    size="icon" 
-                    onClick={clearAll}
-                    className="h-10 w-10 rounded-full shadow-lg bg-red-600/90 hover:bg-red-600 text-white border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
-                  >
-                    <Trash2 className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="left">
-                  <p>Clear All</p>
-                </TooltipContent>
-              </Tooltip>
+
             </TooltipProvider>
           </div>
 
@@ -814,13 +1042,13 @@ export default function MapDrawingPage() {
               </div>
               <Button 
                 onClick={handleLineConfirm} 
-                className="h-10 px-4 bg-green-600/90 hover:bg-green-600 text-white border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 shadow-lg rounded-lg text-sm"
+                className="h-10 px-4 bg-accent/90 hover:bg-accent text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 shadow-lg rounded-lg text-sm"
               >
                 ✓ Confirm Line
               </Button>
               <Button 
                 onClick={handleLineCancelDrawing} 
-                className="h-10 px-4 bg-red-600/90 hover:bg-red-600 text-white border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 shadow-lg rounded-lg text-sm"
+                className="h-10 px-4 bg-destructive/90 hover:bg-destructive text-destructive-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 shadow-lg rounded-lg text-sm"
               >
                 ✗ Cancel Line
               </Button>
@@ -835,21 +1063,21 @@ export default function MapDrawingPage() {
               </div>
               <Button 
                 onClick={handleAreaAddCorner} 
-                className="h-10 px-4 bg-blue-600/90 hover:bg-blue-600 text-white border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 shadow-lg rounded-lg text-sm"
+                className="h-10 px-4 bg-primary/90 hover:bg-primary text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 shadow-lg rounded-lg text-sm"
               >
                 + Add Corner
               </Button>
               {pendingAreaPath.length >= 3 && (
                 <Button 
                   onClick={handleAreaFinish} 
-                  className="h-10 px-4 bg-green-600/90 hover:bg-green-600 text-white border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 shadow-lg rounded-lg text-sm"
+                  className="h-10 px-4 bg-accent/90 hover:bg-accent text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 shadow-lg rounded-lg text-sm"
                 >
                   ✓ Finish Area
                 </Button>
               )}
               <Button 
                 onClick={handleAreaCancelDrawing} 
-                className="h-10 px-4 bg-red-600/90 hover:bg-red-600 text-white border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 shadow-lg rounded-lg text-sm"
+                className="h-10 px-4 bg-destructive/90 hover:bg-destructive text-destructive-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 shadow-lg rounded-lg text-sm"
               >
                 ✗ Cancel Area
               </Button>
@@ -858,6 +1086,86 @@ export default function MapDrawingPage() {
         </div>
       </main>
       
+      {/* Projects Dialog */}
+      <Dialog open={showProjectsDialog} onOpenChange={setShowProjectsDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderOpen className="h-5 w-5" />
+              Project Management
+            </DialogTitle>
+            <DialogDescription>
+              Manage project locations, visibility, and set the active project for drawing operations.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="text-sm text-muted-foreground">
+              <p className="mb-2"><strong>Active Project:</strong> {PROJECT_LOCATIONS[activeProjectId as keyof typeof PROJECT_LOCATIONS]?.name || 'None'}</p>
+              <p className="text-xs">All new objects will be assigned to the active project.</p>
+            </div>
+            
+            <div className="space-y-3">
+              {Object.entries(PROJECT_LOCATIONS).map(([key, location]) => (
+                <div key={key} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex items-center gap-3 flex-1">
+                    {/* Project Name and Info */}
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="font-medium">{location.name}</div>
+                        {activeProjectId === key && (
+                          <Target className="h-4 w-4 text-accent" />
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {location.lat.toFixed(6)}, {location.lon.toFixed(6)}
+                      </div>
+                    </div>
+                    
+                    {/* Visibility Toggle */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => toggleProjectVisibility(key)}
+                      className="h-8 w-8"
+                      title={projectVisibility[key] ? "Hide project" : "Show project"}
+                    >
+                      {projectVisibility[key] ? (
+                        <Eye className="h-4 w-4 text-primary" />
+                      ) : (
+                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </Button>
+                    
+                    {/* Activate Button */}
+                    <Button
+                      variant={activeProjectId === key ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setActiveProject(key)}
+                      disabled={activeProjectId === key}
+                      className="h-8 px-2"
+                    >
+                      {activeProjectId === key ? "Active" : "Activate"}
+                    </Button>
+                    
+                    {/* Visit Button - Only show for active project */}
+                    {activeProjectId === key && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToProjectLocation(key)}
+                        className="h-8 px-2"
+                      >
+                        Visit →
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Migration Dialog */}
       <Dialog open={showMigrationPrompt} onOpenChange={setShowMigrationPrompt}>
         <DialogContent className="sm:max-w-md">
@@ -893,6 +1201,67 @@ export default function MapDrawingPage() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+
+      {/* Edit Item Dialog */}
+      <Dialog open={!!itemToEdit} onOpenChange={() => setItemToEdit(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit {itemToEdit?.id.includes('pin') ? 'Pin' : itemToEdit?.id.includes('line') ? 'Line' : 'Area'}</DialogTitle>
+            <DialogDescription>
+              Update the label and notes for this {itemToEdit?.id.includes('pin') ? 'pin' : itemToEdit?.id.includes('line') ? 'line' : 'area'}.
+            </DialogDescription>
+          </DialogHeader>
+          {itemToEdit && (
+            <div className="space-y-4 py-4">
+              <div>
+                <label htmlFor="edit-label" className="block text-sm font-medium mb-2">
+                  Label
+                </label>
+                <input
+                  id="edit-label"
+                  type="text"
+                  defaultValue={itemToEdit.label}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Enter label"
+                />
+              </div>
+              <div>
+                <label htmlFor="edit-notes" className="block text-sm font-medium mb-2">
+                  Notes
+                </label>
+                <textarea
+                  id="edit-notes"
+                  defaultValue={itemToEdit.notes || ''}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Enter notes"
+                  rows={3}
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setItemToEdit(null)}>
+                  Cancel
+                </Button>
+                <Button onClick={() => {
+                  const label = (document.getElementById('edit-label') as HTMLInputElement)?.value || '';
+                  const notes = (document.getElementById('edit-notes') as HTMLTextAreaElement)?.value || '';
+                  
+                  if (itemToEdit.id.includes('pin')) {
+                    handleUpdatePin(itemToEdit.id, label, notes, itemToEdit.projectId, itemToEdit.tagIds);
+                  } else if (itemToEdit.id.includes('line')) {
+                    handleUpdateLine(itemToEdit.id, label, notes, itemToEdit.projectId, itemToEdit.tagIds);
+                  } else if (itemToEdit.id.includes('area')) {
+                    handleUpdateArea(itemToEdit.id, label, notes, (itemToEdit as any).path, itemToEdit.projectId, itemToEdit.tagIds);
+                  }
+                  
+                  setItemToEdit(null);
+                }}>
+                  Save Changes
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

@@ -71,16 +71,16 @@ export interface ParameterConfigItem {
 
 export const PARAMETER_CONFIG: Record<CombinedParameterKey, ParameterConfigItem> = {
   // Weather Parameters
-  windSpeed10m: { name: "Wind Speed (10m)", apiParam: "windspeed_10m", unit: "knots", apiSource: 'weather', color: '--chart-2' },
-  windDirection10m: { name: "Wind Direction (10m)", apiParam: "winddirection_10m", unit: "°", apiSource: 'weather', color: '--chart-3' },
-  waveHeight: { name: "Wave Height", apiParam: "wave_height", unit: "m", apiSource: 'marine', color: '--chart-1' }, // Reused chart-1 color
-  wavePeriod: { name: "Wave Period", apiParam: "wave_period", unit: "s", apiSource: 'marine', color: '--chart-3' }, // Reused chart-3 color
-  waveDirection: { name: "Wave Direction", apiParam: "wave_direction", unit: "°", apiSource: 'marine', color: '--chart-2' }, // Reused chart-2 color
-  temperature2m: { name: "Air Temperature (2m)", apiParam: "temperature_2m", unit: "°C", apiSource: 'weather', color: '--chart-1' },
-  seaSurfaceTemperature: { name: "Sea Surface Temp (0m)", apiParam: "sea_surface_temperature", unit: "°C", apiSource: 'marine', color: '--chart-4' }, // Reused chart-4 color
-  ghi: { name: "Global Horizontal Irradiance (GHI)", apiParam: "shortwave_radiation", unit: "W/m²", apiSource: 'weather', color: '--chart-4' },
+  windSpeed10m: { name: "Wind Speed (10m)", apiParam: "windspeed_10m", unit: "knots", apiSource: 'weather', color: '--chart-7' }, // Cyan - for wind/air movement
+  windDirection10m: { name: "Wind Direction (10m)", apiParam: "winddirection_10m", unit: "°", apiSource: 'weather', color: '--chart-8' }, // Forest Green - for wind direction
+  waveHeight: { name: "Wave Height", apiParam: "wave_height", unit: "m", apiSource: 'marine', color: '--chart-1' }, // Vibrant Blue - for ocean waves
+  wavePeriod: { name: "Wave Period", apiParam: "wave_period", unit: "s", apiSource: 'marine', color: '--chart-3' }, // Emerald Green - for wave timing
+  waveDirection: { name: "Wave Direction", apiParam: "wave_direction", unit: "°", apiSource: 'marine', color: '--chart-5' }, // Rose Pink - for wave direction
+  temperature2m: { name: "Air Temperature (2m)", apiParam: "temperature_2m", unit: "°C", apiSource: 'weather', color: '--chart-2' }, // Orange - for air temperature/warmth
+  seaSurfaceTemperature: { name: "Sea Surface Temp (0m)", apiParam: "sea_surface_temperature", unit: "°C", apiSource: 'marine', color: '--chart-9' }, // Red - for sea temperature (distinct from air temp)
+  ghi: { name: "Global Horizontal Irradiance (GHI)", apiParam: "shortwave_radiation", unit: "W/m²", apiSource: 'weather', color: '--chart-6' }, // Amber - for solar radiation/sunshine
   // Marine Parameters
-  seaLevelHeightMsl: { name: "Sea Level (MSL)", apiParam: "sea_level_height_msl", unit: "m", apiSource: 'marine', color: '--chart-5' },
+  seaLevelHeightMsl: { name: "Sea Level (MSL)", apiParam: "sea_level_height_msl", unit: "m", apiSource: 'marine', color: '--chart-4' }, // Purple - for sea level/tides
 };
 
 export const FetchCombinedDataInputSchema = z.object({
