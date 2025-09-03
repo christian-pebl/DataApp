@@ -4,8 +4,10 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target } from 'lucide-react';
+import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3 } from 'lucide-react';
 
 import { Separator } from '@/components/ui/separator';
 import {
@@ -112,6 +114,21 @@ export default function MapDrawingPage() {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [locationPermission, setLocationPermission] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown');
   const [showProjectsDialog, setShowProjectsDialog] = useState(false);
+  const [showMainMenu, setShowMainMenu] = useState(false);
+  const [showProjectsDropdown, setShowProjectsDropdown] = useState(false);
+  const [showDrawingToolsDropdown, setShowDrawingToolsDropdown] = useState(false);
+  const [showProjectInfo, setShowProjectInfo] = useState<string | null>(null);
+  const [showProjectMenuInfo, setShowProjectMenuInfo] = useState<string | null>(null);
+  const [mapScale, setMapScale] = useState<{ distance: number; unit: string; pixels: number } | null>(null);
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(320); // Default width in pixels
+  const [isResizing, setIsResizing] = useState(false);
+  const [showFloatingDrawingTools, setShowFloatingDrawingTools] = useState(false);
+  const [isEditingObject, setIsEditingObject] = useState(false);
+  const [editingLabel, setEditingLabel] = useState('');
+  const [editingNotes, setEditingNotes] = useState('');
+  const [editingColor, setEditingColor] = useState('#3b82f6');
+  const [editingSize, setEditingSize] = useState(5);
   
   // Project management state
   const [projectVisibility, setProjectVisibility] = useState<Record<string, boolean>>(() => {
@@ -231,7 +248,53 @@ export default function MapDrawingPage() {
     if (isDrawingArea && areaStartPoint) {
       setCurrentAreaEndPoint(center);
     }
+    
+    // Update scale bar
+    updateMapScale(center, zoom);
   };
+
+  // Calculate scale bar
+  const updateMapScale = useCallback((center: LatLng, zoom: number) => {
+    // Calculate meters per pixel at the current zoom level and latitude
+    const earthRadius = 6378137; // Earth's radius in meters
+    const latRad = (center.lat * Math.PI) / 180;
+    const metersPerPixel = (2 * Math.PI * earthRadius * Math.cos(latRad)) / (256 * Math.pow(2, zoom));
+    
+    // Calculate appropriate scale bar length
+    const targetPixels = 100; // Target width in pixels
+    const targetMeters = metersPerPixel * targetPixels;
+    
+    // Round to nice numbers
+    let distance: number;
+    let unit: string;
+    
+    if (targetMeters >= 1000) {
+      distance = Math.round(targetMeters / 1000);
+      unit = 'km';
+    } else if (targetMeters >= 100) {
+      distance = Math.round(targetMeters / 100) * 100;
+      unit = 'm';
+    } else if (targetMeters >= 10) {
+      distance = Math.round(targetMeters / 10) * 10;
+      unit = 'm';
+    } else {
+      distance = Math.round(targetMeters);
+      unit = 'm';
+    }
+    
+    // Calculate actual pixel width for the rounded distance
+    const actualMeters = unit === 'km' ? distance * 1000 : distance;
+    const pixels = actualMeters / metersPerPixel;
+    
+    setMapScale({ distance, unit, pixels: Math.round(pixels) });
+  }, []);
+  
+  // Initialize scale bar
+  useEffect(() => {
+    if (view) {
+      updateMapScale({ lat: view.center.lat, lng: view.center.lng }, view.zoom);
+    }
+  }, [view, updateMapScale]);
   
   // Stable callback that calls the current handler
   const handleMapMove = useCallback((center: LatLng, zoom: number) => {
@@ -241,6 +304,25 @@ export default function MapDrawingPage() {
   const handleMapClick = useCallback((e: LeafletMouseEvent) => {
     // Pin dropping, line drawing, and area drawing are now handled by button clicks, not map click
   }, [drawingMode, isDrawingLine, lineStartPoint, isDrawingArea, pendingAreaPath]);
+
+  // Add a custom click handler that checks if we clicked on an object
+  const handleObjectClick = useCallback((objectId: string, objectType: 'pin' | 'line' | 'area') => {
+    let clickedObject = null;
+    
+    if (objectType === 'pin') {
+      clickedObject = pins.find(p => p.id === objectId);
+    } else if (objectType === 'line') {
+      clickedObject = lines.find(l => l.id === objectId);
+    } else if (objectType === 'area') {
+      clickedObject = areas.find(a => a.id === objectId);
+    }
+    
+    if (clickedObject) {
+      setItemToEdit(clickedObject);
+      // Prevent default popup behavior
+      return false;
+    }
+  }, [pins, lines, areas]);
 
   const handleMapMouseMove = useCallback((e: LeafletMouseEvent) => {
     // Mouse move disabled for line drawing - we only want drag/pan to update the line
@@ -737,6 +819,124 @@ export default function MapDrawingPage() {
     });
   }, [toast]);
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showMainMenu) {
+        const target = event.target as Element;
+        const menuButton = document.querySelector('[data-menu-button]');
+        const menuDropdown = document.querySelector('[data-menu-dropdown]');
+        
+        if (menuButton && !menuButton.contains(target) && menuDropdown && !menuDropdown.contains(target)) {
+          setShowMainMenu(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showMainMenu]);
+
+  // Handle sidebar resizing
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      
+      const newWidth = Math.max(280, Math.min(600, e.clientX)); // Min 280px, max 600px
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing]);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  // Initialize editing state when itemToEdit changes
+  useEffect(() => {
+    if (itemToEdit && isEditingObject) {
+      setEditingLabel(itemToEdit.label || '');
+      setEditingNotes(itemToEdit.notes || '');
+      // Set default colors based on object type
+      if ('lat' in itemToEdit) {
+        setEditingColor('#3b82f6'); // Blue for pins
+      } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
+        setEditingColor('#10b981'); // Green for lines
+      } else {
+        setEditingColor('#ef4444'); // Red for areas
+      }
+      setEditingSize(5); // Default size
+    }
+  }, [itemToEdit, isEditingObject]);
+
+  const handleStartEdit = () => {
+    if (itemToEdit) {
+      setIsEditingObject(true);
+      setEditingLabel(itemToEdit.label || '');
+      setEditingNotes(itemToEdit.notes || '');
+      // Set current colors based on object type
+      if ('lat' in itemToEdit) {
+        setEditingColor('#3b82f6');
+      } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
+        setEditingColor('#10b981');
+      } else {
+        setEditingColor('#ef4444');
+      }
+      setEditingSize(5);
+    }
+  };
+
+  const handleSaveEdit = () => {
+    if (itemToEdit) {
+      const updatedObject = {
+        ...itemToEdit,
+        label: editingLabel.trim() || undefined,
+        notes: editingNotes.trim() || undefined,
+        color: editingColor,
+        size: editingSize
+      };
+
+      if ('lat' in itemToEdit) {
+        updatePin(itemToEdit.id, updatedObject);
+      } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
+        updateLine(itemToEdit.id, updatedObject);
+      } else {
+        updateArea(itemToEdit.id, updatedObject);
+      }
+
+      setIsEditingObject(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingObject(false);
+    setEditingLabel('');
+    setEditingNotes('');
+    setEditingColor('#3b82f6');
+    setEditingSize(5);
+  };
+
 
 
 
@@ -848,152 +1048,637 @@ export default function MapDrawingPage() {
             editingGeometry={editingGeometry}
             onEditGeometry={setEditingGeometry}
             onUpdateGeometry={(itemId, newPath) => {}}
+            showPopups={false}
+            useEditPanel={true}
+            disableDefaultPopups={true}
+            forceUseEditCallback={true}
+            popupMode="none"
           />
           
-          {/* Drawing Tools */}
-          <div className="absolute top-8 left-4 z-[1000] flex flex-col gap-2">
+          {/* Main Menu Button */}
+          <div className="absolute top-8 left-4 z-[1000]">
             <TooltipProvider>
-              {/* Projects Button */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button 
                     variant="ghost"
                     size="icon" 
-                    onClick={() => setShowProjectsDialog(true)}
+                    onClick={() => setShowMainMenu(!showMainMenu)}
                     className="h-10 w-10 rounded-full shadow-lg bg-primary/90 hover:bg-primary text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
+                    data-menu-button
                   >
-                    <FolderOpen className="h-5 w-5" />
+                    <Menu className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Project Locations</p>
+                  <p>Menu</p>
                 </TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="ghost"
-                    size="icon" 
-                    className={`h-10 w-10 rounded-full shadow-lg text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 ${
-                      drawingMode === 'pin' ? 'bg-accent/90 hover:bg-accent' : 'bg-primary/90 hover:bg-primary'
-                    }`}
-                    onClick={() => {
-                      if (mapRef.current) {
-                        // Get the center of the map (where crosshairs are)
-                        const mapCenter = mapRef.current.getCenter();
-                        console.log('📍 Pin button clicked, dropping pin at center:', mapCenter);
-                        
-                        // Drop pin immediately at crosshair location
-                        setPendingPin(mapCenter);
-                      }
-                    }}
-                  >
-                    <MapPin className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent><p>Add Pin</p></TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="ghost"
-                    size="icon" 
-                    className={`h-10 w-10 rounded-full shadow-lg text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 ${
-                      isDrawingLine ? 'bg-accent/90 hover:bg-accent' : 'bg-primary/90 hover:bg-primary'
-                    }`}
-                    onClick={() => {
-                      if (mapRef.current) {
-                        if (isDrawingLine) {
-                          // Cancel current line
-                          handleLineCancelDrawing();
-                        } else {
-                          // Start line at crosshair center
-                          const mapCenter = mapRef.current.getCenter();
-                          setLineStartPoint(mapCenter);
-                          setCurrentMousePosition(mapCenter);
-                          setIsDrawingLine(true);
-                          setDrawingMode('line');
-                        }
-                      }
-                    }}
-                  >
-                    <Minus className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent><p>{isDrawingLine ? 'Cancel Line' : 'Draw Line'}</p></TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="ghost"
-                    size="icon" 
-                    className={`h-10 w-10 rounded-full shadow-lg text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 ${
-                      isDrawingArea ? 'bg-accent/90 hover:bg-accent' : 'bg-primary/90 hover:bg-primary'
-                    }`}
-                    onClick={() => {
-                      if (isDrawingArea) {
-                        handleAreaCancelDrawing();
-                      } else {
-                        handleAreaStart();
-                      }
-                    }}
-                  >
-                    <Square className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent><p>{isDrawingArea ? 'Cancel Area' : 'Draw Area'}</p></TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
 
-
-
-
-
-
-          {/* Zoom Controls - Top Right */}
-          <div className="absolute top-8 right-4 z-[1000] flex flex-col gap-2">
+          {/* Top Right Controls */}
+          <div className="absolute top-8 right-4 z-[1000] flex flex-col gap-2 items-end">
+            {/* Object Details Panel */}
+            {itemToEdit && (
+              <div className="w-72 bg-background/95 border rounded-lg shadow-lg p-3">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    {'lat' in itemToEdit ? (
+                      <MapPin className="h-4 w-4 text-blue-500" />
+                    ) : 'path' in itemToEdit && Array.isArray(itemToEdit.path) ? (
+                      <Minus className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Square className="h-4 w-4 text-purple-500" />
+                    )}
+                    <span className="text-sm font-medium text-foreground">
+                      {itemToEdit.label || `Unnamed ${'lat' in itemToEdit ? 'Pin' : 'path' in itemToEdit && Array.isArray(itemToEdit.path) ? 'Line' : 'Area'}`}
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setItemToEdit(null);
+                      setIsEditingObject(false);
+                    }}
+                    className="h-6 w-6 p-0 hover:bg-muted"
+                  >
+                    <Plus className="h-3 w-3 rotate-45" />
+                  </Button>
+                </div>
+                
+                {!isEditingObject ? (
+                  // View Mode
+                  <>
+                    {itemToEdit.notes && (
+                      <div className="mb-3">
+                        <div className="text-sm text-muted-foreground">{itemToEdit.notes}</div>
+                      </div>
+                    )}
+                    
+                    {'lat' in itemToEdit && (
+                      <div className="mb-3">
+                        <div className="text-xs font-mono text-muted-foreground">
+                          {itemToEdit.lat.toFixed(6)}, {itemToEdit.lng.toFixed(6)}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleStartEdit}
+                        className="flex-1 h-8"
+                      >
+                        <Edit3 className="h-3 w-3 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if ('lat' in itemToEdit) {
+                            deletePin(itemToEdit.id);
+                          } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
+                            deleteLine(itemToEdit.id);
+                          } else {
+                            deleteArea(itemToEdit.id);
+                          }
+                          setItemToEdit(null);
+                        }}
+                        className="h-8 px-2 text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  // Edit Mode
+                  <>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Label:</label>
+                        <Input
+                          value={editingLabel}
+                          onChange={(e) => setEditingLabel(e.target.value)}
+                          placeholder="Enter label..."
+                          className="mt-1 h-8"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="text-xs text-muted-foreground">Notes:</label>
+                        <Textarea
+                          value={editingNotes}
+                          onChange={(e) => setEditingNotes(e.target.value)}
+                          placeholder="Enter notes..."
+                          className="mt-1"
+                          rows={2}
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="text-xs text-muted-foreground">Color:</label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <input
+                            type="color"
+                            value={editingColor}
+                            onChange={(e) => setEditingColor(e.target.value)}
+                            className="w-8 h-8 rounded border cursor-pointer"
+                          />
+                          <Input
+                            value={editingColor}
+                            onChange={(e) => setEditingColor(e.target.value)}
+                            className="h-8 font-mono text-xs"
+                            placeholder="#000000"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <label className="text-xs text-muted-foreground">Size:</label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <input
+                            type="range"
+                            min="1"
+                            max="10"
+                            value={editingSize}
+                            onChange={(e) => setEditingSize(Number(e.target.value))}
+                            className="flex-1"
+                          />
+                          <span className="text-xs w-6 text-center">{editingSize}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2 pt-2 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCancelEdit}
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSaveEdit}
+                        className="flex-1"
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            
+            {/* Floating Drawing Tools Button */}
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button 
                     variant="ghost"
                     size="icon" 
-                    onClick={zoomIn}
-                    className="h-10 w-10 rounded-full shadow-lg bg-primary/90 hover:bg-primary text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
+                    onClick={() => setShowFloatingDrawingTools(!showFloatingDrawingTools)}
+                    className={`h-10 w-10 rounded-full shadow-lg border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 ${
+                      (drawingMode !== 'none' || isDrawingLine || isDrawingArea) 
+                        ? 'bg-accent/90 hover:bg-accent text-accent-foreground' 
+                        : 'bg-primary/90 hover:bg-primary text-primary-foreground'
+                    }`}
                   >
-                    <ZoomIn className="h-5 w-5" />
+                    <Edit3 className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="left">
-                  <p>Zoom In</p>
-                </TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="ghost"
-                    size="icon" 
-                    onClick={zoomOut}
-                    className="h-10 w-10 rounded-full shadow-lg bg-primary/90 hover:bg-primary text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
-                  >
-                    <ZoomOut className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="left">
-                  <p>Zoom Out</p>
+                <TooltipContent>
+                  <p>Drawing Tools</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-          </div>
+            
+            {/* Floating Drawing Tools Dropdown */}
+            {showFloatingDrawingTools && (
+              <div className="w-48 bg-background border rounded-lg shadow-xl p-2 space-y-1">
+                <div className="text-xs text-muted-foreground mb-2 px-2">
+                  Create objects in active project
+                </div>
+                
+                <Button 
+                  variant="ghost"
+                  size="sm" 
+                  className={`w-full justify-start gap-3 h-10 text-sm ${
+                    drawingMode === 'pin' ? 'bg-accent text-accent-foreground' : ''
+                  }`}
+                  onClick={() => {
+                    if (mapRef.current) {
+                      const mapCenter = mapRef.current.getCenter();
+                      setPendingPin(mapCenter);
+                      setShowFloatingDrawingTools(false);
+                    }
+                  }}
+                >
+                  <MapPin className="h-4 w-4" />
+                  Add Pin
+                </Button>
+                
+                <Button 
+                  variant="ghost"
+                  size="sm" 
+                  className={`w-full justify-start gap-3 h-10 text-sm ${
+                    isDrawingLine ? 'bg-accent text-accent-foreground' : ''
+                  }`}
+                  onClick={() => {
+                    if (mapRef.current) {
+                      if (isDrawingLine) {
+                        handleLineCancelDrawing();
+                      } else {
+                        const mapCenter = mapRef.current.getCenter();
+                        setLineStartPoint(mapCenter);
+                        setCurrentMousePosition(mapCenter);
+                        setIsDrawingLine(true);
+                        setDrawingMode('line');
+                      }
+                      setShowFloatingDrawingTools(false);
+                    }
+                  }}
+                >
+                  <Minus className="h-4 w-4" />
+                  {isDrawingLine ? 'Cancel Line' : 'Draw Line'}
+                </Button>
+                
+                <Button 
+                  variant="ghost"
+                  size="sm" 
+                  className={`w-full justify-start gap-3 h-10 text-sm ${
+                    isDrawingArea ? 'bg-accent text-accent-foreground' : ''
+                  }`}
+                  onClick={() => {
+                    if (isDrawingArea) {
+                      handleAreaCancelDrawing();
+                    } else {
+                      handleAreaStart();
+                    }
+                    setShowFloatingDrawingTools(false);
+                  }}
+                >
+                  <Square className="h-4 w-4" />
+                  {isDrawingArea ? 'Cancel Area' : 'Draw Area'}
+                </Button>
 
-          {/* Control Tools - Bottom Right */}
+                {/* Current Drawing Status */}
+                {(drawingMode !== 'none' || isDrawingLine || isDrawingArea) && (
+                  <div className="mt-2 p-2 bg-accent/10 rounded text-xs">
+                    <div className="font-medium text-accent mb-1">Currently Drawing:</div>
+                    <div className="text-muted-foreground">
+                      {isDrawingLine && "Line - Drag map to set endpoint"}
+                      {isDrawingArea && `Area - ${pendingAreaPath.length} corners added`}
+                      {drawingMode === 'pin' && "Pin mode active"}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          {/* Sidebar Menu - Always rendered for animation */}
+          <>
+            {/* Sidebar - always present but translated off-screen when closed */}
+            <div 
+              className={`fixed left-0 bg-background border-r shadow-xl z-[1600] transform transition-transform duration-300 ease-in-out ${
+                showMainMenu ? 'translate-x-0' : '-translate-x-full'
+              }`}
+              style={{ 
+                width: `${sidebarWidth}px`,
+                top: '80px', // Start below the header bar 
+                height: 'calc(100vh - 80px)' // Adjust height accordingly
+              }}
+              data-menu-dropdown
+            >
+              {/* Resize handle and collapse button - only show when sidebar is open */}
+              {showMainMenu && (
+                <>
+                  {/* Resize Handle */}
+                  <div 
+                    className="absolute top-0 bottom-0 -right-1 w-2 cursor-col-resize z-20 flex items-center justify-center hover:bg-accent/10 transition-colors group"
+                    onMouseDown={handleResizeStart}
+                  >
+                    {/* Double vertical line */}
+                    <div className="flex gap-0.5">
+                      <div className="w-px h-8 bg-border group-hover:bg-accent/40 transition-colors"></div>
+                      <div className="w-px h-8 bg-border group-hover:bg-accent/40 transition-colors"></div>
+                    </div>
+                  </div>
+                  
+                  {/* Collapse button */}
+                  <div className="absolute top-1/2 -translate-y-1/2 -right-3 z-10">
+                    <Button
+                      variant="ghost"
+                      onClick={() => setShowMainMenu(false)}
+                      className="h-8 w-3 rounded-r-md rounded-l-none bg-background/95 border border-l-0 hover:bg-muted/80 flex items-center justify-center shadow-sm"
+                    >
+                      <ChevronRight className="h-2.5 w-2.5 rotate-180 text-muted-foreground" />
+                    </Button>
+                  </div>
+                </>
+              )}
+              
+              <div className="p-4">
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-lg font-semibold">Menu</h2>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowMainMenu(false)}
+                      className="h-8 w-8"
+                    >
+                      <Menu className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  
+                  {/* Active Project - First Item */}
+                  <div className="space-y-2">
+                    {(() => {
+                      const activeProject = PROJECT_LOCATIONS[activeProjectId as keyof typeof PROJECT_LOCATIONS];
+                      if (!activeProject) return null;
+                      
+                      const projectPins = pins.filter(p => p.projectId === activeProjectId);
+                      const projectLines = lines.filter(l => l.projectId === activeProjectId);
+                      const projectAreas = areas.filter(a => a.projectId === activeProjectId);
+                      const totalObjects = projectPins.length + projectLines.length + projectAreas.length;
+                      
+                      return (
+                        <div className="border-l-4 border-accent rounded-sm mb-4 pl-2">
+                          {/* Clickable header with arrow */}
+                          <Button 
+                            variant="ghost"
+                            size="sm" 
+                            onClick={() => setShowProjectInfo(showProjectInfo === activeProjectId ? null : activeProjectId)}
+                            className="w-full justify-between gap-3 h-auto p-3 text-left hover:bg-muted/30"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Target className="h-4 w-4 text-accent" />
+                              <div>
+                                <div className="text-sm font-medium text-foreground">
+                                  {activeProject.name}
+                                </div>
+                                <div className="text-xs text-accent font-medium">
+                                  Active Project
+                                </div>
+                                {totalObjects > 0 && (
+                                  <div className="text-xs text-muted-foreground">
+                                    {totalObjects} objects ({projectPins.length} pins, {projectLines.length} lines, {projectAreas.length} areas)
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            {showProjectInfo === activeProjectId ? (
+                              <ChevronDown className="h-4 w-4 text-accent" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-accent" />
+                            )}
+                          </Button>
+                          
+                          
+                          {/* Active Project Objects Dropdown */}
+                          {showProjectInfo === activeProjectId && (
+                            <div className="px-3 pb-3">
+                              {/* Center on Project Button */}
+                              <div className="mb-4">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    goToProjectLocation(activeProjectId);
+                                  }}
+                                  className="w-full justify-start gap-2 h-8"
+                                >
+                                  <Crosshair className="h-3 w-3" />
+                                  Center on Project
+                                </Button>
+                              </div>
+                              
+                              {totalObjects === 0 ? (
+                                <div className="text-xs text-muted-foreground text-center py-4">
+                                  No objects in this project
+                                </div>
+                              ) : (
+                                <div className="space-y-1">
+                                  {/* All objects in one list */}
+                                  {[
+                                    ...projectPins.map(pin => ({ ...pin, type: 'pin' as const })),
+                                    ...projectLines.map(line => ({ ...line, type: 'line' as const })),
+                                    ...projectAreas.map(area => ({ ...area, type: 'area' as const }))
+                                  ].map(object => (
+                                    <Button
+                                      key={object.id}
+                                      variant="ghost"
+                                      onClick={() => {
+                                        // Set selected state for visual feedback
+                                        setSelectedObjectId(selectedObjectId === object.id ? null : object.id);
+                                        // Trigger the same behavior as clicking on the map object
+                                        setItemToEdit(object);
+                                      }}
+                                      className={`w-full flex items-center gap-2 p-2 rounded text-xs transition-all ${
+                                        selectedObjectId === object.id 
+                                          ? 'bg-accent/20 border border-accent/40 text-accent-foreground' 
+                                          : 'bg-muted/30 hover:bg-muted/50'
+                                      }`}
+                                    >
+                                      {object.type === 'pin' && (
+                                        <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></div>
+                                      )}
+                                      {object.type === 'line' && (
+                                        <div className="w-4 h-0.5 bg-green-500 flex-shrink-0"></div>
+                                      )}
+                                      {object.type === 'area' && (
+                                        <div className="w-3 h-3 bg-red-500/30 border border-red-500 flex-shrink-0"></div>
+                                      )}
+                                      <span className="truncate flex-1 text-left">{object.label || `Unnamed ${object.type.charAt(0).toUpperCase() + object.type.slice(1)}`}</span>
+                                    </Button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    
+                    {/* Project Menu */}
+                    <Button 
+                      variant="ghost"
+                      size="sm" 
+                      onClick={() => setShowProjectsDropdown(!showProjectsDropdown)}
+                      className="w-full justify-between gap-3 h-12 text-base"
+                    >
+                      <div className="flex items-center gap-3">
+                        <FolderOpen className="h-5 w-5" />
+                        Project Menu
+                      </div>
+                      {showProjectsDropdown ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                    
+                    {/* Projects Dropdown */}
+                    {showProjectsDropdown && (
+                      <div className="ml-4 space-y-1 border-l-2 border-muted pl-4">
+                        <div className="text-xs text-muted-foreground mb-2">
+                          <strong>Active:</strong> {PROJECT_LOCATIONS[activeProjectId as keyof typeof PROJECT_LOCATIONS]?.name || 'None'}
+                        </div>
+                        
+                        {/* Sort projects with active project first */}
+                        {Object.entries(PROJECT_LOCATIONS)
+                          .sort(([keyA], [keyB]) => {
+                            if (keyA === activeProjectId) return -1;
+                            if (keyB === activeProjectId) return 1;
+                            return 0;
+                          })
+                          .map(([key, location]) => {
+                            // Get objects for this project
+                            const projectPins = pins.filter(p => p.projectId === key);
+                            const projectLines = lines.filter(l => l.projectId === key);
+                            const projectAreas = areas.filter(a => a.projectId === key);
+                            const totalObjects = projectPins.length + projectLines.length + projectAreas.length;
+                            
+                            return (
+                              <div key={key} className="space-y-1">
+                                <div className={`flex items-center justify-between p-2 rounded ${
+                                  activeProjectId === key 
+                                    ? 'bg-accent/20 border border-accent/40' 
+                                    : 'bg-muted/30'
+                                }`}>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <div className="font-medium text-sm truncate">{location.name}</div>
+                                        {activeProjectId === key && (
+                                          <Target className="h-3 w-3 text-accent flex-shrink-0" />
+                                        )}
+                                        {totalObjects > 0 && (
+                                          <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded flex-shrink-0">
+                                            {totalObjects}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {activeProjectId === key && (
+                                        <div className="text-xs font-medium text-accent">
+                                          Active Project
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Actions */}
+                                  <div className="flex items-center gap-1 ml-2">
+                                    {/* Expand/Collapse Arrow */}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowProjectMenuInfo(showProjectMenuInfo === key ? null : key);
+                                      }}
+                                      className="h-6 w-6 p-0"
+                                    >
+                                      {showProjectMenuInfo === key ? (
+                                        <ChevronDown className="h-3 w-3 text-muted-foreground hover:text-primary" />
+                                      ) : (
+                                        <ChevronRight className="h-3 w-3 text-muted-foreground hover:text-primary" />
+                                      )}
+                                    </Button>
+                                    
+                                    {/* Visibility Toggle */}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleProjectVisibility(key);
+                                      }}
+                                      className="h-6 w-6 p-0"
+                                    >
+                                      {projectVisibility[key] ? (
+                                        <Eye className="h-3 w-3 text-primary" />
+                                      ) : (
+                                        <EyeOff className="h-3 w-3 text-muted-foreground" />
+                                      )}
+                                    </Button>
+                                    
+                                    {/* Activate/Visit Button */}
+                                    {activeProjectId === key ? (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          goToProjectLocation(key);
+                                        }}
+                                        className="h-6 px-2 text-xs"
+                                      >
+                                        Visit
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setActiveProject(key)}
+                                        className="h-6 px-2 text-xs"
+                                      >
+                                        Activate
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                                
+                                {/* Project Info Dropdown */}
+                                {showProjectMenuInfo === key && (
+                                  <div className="ml-2 p-3 bg-muted/40 rounded text-xs space-y-2 border-l-2 border-primary/30">
+                                    <div>
+                                      <span className="font-medium text-muted-foreground">GPS Coordinates:</span>
+                                      <div className="mt-1 font-mono text-foreground">
+                                        {location.lat.toFixed(6)}, {location.lon.toFixed(6)}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <span className="font-medium text-muted-foreground">Objects:</span>
+                                      <div className="mt-1 text-foreground">
+                                        {totalObjects === 0 ? (
+                                          "No objects"
+                                        ) : (
+                                          `${totalObjects} total (${projectPins.length} pins, ${projectLines.length} lines, ${projectAreas.length} areas)`
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                                
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                    
+                  </div>
+                </div>
+              </div>
+          </>
+          {/* End of Sidebar Menu */}
+
+
+
+
+
+
+
+          {/* Control Tools - Bottom Right, Vertical Layout (Individual Buttons) */}
           <div className="absolute bottom-4 right-4 z-[1000] flex flex-col gap-2">
             <TooltipProvider>
+              {/* Current Location - Top */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button 
@@ -1030,9 +1715,59 @@ export default function MapDrawingPage() {
                 </TooltipContent>
               </Tooltip>
 
+              {/* Zoom In - Middle */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost"
+                    size="icon" 
+                    onClick={zoomIn}
+                    className="h-10 w-10 rounded-full shadow-lg bg-primary/90 hover:bg-primary text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="left">
+                  <p>Zoom In</p>
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Zoom Out - Bottom */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost"
+                    size="icon" 
+                    onClick={zoomOut}
+                    className="h-10 w-10 rounded-full shadow-lg bg-primary/90 hover:bg-primary text-primary-foreground border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105"
+                  >
+                    <MinusIcon className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="left">
+                  <p>Zoom Out</p>
+                </TooltipContent>
+              </Tooltip>
 
             </TooltipProvider>
           </div>
+
+          {/* Scale Bar - Bottom Right */}
+          {mapScale && (
+            <div className="absolute bottom-4 right-20 z-[1000]">
+              <div className="bg-transparent px-2 py-1 text-xs font-mono">
+                <div className="flex items-center gap-2">
+                  <div 
+                    className="border-b-2 border-l-2 border-r-2 border-foreground h-2"
+                    style={{ width: `${mapScale.pixels}px` }}
+                  />
+                  <span className="text-foreground drop-shadow-sm">
+                    {mapScale.distance} {mapScale.unit}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Line Drawing Controls */}
           {isDrawingLine && (
@@ -1092,7 +1827,7 @@ export default function MapDrawingPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FolderOpen className="h-5 w-5" />
-              Project Management
+              Project Menu
             </DialogTitle>
             <DialogDescription>
               Manage project locations, visibility, and set the active project for drawing operations.
@@ -1105,62 +1840,144 @@ export default function MapDrawingPage() {
             </div>
             
             <div className="space-y-3">
-              {Object.entries(PROJECT_LOCATIONS).map(([key, location]) => (
-                <div key={key} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex items-center gap-3 flex-1">
-                    {/* Project Name and Info */}
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="font-medium">{location.name}</div>
-                        {activeProjectId === key && (
-                          <Target className="h-4 w-4 text-accent" />
-                        )}
+              {/* Sort projects with active project first */}
+              {Object.entries(PROJECT_LOCATIONS)
+                .sort(([keyA], [keyB]) => {
+                  if (keyA === activeProjectId) return -1;
+                  if (keyB === activeProjectId) return 1;
+                  return 0;
+                })
+                .map(([key, location]) => {
+                  // Get objects for this project
+                  const projectPins = pins.filter(p => p.projectId === key);
+                  const projectLines = lines.filter(l => l.projectId === key);
+                  const projectAreas = areas.filter(a => a.projectId === key);
+                  const totalObjects = projectPins.length + projectLines.length + projectAreas.length;
+                  
+                  return (
+                    <div key={key} className="border rounded-lg">
+                      <div className="flex items-center justify-between p-3">
+                        <div className="flex items-center gap-3 flex-1">
+                          {/* Project Name and Info */}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <div className="font-medium">{location.name}</div>
+                              {activeProjectId === key && (
+                                <Target className="h-4 w-4 text-accent" />
+                              )}
+                              {totalObjects > 0 && (
+                                <span className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded">
+                                  {totalObjects} objects
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {location.lat.toFixed(6)}, {location.lon.toFixed(6)}
+                            </div>
+                          </div>
+                          
+                          {/* Show Objects Dropdown - Only for active project */}
+                          {activeProjectId === key && totalObjects > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const element = document.getElementById(`project-objects-${key}`);
+                                if (element) {
+                                  element.style.display = element.style.display === 'none' ? 'block' : 'none';
+                                }
+                              }}
+                              className="h-8 px-2 text-xs"
+                            >
+                              Show Objects ↓
+                            </Button>
+                          )}
+                          
+                          {/* Visibility Toggle */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => toggleProjectVisibility(key)}
+                            className="h-8 w-8"
+                            title={projectVisibility[key] ? "Hide project" : "Show project"}
+                          >
+                            {projectVisibility[key] ? (
+                              <Eye className="h-4 w-4 text-primary" />
+                            ) : (
+                              <EyeOff className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </Button>
+                          
+                          {/* Activate Button */}
+                          <Button
+                            variant={activeProjectId === key ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setActiveProject(key)}
+                            disabled={activeProjectId === key}
+                            className="h-8 px-2"
+                          >
+                            {activeProjectId === key ? "Active" : "Activate"}
+                          </Button>
+                          
+                          {/* Visit Button - Only show for active project */}
+                          {activeProjectId === key && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => goToProjectLocation(key)}
+                              className="h-8 px-2"
+                            >
+                              Visit →
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        {location.lat.toFixed(6)}, {location.lon.toFixed(6)}
-                      </div>
-                    </div>
-                    
-                    {/* Visibility Toggle */}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => toggleProjectVisibility(key)}
-                      className="h-8 w-8"
-                      title={projectVisibility[key] ? "Hide project" : "Show project"}
-                    >
-                      {projectVisibility[key] ? (
-                        <Eye className="h-4 w-4 text-primary" />
-                      ) : (
-                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      
+                      {/* Objects List - Only for active project */}
+                      {activeProjectId === key && totalObjects > 0 && (
+                        <div id={`project-objects-${key}`} className="border-t bg-muted/30 p-3" style={{display: 'none'}}>
+                          <div className="space-y-2 text-sm">
+                            {projectPins.length > 0 && (
+                              <div>
+                                <div className="font-medium text-xs text-muted-foreground mb-1">PINS ({projectPins.length})</div>
+                                {projectPins.map(pin => (
+                                  <div key={pin.id} className="flex items-center gap-2 py-1">
+                                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                    <span>{pin.label || 'Unnamed Pin'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            
+                            {projectLines.length > 0 && (
+                              <div>
+                                <div className="font-medium text-xs text-muted-foreground mb-1">LINES ({projectLines.length})</div>
+                                {projectLines.map(line => (
+                                  <div key={line.id} className="flex items-center gap-2 py-1">
+                                    <div className="w-4 h-0.5 bg-green-500"></div>
+                                    <span>{line.label || 'Unnamed Line'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            
+                            {projectAreas.length > 0 && (
+                              <div>
+                                <div className="font-medium text-xs text-muted-foreground mb-1">AREAS ({projectAreas.length})</div>
+                                {projectAreas.map(area => (
+                                  <div key={area.id} className="flex items-center gap-2 py-1">
+                                    <div className="w-3 h-3 bg-red-500/30 border border-red-500"></div>
+                                    <span>{area.label || 'Unnamed Area'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       )}
-                    </Button>
-                    
-                    {/* Activate Button */}
-                    <Button
-                      variant={activeProjectId === key ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setActiveProject(key)}
-                      disabled={activeProjectId === key}
-                      className="h-8 px-2"
-                    >
-                      {activeProjectId === key ? "Active" : "Activate"}
-                    </Button>
-                    
-                    {/* Visit Button - Only show for active project */}
-                    {activeProjectId === key && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => goToProjectLocation(key)}
-                        className="h-8 px-2"
-                      >
-                        Visit →
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                    </div>
+                  );
+                })}
             </div>
           </div>
         </DialogContent>
@@ -1202,66 +2019,6 @@ export default function MapDrawingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Item Dialog */}
-      <Dialog open={!!itemToEdit} onOpenChange={() => setItemToEdit(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit {itemToEdit?.id.includes('pin') ? 'Pin' : itemToEdit?.id.includes('line') ? 'Line' : 'Area'}</DialogTitle>
-            <DialogDescription>
-              Update the label and notes for this {itemToEdit?.id.includes('pin') ? 'pin' : itemToEdit?.id.includes('line') ? 'line' : 'area'}.
-            </DialogDescription>
-          </DialogHeader>
-          {itemToEdit && (
-            <div className="space-y-4 py-4">
-              <div>
-                <label htmlFor="edit-label" className="block text-sm font-medium mb-2">
-                  Label
-                </label>
-                <input
-                  id="edit-label"
-                  type="text"
-                  defaultValue={itemToEdit.label}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Enter label"
-                />
-              </div>
-              <div>
-                <label htmlFor="edit-notes" className="block text-sm font-medium mb-2">
-                  Notes
-                </label>
-                <textarea
-                  id="edit-notes"
-                  defaultValue={itemToEdit.notes || ''}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Enter notes"
-                  rows={3}
-                />
-              </div>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setItemToEdit(null)}>
-                  Cancel
-                </Button>
-                <Button onClick={() => {
-                  const label = (document.getElementById('edit-label') as HTMLInputElement)?.value || '';
-                  const notes = (document.getElementById('edit-notes') as HTMLTextAreaElement)?.value || '';
-                  
-                  if (itemToEdit.id.includes('pin')) {
-                    handleUpdatePin(itemToEdit.id, label, notes, itemToEdit.projectId, itemToEdit.tagIds);
-                  } else if (itemToEdit.id.includes('line')) {
-                    handleUpdateLine(itemToEdit.id, label, notes, itemToEdit.projectId, itemToEdit.tagIds);
-                  } else if (itemToEdit.id.includes('area')) {
-                    handleUpdateArea(itemToEdit.id, label, notes, (itemToEdit as any).path, itemToEdit.projectId, itemToEdit.tagIds);
-                  }
-                  
-                  setItemToEdit(null);
-                }}>
-                  Save Changes
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

@@ -68,7 +68,7 @@ export default function TopNavigation({ user }: TopNavigationProps) {
   return (
     <TooltipProvider>
       <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
-        <div className="container flex h-full items-center justify-between px-4">
+        <div className="flex h-full items-center justify-between px-4 w-full">
           {/* Left side - PEBL Logo */}
           <div className="flex items-center">
             <PEBLLogoNav />

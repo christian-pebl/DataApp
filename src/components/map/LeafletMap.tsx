@@ -61,6 +61,12 @@ interface LeafletMapProps {
     editingGeometry: Line | Area | null;
     onEditGeometry: (item: Line | Area | null) => void;
     onUpdateGeometry: (itemId: string, newPath: {lat: number, lng: number}[]) => void;
+    // New props to control popup behavior
+    showPopups?: boolean;
+    useEditPanel?: boolean;
+    disableDefaultPopups?: boolean;
+    forceUseEditCallback?: boolean;
+    popupMode?: 'none' | 'default';
 }
 
 // Coordinate and distance conversion helpers
@@ -136,7 +142,8 @@ const LeafletMap = ({
     pendingArea, onAreaSave, onAreaCancel,
     onUpdatePin, onDeletePin, onUpdateLine, onDeleteLine, onUpdateArea, onDeleteArea, onToggleLabel, onToggleFill,
     itemToEdit, onEditItem, activeProjectId, projectVisibility,
-    editingGeometry, onEditGeometry, onUpdateGeometry
+    editingGeometry, onEditGeometry, onUpdateGeometry,
+    showPopups = true, useEditPanel = false, disableDefaultPopups = false, forceUseEditCallback = false, popupMode = 'default'
 }: LeafletMapProps) => {
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const pinLayerRef = useRef<LayerGroup | null>(null);
@@ -256,11 +263,17 @@ const LeafletMap = ({
                 const markerIcon = createCustomIcon(color);
                 const marker = L.marker([pin.lat, pin.lng], { icon: markerIcon }).addTo(layer);
                 
-                // Add click handler for pin deletion
+                // Add click handler for pin
                 marker.on('click', (e) => {
                     e.originalEvent.stopPropagation(); // Prevent map click
                     
-                    // Show edit/delete options popup
+                    // Use edit panel if configured, otherwise show popup
+                    if (useEditPanel || disableDefaultPopups || forceUseEditCallback || popupMode === 'none') {
+                        onEditItem(pin);
+                        return;
+                    }
+                    
+                    // Show edit/delete options popup (legacy behavior)
                     const actionContent = `
                         <div style="padding: 8px; text-align: center;">
                             <p style="margin: 0 0 8px 0; font-weight: bold;">Pin Options</p>
@@ -326,7 +339,7 @@ const LeafletMap = ({
                 }
             });
         }
-    }, [pins, onDeletePin]);
+    }, [pins, onDeletePin, onEditItem, useEditPanel, disableDefaultPopups, forceUseEditCallback, popupMode, onToggleLabel]);
 
     // Render lines
     useEffect(() => {
@@ -347,11 +360,17 @@ const LeafletMap = ({
                         opacity: 0.8
                     }).addTo(layer);
                     
-                    // Add click handler for line edit/delete
+                    // Add click handler for line
                     polyline.on('click', (e) => {
                         e.originalEvent.stopPropagation(); // Prevent map click
                         
-                        // Show edit/delete options popup
+                        // Use edit panel if configured, otherwise show popup
+                        if (useEditPanel || disableDefaultPopups || forceUseEditCallback || popupMode === 'none') {
+                            onEditItem(line);
+                            return;
+                        }
+                        
+                        // Show edit/delete options popup (legacy behavior)
                         const actionContent = `
                             <div style="padding: 8px; text-align: center;">
                                 <p style="margin: 0 0 8px 0; font-weight: bold;">Line Options</p>
@@ -456,7 +475,7 @@ const LeafletMap = ({
                 }
             });
         }
-    }, [lines]);
+    }, [lines, onEditItem, useEditPanel, disableDefaultPopups, forceUseEditCallback, popupMode, onToggleLabel, onDeleteLine]);
 
     // Render areas
     useEffect(() => {
@@ -478,11 +497,17 @@ const LeafletMap = ({
                         fillOpacity: area.fillVisible !== false ? 0.2 : 0
                     }).addTo(layer);
                     
-                    // Add click handler for area edit/delete
+                    // Add click handler for area
                     polygon.on('click', (e) => {
                         e.originalEvent.stopPropagation(); // Prevent map click
                         
-                        // Show edit/delete options popup
+                        // Use edit panel if configured, otherwise show popup
+                        if (useEditPanel || disableDefaultPopups || forceUseEditCallback || popupMode === 'none') {
+                            onEditItem(area);
+                            return;
+                        }
+                        
+                        // Show edit/delete options popup (legacy behavior)
                         const actionContent = `
                             <div style="padding: 8px; text-align: center;">
                                 <p style="margin: 0 0 8px 0; font-weight: bold;">Area Options</p>
@@ -544,7 +569,7 @@ const LeafletMap = ({
                 }
             });
         }
-    }, [areas]);
+    }, [areas, onEditItem, useEditPanel, disableDefaultPopups, forceUseEditCallback, popupMode, onToggleLabel, onDeleteArea]);
 
     // Handle pending pin popup
     useEffect(() => {
