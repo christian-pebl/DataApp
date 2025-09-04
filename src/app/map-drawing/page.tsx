@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3 } from 'lucide-react';
+import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check } from 'lucide-react';
 
 import { Separator } from '@/components/ui/separator';
 import {
@@ -25,6 +25,18 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useMapView } from '@/hooks/use-map-view';
 import { useSettings } from '@/hooks/use-settings';
 import { useMapData } from '@/hooks/use-map-data';
@@ -128,7 +140,7 @@ export default function MapDrawingPage() {
   const [editingLabel, setEditingLabel] = useState('');
   const [editingNotes, setEditingNotes] = useState('');
   const [editingColor, setEditingColor] = useState('#3b82f6');
-  const [editingSize, setEditingSize] = useState(5);
+  const [editingSize, setEditingSize] = useState(6);
   
   // Project management state
   const [projectVisibility, setProjectVisibility] = useState<Record<string, boolean>>(() => {
@@ -886,7 +898,7 @@ export default function MapDrawingPage() {
       } else {
         setEditingColor('#ef4444'); // Red for areas
       }
-      setEditingSize(5); // Default size
+      setEditingSize(6); // Default size
     }
   }, [itemToEdit, isEditingObject]);
 
@@ -903,7 +915,7 @@ export default function MapDrawingPage() {
       } else {
         setEditingColor('#ef4444');
       }
-      setEditingSize(5);
+      setEditingSize(6);
     }
   };
 
@@ -918,11 +930,11 @@ export default function MapDrawingPage() {
       };
 
       if ('lat' in itemToEdit) {
-        updatePin(itemToEdit.id, updatedObject);
+        updatePinData(itemToEdit.id, updatedObject);
       } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
-        updateLine(itemToEdit.id, updatedObject);
+        updateLineData(itemToEdit.id, updatedObject);
       } else {
-        updateArea(itemToEdit.id, updatedObject);
+        updateAreaData(itemToEdit.id, updatedObject);
       }
 
       setIsEditingObject(false);
@@ -934,7 +946,7 @@ export default function MapDrawingPage() {
     setEditingLabel('');
     setEditingNotes('');
     setEditingColor('#3b82f6');
-    setEditingSize(5);
+    setEditingSize(6);
   };
 
 
@@ -1180,35 +1192,93 @@ export default function MapDrawingPage() {
                       </div>
                       
                       <div>
-                        <label className="text-xs text-muted-foreground">Color:</label>
+                        <label className="text-xs text-muted-foreground">Color & Size:</label>
                         <div className="flex items-center gap-2 mt-1">
-                          <input
-                            type="color"
-                            value={editingColor}
-                            onChange={(e) => setEditingColor(e.target.value)}
-                            className="w-8 h-8 rounded border cursor-pointer"
-                          />
-                          <Input
-                            value={editingColor}
-                            onChange={(e) => setEditingColor(e.target.value)}
-                            className="h-8 font-mono text-xs"
-                            placeholder="#000000"
-                          />
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <label className="text-xs text-muted-foreground">Size:</label>
-                        <div className="flex items-center gap-2 mt-1">
-                          <input
-                            type="range"
-                            min="1"
-                            max="10"
-                            value={editingSize}
-                            onChange={(e) => setEditingSize(Number(e.target.value))}
-                            className="flex-1"
-                          />
-                          <span className="text-xs w-6 text-center">{editingSize}</span>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                className="w-10 h-8 p-0 rounded border"
+                                style={{ backgroundColor: editingColor }}
+                              >
+                                <span className="sr-only">Pick color</span>
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent 
+                              className="w-64 p-4 z-[1100]" 
+                              side="right" 
+                              align="start"
+                              sideOffset={8}
+                            >
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="text-sm font-medium">Choose Color</label>
+                                  <div className="flex items-center gap-2 mt-2">
+                                    <input
+                                      type="color"
+                                      value={editingColor}
+                                      onChange={(e) => {
+                                        setEditingColor(e.target.value);
+                                        // Auto-apply color change
+                                        if (itemToEdit) {
+                                          if ('lat' in itemToEdit) {
+                                            updatePinData(itemToEdit.id, { color: e.target.value, size: editingSize });
+                                          } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
+                                            if (areas.some(area => area.id === itemToEdit.id)) {
+                                              updateAreaData(itemToEdit.id, { color: e.target.value, size: editingSize });
+                                            } else {
+                                              updateLineData(itemToEdit.id, { color: e.target.value, size: editingSize });
+                                            }
+                                          }
+                                        }
+                                      }}
+                                      className="w-full h-10 rounded border cursor-pointer"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <div className="text-xs text-muted-foreground">
+                                    {editingColor.toUpperCase()}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Changes apply automatically
+                                  </div>
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                          <Select 
+                            value={editingSize.toString()} 
+                            onValueChange={(value) => {
+                              const newSize = parseInt(value);
+                              setEditingSize(newSize);
+                              // Auto-apply size change
+                              if (itemToEdit) {
+                                if ('lat' in itemToEdit) {
+                                  updatePinData(itemToEdit.id, { color: editingColor, size: newSize });
+                                } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
+                                  if (areas.some(area => area.id === itemToEdit.id)) {
+                                    updateAreaData(itemToEdit.id, { color: editingColor, size: newSize });
+                                  } else {
+                                    updateLineData(itemToEdit.id, { color: editingColor, size: newSize });
+                                  }
+                                }
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs flex-1">
+                              <SelectValue>
+                                {editingSize === 3 ? 'Size: Small' : 
+                                 editingSize === 6 ? 'Size: Medium' : 
+                                 editingSize === 10 ? 'Size: Large' : 'Size: Medium'}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent className="z-[1200]">
+                              <SelectItem value="3">Small</SelectItem>
+                              <SelectItem value="6">Medium</SelectItem>
+                              <SelectItem value="10">Large</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
                     </div>

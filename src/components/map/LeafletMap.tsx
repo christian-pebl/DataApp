@@ -487,14 +487,20 @@ const LeafletMap = ({
                         if (centerPoint && centerPoint.length === 2 && 
                             !isNaN(centerPoint[0]) && !isNaN(centerPoint[1]) &&
                             isFinite(centerPoint[0]) && isFinite(centerPoint[1])) {
-                            L.tooltip({
+                            const tooltip = L.tooltip({
                                 permanent: true,
                                 direction: 'center',
-                                className: 'line-label-tooltip'
+                                className: 'line-label-tooltip cursor-pointer'
                             })
                             .setContent(line.label)
                             .setLatLng([centerPoint[0], centerPoint[1]])
                             .addTo(layer);
+                            
+                            // Make tooltip clickable for selection
+                            tooltip.on('click', (e) => {
+                                e.originalEvent.stopPropagation();
+                                polyline.fire('click', e); // Trigger the same selection logic as the polyline
+                            });
                         }
                     }
                 }
@@ -586,11 +592,20 @@ const LeafletMap = ({
                     });
                     
                     if (area.labelVisible !== false && area.label) {
-                        polygon.bindTooltip(area.label, { 
+                        const tooltip = polygon.bindTooltip(area.label, { 
                             permanent: true, 
                             direction: 'center',
-                            className: 'font-sans font-bold bg-purple-100 border-purple-300'
+                            className: 'font-sans font-bold bg-purple-100 border-purple-300 cursor-pointer'
                         });
+                        
+                        // Make tooltip clickable for selection
+                        const tooltipElement = tooltip.getTooltip();
+                        if (tooltipElement) {
+                            tooltipElement.on('click', (e) => {
+                                e.originalEvent.stopPropagation();
+                                polygon.fire('click', e); // Trigger the same selection logic as the polygon
+                            });
+                        }
                     }
                 }
             });
