@@ -1420,9 +1420,31 @@ export default function MapDrawingPage() {
                           >
                             <div className="flex items-center gap-2">
                               <Target className="h-4 w-4 text-accent" />
-                              <div>
-                                <div className="text-sm font-medium text-foreground">
-                                  {activeProject.name}
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <div className="text-sm font-medium text-foreground">
+                                    {activeProject.name}
+                                  </div>
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            goToProjectLocation(activeProjectId);
+                                          }}
+                                          className="h-5 w-5 p-0 hover:bg-accent/20"
+                                        >
+                                          <Crosshair className="h-3 w-3 text-accent" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Center on Project</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
                                 </div>
                                 <div className="text-xs text-accent font-medium">
                                   Active Project
@@ -1445,20 +1467,6 @@ export default function MapDrawingPage() {
                           {/* Active Project Objects Dropdown */}
                           {showProjectInfo === activeProjectId && (
                             <div className="px-3 pb-3">
-                              {/* Center on Project Button */}
-                              <div className="mb-4">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    goToProjectLocation(activeProjectId);
-                                  }}
-                                  className="w-full justify-start gap-2 h-8"
-                                >
-                                  <Crosshair className="h-3 w-3" />
-                                  Center on Project
-                                </Button>
-                              </div>
                               
                               {totalObjects === 0 ? (
                                 <div className="text-xs text-muted-foreground text-center py-4">
