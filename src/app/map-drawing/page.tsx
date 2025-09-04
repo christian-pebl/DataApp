@@ -1411,57 +1411,56 @@ export default function MapDrawingPage() {
                       
                       return (
                         <div className="border-l-4 border-accent rounded-sm mb-4 pl-2">
-                          {/* Clickable header with arrow */}
-                          <Button 
-                            variant="ghost"
-                            size="sm" 
-                            onClick={() => setShowProjectInfo(showProjectInfo === activeProjectId ? null : activeProjectId)}
-                            className="w-full justify-between gap-3 h-auto p-3 text-left hover:bg-muted/30"
-                          >
-                            <div className="flex items-center gap-2">
-                              <Target className="h-4 w-4 text-accent" />
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
+                          {/* Clickable header with arrow and separate center button */}
+                          <div className="flex items-center gap-1">
+                            <Button 
+                              variant="ghost"
+                              size="sm" 
+                              onClick={() => setShowProjectInfo(showProjectInfo === activeProjectId ? null : activeProjectId)}
+                              className="flex-1 justify-between gap-3 h-auto p-3 text-left hover:bg-muted/30"
+                            >
+                              <div className="flex items-center gap-2">
+                                <Target className="h-4 w-4 text-accent" />
+                                <div>
                                   <div className="text-sm font-medium text-foreground">
                                     {activeProject.name}
                                   </div>
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            goToProjectLocation(activeProjectId);
-                                          }}
-                                          className="h-5 w-5 p-0 hover:bg-accent/20"
-                                        >
-                                          <Crosshair className="h-3 w-3 text-accent" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Center on Project</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                </div>
-                                <div className="text-xs text-accent font-medium">
-                                  Active Project
-                                </div>
-                                {totalObjects > 0 && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {totalObjects} objects ({projectPins.length} pins, {projectLines.length} lines, {projectAreas.length} areas)
+                                  <div className="text-xs text-accent font-medium">
+                                    Active Project
                                   </div>
-                                )}
+                                  {totalObjects > 0 && (
+                                    <div className="text-xs text-muted-foreground">
+                                      {totalObjects} objects ({projectPins.length} pins, {projectLines.length} lines, {projectAreas.length} areas)
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                            {showProjectInfo === activeProjectId ? (
-                              <ChevronDown className="h-4 w-4 text-accent" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4 text-accent" />
-                            )}
-                          </Button>
+                              {showProjectInfo === activeProjectId ? (
+                                <ChevronDown className="h-4 w-4 text-accent" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-accent" />
+                              )}
+                            </Button>
+                            
+                            {/* Center button - separate from main button */}
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => goToProjectLocation(activeProjectId)}
+                                    className="h-8 w-8 p-0 hover:bg-accent/20 flex-shrink-0"
+                                  >
+                                    <Crosshair className="h-3 w-3 text-accent" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Center on Project</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
                           
                           
                           {/* Active Project Objects Dropdown */}
