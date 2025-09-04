@@ -254,6 +254,8 @@ export interface Pin {
   notes?: string
   projectId?: string
   tagIds?: string[]
+  color?: string
+  size?: number
 }
 
 export interface Line {
@@ -264,6 +266,8 @@ export interface Line {
   notes?: string
   projectId?: string
   tagIds?: string[]
+  color?: string
+  size?: number
 }
 
 export interface Area {
@@ -275,4 +279,6 @@ export interface Area {
   fillVisible?: boolean
   projectId?: string
   tagIds?: string[]
+  color?: string
+  size?: number
 }

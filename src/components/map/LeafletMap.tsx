@@ -1,12 +1,16 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import L from 'leaflet';
 import type { LatLngExpression, Map as LeafletMap, LatLng, DivIconOptions, CircleMarker, Polyline, Polygon, LayerGroup, Popup, LocationEvent, LeafletMouseEvent, CircleMarkerOptions, Tooltip as LeafletTooltip, Marker } from 'leaflet';
 import type { Settings } from '@/hooks/use-settings';
 
-// Import Leaflet CSS
-import 'leaflet/dist/leaflet.css';
+// Dynamically import Leaflet only on client-side
+let L: any = null;
+if (typeof window !== 'undefined') {
+  L = require('leaflet');
+  // Import CSS using dynamic import to avoid HMR issues
+  import('leaflet/dist/leaflet.css');
+}
 
 type Project = { id: string; name: string; description?: string; createdAt: any; };
 type Tag = { id: string; name: string; color: string; projectId: string; };
@@ -106,6 +110,22 @@ const createDraggableVertexIcon = () => {
     });
 };
 
+// Line distance calculation
+export function calculateLineDistance(path: { lat: number; lng: number }[]): number {
+    if (path.length < 2 || !L) {
+        return 0;
+    }
+    
+    let totalDistance = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+        const point1 = L.latLng(path[i].lat, path[i].lng);
+        const point2 = L.latLng(path[i + 1].lat, path[i + 1].lng);
+        totalDistance += point1.distanceTo(point2);
+    }
+    
+    return totalDistance; // Returns distance in meters
+}
+
 // Shoelace formula implementation for area calculation
 function calculatePolygonArea(path: { lat: number; lng: number }[]): number {
     if (path.length < 3) {
@@ -148,6 +168,11 @@ const LeafletMap = ({
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const pinLayerRef = useRef<LayerGroup | null>(null);
     const lineLayerRef = useRef<LayerGroup | null>(null);
+
+    // Return early if Leaflet is not available (SSR)
+    if (!L) {
+        return <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} className="flex items-center justify-center text-muted-foreground">Loading map...</div>;
+    }
     const areaLayerRef = useRef<LayerGroup | null>(null);
     const previewLineRef = useRef<Polyline | null>(null);
     const livePreviewLineRef = useRef<Polyline | null>(null);
@@ -259,7 +284,7 @@ const LeafletMap = ({
             pins.filter(pin => typeof pin.lat === 'number' && typeof pin.lng === 'number' && 
                                !isNaN(pin.lat) && !isNaN(pin.lng) &&
                                isFinite(pin.lat) && isFinite(pin.lng)).forEach(pin => {
-                const color = '#3b82f6'; // Default blue color
+                const color = pin.color || '#3b82f6'; // Use pin color or default blue
                 const markerIcon = createCustomIcon(color);
                 const marker = L.marker([pin.lat, pin.lng], { icon: markerIcon }).addTo(layer);
                 
@@ -339,7 +364,7 @@ const LeafletMap = ({
                 }
             });
         }
-    }, [pins, onDeletePin, onEditItem, useEditPanel, disableDefaultPopups, forceUseEditCallback, popupMode, onToggleLabel]);
+    }, [pins, onEditItem, useEditPanel, disableDefaultPopups, forceUseEditCallback, popupMode]);
 
     // Render lines
     useEffect(() => {
@@ -355,8 +380,8 @@ const LeafletMap = ({
                     .map(p => [p.lat, p.lng] as [number, number]);
                 if (lineCoords.length >= 2) {
                     const polyline = L.polyline(lineCoords, {
-                        color: '#10b981',
-                        weight: 3,
+                        color: line.color || '#10b981',
+                        weight: line.size || 3,
                         opacity: 0.8
                     }).addTo(layer);
                     
@@ -475,7 +500,7 @@ const LeafletMap = ({
                 }
             });
         }
-    }, [lines, onEditItem, useEditPanel, disableDefaultPopups, forceUseEditCallback, popupMode, onToggleLabel, onDeleteLine]);
+    }, [lines, onEditItem, useEditPanel, disableDefaultPopups, forceUseEditCallback, popupMode]);
 
     // Render areas
     useEffect(() => {
@@ -490,10 +515,11 @@ const LeafletMap = ({
                                 isFinite(p.lat) && isFinite(p.lng))
                     .map(p => [p.lat, p.lng] as [number, number]);
                 if (areaCoords.length >= 3) {
+                    const areaColor = area.color || '#8b5cf6';
                     const polygon = L.polygon(areaCoords, {
-                        color: '#8b5cf6',
-                        weight: 2,
-                        fillColor: '#8b5cf6',
+                        color: areaColor,
+                        weight: area.size || 2,
+                        fillColor: areaColor,
                         fillOpacity: area.fillVisible !== false ? 0.2 : 0
                     }).addTo(layer);
                     
@@ -569,7 +595,7 @@ const LeafletMap = ({
                 }
             });
         }
-    }, [areas, onEditItem, useEditPanel, disableDefaultPopups, forceUseEditCallback, popupMode, onToggleLabel, onDeleteArea]);
+    }, [areas, onEditItem, useEditPanel, disableDefaultPopups, forceUseEditCallback, popupMode]);
 
     // Handle pending pin popup
     useEffect(() => {
