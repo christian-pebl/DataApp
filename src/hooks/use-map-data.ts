@@ -114,15 +114,55 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
     setIsLoading(true)
     try {
       console.log('Loading data from database...')
-      const [projectsData, tagsData, pinsData, linesData, areasData] = await Promise.all([
-        mapDataService.getProjects(),
-        mapDataService.getTags(projectId === 'default' ? undefined : projectId),
-        mapDataService.getPins(projectId === 'default' ? undefined : projectId),
-        mapDataService.getLines(projectId === 'default' ? undefined : projectId),
-        mapDataService.getAreas(projectId === 'default' ? undefined : projectId)
-      ])
+      
+      // Load each data type separately with individual error handling
+      let projectsData = []
+      let tagsData = []
+      let pinsData = []
+      let linesData = []
+      let areasData = []
+      
+      try {
+        projectsData = await mapDataService.getProjects()
+        console.log('Projects loaded:', projectsData.length)
+      } catch (error) {
+        console.log('Projects table may not exist yet:', error)
+        projectsData = []
+      }
+      
+      try {
+        tagsData = await mapDataService.getTags(projectId === 'default' ? undefined : projectId)
+        console.log('Tags loaded:', tagsData.length)
+      } catch (error) {
+        console.log('Tags table may not exist yet:', error)
+        tagsData = []
+      }
+      
+      try {
+        pinsData = await mapDataService.getPins(projectId === 'default' ? undefined : projectId)
+        console.log('Pins loaded:', pinsData.length)
+      } catch (error) {
+        console.log('Pins table may not exist yet:', error)
+        pinsData = []
+      }
+      
+      try {
+        linesData = await mapDataService.getLines(projectId === 'default' ? undefined : projectId)
+        console.log('Lines loaded:', linesData.length)
+      } catch (error) {
+        console.log('Lines table may not exist yet:', error)
+        linesData = []
+      }
+      
+      try {
+        areasData = await mapDataService.getAreas(projectId === 'default' ? undefined : projectId)
+        console.log('Areas loaded:', areasData.length)
+      } catch (error) {
+        console.log('Areas table may not exist yet:', error)
+        areasData = []
+      }
 
-      console.log('Database data loaded:', { projectsData, tagsData, pinsData, linesData, areasData })
+      console.log('Database data loaded successfully')
 
       // If we have database data, use it; otherwise keep localStorage data
       if (projectsData.length > 0) setProjects(projectsData)

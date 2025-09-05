@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check } from 'lucide-react';
+import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X } from 'lucide-react';
 
 import { Separator } from '@/components/ui/separator';
 import {
@@ -40,6 +40,17 @@ import {
 import { useMapView } from '@/hooks/use-map-view';
 import { useSettings } from '@/hooks/use-settings';
 import { useMapData } from '@/hooks/use-map-data';
+import { getTimeWindowSummary } from '@/lib/dateParser';
+import { fileStorageService, type PinFile } from '@/lib/supabase/file-storage-service';
+import { mapDataService } from '@/lib/supabase/map-data-service';
+import { 
+  parseCoordinateInput, 
+  getCoordinateFormats, 
+  validateCoordinate, 
+  CoordinateFormat, 
+  COORDINATE_FORMAT_LABELS, 
+  COORDINATE_FORMAT_EXAMPLES 
+} from '@/lib/coordinate-utils';
 // Define types locally to avoid SSR issues with Leaflet
 interface LatLng {
   lat: number;
@@ -75,6 +86,7 @@ const LeafletMap = dynamic(() => import('@/components/map/LeafletMap').then(mod 
 });
 
 import { Project, Tag, Pin, Line, Area } from '@/lib/supabase/types';
+import { PinMarineDeviceData } from '@/components/pin-data/PinMarineDeviceData';
 
 type DrawingMode = 'none' | 'pin' | 'line' | 'area';
 
@@ -118,7 +130,7 @@ export default function MapDrawingPage() {
     clearAll: clearAllData,
     forceSync,
     migrateToDatabase
-  } = useMapData({ projectId: 'default', enableSync: false });
+  } = useMapData({ projectId: 'default', enableSync: true });
   
   // Map state
   const mapRef = useRef<LeafletMap | null>(null);
@@ -141,6 +153,26 @@ export default function MapDrawingPage() {
   const [editingNotes, setEditingNotes] = useState('');
   const [editingColor, setEditingColor] = useState('#3b82f6');
   const [editingSize, setEditingSize] = useState(6);
+  const [editingLat, setEditingLat] = useState('');
+  const [editingLng, setEditingLng] = useState('');
+  const [coordinateFormat, setCoordinateFormat] = useState<CoordinateFormat>('decimal');
+  const [showNotesSection, setShowNotesSection] = useState(false);
+  const [showCoordinateFormatPopover, setShowCoordinateFormatPopover] = useState(false);
+  const [showDataDropdown, setShowDataDropdown] = useState(false);
+  const [showSharePopover, setShowSharePopover] = useState(false);
+  const [sharePrivacyLevel, setSharePrivacyLevel] = useState<'private' | 'public' | 'specific'>('private');
+  const [shareEmails, setShareEmails] = useState('');
+  const [isUpdatingPrivacy, setIsUpdatingPrivacy] = useState(false);
+  const [pinFiles, setPinFiles] = useState<Record<string, File[]>>({});
+  const [pinFileMetadata, setPinFileMetadata] = useState<Record<string, PinFile[]>>({});
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const [showExploreDropdown, setShowExploreDropdown] = useState(false);
+  const [selectedPinForExplore, setSelectedPinForExplore] = useState<string | null>(null);
+  
+  // Marine Device Modal State
+  const [showMarineDeviceModal, setShowMarineDeviceModal] = useState(false);
+  const [selectedFileType, setSelectedFileType] = useState<'GP' | 'FPOD' | 'Subcam' | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   
   // Project management state
   const [projectVisibility, setProjectVisibility] = useState<Record<string, boolean>>(() => {
@@ -227,6 +259,31 @@ export default function MapDrawingPage() {
       setShowMigrationPrompt(false);
     }
   };
+
+  // Load pin files from Supabase when pins change
+  useEffect(() => {
+    const loadPinFiles = async () => {
+      if (pins.length === 0) return;
+      
+      const fileMetadata: Record<string, PinFile[]> = {};
+      
+      // Load files for each pin
+      for (const pin of pins) {
+        try {
+          const files = await fileStorageService.getPinFiles(pin.id);
+          if (files.length > 0) {
+            fileMetadata[pin.id] = files;
+          }
+        } catch (error) {
+          console.error(`Error loading files for pin ${pin.id}:`, error);
+        }
+      }
+      
+      setPinFileMetadata(fileMetadata);
+    };
+
+    loadPinFiles();
+  }, [pins]);
 
 
 
@@ -804,15 +861,77 @@ export default function MapDrawingPage() {
   const goToProjectLocation = useCallback((locationKey: string) => {
     const location = PROJECT_LOCATIONS[locationKey as keyof typeof PROJECT_LOCATIONS];
     if (location && mapRef.current) {
-      mapRef.current.setView([location.lat, location.lon], 12);
+      // Get all objects for this project
+      const projectPins = pins.filter(pin => pin.project === locationKey);
+      const projectLines = lines.filter(line => line.project === locationKey);
+      const projectAreas = areas.filter(area => area.project === locationKey);
+      const totalObjects = projectPins.length + projectLines.length + projectAreas.length;
+      
+      if (totalObjects > 0) {
+        // Calculate bounds that include all project objects
+        let minLat = Infinity, maxLat = -Infinity;
+        let minLng = Infinity, maxLng = -Infinity;
+        
+        // Process pins
+        projectPins.forEach(pin => {
+          minLat = Math.min(minLat, pin.lat);
+          maxLat = Math.max(maxLat, pin.lat);
+          minLng = Math.min(minLng, pin.lng);
+          maxLng = Math.max(maxLng, pin.lng);
+        });
+        
+        // Process lines
+        projectLines.forEach(line => {
+          if (line.points) {
+            line.points.forEach(point => {
+              minLat = Math.min(minLat, point.lat);
+              maxLat = Math.max(maxLat, point.lat);
+              minLng = Math.min(minLng, point.lng);
+              maxLng = Math.max(maxLng, point.lng);
+            });
+          }
+        });
+        
+        // Process areas
+        projectAreas.forEach(area => {
+          if (area.points) {
+            area.points.forEach(point => {
+              minLat = Math.min(minLat, point.lat);
+              maxLat = Math.max(maxLat, point.lat);
+              minLng = Math.min(minLng, point.lng);
+              maxLng = Math.max(maxLng, point.lng);
+            });
+          }
+        });
+        
+        // Add some padding around the bounds
+        const latPadding = (maxLat - minLat) * 0.1 || 0.01;
+        const lngPadding = (maxLng - minLng) * 0.1 || 0.01;
+        
+        // Fit bounds to show all objects
+        mapRef.current.fitBounds([
+          [minLat - latPadding, minLng - lngPadding],
+          [maxLat + latPadding, maxLng + lngPadding]
+        ], { padding: [20, 20] });
+        
+        toast({
+          title: `Viewing ${location.name}`,
+          description: `Showing all ${totalObjects} project objects`,
+          duration: 3000
+        });
+      } else {
+        // Fallback to project location if no objects
+        mapRef.current.setView([location.lat, location.lon], 12);
+        toast({
+          title: `Navigated to ${location.name}`,
+          description: `No objects found - showing project location`,
+          duration: 3000
+        });
+      }
+      
       setShowProjectsDialog(false);
-      toast({
-        title: `Navigated to ${location.name}`,
-        description: `Lat: ${location.lat.toFixed(6)}, Lng: ${location.lon.toFixed(6)}`,
-        duration: 3000
-      });
     }
-  }, [toast]);
+  }, [toast, pins, lines, areas]);
 
   // Project management handlers
   const toggleProjectVisibility = useCallback((projectKey: string) => {
@@ -843,11 +962,41 @@ export default function MapDrawingPage() {
           setShowMainMenu(false);
         }
       }
+      
+      // Close data dropdown when clicking outside
+      if (showDataDropdown) {
+        const target = event.target as Element;
+        const dataDropdown = document.querySelector('[data-data-dropdown]');
+        
+        if (dataDropdown && !dataDropdown.contains(target)) {
+          setShowDataDropdown(false);
+        }
+      }
+      
+          // Close explore dropdown when clicking outside
+      if (showExploreDropdown) {
+        const target = event.target as Element;
+        const exploreDropdown = document.querySelector('[data-explore-dropdown]');
+        
+        if (exploreDropdown && !exploreDropdown.contains(target)) {
+          setShowExploreDropdown(false);
+        }
+      }
+      
+      // Close marine device modal when clicking outside
+      if (showMarineDeviceModal) {
+        const target = event.target as Element;
+        const modalContent = document.querySelector('[data-marine-modal]');
+        
+        if (modalContent && !modalContent.contains(target)) {
+          // Let the Dialog component handle backdrop clicks
+        }
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showMainMenu]);
+  }, [showMainMenu, showDataDropdown, showExploreDropdown]);
 
   // Handle sidebar resizing
   useEffect(() => {
@@ -890,30 +1039,120 @@ export default function MapDrawingPage() {
     if (itemToEdit && isEditingObject) {
       setEditingLabel(itemToEdit.label || '');
       setEditingNotes(itemToEdit.notes || '');
-      // Set default colors based on object type
-      if ('lat' in itemToEdit) {
+      // Initialize coordinates and colors based on object type
+      if ('lat' in itemToEdit && 'lng' in itemToEdit) {
+        console.log('Initializing coordinates:', itemToEdit.lat, itemToEdit.lng, 'format:', coordinateFormat);
+        
+        const formats = getCoordinateFormats(itemToEdit.lat);
+        const lngFormats = getCoordinateFormats(itemToEdit.lng);
+        
+        console.log('Generated formats:', formats, lngFormats);
+        
+        // Set coordinates based on current format
+        switch (coordinateFormat) {
+          case 'degreeMinutes':
+            setEditingLat(formats.degreeMinutes);
+            setEditingLng(lngFormats.degreeMinutes);
+            break;
+          case 'degreeMinutesSeconds':
+            setEditingLat(formats.degreeMinutesSeconds);
+            setEditingLng(lngFormats.degreeMinutesSeconds);
+            break;
+          default:
+            setEditingLat(itemToEdit.lat.toString());
+            setEditingLng(itemToEdit.lng.toString());
+            break;
+        }
         setEditingColor('#3b82f6'); // Blue for pins
       } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
-        setEditingColor('#10b981'); // Green for lines
-      } else {
-        setEditingColor('#ef4444'); // Red for areas
+        if ('fillVisible' in itemToEdit) {
+          setEditingColor('#ef4444'); // Red for areas
+        } else {
+          setEditingColor('#10b981'); // Green for lines
+        }
       }
       setEditingSize(6); // Default size
+      
+      // Auto-expand notes if there are existing notes
+      setShowNotesSection(Boolean(itemToEdit.notes && itemToEdit.notes.trim()));
     }
-  }, [itemToEdit, isEditingObject]);
+  }, [itemToEdit, isEditingObject, coordinateFormat]);
+
+  // Handle coordinate format change
+  const handleCoordinateFormatChange = (newFormat: CoordinateFormat) => {
+    console.log('Format change requested:', newFormat, 'current values:', editingLat, editingLng);
+    
+    if (itemToEdit && 'lat' in itemToEdit) {
+      // Convert current coordinates to new format
+      const currentLat = parseCoordinateInput(editingLat);
+      const currentLng = parseCoordinateInput(editingLng);
+      
+      console.log('Parsed current coordinates:', currentLat, currentLng);
+      
+      if (currentLat !== null && currentLng !== null) {
+        const latFormats = getCoordinateFormats(currentLat);
+        const lngFormats = getCoordinateFormats(currentLng);
+        
+        console.log('Generated new formats:', latFormats, lngFormats);
+        
+        switch (newFormat) {
+          case 'degreeMinutes':
+            setEditingLat(latFormats.degreeMinutes);
+            setEditingLng(lngFormats.degreeMinutes);
+            break;
+          case 'degreeMinutesSeconds':
+            setEditingLat(latFormats.degreeMinutesSeconds);
+            setEditingLng(lngFormats.degreeMinutesSeconds);
+            break;
+          default:
+            setEditingLat(currentLat.toString());
+            setEditingLng(currentLng.toString());
+            break;
+        }
+      } else {
+        console.log('Failed to parse coordinates, falling back to original values');
+        // Fall back to using the original coordinates from itemToEdit
+        const latFormats = getCoordinateFormats(itemToEdit.lat);
+        const lngFormats = getCoordinateFormats(itemToEdit.lng);
+        
+        switch (newFormat) {
+          case 'degreeMinutes':
+            setEditingLat(latFormats.degreeMinutes);
+            setEditingLng(lngFormats.degreeMinutes);
+            break;
+          case 'degreeMinutesSeconds':
+            setEditingLat(latFormats.degreeMinutesSeconds);
+            setEditingLng(lngFormats.degreeMinutesSeconds);
+            break;
+          default:
+            setEditingLat(itemToEdit.lat.toString());
+            setEditingLng(itemToEdit.lng.toString());
+            break;
+        }
+      }
+    }
+    setCoordinateFormat(newFormat);
+  };
 
   const handleStartEdit = () => {
     if (itemToEdit) {
+      console.log('DEBUG: handleStartEdit - itemToEdit:', itemToEdit);
       setIsEditingObject(true);
       setEditingLabel(itemToEdit.label || '');
       setEditingNotes(itemToEdit.notes || '');
-      // Set current colors based on object type
-      if ('lat' in itemToEdit) {
+      // Set current coordinates and colors based on object type
+      if ('lat' in itemToEdit && 'lng' in itemToEdit) {
+        console.log('DEBUG: handleStartEdit - Setting coordinates from itemToEdit - lat:', itemToEdit.lat, 'lng:', itemToEdit.lng);
+        setEditingLat(itemToEdit.lat.toString());
+        setEditingLng(itemToEdit.lng.toString());
+        console.log('DEBUG: handleStartEdit - Coordinate format is:', coordinateFormat);
         setEditingColor('#3b82f6');
       } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
-        setEditingColor('#10b981');
-      } else {
-        setEditingColor('#ef4444');
+        if ('fillVisible' in itemToEdit) {
+          setEditingColor('#ef4444');
+        } else {
+          setEditingColor('#10b981');
+        }
       }
       setEditingSize(6);
     }
@@ -921,20 +1160,79 @@ export default function MapDrawingPage() {
 
   const handleSaveEdit = () => {
     if (itemToEdit) {
-      const updatedObject = {
-        ...itemToEdit,
-        label: editingLabel.trim() || undefined,
-        notes: editingNotes.trim() || undefined,
-        color: editingColor,
-        size: editingSize
-      };
-
+      // Validate coordinates for pins
       if ('lat' in itemToEdit) {
+        console.log('DEBUG: Saving coordinates - editingLat:', editingLat, 'editingLng:', editingLng);
+        const lat = parseCoordinateInput(editingLat);
+        const lng = parseCoordinateInput(editingLng);
+        console.log('DEBUG: Parsed coordinates - lat:', lat, 'lng:', lng);
+        
+        // Validate coordinate values
+        if (lat === null || lng === null) {
+          toast({
+            variant: "destructive",
+            title: "Invalid Coordinates",
+            description: "Please enter valid coordinates in the selected format."
+          });
+          return;
+        }
+        
+        if (!validateCoordinate(lat, 'latitude')) {
+          toast({
+            variant: "destructive", 
+            title: "Invalid Latitude",
+            description: "Latitude must be between -90 and 90 degrees."
+          });
+          return;
+        }
+        
+        if (!validateCoordinate(lng, 'longitude')) {
+          toast({
+            variant: "destructive",
+            title: "Invalid Longitude", 
+            description: "Longitude must be between -180 and 180 degrees."
+          });
+          return;
+        }
+
+        const updatedObject = {
+          ...itemToEdit,
+          lat,
+          lng,
+          label: editingLabel.trim() || undefined,
+          notes: editingNotes.trim() || undefined,
+          color: editingColor,
+          size: editingSize
+        };
+
+        console.log('DEBUG: Original itemToEdit:', itemToEdit);
+        console.log('DEBUG: updatedObject before save:', updatedObject);
+        console.log('DEBUG: Coordinates in updatedObject - lat:', updatedObject.lat, 'lng:', updatedObject.lng);
+        
         updatePinData(itemToEdit.id, updatedObject);
-      } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
-        updateLineData(itemToEdit.id, updatedObject);
+        
+        toast({
+          title: "Pin Updated",
+          description: `Coordinates updated to ${lat.toFixed(6)}, ${lng.toFixed(6)}`
+        });
+        
       } else {
-        updateAreaData(itemToEdit.id, updatedObject);
+        // For lines and areas, no coordinate editing
+        const updatedObject = {
+          ...itemToEdit,
+          label: editingLabel.trim() || undefined,
+          notes: editingNotes.trim() || undefined,
+          color: editingColor,
+          size: editingSize
+        };
+
+        if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
+          if ('fillVisible' in itemToEdit) {
+            updateAreaData(itemToEdit.id, updatedObject);
+          } else {
+            updateLineData(itemToEdit.id, updatedObject);
+          }
+        }
       }
 
       setIsEditingObject(false);
@@ -947,6 +1245,285 @@ export default function MapDrawingPage() {
     setEditingNotes('');
     setEditingColor('#3b82f6');
     setEditingSize(6);
+  };
+
+  // Move pin to current map center (crosshair position)
+  const handleMovePinToCenter = async () => {
+    if (itemToEdit && 'lat' in itemToEdit && mapRef.current) {
+      const mapCenter = mapRef.current.getCenter();
+      console.log('DEBUG: Moving pin to map center (crosshair position):', mapCenter.lat, mapCenter.lng);
+      console.log('DEBUG: Map center coordinates should match exactly where crosshairs are positioned');
+      
+      // Update the editing coordinates to the map center
+      setEditingLat(mapCenter.lat.toString());
+      setEditingLng(mapCenter.lng.toString());
+      
+      // Immediately update the pin in the database/state
+      const updatedObject = {
+        ...itemToEdit,
+        lat: mapCenter.lat,
+        lng: mapCenter.lng,
+      };
+
+      console.log('DEBUG: Updating pin with new coordinates:', updatedObject);
+      try {
+        await updatePinData(itemToEdit.id, updatedObject);
+        console.log('DEBUG: Pin update successful');
+      } catch (error) {
+        console.error('DEBUG: Pin update failed:', error);
+        toast({
+          variant: "destructive",
+          title: "Error Moving Pin",
+          description: "Failed to move pin. Check console for details."
+        });
+        return;
+      }
+      
+      toast({
+        title: "Pin Moved",
+        description: `Pin moved to map center: ${mapCenter.lat.toFixed(6)}, ${mapCenter.lng.toFixed(6)}`
+      });
+    }
+  };
+
+  // Handle sharing pin privacy settings
+  const handleUpdatePrivacy = async () => {
+    if (!itemToEdit || !('lat' in itemToEdit)) return;
+    
+    setIsUpdatingPrivacy(true);
+    try {
+      const sharedEmails = sharePrivacyLevel === 'specific' && shareEmails 
+        ? shareEmails.split(',').map(email => email.trim()).filter(email => email.length > 0)
+        : [];
+      
+      // Update pin privacy in database
+      await mapDataService.updatePinPrivacy(itemToEdit.id, sharePrivacyLevel, sharedEmails);
+      
+      // Update local state
+      const updatedPin = { ...itemToEdit, privacyLevel: sharePrivacyLevel };
+      setItemToEdit(updatedPin);
+      
+      // Update the pins array
+      setPins(prevPins => 
+        prevPins.map(pin => 
+          pin.id === itemToEdit.id 
+            ? { ...pin, privacyLevel: sharePrivacyLevel }
+            : pin
+        )
+      );
+      
+      toast({
+        title: "Privacy Updated",
+        description: `Pin privacy set to ${sharePrivacyLevel}${sharePrivacyLevel === 'specific' && sharedEmails.length > 0 ? ` and shared with: ${sharedEmails.join(', ')}` : ''}`
+      });
+      
+      setShowSharePopover(false);
+      setShareEmails('');
+    } catch (error) {
+      console.error('Error updating privacy:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update privacy settings"
+      });
+    } finally {
+      setIsUpdatingPrivacy(false);
+    }
+  };
+
+  // Initialize sharing state when item is selected
+  const handleOpenShare = () => {
+    if (itemToEdit && 'lat' in itemToEdit) {
+      setSharePrivacyLevel(itemToEdit.privacyLevel || 'private');
+      setShowSharePopover(true);
+    }
+  };
+
+  // Helper function to categorize files by type
+  const categorizeFiles = (files: File[]) => {
+    const categories = {
+      GP: [] as File[],
+      FPOD: [] as File[],
+      Subcam: [] as File[]
+    };
+    
+    files.forEach(file => {
+      const fileName = file.name.toLowerCase();
+      if (fileName.startsWith('gp')) {
+        categories.GP.push(file);
+      } else if (fileName.startsWith('fpod')) {
+        categories.FPOD.push(file);
+      } else if (fileName.startsWith('subcam')) {
+        categories.Subcam.push(file);
+      }
+    });
+    
+    return categories;
+  };
+
+  // Handle file upload for pins
+  const handleFileUpload = (pinId: string) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.multiple = true;
+    
+    input.onchange = async (e) => {
+      const files = Array.from((e.target as HTMLInputElement).files || []);
+      const csvFiles = files.filter(file => file.name.toLowerCase().endsWith('.csv'));
+      
+      if (csvFiles.length !== files.length) {
+        toast({
+          variant: "destructive",
+          title: "Invalid File Type",
+          description: "Please select only CSV files."
+        });
+        return;
+      }
+      
+      if (csvFiles.length > 0) {
+        setIsUploadingFiles(true);
+        
+        try {
+          const uploadResults: PinFile[] = [];
+          const failedUploads: string[] = [];
+          
+          // Upload each file to Supabase
+          for (const file of csvFiles) {
+            const result = await fileStorageService.uploadPinFile(pinId, file, activeProjectId);
+            if (result) {
+              uploadResults.push(result);
+            } else {
+              failedUploads.push(file.name);
+            }
+          }
+          
+          if (uploadResults.length > 0) {
+            // Update local file metadata state
+            setPinFileMetadata(prev => ({
+              ...prev,
+              [pinId]: [...(prev[pinId] || []), ...uploadResults]
+            }));
+            
+            // Keep local files for backward compatibility (for now)
+            setPinFiles(prev => ({
+              ...prev,
+              [pinId]: [...(prev[pinId] || []), ...csvFiles]
+            }));
+          }
+          
+          // Show success/failure toast
+          if (failedUploads.length === 0) {
+            toast({
+              title: "Files Uploaded Successfully",
+              description: `${uploadResults.length} CSV file${uploadResults.length > 1 ? 's' : ''} uploaded to Supabase.`
+            });
+          } else {
+            toast({
+              variant: failedUploads.length === csvFiles.length ? "destructive" : "default",
+              title: failedUploads.length === csvFiles.length ? "Upload Failed" : "Partial Upload Success",
+              description: failedUploads.length === csvFiles.length 
+                ? `Failed to upload ${failedUploads.length} files`
+                : `${uploadResults.length} uploaded, ${failedUploads.length} failed: ${failedUploads.join(', ')}`
+            });
+          }
+          
+        } catch (error) {
+          console.error('File upload error:', error);
+          toast({
+            variant: "destructive",
+            title: "Upload Error",
+            description: "An error occurred while uploading files. Please try again."
+          });
+        } finally {
+          setIsUploadingFiles(false);
+        }
+      }
+    };
+    
+    input.click();
+  };
+
+  // Handle explore data with file type selection
+  const handleExploreData = (pinId: string) => {
+    const files = pinFiles[pinId] || [];
+    
+    if (files.length === 0) {
+      toast({
+        title: "No Data Available",
+        description: "No files uploaded for this pin yet."
+      });
+      return;
+    }
+    
+    setSelectedPinForExplore(pinId);
+    setShowExploreDropdown(true);
+  };
+
+  // Marine Device Modal Handlers
+  const openMarineDeviceModal = useCallback((fileType: 'GP' | 'FPOD' | 'Subcam', files: File[]) => {
+    setSelectedFileType(fileType);
+    setSelectedFiles(files);
+    setShowMarineDeviceModal(true);
+    
+    // Close object properties panel when opening marine device modal
+    setItemToEdit(null);
+    setShowDataDropdown(false);
+    setShowExploreDropdown(false);
+  }, []);
+
+  const closeMarineDeviceModal = useCallback(() => {
+    setShowMarineDeviceModal(false);
+    setSelectedFileType(null);
+    setSelectedFiles([]);
+  }, []);
+
+  // Handle request to return to file selection from Add New Plot button
+  const handleRequestFileSelection = useCallback(() => {
+    // Close the marine device modal
+    setShowMarineDeviceModal(false);
+    setSelectedFileType(null);
+    setSelectedFiles([]);
+    
+    // Reopen the object properties with the file selector
+    // We need to find the original pin that was being edited
+    const pinForReselection = selectedPinForExplore || 
+      (pinFiles && Object.keys(pinFiles).find(pinId => pinFiles[pinId]?.length > 0));
+    
+    if (pinForReselection) {
+      // Find the pin object
+      const pin = pins.find(p => p.id === pinForReselection);
+      if (pin) {
+        setItemToEdit(pin);
+        setShowDataDropdown(true);
+        setShowExploreDropdown(true);
+        setSelectedPinForExplore(pinForReselection);
+      }
+    }
+  }, [selectedPinForExplore, pinFiles, pins]);
+
+  // Handle file type selection
+  const handleFileTypeSelection = (fileType: 'GP' | 'FPOD' | 'Subcam') => {
+    if (!selectedPinForExplore) return;
+    
+    const files = pinFiles[selectedPinForExplore] || [];
+    const categorizedFiles = categorizeFiles(files);
+    const selectedFiles = categorizedFiles[fileType];
+    
+    setShowExploreDropdown(false);
+    setShowDataDropdown(false);
+    setSelectedPinForExplore(null);
+    
+    if (selectedFiles.length > 0) {
+      // Open the Marine Device Modal instead of showing toast
+      openMarineDeviceModal(fileType, selectedFiles);
+    } else {
+      toast({
+        variant: "destructive",
+        title: "No Files Found",
+        description: `No ${fileType} files found for this pin.`
+      });
+    }
   };
 
 
@@ -997,21 +1574,6 @@ export default function MapDrawingPage() {
       <main className="relative overflow-hidden bg-background text-foreground" style={{ height: 'calc(100vh - 3.5rem)' }}>
         <div className="h-full w-full relative" style={{ minHeight: '500px', cursor: drawingMode === 'none' ? 'default' : 'crosshair' }}>
           
-          {/* Always-visible smaller crosshairs */}
-          <div className="absolute inset-0 pointer-events-none z-[999]">
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-              <div className="relative">
-                {/* Horizontal lines with gap */}
-                <div className="absolute top-1/2 left-1/2 w-2 h-px bg-blue-500 transform -translate-x-full -translate-y-1/2" style={{ marginLeft: '-3px' }}></div>
-                <div className="absolute top-1/2 left-1/2 w-2 h-px bg-blue-500 transform -translate-y-1/2" style={{ marginLeft: '3px' }}></div>
-                {/* Vertical lines with gap */}
-                <div className="absolute top-1/2 left-1/2 w-px h-2 bg-blue-500 transform -translate-x-1/2 -translate-y-full" style={{ marginTop: '-3px' }}></div>
-                <div className="absolute top-1/2 left-1/2 w-px h-2 bg-blue-500 transform -translate-x-1/2" style={{ marginTop: '3px' }}></div>
-                {/* Center circle */}
-                <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 border border-blue-500 rounded-full bg-transparent transform -translate-x-1/2 -translate-y-1/2"></div>
-              </div>
-            </div>
-          </div>
           
           <LeafletMap
             mapRef={mapRef}
@@ -1066,6 +1628,16 @@ export default function MapDrawingPage() {
             forceUseEditCallback={true}
             popupMode="none"
           />
+
+          {/* Center Crosshairs */}
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none z-[500]">
+            {/* Horizontal line */}
+            <div className="absolute w-8 h-px bg-red-500 shadow-lg shadow-black/50 -translate-x-1/2 -translate-y-1/2"></div>
+            {/* Vertical line */}
+            <div className="absolute h-8 w-px bg-red-500 shadow-lg shadow-black/50 -translate-x-1/2 -translate-y-1/2"></div>
+            {/* Center dot for perfect accuracy */}
+            <div className="absolute w-1 h-1 bg-red-500 rounded-full -translate-x-1/2 -translate-y-1/2 shadow-lg shadow-black/50"></div>
+          </div>
           
           {/* Main Menu Button */}
           <div className="absolute top-8 left-4 z-[1000]">
@@ -1099,12 +1671,16 @@ export default function MapDrawingPage() {
                     {'lat' in itemToEdit ? (
                       <MapPin className="h-4 w-4 text-blue-500" />
                     ) : 'path' in itemToEdit && Array.isArray(itemToEdit.path) ? (
-                      <Minus className="h-4 w-4 text-green-500" />
+                      'fillVisible' in itemToEdit ? (
+                        <Square className="h-4 w-4 text-purple-500" />
+                      ) : (
+                        <Minus className="h-4 w-4 text-green-500" />
+                      )
                     ) : (
                       <Square className="h-4 w-4 text-purple-500" />
                     )}
                     <span className="text-sm font-medium text-foreground">
-                      {itemToEdit.label || `Unnamed ${'lat' in itemToEdit ? 'Pin' : 'path' in itemToEdit && Array.isArray(itemToEdit.path) ? 'Line' : 'Area'}`}
+                      {itemToEdit.label || `Unnamed ${'lat' in itemToEdit ? 'Pin' : 'path' in itemToEdit && Array.isArray(itemToEdit.path) ? ('fillVisible' in itemToEdit ? 'Area' : 'Line') : 'Unknown'}`}
                     </span>
                   </div>
                   <Button
@@ -1137,33 +1713,281 @@ export default function MapDrawingPage() {
                       </div>
                     )}
                     
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleStartEdit}
-                        className="flex-1 h-8"
-                      >
-                        <Edit3 className="h-3 w-3 mr-1" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          if ('lat' in itemToEdit) {
-                            deletePin(itemToEdit.id);
-                          } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
-                            deleteLine(itemToEdit.id);
-                          } else {
-                            deleteArea(itemToEdit.id);
-                          }
-                          setItemToEdit(null);
-                        }}
-                        className="h-8 px-2 text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleStartEdit}
+                          className="flex-1 h-8"
+                        >
+                          <Edit3 className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                        
+                        {/* Share button - only for pins */}
+                        {itemToEdit && 'lat' in itemToEdit && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={handleOpenShare}
+                                  className="h-8 px-2"
+                                >
+                                  <Share2 className="h-3 w-3" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Share Pin</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if ('lat' in itemToEdit) {
+                              handleDeletePin(itemToEdit.id);
+                            } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
+                              if ('fillVisible' in itemToEdit) {
+                                handleDeleteArea(itemToEdit.id);
+                              } else {
+                                handleDeleteLine(itemToEdit.id);
+                              }
+                            }
+                            setItemToEdit(null);
+                          }}
+                          className="h-8 px-2 text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      
+                      {/* Share Popover - Only for Pins */}
+                      {itemToEdit && 'lat' in itemToEdit && (
+                        <Popover open={showSharePopover} onOpenChange={setShowSharePopover}>
+                          <PopoverTrigger />
+                          <PopoverContent className="w-80 p-4 z-[9999]" align="start">
+                            <div className="space-y-4">
+                              <div>
+                                <h4 className="font-medium text-sm mb-2">Pin Privacy Settings</h4>
+                                <p className="text-xs text-muted-foreground mb-3">
+                                  Control who can see this pin
+                                </p>
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <label className="flex items-center space-x-2 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name="privacy"
+                                    value="private"
+                                    checked={sharePrivacyLevel === 'private'}
+                                    onChange={(e) => setSharePrivacyLevel(e.target.value as 'private' | 'public' | 'specific')}
+                                    className="text-primary"
+                                  />
+                                  <Lock className="h-4 w-4 text-muted-foreground" />
+                                  <div>
+                                    <div className="text-sm font-medium">Private</div>
+                                    <div className="text-xs text-muted-foreground">Only you can see this pin</div>
+                                  </div>
+                                </label>
+                                
+                                <label className="flex items-center space-x-2 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name="privacy"
+                                    value="public"
+                                    checked={sharePrivacyLevel === 'public'}
+                                    onChange={(e) => setSharePrivacyLevel(e.target.value as 'private' | 'public' | 'specific')}
+                                    className="text-primary"
+                                  />
+                                  <Globe className="h-4 w-4 text-muted-foreground" />
+                                  <div>
+                                    <div className="text-sm font-medium">Public</div>
+                                    <div className="text-xs text-muted-foreground">Anyone can see this pin</div>
+                                  </div>
+                                </label>
+                                
+                                <label className="flex items-center space-x-2 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name="privacy"
+                                    value="specific"
+                                    checked={sharePrivacyLevel === 'specific'}
+                                    onChange={(e) => setSharePrivacyLevel(e.target.value as 'private' | 'public' | 'specific')}
+                                    className="text-primary"
+                                  />
+                                  <Users className="h-4 w-4 text-muted-foreground" />
+                                  <div>
+                                    <div className="text-sm font-medium">Specific Users</div>
+                                    <div className="text-xs text-muted-foreground">Share with specific people</div>
+                                  </div>
+                                </label>
+                                
+                                {sharePrivacyLevel === 'specific' && (
+                                  <div className="ml-6 mt-2">
+                                    <Input
+                                      placeholder="Enter email addresses separated by commas"
+                                      value={shareEmails}
+                                      onChange={(e) => setShareEmails(e.target.value)}
+                                      className="text-xs"
+                                    />
+                                    <div className="text-xs text-muted-foreground mt-1">
+                                      Users will receive a notification when you share
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              <div className="flex justify-end space-x-2 pt-2 border-t">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setShowSharePopover(false)}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={handleUpdatePrivacy}
+                                  disabled={isUpdatingPrivacy}
+                                >
+                                  {isUpdatingPrivacy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                                  Update Privacy
+                                </Button>
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                      
+                      {/* Data Dropdown Button - Only for Pins */}
+                      {'lat' in itemToEdit && (
+                        <div className="relative" data-data-dropdown>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowDataDropdown(!showDataDropdown)}
+                            className="w-full h-8 flex items-center gap-2"
+                          >
+                            <Database className="h-3 w-3" />
+                            Data
+                            <ChevronDown className={`h-3 w-3 transition-transform ${showDataDropdown ? 'rotate-180' : ''}`} />
+                          </Button>
+                          
+                          {/* Data Dropdown Menu */}
+                          {showDataDropdown && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-background border rounded-lg shadow-lg z-[1200] p-1">
+                              {/* Explore Data Dropdown */}
+                              <div className="relative" data-explore-dropdown>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    const fileCount = pinFiles[itemToEdit.id]?.length || 0;
+                                    if (fileCount === 0) {
+                                      toast({
+                                        title: "No Data Available",
+                                        description: "No files uploaded for this pin yet."
+                                      });
+                                      return;
+                                    }
+                                    setSelectedPinForExplore(itemToEdit.id);
+                                    setShowExploreDropdown(!showExploreDropdown);
+                                  }}
+                                  className="w-full justify-between gap-2 h-8 text-xs"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <BarChart3 className="h-3 w-3" />
+                                    <span>Explore data ({pinFiles[itemToEdit.id]?.length || 0} files)</span>
+                                  </div>
+                                  <ChevronDown className={`h-3 w-3 transition-transform ${showExploreDropdown ? 'rotate-180' : ''}`} />
+                                </Button>
+                                
+                                {/* File Type Dropdown */}
+                                {showExploreDropdown && selectedPinForExplore === itemToEdit.id && (
+                                  <div className="absolute top-full left-0 mt-1 w-full min-w-[200px] bg-background border rounded-lg shadow-lg z-[1300] p-1">
+                                    {(() => {
+                                      const files = pinFiles[selectedPinForExplore] || [];
+                                      const categorizedFiles = categorizeFiles(files);
+                                      const availableTypes = Object.entries(categorizedFiles).filter(([_, files]) => files.length > 0);
+                                      
+                                      if (availableTypes.length === 0) {
+                                        return (
+                                          <div className="px-3 py-2 text-xs text-muted-foreground text-center">
+                                            No files with recognized prefixes found
+                                          </div>
+                                        );
+                                      }
+                                      
+                                      return availableTypes.map(([fileType, files]) => {
+                                        const timeWindow = getTimeWindowSummary(files);
+                                        
+                                        return (
+                                          <div key={fileType} className="space-y-1">
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => handleFileTypeSelection(fileType as 'GP' | 'FPOD' | 'Subcam')}
+                                              className="w-full justify-start gap-2 h-8 text-xs"
+                                            >
+                                              <span className="font-medium">{fileType}</span>
+                                              <span className="text-muted-foreground">({files.length} files)</span>
+                                            </Button>
+                                            {timeWindow && (
+                                              <div className="flex items-center gap-1.5 px-2 py-1 ml-2 bg-accent/10 rounded text-xs text-accent">
+                                                <Calendar className="h-3 w-3" />
+                                                <span>{timeWindow}</span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      });
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setShowDataDropdown(false);
+                                  handleFileUpload(itemToEdit.id);
+                                }}
+                                disabled={isUploadingFiles}
+                                className="w-full justify-start gap-2 h-8 text-xs"
+                              >
+                                {isUploadingFiles ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Upload className="h-3 w-3" />
+                                )}
+                                {isUploadingFiles ? 'Uploading...' : 'Upload data'}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  // TODO: Implement fetch meteo data
+                                  setShowDataDropdown(false);
+                                  toast({
+                                    title: "Fetch Meteo Data",
+                                    description: "This feature will be implemented soon."
+                                  });
+                                }}
+                                className="w-full justify-start gap-2 h-8 text-xs"
+                              >
+                                <Cloud className="h-3 w-3" />
+                                Fetch meteo data
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </>
                 ) : (
@@ -1180,16 +2004,123 @@ export default function MapDrawingPage() {
                         />
                       </div>
                       
+                      {/* Notes section - collapsible */}
                       <div>
-                        <label className="text-xs text-muted-foreground">Notes:</label>
-                        <Textarea
-                          value={editingNotes}
-                          onChange={(e) => setEditingNotes(e.target.value)}
-                          placeholder="Enter notes..."
-                          className="mt-1"
-                          rows={2}
-                        />
+                        <div className="flex items-center justify-between">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowNotesSection(!showNotesSection)}
+                            className="h-6 px-0 text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            {showNotesSection ? (
+                              <ChevronDown className="h-3 w-3 mr-1" />
+                            ) : (
+                              <ChevronRight className="h-3 w-3 mr-1" />
+                            )}
+                            Notes {editingNotes.trim() && !showNotesSection ? '●' : ''}
+                          </Button>
+                        </div>
+                        
+                        {showNotesSection && (
+                          <div className="mt-2">
+                            <Textarea
+                              value={editingNotes}
+                              onChange={(e) => setEditingNotes(e.target.value)}
+                              placeholder="Enter notes..."
+                              className="text-xs"
+                              rows={2}
+                            />
+                          </div>
+                        )}
                       </div>
+
+                      {/* Coordinate editing - only show for pins */}
+                      {itemToEdit && 'lat' in itemToEdit && (
+                        <>
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-xs text-muted-foreground">Coordinates:</label>
+                              <div className="flex items-center gap-1">
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-4 w-4 p-0 text-muted-foreground hover:text-foreground"
+                                        onClick={handleMovePinToCenter}
+                                      >
+                                        <Target className="h-3 w-3" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top">
+                                      <p>Move pin to current position</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                
+                                <Popover open={showCoordinateFormatPopover} onOpenChange={setShowCoordinateFormatPopover}>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-4 w-4 p-0 text-muted-foreground hover:text-foreground"
+                                    >
+                                      <Settings className="h-3 w-3" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                <PopoverContent className="w-60 p-2 z-[9999]" align="end">
+                                  <div className="space-y-2">
+                                    <div className="text-xs font-medium">Coordinate Format</div>
+                                    <div className="space-y-1">
+                                      {(Object.keys(COORDINATE_FORMAT_LABELS) as CoordinateFormat[]).map((format) => (
+                                        <button
+                                          key={format}
+                                          onClick={() => {
+                                            handleCoordinateFormatChange(format);
+                                            setShowCoordinateFormatPopover(false);
+                                          }}
+                                          className={`w-full text-left p-2 text-xs rounded hover:bg-accent ${coordinateFormat === format ? 'bg-accent' : ''}`}
+                                        >
+                                          <div className="font-medium">{COORDINATE_FORMAT_LABELS[format]}</div>
+                                          <div className="text-muted-foreground">{COORDINATE_FORMAT_EXAMPLES[format]}</div>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                              </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <Input
+                                  value={editingLat}
+                                  onChange={(e) => setEditingLat(e.target.value)}
+                                  placeholder={coordinateFormat === 'decimal' ? 'e.g., 51.68498' : coordinateFormat === 'degreeMinutes' ? 'e.g., 51°41.099\'' : 'e.g., 51°41\'5.9"'}
+                                  className="h-8 font-mono text-xs"
+                                  type={coordinateFormat === 'decimal' ? 'number' : 'text'}
+                                  step={coordinateFormat === 'decimal' ? 'any' : undefined}
+                                />
+                                <span className="text-xs text-muted-foreground">Latitude</span>
+                              </div>
+                              <div>
+                                <Input
+                                  value={editingLng}
+                                  onChange={(e) => setEditingLng(e.target.value)}
+                                  placeholder={coordinateFormat === 'decimal' ? 'e.g., 5.16133' : coordinateFormat === 'degreeMinutes' ? 'e.g., 5°9.680\'' : 'e.g., 5°9\'40.8"'}
+                                  className="h-8 font-mono text-xs"
+                                  type={coordinateFormat === 'decimal' ? 'number' : 'text'}
+                                  step={coordinateFormat === 'decimal' ? 'any' : undefined}
+                                />
+                                <span className="text-xs text-muted-foreground">Longitude</span>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
                       
                       <div>
                         <label className="text-xs text-muted-foreground">Color & Size:</label>
@@ -1224,7 +2155,7 @@ export default function MapDrawingPage() {
                                           if ('lat' in itemToEdit) {
                                             updatePinData(itemToEdit.id, { color: e.target.value, size: editingSize });
                                           } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
-                                            if (areas.some(area => area.id === itemToEdit.id)) {
+                                            if ('fillVisible' in itemToEdit) {
                                               updateAreaData(itemToEdit.id, { color: e.target.value, size: editingSize });
                                             } else {
                                               updateLineData(itemToEdit.id, { color: e.target.value, size: editingSize });
@@ -1257,7 +2188,7 @@ export default function MapDrawingPage() {
                                 if ('lat' in itemToEdit) {
                                   updatePinData(itemToEdit.id, { color: editingColor, size: newSize });
                                 } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
-                                  if (areas.some(area => area.id === itemToEdit.id)) {
+                                  if ('fillVisible' in itemToEdit) {
                                     updateAreaData(itemToEdit.id, { color: editingColor, size: newSize });
                                   } else {
                                     updateLineData(itemToEdit.id, { color: editingColor, size: newSize });
@@ -1490,7 +2421,7 @@ export default function MapDrawingPage() {
                               className="flex-1 justify-between gap-3 h-auto p-3 text-left hover:bg-muted/30"
                             >
                               <div className="flex items-center gap-2">
-                                <Target className="h-4 w-4 text-accent" />
+                                <Crosshair className="h-4 w-4 text-accent" />
                                 <div>
                                   <div className="text-sm font-medium text-foreground">
                                     {activeProject.name}
@@ -1512,24 +2443,6 @@ export default function MapDrawingPage() {
                               )}
                             </Button>
                             
-                            {/* Center button - separate from main button */}
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => goToProjectLocation(activeProjectId)}
-                                    className="h-8 w-8 p-0 hover:bg-accent/20 flex-shrink-0"
-                                  >
-                                    <Crosshair className="h-3 w-3 text-accent" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Center on Project</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
                           </div>
                           
                           
@@ -1574,6 +2487,16 @@ export default function MapDrawingPage() {
                                         <div className="w-3 h-3 bg-red-500/30 border border-red-500 flex-shrink-0"></div>
                                       )}
                                       <span className="truncate flex-1 text-left">{object.label || `Unnamed ${object.type.charAt(0).toUpperCase() + object.type.slice(1)}`}</span>
+                                      
+                                      {/* Data indicator for pins with uploaded files */}
+                                      {object.type === 'pin' && (pinFiles[object.id]?.length > 0 || pinFileMetadata[object.id]?.length > 0) && (
+                                        <div className="flex items-center gap-1 ml-auto">
+                                          <Database className="h-3 w-3 text-accent" />
+                                          <span className="text-xs text-accent font-medium">
+                                            {pinFileMetadata[object.id]?.length || pinFiles[object.id]?.length || 0}
+                                          </span>
+                                        </div>
+                                      )}
                                     </Button>
                                   ))}
                                 </div>
@@ -1635,7 +2558,7 @@ export default function MapDrawingPage() {
                                       <div className="flex items-center gap-2">
                                         <div className="font-medium text-sm truncate">{location.name}</div>
                                         {activeProjectId === key && (
-                                          <Target className="h-3 w-3 text-accent flex-shrink-0" />
+                                          <Crosshair className="h-3 w-3 text-accent flex-shrink-0" />
                                         )}
                                         {totalObjects > 0 && (
                                           <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded flex-shrink-0">
@@ -1940,7 +2863,7 @@ export default function MapDrawingPage() {
                             <div className="flex items-center gap-2 mb-1">
                               <div className="font-medium">{location.name}</div>
                               {activeProjectId === key && (
-                                <Target className="h-4 w-4 text-accent" />
+                                <Crosshair className="h-4 w-4 text-accent" />
                               )}
                               {totalObjects > 0 && (
                                 <span className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded">
@@ -2020,7 +2943,17 @@ export default function MapDrawingPage() {
                                 {projectPins.map(pin => (
                                   <div key={pin.id} className="flex items-center gap-2 py-1">
                                     <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                                    <span>{pin.label || 'Unnamed Pin'}</span>
+                                    <span className="flex-1">{pin.label || 'Unnamed Pin'}</span>
+                                    
+                                    {/* Data indicator for pins with uploaded files */}
+                                    {(pinFiles[pin.id]?.length > 0 || pinFileMetadata[pin.id]?.length > 0) && (
+                                      <div className="flex items-center gap-1 ml-auto">
+                                        <Database className="h-3 w-3 text-accent" />
+                                        <span className="text-xs text-accent font-medium">
+                                          {pinFileMetadata[pin.id]?.length || pinFiles[pin.id]?.length || 0}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
                               </div>
@@ -2092,6 +3025,38 @@ export default function MapDrawingPage() {
                 Migrate to Account
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Marine Device Data Modal */}
+      <Dialog open={showMarineDeviceModal} onOpenChange={setShowMarineDeviceModal}>
+        <DialogContent className="max-w-6xl h-[80vh] marine-device-modal" data-marine-modal>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5" />
+              Marine Device Data - {selectedFileType}
+            </DialogTitle>
+            <DialogDescription>
+              Analyzing {selectedFiles.length} {selectedFileType} file{selectedFiles.length > 1 ? 's' : ''} • Click ESC to close
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden">
+            {selectedFileType && selectedFiles.length > 0 ? (
+              <PinMarineDeviceData 
+                fileType={selectedFileType}
+                files={selectedFiles}
+                onRequestFileSelection={handleRequestFileSelection}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-center">
+                <div className="text-muted-foreground">
+                  <Database className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p className="font-medium">No files selected</p>
+                  <p className="text-sm">Select a file type to begin analysis</p>
+                </div>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

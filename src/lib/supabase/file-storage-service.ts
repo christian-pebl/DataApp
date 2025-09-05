@@ -1,0 +1,231 @@
+import { createClient } from './client'
+import { v4 as uuidv4 } from 'uuid'
+
+export interface PinFile {
+  id: string
+  pinId: string
+  fileName: string
+  filePath: string
+  fileSize: number
+  fileType: string
+  uploadedAt: Date
+  projectId: string
+}
+
+class FileStorageService {
+  private supabase = createClient()
+
+  /**
+   * Upload a file to Supabase Storage and save metadata to database
+   */
+  async uploadPinFile(
+    pinId: string, 
+    file: File, 
+    projectId: string = 'default'
+  ): Promise<PinFile | null> {
+    try {
+      // Generate unique file path
+      const fileId = uuidv4()
+      const fileExtension = file.name.split('.').pop()
+      const filePath = `pins/${pinId}/${fileId}.${fileExtension}`
+
+      // Upload file to Supabase Storage
+      const { error: uploadError } = await this.supabase.storage
+        .from('pin-files')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) {
+        console.error('File upload error:', uploadError)
+        return null
+      }
+
+      // Save file metadata to database (using snake_case column names)
+      const pinFileData = {
+        pin_id: pinId,
+        file_name: file.name,
+        file_path: filePath,
+        file_size: file.size,
+        file_type: file.type || 'text/csv',
+        project_id: projectId
+      }
+
+      console.log('DEBUG: Inserting pin file data:', pinFileData);
+
+      const { data, error: dbError } = await this.supabase
+        .from('pin_files')
+        .insert(pinFileData)
+        .select()
+        .single()
+
+      if (dbError) {
+        console.error('Database error:', dbError)
+        // Clean up uploaded file if database save fails
+        await this.supabase.storage
+          .from('pin-files')
+          .remove([filePath])
+        return null
+      }
+
+      console.log('DEBUG: Database insert successful:', data);
+
+      // Transform snake_case to camelCase for return
+      return {
+        id: data.id,
+        pinId: data.pin_id,
+        fileName: data.file_name,
+        filePath: data.file_path,
+        fileSize: data.file_size,
+        fileType: data.file_type,
+        projectId: data.project_id,
+        uploadedAt: new Date(data.uploaded_at)
+      } as PinFile
+
+    } catch (error) {
+      console.error('Upload file error:', error)
+      return null
+    }
+  }
+
+  /**
+   * Get all files for a specific pin
+   */
+  async getPinFiles(pinId: string): Promise<PinFile[]> {
+    try {
+      const { data, error } = await this.supabase
+        .from('pin_files')
+        .select('*')
+        .eq('pin_id', pinId)  // Use snake_case column name
+        .order('uploaded_at', { ascending: false })  // Use snake_case column name
+
+      if (error) {
+        console.error('Get pin files error:', error)
+        return []
+      }
+
+      // Transform snake_case to camelCase for return
+      return (data || []).map(item => ({
+        id: item.id,
+        pinId: item.pin_id,
+        fileName: item.file_name,
+        filePath: item.file_path,
+        fileSize: item.file_size,
+        fileType: item.file_type,
+        projectId: item.project_id,
+        uploadedAt: new Date(item.uploaded_at)
+      }))
+    } catch (error) {
+      console.error('Get pin files error:', error)
+      return []
+    }
+  }
+
+  /**
+   * Download a file from Supabase Storage
+   */
+  async downloadFile(filePath: string): Promise<Blob | null> {
+    try {
+      const { data, error } = await this.supabase.storage
+        .from('pin-files')
+        .download(filePath)
+
+      if (error) {
+        console.error('Download file error:', error)
+        return null
+      }
+
+      return data
+    } catch (error) {
+      console.error('Download file error:', error)
+      return null
+    }
+  }
+
+  /**
+   * Delete a file from storage and database
+   */
+  async deleteFile(fileId: string): Promise<boolean> {
+    try {
+      // Get file metadata first
+      const { data: fileData, error: getError } = await this.supabase
+        .from('pin_files')
+        .select('filePath')
+        .eq('id', fileId)
+        .single()
+
+      if (getError || !fileData) {
+        console.error('Get file data error:', getError)
+        return false
+      }
+
+      // Delete from storage
+      const { error: storageError } = await this.supabase.storage
+        .from('pin-files')
+        .remove([fileData.filePath])
+
+      if (storageError) {
+        console.error('Storage delete error:', storageError)
+        return false
+      }
+
+      // Delete from database
+      const { error: dbError } = await this.supabase
+        .from('pin_files')
+        .delete()
+        .eq('id', fileId)
+
+      if (dbError) {
+        console.error('Database delete error:', dbError)
+        return false
+      }
+
+      return true
+    } catch (error) {
+      console.error('Delete file error:', error)
+      return false
+    }
+  }
+
+  /**
+   * Get all files for a project
+   */
+  async getProjectFiles(projectId: string): Promise<PinFile[]> {
+    try {
+      const { data, error } = await this.supabase
+        .from('pin_files')
+        .select('*')
+        .eq('projectId', projectId)
+        .order('uploadedAt', { ascending: false })
+
+      if (error) {
+        console.error('Get project files error:', error)
+        return []
+      }
+
+      return data || []
+    } catch (error) {
+      console.error('Get project files error:', error)
+      return []
+    }
+  }
+
+  /**
+   * Create a public URL for a file (for viewing/analysis)
+   */
+  getPublicUrl(filePath: string): string | null {
+    try {
+      const { data } = this.supabase.storage
+        .from('pin-files')
+        .getPublicUrl(filePath)
+
+      return data.publicUrl
+    } catch (error) {
+      console.error('Get public URL error:', error)
+      return null
+    }
+  }
+}
+
+export const fileStorageService = new FileStorageService()

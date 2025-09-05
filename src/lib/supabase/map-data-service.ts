@@ -130,11 +130,12 @@ export class MapDataService {
 
   // Pin operations
   async getPins(projectId?: string): Promise<Pin[]> {
+    // Simplified query for backward compatibility
     let query = this.supabase
       .from('pins')
       .select(`
         *,
-        pin_tags!inner(tag_id)
+        pin_tags!left(tag_id)
       `)
     
     if (projectId) {
@@ -153,13 +154,16 @@ export class MapDataService {
       labelVisible: pin.label_visible ?? true,
       notes: pin.notes || undefined,
       projectId: pin.project_id || undefined,
-      tagIds: (pin as any).pin_tags?.map((pt: any) => pt.tag_id) || []
+      tagIds: (pin as any).pin_tags?.map((pt: any) => pt.tag_id) || [],
+      // privacyLevel: pin.privacy_level || 'private', // Temporarily removed
+      userId: pin.user_id
     }))
   }
 
   async createPin(pin: Omit<Pin, 'id'>): Promise<Pin> {
-    // Use admin user ID for shared data
-    const ADMIN_USER_ID = 'admin-shared-data'
+    // Get current user ID, fallback to admin for backward compatibility
+    const { data: { user } } = await this.supabase.auth.getUser()
+    const userId = user?.id || 'admin-shared-data'
 
     const { data, error } = await this.supabase
       .from('pins')
@@ -170,7 +174,8 @@ export class MapDataService {
         notes: pin.notes || null,
         label_visible: pin.labelVisible ?? true,
         project_id: pin.projectId || null,
-        user_id: ADMIN_USER_ID
+        user_id: userId
+        // privacy_level: 'private' // Temporarily removed until DB is updated
       })
       .select()
       .single()
@@ -533,6 +538,85 @@ export class MapDataService {
       .from('areas')
       .delete()
       .eq('id', id)
+
+    if (error) throw error
+  }
+
+  // Privacy and sharing operations
+  async updatePinPrivacy(pinId: string, privacyLevel: 'private' | 'public' | 'specific', sharedEmails?: string[]): Promise<void> {
+    // Update the pin's privacy level
+    const { error: pinError } = await this.supabase
+      .from('pins')
+      .update({ 
+        privacy_level: privacyLevel,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', pinId)
+
+    if (pinError) throw pinError
+
+    // If sharing with specific users, handle sharing
+    if (privacyLevel === 'specific' && sharedEmails && sharedEmails.length > 0) {
+      // Get current user
+      const { data: { user } } = await this.supabase.auth.getUser()
+      if (!user) throw new Error('User not authenticated')
+
+      // Clear existing shares for this pin
+      await this.supabase
+        .from('pin_shares')
+        .delete()
+        .eq('pin_id', pinId)
+
+      // Look up user IDs by email
+      for (const email of sharedEmails) {
+        const { data: profiles } = await this.supabase
+          .from('user_profiles')
+          .select('id')
+          .eq('email', email.trim())
+          .single()
+
+        if (profiles) {
+          // Create share record
+          await this.supabase
+            .from('pin_shares')
+            .insert({
+              pin_id: pinId,
+              shared_with_user_id: profiles.id,
+              shared_by_user_id: user.id
+            })
+        }
+      }
+    } else if (privacyLevel !== 'specific') {
+      // Clear all shares if not specific sharing
+      await this.supabase
+        .from('pin_shares')
+        .delete()
+        .eq('pin_id', pinId)
+    }
+  }
+
+  // Get user notifications
+  async getNotifications(): Promise<any[]> {
+    const { data: { user } } = await this.supabase.auth.getUser()
+    if (!user) return []
+
+    const { data, error } = await this.supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('read', false)
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+    return data
+  }
+
+  // Mark notification as read
+  async markNotificationRead(notificationId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('id', notificationId)
 
     if (error) throw error
   }

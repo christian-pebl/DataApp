@@ -256,6 +256,8 @@ export interface Pin {
   tagIds?: string[]
   color?: string
   size?: number
+  privacyLevel?: 'private' | 'public' | 'specific'
+  userId?: string
 }
 
 export interface Line {

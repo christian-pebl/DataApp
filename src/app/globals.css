@@ -22,6 +22,15 @@ body {
   font-weight: bold;
 }
 
+/* Marine Device Modal - Ensure it appears above everything */
+.marine-device-modal {
+  z-index: 9999 !important;
+}
+
+.marine-device-modal [data-radix-popper-content-wrapper] {
+  z-index: 9999 !important;
+}
+
 .pebl-subheading {
   font-family: 'Futura', 'Trebuchet MS', 'Avenir Next', 'Helvetica Neue', Arial, sans-serif;
   font-weight: bold;
