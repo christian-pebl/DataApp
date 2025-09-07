@@ -15,7 +15,7 @@ import {
   PlusCircle, Waves, MapPin, CalendarDays, Search,
   Loader2, Info, CheckCircle2, XCircle, Copy, CloudSun, Anchor,
   Thermometer, Wind as WindIcon, Compass as CompassIcon, Sailboat, Timer as TimerIcon, ListChecks, FilePenLine,
-  ChevronsLeft, ChevronsRight, Home, LayoutGrid
+  ChevronsLeft, ChevronsRight, Home, LayoutGrid, FileText, ChevronDown, ChevronRight, Database, Eye
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -27,6 +27,7 @@ import { Label as UiLabel } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -112,6 +113,11 @@ export default function DataExplorerPage() {
   const [isApiLogLoading, setIsApiLogLoading] = useState(false);
   const [apiLogOverallStatus, setApiLogOverallStatus] = useState<ApiLogOverallStatus>('idle');
   const lastApiErrorRef = useRef<string | null>(null);
+
+  // Section visibility states
+  const [showDataOverview, setShowDataOverview] = useState(false);
+  const [showMarineMeteoData, setShowMarineMeteoData] = useState(false);
+  const [showMarineDeviceData, setShowMarineDeviceData] = useState(false);
   const initialApiFetchDone = useRef(false);
 
   // Home Location Logic
@@ -438,15 +444,111 @@ export default function DataExplorerPage() {
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <main className="flex-grow container mx-auto p-2 sm:p-3 space-y-3">
         
+        {/* Data Overview Section */}
         <Card className="shadow-sm">
           <CardHeader className="pb-2 pt-3">
-            <CardTitle className="text-base flex items-center gap-1.5 font-futura">
-               Marine & Meteorological Data
-            </CardTitle>
-            <p className="text-xs text-muted-foreground pebl-body-main">
-              Advanced ocean data visualization for ecological monitoring
-            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-1.5 font-futura">
+                  <Database className="h-4 w-4 text-primary" />
+                  Data Overview
+                </CardTitle>
+                <p className="text-xs text-muted-foreground pebl-body-main">
+                  Overview of all uploaded files and their associations
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDataOverview(!showDataOverview)}
+                className="h-8 px-3 text-xs"
+              >
+                {showDataOverview ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
+                {showDataOverview ? 'Hide' : 'Show'}
+              </Button>
+            </div>
           </CardHeader>
+          {showDataOverview && (
+            <CardContent className="p-3">
+              <div className="rounded border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">File Name</TableHead>
+                      <TableHead className="text-xs">Project</TableHead>
+                      <TableHead className="text-xs">Object</TableHead>
+                      <TableHead className="text-xs">Device Type</TableHead>
+                      <TableHead className="text-xs">Upload Date</TableHead>
+                      <TableHead className="text-xs">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {/* Sample data - this would be populated from actual data */}
+                    <TableRow>
+                      <TableCell className="text-xs">sample_data.csv</TableCell>
+                      <TableCell className="text-xs">Marine Study 2024</TableCell>
+                      <TableCell className="text-xs">Buoy Station A</TableCell>
+                      <TableCell className="text-xs">GP Sensor</TableCell>
+                      <TableCell className="text-xs">2024-01-15</TableCell>
+                      <TableCell className="text-xs">
+                        <span className="text-green-600 flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Active
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="text-xs">temperature_log.csv</TableCell>
+                      <TableCell className="text-xs">Coastal Monitoring</TableCell>
+                      <TableCell className="text-xs">Sensor Pod B</TableCell>
+                      <TableCell className="text-xs">FPOD</TableCell>
+                      <TableCell className="text-xs">2024-01-20</TableCell>
+                      <TableCell className="text-xs">
+                        <span className="text-blue-600 flex items-center gap-1">
+                          <Info className="h-3 w-3" />
+                          Processing
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="text-xs" colSpan={6}>
+                        <div className="text-center text-muted-foreground py-2">
+                          No uploaded files found. Upload device data to see file associations here.
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          )}
+        </Card>
+        
+        {/* Marine & Meteorological Data Section - Now Collapsible */}
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2 pt-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-1.5 font-futura">
+                  <Waves className="h-4 w-4 text-primary" />
+                  Marine & Meteorological Data
+                </CardTitle>
+                <p className="text-xs text-muted-foreground pebl-body-main">
+                  Advanced ocean data visualization for ecological monitoring
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowMarineMeteoData(!showMarineMeteoData)}
+                className="h-8 px-3 text-xs"
+              >
+                {showMarineMeteoData ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
+                {showMarineMeteoData ? 'Hide' : 'Show'}
+              </Button>
+            </div>
+          </CardHeader>
+          {showMarineMeteoData && (
           <CardContent className="p-3 grid grid-cols-1 lg:grid-cols-12 gap-3">
             {!isApiPlotsExpanded && (
               <div className="lg:col-span-4 space-y-3">
@@ -573,19 +675,42 @@ export default function DataExplorerPage() {
                 </Card>
             </div>
           </CardContent>
+          )}
         </Card>
         
         <Separator className="my-4" />
 
+        {/* Marine Device Data Section - Now Collapsible */}
         <Card className="shadow-sm">
-           <CardHeader className="pb-2 pt-3 flex flex-row items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-1.5 font-futura font-semibold">
-               Marine Device Data
-            </CardTitle>
-            <Button onClick={addPlot} size="sm" className="h-8 text-xs">
-              <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot
-            </Button>
+          <CardHeader className="pb-2 pt-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-1.5 font-futura">
+                  <LayoutGrid className="h-4 w-4 text-primary" />
+                  Marine Device Data
+                </CardTitle>
+                <p className="text-xs text-muted-foreground pebl-body-main">
+                  Upload and analyze marine device data files
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowMarineDeviceData(!showMarineDeviceData)}
+                className="h-8 px-3 text-xs"
+              >
+                {showMarineDeviceData ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
+                {showMarineDeviceData ? 'Hide' : 'Show'}
+              </Button>
+            </div>
           </CardHeader>
+          {showMarineDeviceData && (
+            <div>
+              <div className="px-3 pb-2 flex justify-end">
+                <Button onClick={addPlot} size="sm" className="h-8 text-xs">
+                  <PlusCircle className="mr-2 h-4 w-4" /> Add New Plot
+                </Button>
+              </div>
           <CardContent className="p-3">
              {plots.length === 0 ? (
               <div className="flex flex-col items-center justify-center text-muted-foreground h-40 p-2 border rounded-md bg-muted/20">
@@ -606,6 +731,8 @@ export default function DataExplorerPage() {
               </div>
             )}
           </CardContent>
+            </div>
+          )}
         </Card>
       </main>
 

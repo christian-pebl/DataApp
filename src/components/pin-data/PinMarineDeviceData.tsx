@@ -47,35 +47,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection }:
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header - matches the original Marine Device Data header exactly */}
-      <CardHeader className="pb-2 pt-3 flex flex-row items-center justify-between flex-shrink-0">
-        <div>
-          <CardTitle className="text-base flex items-center gap-1.5 font-futura font-semibold">
-            Marine Device Data
-          </CardTitle>
-          <p className="text-xs text-muted-foreground mt-1">
-            {fileType} analysis • {files.length} file{files.length > 1 ? 's' : ''} • {plots.length} plot{plots.length > 1 ? 's' : ''}
-          </p>
-        </div>
-        <Button 
-          onClick={() => {
-            if (onRequestFileSelection) {
-              onRequestFileSelection();
-            } else {
-              // Fallback to adding plot with current files
-              addPlot();
-            }
-          }} 
-          size="sm" 
-          className="h-8 text-xs"
-          title={onRequestFileSelection ? "Select different files or file types for a new plot" : "Add new plot with current files"}
-        >
-          <PlusCircle className="mr-2 h-4 w-4" /> 
-          {onRequestFileSelection ? "Add New Plot" : "Add New Plot"}
-        </Button>
-      </CardHeader>
-
-      {/* Content area - matches the original structure */}
+      {/* Content area - clean white background without header */}
       <CardContent className="p-3 flex-1 overflow-hidden">
         {plots.length === 0 ? (
           // Empty state - exactly like the original

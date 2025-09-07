@@ -254,11 +254,16 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
       try {
         await mapDataService.createPin(pinData)
       } catch (error) {
-        console.error('Error syncing pin to database:', error)
+        console.error('Error syncing pin to database:', {
+          error,
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+          pinData
+        })
         toast({
           variant: "destructive",
           title: "Sync Error",
-          description: "Pin saved locally but failed to sync to database."
+          description: `Pin saved locally but failed to sync to database. ${error instanceof Error ? error.message : 'Unknown error'}`
         })
       }
     }

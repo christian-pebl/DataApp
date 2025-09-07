@@ -7,7 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X } from 'lucide-react';
+import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X, Search, CheckCircle2, XCircle, ChevronUp, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle } from 'lucide-react';
+import { ResponsiveContainer, LineChart, Line as RechartsLine, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, Brush, LabelList, ReferenceLine } from 'recharts';
+import type { LucideIcon } from "lucide-react";
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { format, parseISO, isValid, startOfDay, formatISO, subDays } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 import { Separator } from '@/components/ui/separator';
 import {
@@ -43,6 +49,12 @@ import { useMapData } from '@/hooks/use-map-data';
 import { getTimeWindowSummary } from '@/lib/dateParser';
 import { fileStorageService, type PinFile } from '@/lib/supabase/file-storage-service';
 import { mapDataService } from '@/lib/supabase/map-data-service';
+import type { DateRange } from "react-day-picker";
+import type { CombinedDataPoint, LogStep as ApiLogStep, CombinedParameterKey } from '../om-marine-explorer/shared';
+import { ALL_PARAMETERS, PARAMETER_CONFIG } from '../om-marine-explorer/shared';
+import { fetchCombinedDataAction } from '../om-marine-explorer/actions';
+import { MarinePlotsGrid } from '@/components/marine/MarinePlotsGrid';
+import { DatePickerWithRange } from '@/components/ui/date-picker-with-range';
 import { 
   parseCoordinateInput, 
   getCoordinateFormats, 
@@ -85,7 +97,7 @@ const LeafletMap = dynamic(() => import('@/components/map/LeafletMap').then(mod 
   ),
 });
 
-import { Project, Tag, Pin, Line, Area } from '@/lib/supabase/types';
+import { Project, Tag, Pin, Line as LineType, Area } from '@/lib/supabase/types';
 import { PinMarineDeviceData } from '@/components/pin-data/PinMarineDeviceData';
 
 type DrawingMode = 'none' | 'pin' | 'line' | 'area';
@@ -101,10 +113,236 @@ const PROJECT_LOCATIONS = {
   lochsunart: { name: "Loch Sunart", lat: 56.666195, lon: -5.917401 },
 };
 
+// Helper components for pin meteo data display (matching MarinePlotsGrid style)
+const formatDateTickBrush = (timeValue: string | number): string => {
+  try {
+    const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
+    if (!isValid(dateObj)) return String(timeValue);
+    return format(dateObj, 'EEE, dd/MM');
+  } catch (e) {
+    return String(timeValue);
+  }
+};
+
+type SeriesAvailabilityStatus = 'pending' | 'available' | 'unavailable';
+
+type PlotConfigInternal = {
+  dataKey: CombinedParameterKey; 
+  name: string;
+  unit: string;
+  color: string;
+  Icon: LucideIcon; 
+  isDirectional?: boolean;
+};
+
+// A simple arrow shape for the data labels
+const DirectionArrow = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
+  <svg 
+    xmlns="http://www.w3.org/2000/svg" 
+    width="14" height="14" viewBox="0 0 24 24" 
+    fill="currentColor" stroke="hsl(var(--background))" 
+    strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" 
+    className={cn("lucide lucide-navigation", className)}
+    {...props}
+  >
+    <polygon points="12 2 19 21 12 17 5 21 12 2"></polygon>
+  </svg>
+);
+
+// Custom Label for Directional Plots
+const DirectionLabel = (props: any) => {
+  const { x, y, value, index } = props;
+
+  // Only render for every 10th item to prevent clutter
+  if (index % 10 !== 0 || value === null || value === undefined) {
+    return null;
+  }
+
+  return (
+    <foreignObject x={x - 7} y={y - 7} width="14" height="14">
+      <DirectionArrow
+        style={{ transform: `rotate(${value + 180}deg)`, transformOrigin: 'center center' }} 
+        className="text-foreground/80"
+      />
+    </foreignObject>
+  );
+};
+
+const PinMeteoPlotRow = React.memo(({
+  config,
+  index,
+  plotCount,
+  displayData,
+  isPlotVisible,
+  availabilityStatus,
+  dailyReferenceLines,
+  onVisibilityChange,
+  onMove
+}: {
+  config: PlotConfigInternal;
+  index: number;
+  plotCount: number;
+  displayData: CombinedDataPoint[];
+  isPlotVisible: boolean;
+  availabilityStatus: SeriesAvailabilityStatus;
+  dailyReferenceLines: string[];
+  onVisibilityChange: (key: CombinedParameterKey, checked: boolean) => void;
+  onMove: (index: number, direction: 'up' | 'down') => void;
+}) => {
+
+  const isDirectional = config.isDirectional;
+
+  const transformedDisplayData = React.useMemo(() => displayData.map(point => {
+    const value = point[config.dataKey as keyof CombinedDataPoint];
+    if (value === undefined || value === null || (typeof value === 'number' && isNaN(value))) {
+      return { ...point, [config.dataKey]: null };
+    }
+    return point;
+  }), [displayData, config.dataKey]);
+
+  const hasValidDataForSeriesInView = React.useMemo(() => transformedDisplayData.some(p => {
+    const val = p[config.dataKey as keyof CombinedDataPoint];
+    return val !== null && !isNaN(Number(val));
+  }), [transformedDisplayData, config.dataKey]);
+
+  const lastDataPointWithValidValue = React.useMemo(() => [...transformedDisplayData].reverse().find(p => {
+    const val = p[config.dataKey as keyof CombinedDataPoint];
+    return val !== null && !isNaN(Number(val));
+  }), [transformedDisplayData, config.dataKey]);
+  
+  const currentValue = lastDataPointWithValidValue ? lastDataPointWithValidValue[config.dataKey as keyof CombinedDataPoint] as number | undefined : undefined;
+  
+  let displayValue = "";
+  if (isPlotVisible && availabilityStatus === 'available' && typeof currentValue === 'number' && !isNaN(currentValue)) {
+    displayValue = `${currentValue.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits: 1})}${isDirectional ? '' : config.unit || ''}`;
+  }
+
+  const IconComponent = config.Icon;
+
+  return (
+    <div key={config.dataKey as string} className="border rounded-md p-1.5 shadow-sm bg-card flex-shrink-0 flex flex-col">
+      <div className="flex items-center justify-between px-1 pt-0.5 text-lg">
+        <div className="flex flex-1 items-center gap-1.5 min-w-0">
+          <Checkbox
+            id={`visibility-${config.dataKey}-${index}`}
+            checked={isPlotVisible}
+            onCheckedChange={(checked) => onVisibilityChange(config.dataKey, !!checked)}
+            className="h-3.5 w-3.5 flex-shrink-0 border-muted-foreground/50"
+          />
+          <Label htmlFor={`visibility-${config.dataKey}-${index}`} className="flex items-center gap-1 cursor-pointer min-w-0 text-muted-foreground">
+            <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={config.name}>
+              {config.name}
+            </span>
+          </Label>
+          <div className="flex-shrink-0 flex items-center ml-1">
+            {availabilityStatus === 'pending' && <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />}
+            {availabilityStatus === 'available' && isPlotVisible && hasValidDataForSeriesInView && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+            {availabilityStatus !== 'pending' && isPlotVisible && (!hasValidDataForSeriesInView || availabilityStatus === 'unavailable') && <XCircle className="h-3.5 w-3.5 text-red-500" />}
+          </div>
+        </div>
+        <div className="flex items-center flex-shrink-0">
+          {displayValue && (
+            <span className={cn("text-muted-foreground text-lg font-semibold ml-auto pl-2 whitespace-nowrap")}>{displayValue}
+             {isDirectional && typeof currentValue === 'number' && <DirectionArrow style={{ display: 'inline-block', transform: `rotate(${currentValue + 180}deg)`, height: '1em', width: '1em', marginLeft: '0.25em', verticalAlign: 'middle' }} />}
+            </span>
+          )}
+          <Button variant="ghost" size="icon" className="h-5 w-5 ml-1" onClick={() => onMove(index, 'up')} disabled={index === 0}>
+            <ChevronUp className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => onMove(index, 'down')} disabled={index === plotCount - 1}>
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {isPlotVisible && (
+        <div className="flex-grow h-[100px] sm:h-[90px] mt-1">
+          {(availabilityStatus === 'available' && hasValidDataForSeriesInView) ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={transformedDisplayData} margin={{ top: 5, right: 12, left: 5, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
+                {dailyReferenceLines.map(time => (
+                  <ReferenceLine key={time} yAxisId={config.dataKey} x={time} stroke="hsl(var(--border))" strokeDasharray="3 3" />
+                ))}
+                <YAxis
+                  yAxisId={config.dataKey}
+                  domain={isDirectional ? [0, 360] : ['auto', 'auto']}
+                  ticks={isDirectional ? [0, 90, 180, 270, 360] : undefined}
+                  tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:1}) : String(value)}
+                  tick={{ fontSize: '0.75rem', fill: 'hsl(var(--muted-foreground))' }}
+                  stroke="hsl(var(--border))"
+                  width={60} 
+                />
+                <XAxis dataKey="time" hide />
+                <RechartsTooltip
+                  contentStyle={{ 
+                    backgroundColor: 'hsl(var(--background))', 
+                    border: '1px solid hsl(var(--border))', 
+                    fontSize: '0.75rem',
+                    padding: '8px',
+                    borderRadius: '6px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                  }}
+                  itemStyle={{ color: 'hsl(var(--foreground))' }}
+                  formatter={(value: number | null | undefined, name: string, props) => { 
+                    const formattedValue = (value !== null && value !== undefined && typeof value === 'number' && !isNaN(value)) 
+                      ? value.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) 
+                      : 'N/A';
+                    return [
+                       <div key="val" style={{ display: 'flex', alignItems: 'center' }}>
+                         {`${formattedValue}${isDirectional ? '' : (config.unit || '')}`}
+                         {isDirectional && typeof value === 'number' && <DirectionArrow style={{ transform: `rotate(${value + 180}deg)`, height: '1em', width: '1em', marginLeft: '0.5em' }} />}
+                       </div>,
+                       name
+                    ];
+                  }}
+                  labelFormatter={(label) => {
+                    try {
+                      const date = parseISO(String(label));
+                      return isValid(date) ? format(date, 'EEE, MMM dd, HH:mm') : String(label);
+                    } catch {
+                      return String(label);
+                    }
+                  }}
+                  isAnimationActive={false}
+                />
+                 <RechartsLine
+                    yAxisId={config.dataKey}
+                    type="monotone"
+                    dataKey={config.dataKey as string}
+                    stroke={`hsl(var(${config.color || '--chart-1'}))`}
+                    strokeWidth={1.5}
+                    dot={false}
+                    connectNulls={true}
+                    name={config.name} 
+                    isAnimationActive={false}
+                  >
+                    {isDirectional && <LabelList dataKey={config.dataKey as string} content={<DirectionLabel />} />}
+                  </RechartsLine>
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-full text-xs text-muted-foreground italic">
+              {availabilityStatus === 'pending' ? "Loading plot data..." : 
+               availabilityStatus === 'unavailable' ? "Data unavailable for this parameter." : 
+               availabilityStatus === 'available' && !hasValidDataForSeriesInView ? "No data points in selected range." :
+               "Checking data..."
+              }
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+PinMeteoPlotRow.displayName = 'PinMeteoPlotRow';
+
 export default function MapDrawingPage() {
   const { view, setView } = useMapView('dev-user');
   const { settings, setSettings } = useSettings();
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
 
   
   // Use the integrated map data hook
@@ -146,6 +384,7 @@ export default function MapDrawingPage() {
   const [mapScale, setMapScale] = useState<{ distance: number; unit: string; pixels: number } | null>(null);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(320); // Default width in pixels
+  const [originalSidebarWidth, setOriginalSidebarWidth] = useState(320); // Store original width
   const [isResizing, setIsResizing] = useState(false);
   const [showFloatingDrawingTools, setShowFloatingDrawingTools] = useState(false);
   const [isEditingObject, setIsEditingObject] = useState(false);
@@ -168,6 +407,32 @@ export default function MapDrawingPage() {
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [showExploreDropdown, setShowExploreDropdown] = useState(false);
   const [selectedPinForExplore, setSelectedPinForExplore] = useState<string | null>(null);
+  
+  // Pin Meteo Data State (copied from data explorer)
+  const [pinMeteoDateRange, setPinMeteoDateRange] = useState<DateRange | undefined>(() => {
+    const today = new Date();
+    const from = subDays(today, 7); // 7 days ago
+    const to = subDays(today, 1);   // yesterday
+    return { from, to };
+  });
+  const [pinMeteoData, setPinMeteoData] = useState<CombinedDataPoint[] | null>(null);
+  const [isLoadingPinMeteoData, setIsLoadingPinMeteoData] = useState(false);
+  const [errorPinMeteoData, setErrorPinMeteoData] = useState<string | null>(null);
+  const [pinMeteoLocationContext, setPinMeteoLocationContext] = useState<string | null>(null);
+  const [pinMeteoFetchLogSteps, setPinMeteoFetchLogSteps] = useState<ApiLogStep[]>([]);
+  const [pinMeteoPlotVisibility, setPinMeteoPlotVisibility] = useState(() => {
+    return Object.fromEntries(
+      ALL_PARAMETERS.map(key => [key, true])
+    );
+  });
+  const [showMeteoDataSection, setShowMeteoDataSection] = useState(false);
+  
+  // Pin Meteo Grid state (matching MarinePlotsGrid)
+  const [pinMeteoBrushStartIndex, setPinMeteoBrushStartIndex] = useState<number | undefined>(0);
+  const [pinMeteoBrushEndIndex, setPinMeteoBrushEndIndex] = useState<number | undefined>(undefined);
+  const [pinMeteoPlotConfigsInternal, setPinMeteoPlotConfigsInternal] = useState<PlotConfigInternal[]>([]);
+  const [pinMeteoSeriesDataAvailability, setPinMeteoSeriesDataAvailability] = useState<Record<CombinedParameterKey, SeriesAvailabilityStatus>>({});
+  const [pinMeteoExpanded, setPinMeteoExpanded] = useState(false);
   
   // Marine Device Modal State
   const [showMarineDeviceModal, setShowMarineDeviceModal] = useState(false);
@@ -204,6 +469,21 @@ export default function MapDrawingPage() {
   
   // Refs to prevent duplicate operations
   const lineConfirmInProgressRef = useRef<boolean>(false);
+  const labelInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-expand sidebar when pin marine meteo data section is opened
+  useEffect(() => {
+    if (showDataDropdown && showMeteoDataSection) {
+      // Store the current width if not already stored
+      if (sidebarWidth <= 800) {
+        setOriginalSidebarWidth(sidebarWidth);
+        setSidebarWidth(800); // Much wider for better data visibility
+      }
+    } else if (!showDataDropdown) {
+      // Restore original width when closing the data dropdown
+      setSidebarWidth(originalSidebarWidth);
+    }
+  }, [showDataDropdown, showMeteoDataSection, sidebarWidth, originalSidebarWidth]);
 
   // Check GPS permission status on mount
   useEffect(() => {
@@ -364,6 +644,77 @@ export default function MapDrawingPage() {
       updateMapScale({ lat: view.center.lat, lng: view.center.lng }, view.zoom);
     }
   }, [view, updateMapScale]);
+
+  // Pin Meteo Grid: Initialize plot configurations
+  useEffect(() => {
+    const configs: PlotConfigInternal[] = ALL_PARAMETERS.map(key => {
+      const baseConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
+      let iconComp: LucideIcon = Info; // Default icon
+      const isDirectional = key === 'waveDirection' || key === 'windDirection10m';
+
+      // Fallbacks if no icon is in PARAMETER_CONFIG
+      if (key === 'seaLevelHeightMsl') iconComp = Waves;
+      else if (key === 'waveHeight') iconComp = Sailboat;
+      else if (key === 'waveDirection') iconComp = CompassIcon;
+      else if (key === 'wavePeriod') iconComp = TimerIcon;
+      else if (key === 'seaSurfaceTemperature') iconComp = Thermometer;
+      else if (key === 'temperature2m') iconComp = Thermometer;
+      else if (key === 'windSpeed10m') iconComp = WindIcon;
+      else if (key === 'windDirection10m') iconComp = CompassIcon;
+      else if (key === 'ghi') iconComp = SunIcon;
+      
+      return {
+        dataKey: key as CombinedParameterKey,
+        name: baseConfig.name,
+        unit: baseConfig.unit || '',
+        color: baseConfig.color || '--chart-1',
+        Icon: iconComp,
+        isDirectional,
+      };
+    });
+    setPinMeteoPlotConfigsInternal(configs);
+  }, []);
+
+  // Pin Meteo Grid: Manage data availability status
+  useEffect(() => {
+    if (isLoadingPinMeteoData) {
+      const pendingAvailability: Partial<Record<CombinedParameterKey, SeriesAvailabilityStatus>> = {};
+      ALL_PARAMETERS.forEach(key => {
+        pendingAvailability[key as CombinedParameterKey] = 'pending';
+      });
+      setPinMeteoSeriesDataAvailability(pendingAvailability as Record<CombinedParameterKey, SeriesAvailabilityStatus>);
+      return;
+    }
+    
+    const newAvailability: Partial<Record<CombinedParameterKey, SeriesAvailabilityStatus>> = {};
+    if (!pinMeteoData || pinMeteoData.length === 0) {
+      ALL_PARAMETERS.forEach(key => {
+        newAvailability[key as CombinedParameterKey] = 'unavailable';
+      });
+    } else {
+      ALL_PARAMETERS.forEach(key => {
+        const hasData = pinMeteoData.some(
+          point => {
+            const val = point[key as keyof CombinedDataPoint];
+            return val !== undefined && val !== null && !isNaN(Number(val));
+          }
+        );
+        newAvailability[key as CombinedParameterKey] = hasData ? 'available' : 'unavailable';
+      });
+    }
+    setPinMeteoSeriesDataAvailability(newAvailability as Record<CombinedParameterKey, SeriesAvailabilityStatus>);
+  }, [pinMeteoData, isLoadingPinMeteoData]);
+
+  // Pin Meteo Grid: Manage brush range
+  useEffect(() => {
+    if (pinMeteoData && pinMeteoData.length > 0 && pinMeteoBrushEndIndex === undefined) {
+      setPinMeteoBrushStartIndex(0);
+      setPinMeteoBrushEndIndex(pinMeteoData.length - 1);
+    } else if ((!pinMeteoData || pinMeteoData.length === 0)) {
+      setPinMeteoBrushStartIndex(0);
+      setPinMeteoBrushEndIndex(undefined);
+    }
+  }, [pinMeteoData, pinMeteoBrushEndIndex]);
   
   // Stable callback that calls the current handler
   const handleMapMove = useCallback((center: LatLng, zoom: number) => {
@@ -450,10 +801,15 @@ export default function MapDrawingPage() {
     
     try {
       console.log('🎯 STEP 8: Calling createLineData');
-      await createLineData(lineData);
+      const newLine = await createLineData(lineData);
       console.log('🎯 STEP 9: Line created successfully, clearing pendingLine');
       setPendingLine(null);
       lineConfirmInProgressRef.current = false; // Reset the flag
+      
+      // Immediately select this line and enter edit mode
+      setItemToEdit(newLine);
+      setIsEditingObject(true);
+      
     } catch (error) {
       console.error('Error creating line:', error);
       lineConfirmInProgressRef.current = false; // Reset the flag on error too
@@ -482,8 +838,13 @@ export default function MapDrawingPage() {
     };
     
     try {
-      await createAreaData(areaData);
+      const newArea = await createAreaData(areaData);
       setPendingArea(null);
+      
+      // Immediately select this area and enter edit mode
+      setItemToEdit(newArea);
+      setIsEditingObject(true);
+      
     } catch (error) {
       console.error('Error creating area:', error);
       toast({
@@ -1075,6 +1436,14 @@ export default function MapDrawingPage() {
       
       // Auto-expand notes if there are existing notes
       setShowNotesSection(Boolean(itemToEdit.notes && itemToEdit.notes.trim()));
+      
+      // Focus the label input field after a brief delay
+      setTimeout(() => {
+        if (labelInputRef.current) {
+          labelInputRef.current.focus();
+          labelInputRef.current.select(); // Select all text for easy editing
+        }
+      }, 100);
     }
   }, [itemToEdit, isEditingObject, coordinateFormat]);
 
@@ -1338,6 +1707,138 @@ export default function MapDrawingPage() {
       setShowSharePopover(true);
     }
   };
+
+  // Handle fetching pin meteo data (copied from data explorer)
+  const handleFetchPinMeteoData = useCallback(async () => {
+    if (!itemToEdit || !('lat' in itemToEdit)) {
+      toast({ variant: "destructive", title: "No Pin Selected", description: "Please select a pin first." });
+      return;
+    }
+    
+    if (!pinMeteoDateRange?.from || !pinMeteoDateRange?.to) {
+      toast({ variant: "destructive", title: "Missing Date Range", description: "Please select a date range." });
+      return;
+    }
+    
+    const selectedParams = ALL_PARAMETERS;
+
+    const locationName = itemToEdit.label || `Pin at ${itemToEdit.lat.toFixed(3)}, ${itemToEdit.lng.toFixed(3)}`;
+    
+    setIsLoadingPinMeteoData(true);
+    setErrorPinMeteoData(null);
+    setPinMeteoData(null);
+    setPinMeteoLocationContext(null);
+    setPinMeteoFetchLogSteps([{ message: `Fetching ${selectedParams.length} parameter(s) for ${locationName}...`, status: 'pending' }]);
+
+    const loadingToastId = toast({ 
+      title: "Fetching Meteo Data", 
+      description: `Fetching data for ${locationName}...` 
+    }).id;
+
+    try {
+      const result = await fetchCombinedDataAction({
+        latitude: itemToEdit.lat,
+        longitude: itemToEdit.lng,
+        startDate: formatISO(pinMeteoDateRange.from, { representation: 'date' }),
+        endDate: formatISO(pinMeteoDateRange.to, { representation: 'date' }),
+        parameters: selectedParams
+      });
+
+      if (loadingToastId) dismiss(loadingToastId);
+      setPinMeteoFetchLogSteps(result.log || []);
+
+      if (result.success && result.data) {
+        setPinMeteoData(result.data);
+        setPinMeteoLocationContext(locationName);
+        
+        if (result.data.length === 0 && !result.error) {
+          toast({ variant: "default", title: "No Meteo Data", description: "No data points found for the selected criteria.", duration: 4000 });
+        } else if (result.data.length > 0) {
+          const successToast = toast({ title: "Meteo Data Loaded", description: `Loaded ${result.data.length} data points for ${locationName}.` });
+          setTimeout(() => {
+            successToast.dismiss();
+          }, 3000);
+        } else { 
+          setErrorPinMeteoData(result.error || "Failed to load meteo data.");
+          toast({ variant: "destructive", title: "Error Loading Meteo Data", description: result.error || "Failed to load meteo data." });
+        }
+      } else {
+        setErrorPinMeteoData(result.error || "Failed to load meteo data.");
+        toast({ variant: "destructive", title: "Error Loading Meteo Data", description: result.error || "Failed to load meteo data." });
+      }
+    } catch (e) {
+      if (loadingToastId) dismiss(loadingToastId);
+      const errorMsg = e instanceof Error ? e.message : "An unknown error occurred during meteo data fetch.";
+      setErrorPinMeteoData(errorMsg);
+      setPinMeteoFetchLogSteps(prev => [...prev, { message: `Critical error in meteo fetch operation: ${errorMsg}`, status: 'error' }]);
+      toast({ variant: "destructive", title: "Critical Meteo Fetch Error", description: errorMsg });
+    } finally {
+      setIsLoadingPinMeteoData(false);
+    }
+  }, [itemToEdit, pinMeteoDateRange, pinMeteoPlotVisibility, toast, dismiss]);
+
+  // Handle meteo plot visibility changes
+  const handlePinMeteoPlotVisibilityChange = useCallback((key: CombinedParameterKey, checked: boolean) => {
+    setPinMeteoPlotVisibility(prev => ({
+      ...prev,
+      [key]: checked
+    }));
+  }, []);
+
+  // Pin Meteo Grid: Handle brush change
+  const handlePinMeteoBrushChange = useCallback((newIndex: { startIndex?: number; endIndex?: number }) => {
+    setPinMeteoBrushStartIndex(newIndex.startIndex);
+    setPinMeteoBrushEndIndex(newIndex.endIndex);
+  }, []);
+
+  // Pin Meteo Grid: Handle plot reordering
+  const handlePinMeteoMovePlot = useCallback((index: number, direction: 'up' | 'down') => {
+    setPinMeteoPlotConfigsInternal(prevConfigs => {
+      const newConfigs = [...prevConfigs];
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+
+      if (targetIndex >= 0 && targetIndex < newConfigs.length) {
+        [newConfigs[index], newConfigs[targetIndex]] = [newConfigs[targetIndex], newConfigs[index]];
+      }
+      return newConfigs;
+    });
+  }, []);
+
+  // Pin Meteo Grid: Calculate display data based on brush range
+  const pinMeteoDisplayData = React.useMemo(() => {
+    if (!pinMeteoData || pinMeteoData.length === 0 || pinMeteoBrushStartIndex === undefined || pinMeteoBrushEndIndex === undefined) {
+      return [];
+    }
+    const start = Math.max(0, pinMeteoBrushStartIndex);
+    const end = Math.min(pinMeteoData.length - 1, pinMeteoBrushEndIndex);
+    const slicedData = pinMeteoData.slice(start, end + 1);
+    return slicedData;
+  }, [pinMeteoData, pinMeteoBrushStartIndex, pinMeteoBrushEndIndex]);
+
+  // Pin Meteo Grid: Calculate daily reference lines
+  const pinMeteoDailyReferenceLines = React.useMemo(() => {
+    if (!pinMeteoData || pinMeteoData.length === 0) return [];
+    const dailyTimestamps = new Set<string>();
+
+    pinMeteoData.forEach(point => {
+      try {
+        const date = parseISO(point.time);
+        if (isValid(date)) {
+          // Get the ISO string for the start of the day
+          const dayStartISO = startOfDay(date).toISOString();
+          dailyTimestamps.add(dayStartISO);
+        }
+      } catch (e) {
+        // ignore invalid time format
+      }
+    });
+
+    // The reference lines need to match exact timestamps in the data.
+    // We find the first timestamp for each day.
+    return Array.from(dailyTimestamps).map(dayStartISO => {
+      return pinMeteoData.find(p => p.time.startsWith(dayStartISO.substring(0, 10)))?.time;
+    }).filter((t): t is string => !!t);
+  }, [pinMeteoData]);
 
   // Helper function to categorize files by type
   const categorizeFiles = (files: File[]) => {
@@ -1881,7 +2382,7 @@ export default function MapDrawingPage() {
                           
                           {/* Data Dropdown Menu */}
                           {showDataDropdown && (
-                            <div className="absolute top-full left-0 right-0 mt-1 bg-background border rounded-lg shadow-lg z-[1200] p-1">
+                            <div className={`absolute top-full mt-1 bg-background border rounded-lg shadow-lg z-[1200] p-1 ${showMeteoDataSection ? 'w-[800px] right-0' : 'w-72 left-0'}`}>
                               {/* Explore Data Dropdown */}
                               <div className="relative" data-explore-dropdown>
                                 <Button
@@ -1968,22 +2469,145 @@ export default function MapDrawingPage() {
                                 )}
                                 {isUploadingFiles ? 'Uploading...' : 'Upload data'}
                               </Button>
+                              {/* Marine & Meteorological Data Button */}
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => {
-                                  // TODO: Implement fetch meteo data
-                                  setShowDataDropdown(false);
-                                  toast({
-                                    title: "Fetch Meteo Data",
-                                    description: "This feature will be implemented soon."
-                                  });
-                                }}
+                                onClick={() => setShowMeteoDataSection(!showMeteoDataSection)}
                                 className="w-full justify-start gap-2 h-8 text-xs"
                               >
-                                <Cloud className="h-3 w-3" />
-                                Fetch meteo data
+                                <BarChart3 className="h-3 w-3" />
+                                Marine & meteo data
+                                {showMeteoDataSection ? <ChevronDown className="h-3 w-3 ml-auto" /> : <ChevronRight className="h-3 w-3 ml-auto" />}
                               </Button>
+                              
+                              {/* Marine & Meteo Data Expanded Section */}
+                              {showMeteoDataSection && (
+                                <div className="px-2 pb-2 space-y-3 border-l-2 border-accent/20 ml-2 w-[750px]">
+                                  {/* Date Range and Fetch Button Row */}
+                                  <div className="flex gap-2 items-end">
+                                    {/* Date Range Selection */}
+                                    <div className="flex-1">
+                                      <div className="text-sm font-medium mb-1">Date Range</div>
+                                      <DatePickerWithRange 
+                                        date={pinMeteoDateRange} 
+                                        onDateChange={setPinMeteoDateRange} 
+                                        disabled={isLoadingPinMeteoData}
+                                        className="h-7 text-sm w-full"
+                                      />
+                                      {pinMeteoDateRange?.from && pinMeteoDateRange?.to && pinMeteoDateRange.from > pinMeteoDateRange.to && (
+                                        <p className="text-xs text-destructive mt-1">Start date must be before end date.</p>
+                                      )}
+                                    </div>
+                                    
+                                    {/* Fetch Button */}
+                                    <Button 
+                                      onClick={() => {
+                                        handleFetchPinMeteoData();
+                                        // Keep the dropdown open - remove setShowDataDropdown(false)
+                                      }} 
+                                      disabled={isLoadingPinMeteoData || !pinMeteoDateRange?.from || !pinMeteoDateRange?.to} 
+                                      className="h-7 text-sm px-3 flex-shrink-0"
+                                      size="sm"
+                                    >
+                                      {isLoadingPinMeteoData ? <Loader2 className="mr-1 h-2.5 w-2.5 animate-spin" /> : <Search className="mr-1 h-2.5 w-2.5"/>}
+                                      {isLoadingPinMeteoData ? "Fetching..." : "Fetch Data"}
+                                    </Button>
+                                  </div>
+
+                                  {/* Meteo Data Display - MarinePlotsGrid Style with Double Width and Expandable Panel */}
+                                  {pinMeteoData && pinMeteoData.length > 0 && (
+                                    <div className="w-full">
+                                      {/* Header */}
+                                      <div className="mb-2 flex items-center justify-between">
+                                        <div className="text-base font-semibold text-foreground">
+                                          {pinMeteoLocationContext} - {pinMeteoData.length} points
+                                        </div>
+                                        {/* Expand/Collapse Toggle */}
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => setPinMeteoExpanded(!pinMeteoExpanded)}
+                                          className="h-6 w-6 p-0"
+                                        >
+                                          <ChevronDown 
+                                            className={`h-4 w-4 transition-transform duration-200 ${
+                                              pinMeteoExpanded ? 'transform rotate-180' : ''
+                                            }`} 
+                                          />
+                                        </Button>
+                                      </div>
+                                      
+                                      {/* Marine Data Container */}
+                                      <div 
+                                        className={`w-full border rounded-md bg-card/20 transition-all duration-300 ${
+                                          pinMeteoExpanded ? 'max-h-[800px]' : 'max-h-[400px]'
+                                        }`}
+                                      >
+                                        <div 
+                                          className={`flex-grow flex flex-col space-y-1 overflow-y-auto pr-1 p-2 ${
+                                            pinMeteoExpanded ? 'max-h-[700px]' : 'max-h-[300px]'
+                                          }`}
+                                        >
+                                          {pinMeteoPlotConfigsInternal.map((config, index) => (
+                                            <PinMeteoPlotRow
+                                              key={config.dataKey}
+                                              config={config}
+                                              index={index}
+                                              plotCount={pinMeteoPlotConfigsInternal.length}
+                                              displayData={pinMeteoDisplayData}
+                                              isPlotVisible={pinMeteoPlotVisibility[config.dataKey] ?? false}
+                                              availabilityStatus={pinMeteoSeriesDataAvailability[config.dataKey] || 'pending'}
+                                              dailyReferenceLines={pinMeteoDailyReferenceLines}
+                                              onVisibilityChange={handlePinMeteoPlotVisibilityChange}
+                                              onMove={handlePinMeteoMovePlot}
+                                            />
+                                          ))}
+                                        </div>
+
+                                        {/* Time Brush Selector */}
+                                        {pinMeteoData && pinMeteoData.length > 0 && (
+                                          <div className="h-[104px] sm:h-[96px] w-full border rounded-md p-2 shadow-sm bg-card mt-4 flex-shrink-0">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                              <LineChart data={pinMeteoData} margin={{ top: 10, right: 30, left: 30, bottom: 0 }}>
+                                                <XAxis
+                                                  dataKey="time"
+                                                  tickFormatter={formatDateTickBrush}
+                                                  stroke="hsl(var(--muted-foreground))"
+                                                  tick={{ fontSize: '0.65rem' }}
+                                                  height={30}
+                                                  interval="preserveStartEnd"
+                                                />
+                                                <Brush
+                                                  dataKey="time"
+                                                  height={44}
+                                                  stroke="hsl(var(--primary))"
+                                                  fill="transparent"
+                                                  tickFormatter={() => ""} // Hide labels on brush itself
+                                                  travellerWidth={24} // Larger for easier touch interaction
+                                                  startIndex={pinMeteoBrushStartIndex}
+                                                  endIndex={pinMeteoBrushEndIndex}
+                                                  onChange={handlePinMeteoBrushChange}
+                                                  y={36} 
+                                                />
+                                              </LineChart>
+                                            </ResponsiveContainer>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Error Display */}
+                                  {errorPinMeteoData && (
+                                    <div className="mt-2 p-2 border rounded-md bg-destructive/10 border-destructive/20">
+                                      <div className="text-sm text-destructive font-medium">
+                                        {errorPinMeteoData}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1997,6 +2621,7 @@ export default function MapDrawingPage() {
                       <div>
                         <label className="text-xs text-muted-foreground">Label:</label>
                         <Input
+                          ref={labelInputRef}
                           value={editingLabel}
                           onChange={(e) => setEditingLabel(e.target.value)}
                           placeholder="Enter label..."
@@ -2236,6 +2861,7 @@ export default function MapDrawingPage() {
               </div>
             )}
             
+            
             {/* Floating Drawing Tools Button */}
             <TooltipProvider>
               <Tooltip>
@@ -2272,11 +2898,41 @@ export default function MapDrawingPage() {
                   className={`w-full justify-start gap-3 h-10 text-sm ${
                     drawingMode === 'pin' ? 'bg-accent text-accent-foreground' : ''
                   }`}
-                  onClick={() => {
+                  onClick={async () => {
                     if (mapRef.current) {
                       const mapCenter = mapRef.current.getCenter();
-                      setPendingPin(mapCenter);
-                      setShowFloatingDrawingTools(false);
+                      
+                      // Create pin directly with default label
+                      const pinData = {
+                        lat: mapCenter.lat,
+                        lng: mapCenter.lng,
+                        label: 'New Pin',
+                        notes: '',
+                        projectId: activeProjectId,
+                        tagIds: [],
+                        labelVisible: true
+                      };
+                      
+                      try {
+                        const newPin = await createPinData(pinData);
+                        
+                        // Immediately select this pin and enter edit mode
+                        setItemToEdit(newPin);
+                        setIsEditingObject(true);
+                        setShowFloatingDrawingTools(false);
+                        
+                        toast({
+                          title: "Pin Created",
+                          description: "Pin added and ready for editing."
+                        });
+                      } catch (error) {
+                        console.error('Error creating pin:', error);
+                        toast({
+                          variant: "destructive",
+                          title: "Error",
+                          description: "Failed to create pin. Please try again."
+                        });
+                      }
                     }
                   }}
                 >
@@ -3032,15 +3688,6 @@ export default function MapDrawingPage() {
       {/* Marine Device Data Modal */}
       <Dialog open={showMarineDeviceModal} onOpenChange={setShowMarineDeviceModal}>
         <DialogContent className="max-w-6xl h-[80vh] marine-device-modal" data-marine-modal>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              Marine Device Data - {selectedFileType}
-            </DialogTitle>
-            <DialogDescription>
-              Analyzing {selectedFiles.length} {selectedFileType} file{selectedFiles.length > 1 ? 's' : ''} • Click ESC to close
-            </DialogDescription>
-          </DialogHeader>
           <div className="flex-1 overflow-hidden">
             {selectedFileType && selectedFiles.length > 0 ? (
               <PinMarineDeviceData 
@@ -3060,6 +3707,7 @@ export default function MapDrawingPage() {
           </div>
         </DialogContent>
       </Dialog>
+
 
     </>
   );

@@ -161,26 +161,37 @@ export class MapDataService {
   }
 
   async createPin(pin: Omit<Pin, 'id'>): Promise<Pin> {
+    console.log('MapDataService: Creating pin with data:', pin)
+    
     // Get current user ID, fallback to admin for backward compatibility
     const { data: { user } } = await this.supabase.auth.getUser()
     const userId = user?.id || 'admin-shared-data'
+    
+    console.log('MapDataService: Using user ID:', userId)
+
+    const insertData = {
+      lat: pin.lat,
+      lng: pin.lng,
+      label: pin.label,
+      notes: pin.notes || null,
+      label_visible: pin.labelVisible ?? true,
+      project_id: pin.projectId || null,
+      user_id: userId
+      // privacy_level: 'private' // Temporarily removed until DB is updated
+    }
+    
+    console.log('MapDataService: Insert data:', insertData)
 
     const { data, error } = await this.supabase
       .from('pins')
-      .insert({
-        lat: pin.lat,
-        lng: pin.lng,
-        label: pin.label,
-        notes: pin.notes || null,
-        label_visible: pin.labelVisible ?? true,
-        project_id: pin.projectId || null,
-        user_id: userId
-        // privacy_level: 'private' // Temporarily removed until DB is updated
-      })
+      .insert(insertData)
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      console.error('MapDataService: Database error creating pin:', error)
+      throw new Error(`Database error creating pin: ${error.message}`)
+    }
 
     // Handle tag associations
     if (pin.tagIds && pin.tagIds.length > 0) {

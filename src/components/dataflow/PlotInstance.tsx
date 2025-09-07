@@ -371,6 +371,19 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
     return { success: false };
   }, [parseAndValidateCsv, toast, dismiss]);
 
+  // Direct click handlers for upload buttons - optimized for speed
+  const handleUploadClick = useCallback(() => {
+    if (csvFileInputRef.current) {
+      csvFileInputRef.current.click();
+    }
+  }, []);
+
+  const handleLoadPlotClick = useCallback(() => {
+    if (jsonLoadInputRef.current) {
+      jsonLoadInputRef.current.click();
+    }
+  }, []);
+
   const handleFileChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     setIsProcessing(true);
     setCurrentFileForValidation(null);
@@ -738,18 +751,28 @@ export function PlotInstance({ instanceId, onRemovePlot, initialPlotTitle = "Dat
                   <h3 className="text-[0.65rem] font-semibold text-[#2B7A78]">Import &amp; Validate</h3>
                 </div>
                 <div className="px-1 py-1.5 flex justify-center">
-                  <Button asChild variant="outline" size="sm" className="h-8 text-xs w-full" disabled={isProcessing}>
-                    <UiLabel htmlFor={fileInputId} className="cursor-pointer flex items-center justify-center gap-1.5 w-full">
-                      <UploadCloud className="h-3.5 w-3.5"/> Choose file
-                    </UiLabel>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="h-8 text-xs w-full" 
+                    disabled={isProcessing}
+                    onClick={handleUploadClick}
+                  >
+                    <UploadCloud className="h-3.5 w-3.5 mr-1.5"/> Choose file
                   </Button>
-                  <Input id={fileInputId} ref={csvFileInputRef} type="file" accept=".csv" onChange={handleFileChange} className="sr-only"/>
+                  <Input ref={csvFileInputRef} type="file" accept=".csv" onChange={handleFileChange} className="sr-only"/>
                 </div>
                 <div className="px-1 pb-0.5">
-                  <Button asChild variant="outline" size="sm" className="w-full h-7 text-xs" disabled={isProcessing}>
-                    <UiLabel htmlFor={jsonLoadInputId} className="cursor-pointer flex items-center justify-center gap-1.5 w-full"><UploadCloud className="h-3.5 w-3.5"/> Load Plot</UiLabel>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full h-7 text-xs" 
+                    disabled={isProcessing}
+                    onClick={handleLoadPlotClick}
+                  >
+                    <UploadCloud className="h-3.5 w-3.5 mr-1.5"/> Load Plot
                   </Button>
-                  <Input id={jsonLoadInputId} ref={jsonLoadInputRef} type="file" accept=".json" onChange={handleLoadSavedPlotFileChange} className="sr-only"/>
+                  <Input ref={jsonLoadInputRef} type="file" accept=".json" onChange={handleLoadSavedPlotFileChange} className="sr-only"/>
                 </div>
 
                 <div className="space-y-1 px-1 pt-1">

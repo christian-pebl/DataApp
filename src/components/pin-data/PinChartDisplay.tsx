@@ -14,6 +14,8 @@ interface PinChartDisplayProps {
   data: ParsedDataPoint[];
   fileType: 'GP' | 'FPOD' | 'Subcam';
   timeColumn: string | null;
+  showYAxisLabels?: boolean;
+  fileName?: string;
 }
 
 // Color palette matching the marine data theme
@@ -37,7 +39,7 @@ const formatDateTick = (timeValue: string | number): string => {
   }
 };
 
-export function PinChartDisplay({ data, fileType, timeColumn }: PinChartDisplayProps) {
+export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = false, fileName }: PinChartDisplayProps) {
   // Get all numeric parameters (excluding time)
   const numericParameters = useMemo(() => {
     if (data.length === 0) return [];
@@ -135,65 +137,15 @@ export function PinChartDisplay({ data, fileType, timeColumn }: PinChartDisplayP
   }
 
   return (
-    <div className="space-y-3">
-      {/* Parameter Controls */}
-      <div className="space-y-2">
-        <p className="text-xs font-medium">Parameters ({visibleParameters.length} visible)</p>
-        
-        <div className="space-y-1 max-h-32 overflow-y-auto">
-          {numericParameters.map((parameter, index) => {
-            const state = parameterStates[parameter];
-            if (!state) return null;
-
-            return (
-              <div key={parameter} className="flex items-center justify-between p-1.5 rounded border bg-card/50">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <Checkbox
-                    id={`param-${parameter}`}
-                    checked={state.visible}
-                    onCheckedChange={() => toggleParameterVisibility(parameter)}
-                    className="h-3 w-3"
-                  />
-                  <Label 
-                    htmlFor={`param-${parameter}`} 
-                    className="text-xs cursor-pointer truncate flex-1"
-                    title={parameter}
-                  >
-                    {parameter}
-                  </Label>
-                  <div 
-                    className="w-3 h-3 rounded-full border"
-                    style={{ backgroundColor: `hsl(var(${state.color}))` }}
-                  />
-                </div>
-                
-                <div className="flex items-center">
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-5 w-5" 
-                    onClick={() => moveParameter(parameter, 'up')}
-                    disabled={index === 0}
-                  >
-                    <ChevronUp className="h-3 w-3" />
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-5 w-5" 
-                    onClick={() => moveParameter(parameter, 'down')}
-                    disabled={index === numericParameters.length - 1}
-                  >
-                    <ChevronDown className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Main Chart */}
+    <div className="flex gap-3">
+      {/* Main Chart - Takes up most space */}
+      <div className="flex-1 space-y-3">
+        {/* File name at the top */}
+        {fileName && (
+          <div className="text-xs text-muted-foreground font-medium">
+            {fileName}
+          </div>
+        )}
       {visibleParameters.length > 0 && (
         <div className="h-64 w-full border rounded-md bg-card p-2">
           <ResponsiveContainer width="100%" height="100%">
@@ -210,7 +162,13 @@ export function PinChartDisplay({ data, fileType, timeColumn }: PinChartDisplayP
               <YAxis
                 tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }}
                 stroke="hsl(var(--border))"
-                width={50}
+                width={showYAxisLabels ? 80 : 50}
+                label={showYAxisLabels ? { 
+                  value: 'Value', 
+                  angle: -90, 
+                  position: 'insideLeft',
+                  style: { textAnchor: 'middle', fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }
+                } : undefined}
               />
               
               <RechartsTooltip
@@ -289,13 +247,63 @@ export function PinChartDisplay({ data, fileType, timeColumn }: PinChartDisplayP
         </div>
       )}
 
-      {/* Data Info */}
-      <div className="text-xs text-muted-foreground bg-muted/20 rounded p-2">
-        <p>
-          Showing {displayData.length} of {data.length} data points • 
-          {visibleParameters.length} of {numericParameters.length} parameters visible •
-          Time range: {brushStartIndex + 1} to {(brushEndIndex ?? data.length - 1) + 1}
-        </p>
+      </div>
+
+      {/* Parameter Controls - On the right side */}
+      <div className="w-64 space-y-2">
+        <p className="text-xs font-medium">Parameters ({visibleParameters.length} visible)</p>
+        
+        <div className="space-y-1 max-h-80 overflow-y-auto">
+          {numericParameters.map((parameter, index) => {
+            const state = parameterStates[parameter];
+            if (!state) return null;
+
+            return (
+              <div key={parameter} className="flex items-center justify-between p-1.5 rounded border bg-card/50">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <Checkbox
+                    id={`param-${parameter}`}
+                    checked={state.visible}
+                    onCheckedChange={() => toggleParameterVisibility(parameter)}
+                    className="h-3 w-3"
+                  />
+                  <Label 
+                    htmlFor={`param-${parameter}`} 
+                    className="text-xs cursor-pointer truncate flex-1"
+                    title={parameter}
+                  >
+                    {parameter}
+                  </Label>
+                  <div 
+                    className="w-3 h-3 rounded-full border"
+                    style={{ backgroundColor: `hsl(var(${state.color}))` }}
+                  />
+                </div>
+                
+                <div className="flex items-center">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-5 w-5" 
+                    onClick={() => moveParameter(parameter, 'up')}
+                    disabled={index === 0}
+                  >
+                    <ChevronUp className="h-3 w-3" />
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-5 w-5" 
+                    onClick={() => moveParameter(parameter, 'down')}
+                    disabled={index === numericParameters.length - 1}
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
