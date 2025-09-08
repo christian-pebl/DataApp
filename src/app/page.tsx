@@ -12,6 +12,6 @@ export default async function HomePage() {
     redirect('/auth');
   }
 
-  // If user is authenticated, redirect to data explorer
-  redirect('/data-explorer');
+  // If user is authenticated, redirect to map drawing
+  redirect('/map-drawing');
 }

@@ -31,6 +31,15 @@ body {
   z-index: 9999 !important;
 }
 
+/* User Dropdown Menu - Ensure it appears above everything including map and panels */
+[data-radix-dropdown-menu-content] {
+  z-index: 10001 !important;
+}
+
+.user-dropdown-menu {
+  z-index: 10001 !important;
+}
+
 .pebl-subheading {
   font-family: 'Futura', 'Trebuchet MS', 'Avenir Next', 'Helvetica Neue', Arial, sans-serif;
   font-weight: bold;

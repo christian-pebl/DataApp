@@ -24,6 +24,27 @@ class FileStorageService {
     projectId: string = 'default'
   ): Promise<PinFile | null> {
     try {
+      // Get current user and verify authentication
+      const { data: { user }, error: authError } = await this.supabase.auth.getUser()
+      
+      if (authError || !user) {
+        console.error('Authentication required to upload pin files:', authError)
+        return null
+      }
+
+      // Verify that the user owns the pin they're trying to upload to
+      const { data: pinData, error: pinError } = await this.supabase
+        .from('pins')
+        .select('id, user_id')
+        .eq('id', pinId)
+        .eq('user_id', user.id)
+        .single()
+
+      if (pinError || !pinData) {
+        console.error('Pin not found or user does not have upload access:', pinError)
+        return null
+      }
+
       // Generate unique file path
       const fileId = uuidv4()
       const fileExtension = file.name.split('.').pop()
@@ -90,10 +111,32 @@ class FileStorageService {
   }
 
   /**
-   * Get all files for a specific pin
+   * Get all files for a specific pin (with user authentication check)
    */
   async getPinFiles(pinId: string): Promise<PinFile[]> {
     try {
+      // Get current user to ensure they have access to this pin
+      const { data: { user }, error: authError } = await this.supabase.auth.getUser()
+      
+      if (authError || !user) {
+        console.error('Authentication required to get pin files:', authError)
+        return []
+      }
+
+      // First verify that the user owns the pin
+      const { data: pinData, error: pinError } = await this.supabase
+        .from('pins')
+        .select('id, user_id')
+        .eq('id', pinId)
+        .eq('user_id', user.id)
+        .single()
+
+      if (pinError || !pinData) {
+        console.error('Pin not found or user does not have access:', pinError)
+        return []
+      }
+
+      // Now get the files - RLS policies will handle additional filtering
       const { data, error } = await this.supabase
         .from('pin_files')
         .select('*')
@@ -144,14 +187,26 @@ class FileStorageService {
   }
 
   /**
-   * Delete a file from storage and database
+   * Delete a file from storage and database (with user authentication check)
    */
   async deleteFile(fileId: string): Promise<boolean> {
     try {
-      // Get file metadata first
+      // Get current user to ensure they have access
+      const { data: { user }, error: authError } = await this.supabase.auth.getUser()
+      
+      if (authError || !user) {
+        console.error('Authentication required to delete pin files:', authError)
+        return false
+      }
+
+      // Get file metadata and verify user ownership through pin ownership
       const { data: fileData, error: getError } = await this.supabase
         .from('pin_files')
-        .select('filePath')
+        .select(`
+          file_path,
+          pin_id,
+          pins!inner(user_id)
+        `)
         .eq('id', fileId)
         .single()
 
@@ -160,17 +215,23 @@ class FileStorageService {
         return false
       }
 
+      // Check if user owns the pin associated with this file
+      if (fileData.pins.user_id !== user.id) {
+        console.error('User does not have permission to delete this file')
+        return false
+      }
+
       // Delete from storage
       const { error: storageError } = await this.supabase.storage
         .from('pin-files')
-        .remove([fileData.filePath])
+        .remove([fileData.file_path])
 
       if (storageError) {
         console.error('Storage delete error:', storageError)
         return false
       }
 
-      // Delete from database
+      // Delete from database - RLS policies will handle additional filtering
       const { error: dbError } = await this.supabase
         .from('pin_files')
         .delete()

@@ -15,7 +15,7 @@ export default function AuthForm() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
-        router.refresh()
+        router.push('/map-drawing')
       }
     })
 

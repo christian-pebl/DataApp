@@ -1,130 +1,168 @@
 'use client'
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { Map, BarChart3, Settings, SunMoon, Menu, X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { useEffect, useState, useCallback } from 'react'
 import UserMenu from '@/components/auth/UserMenu'
 import { User } from '@supabase/supabase-js'
-import { useState } from 'react'
-import { useIsMobile } from '@/hooks/use-mobile'
 import { PEBLLogoNav } from '@/components/branding/PEBLLogo'
+import { createClient } from '@/lib/supabase/client'
 
 interface TopNavigationProps {
-  user: User
+  user: User | null
 }
 
-const NavigationItems = ({ pathname, onItemClick }: { pathname: string; onItemClick?: () => void }) => (
-  <>
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Link href="/data-explorer" passHref>
-          <Button 
-            variant={pathname === '/data-explorer' ? "secondary" : "ghost"} 
-            size="icon" 
-            className="h-9 w-9"
-            aria-label="Data Explorer"
-            onClick={onItemClick}
-          >
-            <BarChart3 className="h-5 w-5" />
-          </Button>
-        </Link>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>Data Explorer</p>
-      </TooltipContent>
-    </Tooltip>
-
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Link href="/map-drawing" passHref>
-          <Button 
-            variant={pathname === '/map-drawing' ? "secondary" : "ghost"} 
-            size="icon" 
-            className="h-9 w-9"
-            aria-label="Map Mode"
-            onClick={onItemClick}
-          >
-            <Map className="h-5 w-5" />
-          </Button>
-        </Link>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>Map Mode</p>
-      </TooltipContent>
-    </Tooltip>
-  </>
+// Navigation skeleton component for loading states
+const NavigationSkeleton = () => (
+  <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
+    <div className="flex h-full items-center justify-between px-4 w-full">
+      <div className="flex items-center">
+        <PEBLLogoNav />
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="h-9 w-9 rounded-full bg-muted animate-pulse" />
+      </div>
+    </div>
+  </nav>
 )
 
-export default function TopNavigation({ user }: TopNavigationProps) {
-  const pathname = usePathname()
-  const isMobile = useIsMobile()
-  const [isOpen, setIsOpen] = useState(false)
+// Error fallback navigation - still shows logo
+const NavigationError = () => (
+  <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
+    <div className="flex h-full items-center justify-between px-4 w-full">
+      <div className="flex items-center">
+        <PEBLLogoNav />
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="h-8 w-8" />
+      </div>
+    </div>
+  </nav>
+)
 
-  const closeSheet = () => setIsOpen(false)
+export default function TopNavigation({ user: initialUser }: TopNavigationProps) {
+  const [user, setUser] = useState<User | null>(initialUser)
+  const [isLoading, setIsLoading] = useState(false)
+  const [isHydrated, setIsHydrated] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
 
-  return (
-    <TooltipProvider>
+  // Safe supabase client creation with error handling
+  const [supabase] = useState(() => {
+    try {
+      return createClient()
+    } catch (error) {
+      console.error('Failed to create Supabase client:', error)
+      setAuthError('Authentication service unavailable')
+      return null
+    }
+  })
+
+  // Handle hydration
+  useEffect(() => {
+    setIsHydrated(true)
+  }, [])
+
+  // Robust auth state management
+  const initializeAuth = useCallback(async () => {
+    if (!supabase) return
+
+    try {
+      setIsLoading(true)
+      setAuthError(null)
+      
+      const { data: { session }, error } = await supabase.auth.getSession()
+      
+      if (error) {
+        console.error('Error getting session:', error)
+        setAuthError('Failed to get session')
+        return
+      }
+      
+      setUser(session?.user ?? null)
+    } catch (error) {
+      console.error('Unexpected error during auth initialization:', error)
+      setAuthError('Authentication initialization failed')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [supabase])
+
+  useEffect(() => {
+    if (!isHydrated || !supabase) return
+
+    initializeAuth()
+
+    // Listen for auth changes with robust error handling
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      try {
+        console.log('Auth state changed:', event, session?.user?.email || 'no user')
+        setUser(session?.user ?? null)
+        setAuthError(null)
+      } catch (error) {
+        console.error('Error handling auth state change:', error)
+        setAuthError('Auth state update failed')
+      } finally {
+        setIsLoading(false)
+      }
+    })
+
+    return () => {
+      try {
+        subscription.unsubscribe()
+      } catch (error) {
+        console.error('Error unsubscribing from auth changes:', error)
+      }
+    }
+  }, [isHydrated, supabase, initializeAuth])
+
+  // Handle pre-hydration state
+  if (!isHydrated) {
+    return (
       <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <div className="flex h-full items-center justify-between px-4 w-full">
-          {/* Left side - PEBL Logo */}
           <div className="flex items-center">
             <PEBLLogoNav />
           </div>
-
-          {/* Desktop Navigation */}
-          {!isMobile && (
-            <div className="flex items-center gap-2">
-              <NavigationItems pathname={pathname} />
-            </div>
-          )}
-
-          {/* Right side */}
           <div className="flex items-center gap-2">
-            {/* Mobile Navigation */}
-            {isMobile && (
-              <Sheet open={isOpen} onOpenChange={setIsOpen}>
-                <SheetTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Open menu">
-                    <Menu className="h-5 w-5" />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-64">
-                  <SheetHeader>
-                    <SheetTitle className="text-lg font-futura font-semibold">Navigation</SheetTitle>
-                  </SheetHeader>
-                  <div className="flex flex-col space-y-2 pt-4">
-                      <Link href="/data-explorer" passHref>
-                        <Button 
-                          variant={pathname === '/data-explorer' ? "secondary" : "ghost"} 
-                          className="w-full justify-start"
-                          onClick={closeSheet}
-                        >
-                          <BarChart3 className="mr-2 h-4 w-4" />
-                          Data Explorer
-                        </Button>
-                      </Link>
-                      <Link href="/map-drawing" passHref>
-                        <Button 
-                          variant={pathname === '/map-drawing' ? "secondary" : "ghost"} 
-                          className="w-full justify-start"
-                          onClick={closeSheet}
-                        >
-                          <Map className="mr-2 h-4 w-4" />
-                          Map Mode
-                        </Button>
-                      </Link>
-                  </div>
-                </SheetContent>
-              </Sheet>
+            {initialUser ? (
+              <UserMenu user={initialUser} />
+            ) : (
+              <div className="h-8 w-8" />
             )}
-            
-            <UserMenu user={user} />
           </div>
         </div>
       </nav>
-    </TooltipProvider>
+    )
+  }
+
+  // Handle auth errors - still show navigation with logo
+  if (authError) {
+    return <NavigationError />
+  }
+
+  // Handle loading state with skeleton
+  if (isLoading && !user) {
+    return <NavigationSkeleton />
+  }
+
+  // Main navigation render - this structure is ALWAYS rendered
+  return (
+    <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
+      <div className="flex h-full items-center justify-between px-4 w-full">
+        {/* Left side - PEBL Logo - ALWAYS visible regardless of any state */}
+        <div className="flex items-center">
+          <PEBLLogoNav />
+        </div>
+
+        {/* Right side - User menu with robust error handling */}
+        <div className="flex items-center gap-2">
+          {user ? (
+            <UserMenu user={user} />
+          ) : (
+            <div className="h-8 w-8" /> // Placeholder to maintain layout consistency
+          )}
+        </div>
+      </div>
+    </nav>
   )
 }

@@ -14,10 +14,12 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { SunMoon, Settings, LogOut, Ruler } from 'lucide-react'
+import { SunMoon, Settings, LogOut, Ruler, Map, BarChart3 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { useSettings } from '@/hooks/use-settings'
+import { usePathname } from 'next/navigation'
+import Link from 'next/link'
 
 interface UserMenuProps {
   user: User
@@ -26,6 +28,7 @@ interface UserMenuProps {
 export default function UserMenu({ user }: UserMenuProps) {
   const supabase = createClient()
   const router = useRouter()
+  const pathname = usePathname()
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const { settings, setSettings } = useSettings()
 
@@ -58,9 +61,16 @@ export default function UserMenu({ user }: UserMenuProps) {
   }
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/auth')
-    router.refresh()
+    try {
+      await supabase.auth.signOut()
+      router.push('/auth')
+      router.refresh()
+    } catch (error) {
+      console.error('Error signing out:', error)
+      // Still try to redirect even if sign out fails
+      router.push('/auth')
+      router.refresh()
+    }
   }
 
   return (
@@ -75,7 +85,7 @@ export default function UserMenu({ user }: UserMenuProps) {
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-64" align="end" forceMount>
+      <DropdownMenuContent className="w-64 z-[10000] user-dropdown-menu" align="end" forceMount>
         {/* User Info */}
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
@@ -114,6 +124,25 @@ export default function UserMenu({ user }: UserMenuProps) {
             disabled={!settings}
           />
         </div>
+        
+        <DropdownMenuSeparator />
+        
+        {/* Navigation Items */}
+        <Link href="/data-explorer">
+          <DropdownMenuItem className="cursor-pointer">
+            <BarChart3 className="mr-2 h-4 w-4" />
+            <span>Data Explorer</span>
+            {pathname === '/data-explorer' && <div className="ml-auto w-2 h-2 bg-primary rounded-full" />}
+          </DropdownMenuItem>
+        </Link>
+        
+        <Link href="/map-drawing">
+          <DropdownMenuItem className="cursor-pointer">
+            <Map className="mr-2 h-4 w-4" />
+            <span>Map Drawing</span>
+            {pathname === '/map-drawing' && <div className="ml-auto w-2 h-2 bg-primary rounded-full" />}
+          </DropdownMenuItem>
+        </Link>
         
         <DropdownMenuSeparator />
         

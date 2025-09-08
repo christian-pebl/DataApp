@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { createClient } from '@/lib/supabase/server';
 import TopNavigation from '@/components/layout/TopNavigation';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { NavigationErrorBoundary } from '@/components/layout/NavigationErrorBoundary';
 
 // PEBL Brand Typography: Roboto for body text
 const roboto = Roboto({
@@ -40,16 +41,28 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Safe user fetching with error handling
+  let user = null;
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.getUser();
+    if (error) {
+      console.error('Error fetching user in layout:', error);
+    } else {
+      user = data.user;
+    }
+  } catch (error) {
+    console.error('Failed to initialize Supabase in layout:', error);
+  }
 
   return (
     <html lang="en">
       <body className={`${roboto.variable} font-roboto antialiased`}>
         <ErrorBoundary>
-          {user && <TopNavigation user={user} />}
+          {/* Wrap TopNavigation with its own error boundary for extra protection */}
+          <NavigationErrorBoundary>
+            <TopNavigation user={user} />
+          </NavigationErrorBoundary>
           {children}
           <Toaster />
         </ErrorBoundary>

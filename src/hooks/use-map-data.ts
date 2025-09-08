@@ -282,15 +282,28 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
     // Sync to database if online and authenticated
     if (enableSync && isAuthenticated && isOnline) {
       try {
+        console.log('useMapData: Attempting to sync pin update to database...', { id, updates })
         await mapDataService.updatePin(id, updates)
+        console.log('useMapData: Pin update synced successfully to database')
       } catch (error) {
-        console.error('Error syncing pin update to database:', error)
+        console.error('useMapData: Error syncing pin update to database:', error)
+        
+        // Show detailed error information
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        console.error('useMapData: Detailed error message:', errorMessage)
+        
         toast({
           variant: "destructive",
-          title: "Sync Error",
-          description: "Pin updated locally but failed to sync to database."
+          title: "Database Sync Failed",
+          description: `Pin updated locally but failed to sync: ${errorMessage}`
         })
       }
+    } else {
+      console.log('useMapData: Skipping database sync due to conditions:', { 
+        enableSync, 
+        isAuthenticated, 
+        isOnline 
+      })
     }
   }, [pins, enableSync, isAuthenticated, isOnline, saveToLocalStorage, toast])
 

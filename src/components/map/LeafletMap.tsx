@@ -86,15 +86,19 @@ const toDMS = (deg: number, isLat: boolean) => {
   return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
 };
 
-const createCustomIcon = (color: string) => {
-    const iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" width="36" height="36" class="drop-shadow-lg"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
+const createCustomIcon = (color: string, size: number = 6) => {
+    // Map pin size values (3, 6, 10) to pixel sizes
+    const sizeMap = { 3: 24, 6: 36, 10: 48 };
+    const pixelSize = sizeMap[size as keyof typeof sizeMap] || 36;
+    
+    const iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" width="${pixelSize}" height="${pixelSize}" class="drop-shadow-lg"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
     
     const iconOptions: DivIconOptions = {
       html: iconHtml,
       className: 'border-0 bg-transparent',
-      iconSize: [36, 36],
-      iconAnchor: [18, 36],
-      popupAnchor: [0, -38]
+      iconSize: [pixelSize, pixelSize],
+      iconAnchor: [pixelSize / 2, pixelSize],
+      popupAnchor: [0, -pixelSize - 2]
     };
 
     return L.divIcon(iconOptions as any);
@@ -285,7 +289,8 @@ const LeafletMap = ({
                                !isNaN(pin.lat) && !isNaN(pin.lng) &&
                                isFinite(pin.lat) && isFinite(pin.lng)).forEach(pin => {
                 const color = pin.color || '#3b82f6'; // Use pin color or default blue
-                const markerIcon = createCustomIcon(color);
+                const size = pin.size || 6; // Use pin size or default medium
+                const markerIcon = createCustomIcon(color, size);
                 const marker = L.marker([pin.lat, pin.lng], { icon: markerIcon }).addTo(layer);
                 
                 // Add click handler for pin

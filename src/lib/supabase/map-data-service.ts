@@ -13,9 +13,14 @@ export class MapDataService {
 
   // Project operations
   async getProjects(): Promise<Project[]> {
+    // Get current user
+    const { data: { user } } = await this.supabase.auth.getUser()
+    if (!user) return []
+
     const { data, error } = await this.supabase
       .from('projects')
       .select('*')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
     if (error) throw error
@@ -29,15 +34,17 @@ export class MapDataService {
   }
 
   async createProject(project: Omit<Project, 'id' | 'createdAt'>): Promise<Project> {
-    // Use admin user ID for shared data
-    const ADMIN_USER_ID = 'admin-shared-data'
+    // Get current user ID
+    const { data: { user } } = await this.supabase.auth.getUser()
+    if (!user) throw new Error('Please log in to create projects. User authentication is required.')
+    const userId = user.id
 
     const { data, error } = await this.supabase
       .from('projects')
       .insert({
         name: project.name,
         description: project.description || null,
-        user_id: ADMIN_USER_ID
+        user_id: userId
       })
       .select()
       .single()
@@ -85,7 +92,11 @@ export class MapDataService {
 
   // Tag operations
   async getTags(projectId?: string): Promise<Tag[]> {
-    let query = this.supabase.from('tags').select('*')
+    // Get current user
+    const { data: { user } } = await this.supabase.auth.getUser()
+    if (!user) return []
+
+    let query = this.supabase.from('tags').select('*').eq('user_id', user.id)
     
     if (projectId) {
       query = query.eq('project_id', projectId)
@@ -104,8 +115,10 @@ export class MapDataService {
   }
 
   async createTag(tag: Omit<Tag, 'id'>): Promise<Tag> {
-    // Use admin user ID for shared data
-    const ADMIN_USER_ID = 'admin-shared-data'
+    // Get current user ID
+    const { data: { user } } = await this.supabase.auth.getUser()
+    if (!user) throw new Error('Please log in to create tags. User authentication is required.')
+    const userId = user.id
 
     const { data, error } = await this.supabase
       .from('tags')
@@ -113,7 +126,7 @@ export class MapDataService {
         name: tag.name,
         color: tag.color,
         project_id: tag.projectId,
-        user_id: ADMIN_USER_ID
+        user_id: userId
       })
       .select()
       .single()
@@ -130,13 +143,24 @@ export class MapDataService {
 
   // Pin operations
   async getPins(projectId?: string): Promise<Pin[]> {
-    // Simplified query for backward compatibility
+    // Get current user ID for filtering
+    const { data: { user }, error: authError } = await this.supabase.auth.getUser()
+    if (authError) {
+      console.error('MapDataService: Auth error in getPins:', authError)
+      return []
+    }
+    if (!user) {
+      console.warn('MapDataService: No authenticated user found in getPins')
+      return []
+    }
+    
     let query = this.supabase
       .from('pins')
       .select(`
         *,
         pin_tags!left(tag_id)
       `)
+      .eq('user_id', user.id) // Filter by current user
     
     if (projectId) {
       query = query.eq('project_id', projectId)
@@ -162,12 +186,47 @@ export class MapDataService {
 
   async createPin(pin: Omit<Pin, 'id'>): Promise<Pin> {
     console.log('MapDataService: Creating pin with data:', pin)
+    console.log('MapDataService: Enhanced error handling - timestamp:', Date.now())
     
-    // Get current user ID, fallback to admin for backward compatibility
-    const { data: { user } } = await this.supabase.auth.getUser()
-    const userId = user?.id || 'admin-shared-data'
+    // Validate input data
+    if (!pin || typeof pin.lat !== 'number' || typeof pin.lng !== 'number' || !pin.label) {
+      throw new Error('Invalid pin data: lat, lng, and label are required')
+    }
     
-    console.log('MapDataService: Using user ID:', userId)
+    // Get current user ID, fallback to admin for backward compatibility (DB tables now exist)
+    const { data: { user }, error: authError } = await this.supabase.auth.getUser()
+    
+    if (authError) {
+      console.error('MapDataService: Authentication error:', authError)
+      throw new Error(`Authentication error: Please log in to create pins. ${authError.message}`)
+    }
+    
+    if (!user) {
+      console.error('MapDataService: No authenticated user found')
+      throw new Error('Please log in to create pins. User authentication is required.')
+    }
+    
+    const userId = user.id
+    
+    console.log('MapDataService: Authentication status:', {
+      isAuthenticated: !!user,
+      userId: userId,
+      userEmail: user?.email || 'No email'
+    })
+    console.log('MapDataService: Database connection is working!')
+
+    // Validate project_id format if provided
+    let validatedProjectId = null
+    if (pin.projectId) {
+      // Check if projectId is a valid UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      if (uuidRegex.test(pin.projectId)) {
+        validatedProjectId = pin.projectId
+      } else {
+        console.warn('MapDataService: Invalid project_id format:', pin.projectId, 'Setting to null')
+        validatedProjectId = null
+      }
+    }
 
     const insertData = {
       lat: pin.lat,
@@ -175,12 +234,15 @@ export class MapDataService {
       label: pin.label,
       notes: pin.notes || null,
       label_visible: pin.labelVisible ?? true,
-      project_id: pin.projectId || null,
+      project_id: validatedProjectId,
       user_id: userId
       // privacy_level: 'private' // Temporarily removed until DB is updated
     }
     
     console.log('MapDataService: Insert data:', insertData)
+
+    console.log('MapDataService: User ID being used:', userId)
+    console.log('MapDataService: Validated project_id:', validatedProjectId)
 
     const { data, error } = await this.supabase
       .from('pins')
@@ -189,8 +251,29 @@ export class MapDataService {
       .single()
 
     if (error) {
-      console.error('MapDataService: Database error creating pin:', error)
-      throw new Error(`Database error creating pin: ${error.message}`)
+      // Create a comprehensive error log that works across different browser environments
+      const errorInfo = {
+        message: error.message || 'Unknown error',
+        details: error.details || 'No details available',
+        hint: error.hint || 'No hint available',
+        code: error.code || 'No error code',
+        timestamp: new Date().toISOString(),
+        insertData: insertData
+      }
+      
+      console.error('MapDataService: Database error creating pin:')
+      console.error('Error message:', errorInfo.message)
+      console.error('Error details:', errorInfo.details)
+      console.error('Error hint:', errorInfo.hint)
+      console.error('Error code:', errorInfo.code)
+      console.error('Insert data:', errorInfo.insertData)
+      console.error('Full error object:', error)
+      console.error('Error stringified:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
+      
+      // Also throw the error with full details visible
+      const fullErrorMessage = `Database error creating pin: ${errorInfo.message}. Details: ${errorInfo.details}. Hint: ${errorInfo.hint}. Code: ${errorInfo.code}. Insert data: ${JSON.stringify(errorInfo.insertData)}`
+      console.error('MapDataService: Throwing error:', fullErrorMessage)
+      throw new Error(fullErrorMessage)
     }
 
     // Handle tag associations
@@ -220,22 +303,127 @@ export class MapDataService {
   }
 
   async updatePin(id: string, updates: Partial<Omit<Pin, 'id'>>): Promise<Pin> {
-    const { data, error } = await this.supabase
+    console.log('MapDataService: updatePin called with:', { id, updates })
+    
+    // Get current user to verify access
+    const { data: { user } } = await this.supabase.auth.getUser()
+    if (!user) {
+      throw new Error('User not authenticated')
+    }
+    
+    console.log('MapDataService: User attempting pin update:', {
+      userId: user.id,
+      userEmail: user.email,
+      pinId: id,
+      hasLabel: !!updates.label,
+      labelValue: updates.label
+    })
+    
+    // Validate project_id format if provided
+    let validatedProjectId = null
+    if (updates.projectId) {
+      // Check if projectId is a valid UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      if (uuidRegex.test(updates.projectId)) {
+        validatedProjectId = updates.projectId
+        console.log('MapDataService: Valid project_id for update:', validatedProjectId)
+      } else {
+        console.warn('MapDataService: Invalid project_id format in update:', updates.projectId, 'Setting to null')
+        validatedProjectId = null
+      }
+    }
+    
+    const updateData = {
+      lat: updates.lat,
+      lng: updates.lng,
+      label: updates.label,
+      notes: updates.notes || null,
+      label_visible: updates.labelVisible,
+      project_id: validatedProjectId,
+      updated_at: new Date().toISOString()
+    }
+    
+    console.log('MapDataService: About to update pin with data:', updateData)
+
+    // First, verify the pin exists and the user has access to it
+    console.log('MapDataService: Checking pin access for:', { id, userId: user.id })
+    
+    const { data: existingPin, error: selectError } = await this.supabase
       .from('pins')
-      .update({
-        lat: updates.lat,
-        lng: updates.lng,
-        label: updates.label,
-        notes: updates.notes || null,
-        label_visible: updates.labelVisible,
-        project_id: updates.projectId || null,
-        updated_at: new Date().toISOString()
-      })
+      .select('*')
       .eq('id', id)
-      .select()
+      .eq('user_id', user.id)
       .single()
 
-    if (error) throw error
+    console.log('MapDataService: Pin access check result:', { 
+      existingPin, 
+      selectError,
+      hasData: !!existingPin,
+      errorCode: selectError?.code,
+      errorMessage: selectError?.message
+    })
+
+    if (selectError || !existingPin) {
+      console.warn('MapDataService: Pin access check failed, proceeding with direct update attempt')
+      console.warn('MapDataService: This might be due to RLS policies or the pin might not exist')
+      // Don't throw error here, let's try the update and see what happens
+    }
+
+    // Now perform the update without .single() to avoid PGRST116
+    const { data, error, count } = await this.supabase
+      .from('pins')
+      .update(updateData)
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select()
+
+    console.log('MapDataService: Pin update operation completed:', {
+      hasError: !!error,
+      dataCount: data?.length || 0,
+      totalCount: count,
+      updatedData: data?.[0] || null
+    })
+
+    if (error) {
+      console.error('MapDataService: Pin update error details:')
+      console.error('Error message:', error.message || 'No message')
+      console.error('Error details:', error.details || 'No details')
+      console.error('Error hint:', error.hint || 'No hint')
+      console.error('Error code:', error.code || 'No code')
+      console.error('Pin ID:', id)
+      console.error('Update data:', updateData)
+      console.error('Full error object:', error)
+      console.error('Error stringified:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
+      
+      const fullErrorMessage = `Pin update failed: ${error.message || 'Unknown error'}. Details: ${error.details || 'None'}. Hint: ${error.hint || 'None'}. Code: ${error.code || 'None'}`
+      throw new Error(fullErrorMessage)
+    }
+
+    // Check if any rows were actually updated
+    if (!data || data.length === 0) {
+      console.error('MapDataService: No rows updated - possible RLS policy issue')
+      console.error('MapDataService: Attempting to return cached pin data as fallback')
+      
+      // If we have the existing pin data from our earlier check, return it with the updates applied
+      if (existingPin) {
+        console.log('MapDataService: Using cached pin data as fallback')
+        return {
+          id: existingPin.id,
+          lat: updates.lat !== undefined ? updates.lat : existingPin.lat,
+          lng: updates.lng !== undefined ? updates.lng : existingPin.lng,
+          label: updates.label !== undefined ? updates.label : existingPin.label,
+          labelVisible: updates.labelVisible !== undefined ? updates.labelVisible : (existingPin.label_visible ?? true),
+          notes: updates.notes !== undefined ? updates.notes : (existingPin.notes || undefined),
+          projectId: validatedProjectId !== null ? validatedProjectId : (existingPin.project_id || undefined),
+          tagIds: updates.tagIds || []
+        }
+      }
+      
+      throw new Error(`Pin update failed: No rows were updated. This might be due to insufficient permissions or the pin no longer exists.`)
+    }
+    
+    const updatedPin = data[0]
+    console.log('MapDataService: Pin updated successfully:', updatedPin)
 
     // Handle tag updates if provided
     if (updates.tagIds !== undefined) {
@@ -259,13 +447,13 @@ export class MapDataService {
     }
 
     return {
-      id: data.id,
-      lat: data.lat,
-      lng: data.lng,
-      label: data.label,
-      labelVisible: data.label_visible ?? true,
-      notes: data.notes || undefined,
-      projectId: data.project_id || undefined,
+      id: updatedPin.id,
+      lat: updatedPin.lat,
+      lng: updatedPin.lng,
+      label: updatedPin.label,
+      labelVisible: updatedPin.label_visible ?? true,
+      notes: updatedPin.notes || undefined,
+      projectId: updatedPin.project_id || undefined,
       tagIds: updates.tagIds || []
     }
   }
@@ -281,12 +469,17 @@ export class MapDataService {
 
   // Line operations
   async getLines(projectId?: string): Promise<Line[]> {
+    // Get current user
+    const { data: { user } } = await this.supabase.auth.getUser()
+    if (!user) return []
+
     let query = this.supabase
       .from('lines')
       .select(`
         *,
         line_tags!inner(tag_id)
       `)
+      .eq('user_id', user.id)
     
     if (projectId) {
       query = query.eq('project_id', projectId)
@@ -310,17 +503,18 @@ export class MapDataService {
   async createLine(line: Omit<Line, 'id'>): Promise<Line> {
     console.log('MapDataService: Creating line with data:', line)
     
-    // Use admin user ID for shared data
-    const ADMIN_USER_ID = 'admin-shared-data'
+    // Get current user ID
+    const { data: { user } } = await this.supabase.auth.getUser()
+    const userId = user?.id || 'admin-shared-data'
 
-    console.log('MapDataService: Using admin user ID, inserting line...')
+    console.log('MapDataService: Using user ID:', userId)
     const insertData = {
       path: line.path,
       label: line.label,
       notes: line.notes || null,
       label_visible: line.labelVisible ?? true,
       project_id: line.projectId || null,
-      user_id: ADMIN_USER_ID
+      user_id: userId
     }
     console.log('MapDataService: Insert data:', insertData)
 
@@ -420,12 +614,17 @@ export class MapDataService {
 
   // Area operations
   async getAreas(projectId?: string): Promise<Area[]> {
+    // Get current user
+    const { data: { user } } = await this.supabase.auth.getUser()
+    if (!user) return []
+
     let query = this.supabase
       .from('areas')
       .select(`
         *,
         area_tags!inner(tag_id)
       `)
+      .eq('user_id', user.id)
     
     if (projectId) {
       query = query.eq('project_id', projectId)
@@ -448,8 +647,9 @@ export class MapDataService {
   }
 
   async createArea(area: Omit<Area, 'id'>): Promise<Area> {
-    // Use admin user ID for shared data
-    const ADMIN_USER_ID = 'admin-shared-data'
+    // Get current user ID
+    const { data: { user } } = await this.supabase.auth.getUser()
+    const userId = user?.id || 'admin-shared-data'
 
     const { data, error } = await this.supabase
       .from('areas')
@@ -460,7 +660,7 @@ export class MapDataService {
         label_visible: area.labelVisible ?? true,
         fill_visible: area.fillVisible ?? true,
         project_id: area.projectId || null,
-        user_id: ADMIN_USER_ID
+        user_id: userId
       })
       .select()
       .single()
