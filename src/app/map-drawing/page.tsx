@@ -949,7 +949,11 @@ export default function MapDrawingPage() {
   const handleUpdatePin = useCallback(async (id: string, label: string, notes: string, projectId?: string, tagIds?: string[]) => {
     try {
       await updatePinData(id, { label, notes, projectId, tagIds });
-      toast({ title: "Pin Updated", description: "Pin has been updated successfully." });
+      toast({ 
+        title: "Pin Updated", 
+        description: "Pin has been updated successfully.",
+        duration: 3000 
+      });
     } catch (error) {
       console.error('Error updating pin:', error);
       toast({ 

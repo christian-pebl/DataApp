@@ -35,13 +35,17 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
     const checkAuth = async () => {
       try {
         const supabase = createClient()
-        const { data: { user }, error } = await supabase.auth.getUser()
+        // Use getSession instead of getUser to avoid auth errors when not logged in
+        const { data: { session }, error } = await supabase.auth.getSession()
         if (error) {
-          console.log('Auth check error:', error)
+          // Only log if it's not the expected "Auth session missing" error
+          if (error.message !== 'Auth session missing!') {
+            console.log('Auth check error:', error)
+          }
           setIsAuthenticated(false)
         } else {
-          console.log('Auth check result:', !!user)
-          setIsAuthenticated(!!user)
+          console.log('Auth check result:', !!session?.user)
+          setIsAuthenticated(!!session?.user)
         }
       } catch (error) {
         console.error('Error checking authentication:', error)
@@ -141,6 +145,15 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
       try {
         pinsData = await mapDataService.getPins(projectId === 'default' ? undefined : projectId)
         console.log('Pins loaded:', pinsData.length)
+        // Debug: Log the first few pins to see if labels are present
+        if (pinsData.length > 0) {
+          console.log('Sample pins with labels:', pinsData.slice(0, 3).map(p => ({
+            id: p.id.substring(0, 8),
+            label: p.label || '(no label)',
+            lat: p.lat.toFixed(4),
+            lng: p.lng.toFixed(4)
+          })))
+        }
       } catch (error) {
         console.log('Pins table may not exist yet:', error)
         pinsData = []
@@ -171,6 +184,15 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
       setLines(linesData)
       setAreas(areasData)
       
+      // Clear localStorage when we successfully load from database
+      // to prevent stale data from overriding database data
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('map-drawing-pins')
+        localStorage.removeItem('map-drawing-lines')
+        localStorage.removeItem('map-drawing-areas')
+        console.log('Cleared localStorage after successful database sync')
+      }
+      
       setLastSyncTime(new Date())
       console.log('Database sync completed successfully')
     } catch (error) {
@@ -190,9 +212,12 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
 
   // Initial data load
   useEffect(() => {
-    loadFromLocalStorage()
     if (enableSync && isAuthenticated) {
+      // If authenticated, load from database (don't load from localStorage first)
       loadFromDatabase()
+    } else {
+      // Only load from localStorage if not authenticated
+      loadFromLocalStorage()
     }
   }, [loadFromLocalStorage, loadFromDatabase, enableSync, isAuthenticated])
 

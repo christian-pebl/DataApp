@@ -40,7 +40,7 @@ const NavigationError = () => (
 
 export default function TopNavigation({ user: initialUser }: TopNavigationProps) {
   const [user, setUser] = useState<User | null>(initialUser)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(!initialUser) // Start loading if no initial user
   const [isHydrated, setIsHydrated] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
 
@@ -140,10 +140,8 @@ export default function TopNavigation({ user: initialUser }: TopNavigationProps)
     return <NavigationError />
   }
 
-  // Handle loading state with skeleton
-  if (isLoading && !user) {
-    return <NavigationSkeleton />
-  }
+  // Don't show loading skeleton if there's an auth error
+  // as we already have a fallback for that
 
   // Main navigation render - this structure is ALWAYS rendered
   return (
@@ -158,6 +156,8 @@ export default function TopNavigation({ user: initialUser }: TopNavigationProps)
         <div className="flex items-center gap-2">
           {user ? (
             <UserMenu user={user} />
+          ) : isLoading ? (
+            <div className="h-9 w-9 rounded-full bg-muted animate-pulse" />
           ) : (
             <div className="h-8 w-8" /> // Placeholder to maintain layout consistency
           )}

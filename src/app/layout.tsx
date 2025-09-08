@@ -42,12 +42,16 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   // Safe user fetching with error handling
+  // Note: Server-side auth often fails in development, but client-side will pick it up
   let user = null;
   try {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.getUser();
     if (error) {
-      console.error('Error fetching user in layout:', error);
+      // Don't log auth session missing errors in development as they're common
+      if (error.message !== 'Auth session missing!' || process.env.NODE_ENV !== 'development') {
+        console.error('Error fetching user in layout:', error);
+      }
     } else {
       user = data.user;
     }

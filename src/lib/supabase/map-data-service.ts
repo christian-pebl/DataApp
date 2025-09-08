@@ -143,16 +143,20 @@ export class MapDataService {
 
   // Pin operations
   async getPins(projectId?: string): Promise<Pin[]> {
-    // Get current user ID for filtering
-    const { data: { user }, error: authError } = await this.supabase.auth.getUser()
+    // Get current session for filtering
+    const { data: { session }, error: authError } = await this.supabase.auth.getSession()
     if (authError) {
-      console.error('MapDataService: Auth error in getPins:', authError)
+      // Only log if it's not the expected "Auth session missing" error
+      if (authError.message !== 'Auth session missing!') {
+        console.error('MapDataService: Auth error in getPins:', authError)
+      }
       return []
     }
-    if (!user) {
-      console.warn('MapDataService: No authenticated user found in getPins')
+    if (!session?.user) {
+      // This is normal when not logged in, don't log as warning
       return []
     }
+    const user = session.user
     
     let query = this.supabase
       .from('pins')
