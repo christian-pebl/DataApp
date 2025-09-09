@@ -25,14 +25,17 @@ class FileStorageService {
   ): Promise<PinFile | null> {
     try {
       // Get current user and verify authentication
+      console.log('🔐 Checking authentication for file upload...');
       const { data: { user }, error: authError } = await this.supabase.auth.getUser()
       
       if (authError || !user) {
-        console.error('Authentication required to upload pin files:', authError)
+        console.error('❌ Authentication required to upload pin files:', authError)
         return null
       }
+      console.log(`✅ Authenticated as user: ${user.id}`);
 
       // Verify that the user owns the pin they're trying to upload to
+      console.log(`🔍 Verifying ownership of pin ${pinId}...`);
       const { data: pinData, error: pinError } = await this.supabase
         .from('pins')
         .select('id, user_id')
@@ -41,9 +44,11 @@ class FileStorageService {
         .single()
 
       if (pinError || !pinData) {
-        console.error('Pin not found or user does not have upload access:', pinError)
+        console.error('❌ Pin not found or user does not have upload access:', pinError)
+        console.error('Pin ID:', pinId, 'User ID:', user.id);
         return null
       }
+      console.log('✅ Pin ownership verified');
 
       // Generate unique file path
       const fileId = uuidv4()
@@ -51,6 +56,7 @@ class FileStorageService {
       const filePath = `pins/${pinId}/${fileId}.${fileExtension}`
 
       // Upload file to Supabase Storage
+      console.log(`📤 Uploading file to storage: ${filePath}`);
       const { error: uploadError } = await this.supabase.storage
         .from('pin-files')
         .upload(filePath, file, {
@@ -59,9 +65,11 @@ class FileStorageService {
         })
 
       if (uploadError) {
-        console.error('File upload error:', uploadError)
+        console.error('❌ File upload error:', uploadError)
+        console.error('Bucket:', 'pin-files', 'Path:', filePath);
         return null
       }
+      console.log('✅ File uploaded to storage successfully');
 
       // Save file metadata to database (using snake_case column names)
       const pinFileData = {
@@ -73,7 +81,7 @@ class FileStorageService {
         project_id: projectId
       }
 
-      console.log('DEBUG: Inserting pin file data:', pinFileData);
+      console.log('💾 Inserting pin file metadata to database:', pinFileData);
 
       const { data, error: dbError } = await this.supabase
         .from('pin_files')
@@ -82,15 +90,17 @@ class FileStorageService {
         .single()
 
       if (dbError) {
-        console.error('Database error:', dbError)
+        console.error('❌ Database error:', dbError)
+        console.error('Table: pin_files, Data:', pinFileData);
         // Clean up uploaded file if database save fails
+        console.log('🧹 Cleaning up uploaded file due to database error...');
         await this.supabase.storage
           .from('pin-files')
           .remove([filePath])
         return null
       }
 
-      console.log('DEBUG: Database insert successful:', data);
+      console.log('✅ Database insert successful:', data);
 
       // Transform snake_case to camelCase for return
       return {
@@ -116,14 +126,17 @@ class FileStorageService {
   async getPinFiles(pinId: string): Promise<PinFile[]> {
     try {
       // Get current user to ensure they have access to this pin
+      console.log(`🔍 Getting files for pin ${pinId}...`);
       const { data: { user }, error: authError } = await this.supabase.auth.getUser()
       
       if (authError || !user) {
-        console.error('Authentication required to get pin files:', authError)
+        console.error('❌ Authentication required to get pin files:', authError)
         return []
       }
+      console.log(`✅ Authenticated as user: ${user.id}`);
 
       // First verify that the user owns the pin
+      console.log(`🔐 Verifying pin ownership for retrieval...`);
       const { data: pinData, error: pinError } = await this.supabase
         .from('pins')
         .select('id, user_id')
@@ -132,11 +145,14 @@ class FileStorageService {
         .single()
 
       if (pinError || !pinData) {
-        console.error('Pin not found or user does not have access:', pinError)
+        console.error('❌ Pin not found or user does not have access:', pinError)
+        console.error('Pin ID:', pinId, 'User ID:', user.id);
         return []
       }
+      console.log('✅ Pin ownership verified for retrieval');
 
       // Now get the files - RLS policies will handle additional filtering
+      console.log(`📂 Querying pin_files table for pin ${pinId}...`);
       const { data, error } = await this.supabase
         .from('pin_files')
         .select('*')
@@ -144,8 +160,16 @@ class FileStorageService {
         .order('uploaded_at', { ascending: false })  // Use snake_case column name
 
       if (error) {
-        console.error('Get pin files error:', error)
+        console.error('❌ Get pin files error:', error)
+        console.error('Query: pin_id =', pinId);
         return []
+      }
+      
+      console.log(`✅ Found ${data?.length || 0} file(s) in database for pin ${pinId}`);
+      if (data && data.length > 0) {
+        data.forEach((file: any) => {
+          console.log(`  - ${file.file_name} (${file.file_path})`);
+        });
       }
 
       // Transform snake_case to camelCase for return

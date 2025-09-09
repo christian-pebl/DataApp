@@ -49,6 +49,7 @@ import { useMapData } from '@/hooks/use-map-data';
 import { getTimeWindowSummary } from '@/lib/dateParser';
 import { fileStorageService, type PinFile } from '@/lib/supabase/file-storage-service';
 import { mapDataService } from '@/lib/supabase/map-data-service';
+import { ShareDialog } from '@/components/sharing/ShareDialog';
 import type { DateRange } from "react-day-picker";
 import type { CombinedDataPoint, LogStep as ApiLogStep, CombinedParameterKey } from '../om-marine-explorer/shared';
 import { ALL_PARAMETERS, PARAMETER_CONFIG } from '../om-marine-explorer/shared';
@@ -398,6 +399,8 @@ export default function MapDrawingPage() {
   const [showNotesSection, setShowNotesSection] = useState(false);
   const [showCoordinateFormatPopover, setShowCoordinateFormatPopover] = useState(false);
   const [showDataDropdown, setShowDataDropdown] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [selectedPinForShare, setSelectedPinForShare] = useState<{ id: string; label: string } | null>(null);
   const [showSharePopover, setShowSharePopover] = useState(false);
   const [sharePrivacyLevel, setSharePrivacyLevel] = useState<'private' | 'public' | 'specific'>('private');
   const [shareEmails, setShareEmails] = useState('');
@@ -543,22 +546,35 @@ export default function MapDrawingPage() {
   // Load pin files from Supabase when pins change
   useEffect(() => {
     const loadPinFiles = async () => {
-      if (pins.length === 0) return;
+      if (pins.length === 0) {
+        console.log('🔍 No pins to load files for');
+        return;
+      }
       
+      console.log(`🔍 Loading files for ${pins.length} pins...`);
       const fileMetadata: Record<string, PinFile[]> = {};
       
       // Load files for each pin
       for (const pin of pins) {
         try {
+          console.log(`  📍 Checking files for pin: ${pin.label || 'Unnamed'} (${pin.id})`);
           const files = await fileStorageService.getPinFiles(pin.id);
+          
           if (files.length > 0) {
+            console.log(`    ✅ Found ${files.length} file(s) for pin ${pin.id}`);
+            files.forEach(file => {
+              console.log(`      - ${file.fileName} (${(file.fileSize / 1024).toFixed(2)} KB)`);
+            });
             fileMetadata[pin.id] = files;
+          } else {
+            console.log(`    📭 No files found for pin ${pin.id}`);
           }
         } catch (error) {
-          console.error(`Error loading files for pin ${pin.id}:`, error);
+          console.error(`    ❌ Error loading files for pin ${pin.id}:`, error);
         }
       }
       
+      console.log(`📦 Total file metadata loaded:`, Object.keys(fileMetadata).length, 'pins with files');
       setPinFileMetadata(fileMetadata);
     };
 
@@ -1894,11 +1910,18 @@ export default function MapDrawingPage() {
           const failedUploads: string[] = [];
           
           // Upload each file to Supabase
+          console.log(`📤 Starting upload of ${csvFiles.length} file(s) to pin ${pinId}`);
+          
           for (const file of csvFiles) {
+            console.log(`  📎 Uploading: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`);
             const result = await fileStorageService.uploadPinFile(pinId, file, activeProjectId);
+            
             if (result) {
+              console.log(`    ✅ Successfully uploaded: ${file.name}`);
+              console.log(`    📍 File path: ${result.filePath}`);
               uploadResults.push(result);
             } else {
+              console.error(`    ❌ Failed to upload: ${file.name}`);
               failedUploads.push(file.name);
             }
           }
@@ -1923,6 +1946,10 @@ export default function MapDrawingPage() {
               title: "Files Uploaded Successfully",
               description: `${uploadResults.length} CSV file${uploadResults.length > 1 ? 's' : ''} uploaded to Supabase.`
             });
+            
+            // Keep the explore dropdown open to show the newly uploaded files
+            setShowExploreDropdown(true);
+            setSelectedPinForExplore(pinId);
           } else {
             toast({
               variant: failedUploads.length === csvFiles.length ? "destructive" : "default",
@@ -1931,6 +1958,12 @@ export default function MapDrawingPage() {
                 ? `Failed to upload ${failedUploads.length} files`
                 : `${uploadResults.length} uploaded, ${failedUploads.length} failed: ${failedUploads.join(', ')}`
             });
+            
+            // If at least some files uploaded successfully, keep dropdown open
+            if (uploadResults.length > 0) {
+              setShowExploreDropdown(true);
+              setSelectedPinForExplore(pinId);
+            }
           }
           
         } catch (error) {
@@ -1951,9 +1984,11 @@ export default function MapDrawingPage() {
 
   // Handle explore data with file type selection
   const handleExploreData = (pinId: string) => {
-    const files = pinFiles[pinId] || [];
+    const localFiles = pinFiles[pinId] || [];
+    const dbFiles = pinFileMetadata[pinId] || [];
+    const totalFiles = localFiles.length + dbFiles.length;
     
-    if (files.length === 0) {
+    if (totalFiles === 0) {
       toast({
         title: "No Data Available",
         description: "No files uploaded for this pin yet."
@@ -2008,11 +2043,34 @@ export default function MapDrawingPage() {
   }, [selectedPinForExplore, pinFiles, pins]);
 
   // Handle file type selection
-  const handleFileTypeSelection = (fileType: 'GP' | 'FPOD' | 'Subcam') => {
+  const handleFileTypeSelection = async (fileType: 'GP' | 'FPOD' | 'Subcam') => {
     if (!selectedPinForExplore) return;
     
-    const files = pinFiles[selectedPinForExplore] || [];
-    const categorizedFiles = categorizeFiles(files);
+    // Get local files
+    const localFiles = pinFiles[selectedPinForExplore] || [];
+    
+    // Get database files and convert them to File objects if needed
+    const dbFileMetadata = pinFileMetadata[selectedPinForExplore] || [];
+    const dbFiles: File[] = [];
+    
+    // For database files, we need to download them first
+    for (const meta of dbFileMetadata) {
+      try {
+        // Check if file matches the selected type based on filename prefix
+        if (meta.fileName.startsWith(fileType)) {
+          // Create a File-like object for now (you may want to actually download the file)
+          const file = new File([new Blob()], meta.fileName, { type: meta.fileType || 'text/csv' });
+          Object.defineProperty(file, 'size', { value: meta.fileSize });
+          dbFiles.push(file);
+        }
+      } catch (error) {
+        console.error('Error processing database file:', error);
+      }
+    }
+    
+    // Combine all files
+    const allFiles = [...localFiles, ...dbFiles];
+    const categorizedFiles = categorizeFiles(allFiles);
     const selectedFiles = categorizedFiles[fileType];
     
     setShowExploreDropdown(false);
@@ -2250,6 +2308,20 @@ export default function MapDrawingPage() {
                             </Tooltip>
                           </TooltipProvider>
                         )}
+                        {/* Share Button - Only for Pins */}
+                        {itemToEdit && 'lat' in itemToEdit && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedPinForShare({ id: itemToEdit.id, label: itemToEdit.label });
+                              setShowShareDialog(true);
+                            }}
+                            className="h-8 px-2"
+                          >
+                            <Share2 className="h-3 w-3" />
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
@@ -2393,7 +2465,7 @@ export default function MapDrawingPage() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => {
-                                    const fileCount = pinFiles[itemToEdit.id]?.length || 0;
+                                    const fileCount = (pinFileMetadata[itemToEdit.id]?.length || 0) + (pinFiles[itemToEdit.id]?.length || 0);
                                     if (fileCount === 0) {
                                       toast({
                                         title: "No Data Available",
@@ -2408,7 +2480,12 @@ export default function MapDrawingPage() {
                                 >
                                   <div className="flex items-center gap-2">
                                     <BarChart3 className="h-3 w-3" />
-                                    <span>Explore data ({pinFiles[itemToEdit.id]?.length || 0} files)</span>
+                                    <span>
+                                      Explore data 
+                                      <span className={`ml-1 font-semibold ${((pinFileMetadata[itemToEdit.id]?.length || 0) + (pinFiles[itemToEdit.id]?.length || 0)) > 0 ? 'text-green-600' : ''}`}>
+                                        ({(pinFileMetadata[itemToEdit.id]?.length || 0) + (pinFiles[itemToEdit.id]?.length || 0)} {((pinFileMetadata[itemToEdit.id]?.length || 0) + (pinFiles[itemToEdit.id]?.length || 0)) === 1 ? 'file' : 'files'})
+                                      </span>
+                                    </span>
                                   </div>
                                   <ChevronDown className={`h-3 w-3 transition-transform ${showExploreDropdown ? 'rotate-180' : ''}`} />
                                 </Button>
@@ -2417,8 +2494,20 @@ export default function MapDrawingPage() {
                                 {showExploreDropdown && selectedPinForExplore === itemToEdit.id && (
                                   <div className="absolute top-full left-0 mt-1 w-full min-w-[200px] bg-background border rounded-lg shadow-lg z-[1300] p-1">
                                     {(() => {
-                                      const files = pinFiles[selectedPinForExplore] || [];
-                                      const categorizedFiles = categorizeFiles(files);
+                                      // Combine local files and files from database
+                                      const localFiles = pinFiles[selectedPinForExplore] || [];
+                                      const dbFiles = pinFileMetadata[selectedPinForExplore] || [];
+                                      
+                                      // Convert database files to File-like objects for categorization
+                                      const dbFilesAsFileObjects = dbFiles.map(f => ({
+                                        name: f.fileName,
+                                        size: f.fileSize,
+                                        type: f.fileType || 'text/csv'
+                                      }));
+                                      
+                                      // Combine both sources
+                                      const allFiles = [...localFiles, ...dbFilesAsFileObjects];
+                                      const categorizedFiles = categorizeFiles(allFiles);
                                       const availableTypes = Object.entries(categorizedFiles).filter(([_, files]) => files.length > 0);
                                       
                                       if (availableTypes.length === 0) {
@@ -2432,23 +2521,106 @@ export default function MapDrawingPage() {
                                       return availableTypes.map(([fileType, files]) => {
                                         const timeWindow = getTimeWindowSummary(files);
                                         
+                                        // Extract date from filename (format: FPOD_YYYY_MM_DD_*.csv)
+                                        const getDateFromFileName = (fileName: string) => {
+                                          const match = fileName.match(/(\d{4})_(\d{2})_(\d{2})/);
+                                          if (match) {
+                                            const [_, year, month, day] = match;
+                                            const date = new Date(`${year}-${month}-${day}`);
+                                            return format(date, 'dd MMM yyyy');
+                                          }
+                                          return fileName;
+                                        };
+                                        
                                         return (
                                           <div key={fileType} className="space-y-1">
+                                            <div className="flex items-center gap-2 px-2 py-1">
+                                              <span className="font-medium text-xs">{fileType}</span>
+                                              <span className="text-muted-foreground text-xs">({files.length} files)</span>
+                                            </div>
+                                            
+                                            {/* Show individual files */}
+                                            <div className="ml-4 space-y-0.5">
+                                              {files.map((file, idx) => {
+                                                // Check if this file has metadata (is from database)
+                                                const dbMetadata = pinFileMetadata[selectedPinForExplore]?.find(
+                                                  meta => meta.fileName === file.name
+                                                );
+                                                
+                                                return (
+                                                  <div key={`${fileType}-${idx}`} className="flex items-center gap-1 group max-w-full">
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="sm"
+                                                      onClick={() => {
+                                                        // Open modal with just this specific file
+                                                        setShowExploreDropdown(false);
+                                                        setShowDataDropdown(false);
+                                                        setSelectedPinForExplore(null);
+                                                        openMarineDeviceModal(fileType as 'GP' | 'FPOD' | 'Subcam', [file]);
+                                                      }}
+                                                      className="flex-1 min-w-0 justify-start gap-1 h-7 text-xs hover:bg-accent/50 px-2"
+                                                    >
+                                                      <Calendar className="h-3 w-3 flex-shrink-0" />
+                                                      <span className="truncate max-w-[120px]" title={getDateFromFileName(file.name)}>
+                                                        {getDateFromFileName(file.name)}
+                                                      </span>
+                                                      <span className="text-muted-foreground ml-auto flex-shrink-0 text-[10px]">
+                                                        {(file.size / 1024).toFixed(0)}KB
+                                                      </span>
+                                                    </Button>
+                                                    
+                                                    {/* Delete button - only show for database files */}
+                                                    {dbMetadata && (
+                                                      <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={async (e) => {
+                                                          e.stopPropagation();
+                                                          if (confirm(`Delete ${file.name}?`)) {
+                                                            const success = await fileStorageService.deleteFile(dbMetadata.id);
+                                                            if (success) {
+                                                              toast({
+                                                                title: "File Deleted",
+                                                                description: `${file.name} has been deleted.`
+                                                              });
+                                                              // Refresh the pin files
+                                                              if (selectedPinForExplore) {
+                                                                const updatedFiles = await fileStorageService.getPinFiles(selectedPinForExplore);
+                                                                setPinFileMetadata(prev => ({
+                                                                  ...prev,
+                                                                  [selectedPinForExplore]: updatedFiles
+                                                                }));
+                                                              }
+                                                            } else {
+                                                              toast({
+                                                                variant: "destructive",
+                                                                title: "Delete Failed",
+                                                                description: `Failed to delete ${file.name}.`
+                                                              });
+                                                            }
+                                                          }
+                                                        }}
+                                                        className="h-6 w-6 p-0 flex-shrink-0"
+                                                        title={`Delete ${file.name}`}
+                                                      >
+                                                        <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                                      </Button>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                            
+                                            {/* Show all files button */}
                                             <Button
-                                              variant="ghost"
+                                              variant="outline"
                                               size="sm"
                                               onClick={() => handleFileTypeSelection(fileType as 'GP' | 'FPOD' | 'Subcam')}
-                                              className="w-full justify-start gap-2 h-8 text-xs"
+                                              className="w-full justify-center gap-2 h-7 text-xs mt-1"
                                             >
-                                              <span className="font-medium">{fileType}</span>
-                                              <span className="text-muted-foreground">({files.length} files)</span>
+                                              View All {fileType} Files
                                             </Button>
-                                            {timeWindow && (
-                                              <div className="flex items-center gap-1.5 px-2 py-1 ml-2 bg-accent/10 rounded text-xs text-accent">
-                                                <Calendar className="h-3 w-3" />
-                                                <span>{timeWindow}</span>
-                                              </div>
-                                            )}
                                           </div>
                                         );
                                       });
@@ -2460,7 +2632,7 @@ export default function MapDrawingPage() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  setShowDataDropdown(false);
+                                  // Don't close the dropdown, just trigger file upload
                                   handleFileUpload(itemToEdit.id);
                                 }}
                                 disabled={isUploadingFiles}
@@ -3712,6 +3884,15 @@ export default function MapDrawingPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Share Dialog */}
+      {selectedPinForShare && (
+        <ShareDialog
+          open={showShareDialog}
+          onOpenChange={setShowShareDialog}
+          pinId={selectedPinForShare.id}
+          pinLabel={selectedPinForShare.label}
+        />
+      )}
 
     </>
   );
