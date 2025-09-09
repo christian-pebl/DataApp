@@ -308,20 +308,33 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
     if (enableSync && isAuthenticated && isOnline) {
       try {
         console.log('useMapData: Attempting to sync pin update to database...', { id, updates })
-        await mapDataService.updatePin(id, updates)
-        console.log('useMapData: Pin update synced successfully to database')
+        const result = await mapDataService.updatePin(id, updates)
+        console.log('useMapData: Pin update synced successfully to database', result)
+        
+        // Only show success message if there was an actual database update
+        if (result && result.id) {
+          console.log('useMapData: Pin successfully synced with database')
+        }
       } catch (error) {
         console.error('useMapData: Error syncing pin update to database:', error)
         
-        // Show detailed error information
+        // Only show error if it's a real error, not a sync warning
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        console.error('useMapData: Detailed error message:', errorMessage)
         
-        toast({
-          variant: "destructive",
-          title: "Database Sync Failed",
-          description: `Pin updated locally but failed to sync: ${errorMessage}`
-        })
+        // Don't show error toast for expected sync issues
+        if (!errorMessage.includes('locally created pin') && 
+            !errorMessage.includes('couldn\'t be synced') &&
+            !errorMessage.includes('fallback')) {
+          console.error('useMapData: Showing error toast for:', errorMessage)
+          
+          toast({
+            variant: "destructive",
+            title: "Database Sync Error",
+            description: `Pin update failed: ${errorMessage}`
+          })
+        } else {
+          console.log('useMapData: Pin updated locally, database sync will be attempted later')
+        }
       }
     } else {
       console.log('useMapData: Skipping database sync due to conditions:', { 

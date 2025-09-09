@@ -173,6 +173,25 @@ body {
   }
 }
 
+@layer utilities {
+  /* Ensure text in toasts and error messages is selectable */
+  .select-text {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
+  }
+  
+  /* Make toast content specifically selectable */
+  [data-radix-toast-announce-label],
+  [data-radix-toast-announce-description] {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
+  }
+}
+
 /* --- DEBUG STYLES START --- */
 /* Uncomment to see element boundaries and help diagnose layout issues. */
 /*

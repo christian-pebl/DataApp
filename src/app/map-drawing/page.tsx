@@ -50,6 +50,8 @@ import { getTimeWindowSummary } from '@/lib/dateParser';
 import { fileStorageService, type PinFile } from '@/lib/supabase/file-storage-service';
 import { mapDataService } from '@/lib/supabase/map-data-service';
 import { ShareDialog } from '@/components/sharing/ShareDialog';
+import { DataRestoreDialog } from '@/components/auth/DataRestoreDialog';
+import { createClient } from '@/lib/supabase/client';
 import type { DateRange } from "react-day-picker";
 import type { CombinedDataPoint, LogStep as ApiLogStep, CombinedParameterKey } from '../om-marine-explorer/shared';
 import { ALL_PARAMETERS, PARAMETER_CONFIG } from '../om-marine-explorer/shared';
@@ -410,6 +412,12 @@ export default function MapDrawingPage() {
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [showExploreDropdown, setShowExploreDropdown] = useState(false);
   const [selectedPinForExplore, setSelectedPinForExplore] = useState<string | null>(null);
+  const [deleteConfirmFile, setDeleteConfirmFile] = useState<{ id: string; name: string } | null>(null);
+  const [deleteConfirmItem, setDeleteConfirmItem] = useState<{ id: string; type: 'pin' | 'line' | 'area'; hasData?: boolean } | null>(null);
+  
+  // Data restoration state
+  const [showDataRestore, setShowDataRestore] = useState(false);
+  const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
   
   // Pin Meteo Data State (copied from data explorer)
   const [pinMeteoDateRange, setPinMeteoDateRange] = useState<DateRange | undefined>(() => {
@@ -535,6 +543,33 @@ export default function MapDrawingPage() {
       }
     }
   }, [isAuthenticated, pins.length, lines.length, areas.length]);
+
+  // Check for authentication and show restore dialog on login
+  useEffect(() => {
+    const checkAuthAndRestore = async () => {
+      if (!hasCheckedAuth && isAuthenticated) {
+        setHasCheckedAuth(true);
+        
+        // Check if this is a fresh login (no data in state but user is authenticated)
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session) {
+          // Check if we need to restore data
+          const lastSync = localStorage.getItem('map-drawing-last-sync');
+          const timeSinceSync = lastSync ? Date.now() - new Date(lastSync).getTime() : Infinity;
+          
+          // Show restore dialog if it's been more than 5 minutes since last sync
+          // or if there's no sync time recorded
+          if (timeSinceSync > 5 * 60 * 1000 || !lastSync) {
+            setShowDataRestore(true);
+          }
+        }
+      }
+    };
+    
+    checkAuthAndRestore();
+  }, [isAuthenticated, hasCheckedAuth]);
   
   const handleMigration = async () => {
     const success = await migrateToDatabase();
@@ -964,10 +999,23 @@ export default function MapDrawingPage() {
   // Update/Delete handlers
   const handleUpdatePin = useCallback(async (id: string, label: string, notes: string, projectId?: string, tagIds?: string[]) => {
     try {
-      await updatePinData(id, { label, notes, projectId, tagIds });
+      console.log('handleUpdatePin called with:', { id, label, notes, projectId, tagIds });
+      
+      // Ensure label is not empty string but can be undefined
+      const sanitizedLabel = label?.trim() || undefined;
+      
+      console.log('Updating pin with sanitized label:', sanitizedLabel);
+      await updatePinData(id, { 
+        label: sanitizedLabel, 
+        notes: notes?.trim() || undefined, 
+        projectId, 
+        tagIds 
+      });
+      
+      console.log('Pin update successful');
       toast({ 
         title: "Pin Updated", 
-        description: "Pin has been updated successfully.",
+        description: `Pin "${sanitizedLabel || 'Unnamed'}" has been updated successfully.`,
         duration: 3000 
       });
     } catch (error) {
@@ -1467,6 +1515,49 @@ export default function MapDrawingPage() {
     }
   }, [itemToEdit, isEditingObject, coordinateFormat]);
 
+  // Keep itemToEdit in sync with pins/lines/areas arrays
+  useEffect(() => {
+    if (itemToEdit) {
+      // Check if it's a pin
+      if ('lat' in itemToEdit && 'lng' in itemToEdit) {
+        const updatedPin = pins.find(p => p.id === itemToEdit.id);
+        if (updatedPin) {
+          // Only update if the data has actually changed (comparing relevant fields)
+          if (updatedPin.label !== itemToEdit.label || 
+              updatedPin.notes !== itemToEdit.notes ||
+              updatedPin.lat !== itemToEdit.lat ||
+              updatedPin.lng !== itemToEdit.lng ||
+              updatedPin.labelVisible !== itemToEdit.labelVisible) {
+            console.log('Updating itemToEdit with updated pin data:', updatedPin);
+            setItemToEdit(updatedPin);
+          }
+        }
+      } 
+      // Check if it's a line
+      else if ('path' in itemToEdit && !('fillVisible' in itemToEdit)) {
+        const updatedLine = lines.find(l => l.id === itemToEdit.id);
+        if (updatedLine) {
+          if (updatedLine.label !== itemToEdit.label || 
+              updatedLine.notes !== itemToEdit.notes) {
+            console.log('Updating itemToEdit with updated line data:', updatedLine);
+            setItemToEdit(updatedLine);
+          }
+        }
+      }
+      // Check if it's an area
+      else if ('path' in itemToEdit && 'fillVisible' in itemToEdit) {
+        const updatedArea = areas.find(a => a.id === itemToEdit.id);
+        if (updatedArea) {
+          if (updatedArea.label !== itemToEdit.label || 
+              updatedArea.notes !== itemToEdit.notes) {
+            console.log('Updating itemToEdit with updated area data:', updatedArea);
+            setItemToEdit(updatedArea);
+          }
+        }
+      }
+    }
+  }, [pins, lines, areas]); // Removed itemToEdit from dependencies to avoid infinite loop
+
   // Handle coordinate format change
   const handleCoordinateFormatChange = (newFormat: CoordinateFormat) => {
     console.log('Format change requested:', newFormat, 'current values:', editingLat, editingLng);
@@ -1883,7 +1974,22 @@ export default function MapDrawingPage() {
   };
 
   // Handle file upload for pins
-  const handleFileUpload = (pinId: string) => {
+  const handleFileUpload = async (pinId: string) => {
+    // First check if user is authenticated
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
+      console.error('Authentication check failed:', authError);
+      toast({
+        variant: "destructive",
+        title: "Authentication Required",
+        description: "Please log in to upload files."
+      });
+      return;
+    }
+    
+    console.log('User authenticated for upload:', user.id);
+    
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.csv';
@@ -1911,17 +2017,24 @@ export default function MapDrawingPage() {
           
           // Upload each file to Supabase
           console.log(`📤 Starting upload of ${csvFiles.length} file(s) to pin ${pinId}`);
+          console.log('Active project ID:', activeProjectId);
           
           for (const file of csvFiles) {
             console.log(`  📎 Uploading: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`);
-            const result = await fileStorageService.uploadPinFile(pinId, file, activeProjectId);
             
-            if (result) {
-              console.log(`    ✅ Successfully uploaded: ${file.name}`);
-              console.log(`    📍 File path: ${result.filePath}`);
-              uploadResults.push(result);
-            } else {
-              console.error(`    ❌ Failed to upload: ${file.name}`);
+            try {
+              const result = await fileStorageService.uploadPinFile(pinId, file, activeProjectId);
+              
+              if (result) {
+                console.log(`    ✅ Successfully uploaded: ${file.name}`);
+                console.log(`    📍 File path: ${result.filePath}`);
+                uploadResults.push(result);
+              } else {
+                console.error(`    ❌ Failed to upload: ${file.name} - check console for details`);
+                failedUploads.push(file.name);
+              }
+            } catch (uploadError) {
+              console.error(`    ❌ Exception during upload of ${file.name}:`, uploadError);
               failedUploads.push(file.name);
             }
           }
@@ -2308,39 +2421,82 @@ export default function MapDrawingPage() {
                             </Tooltip>
                           </TooltipProvider>
                         )}
-                        {/* Share Button - Only for Pins */}
-                        {itemToEdit && 'lat' in itemToEdit && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedPinForShare({ id: itemToEdit.id, label: itemToEdit.label });
-                              setShowShareDialog(true);
-                            }}
-                            className="h-8 px-2"
-                          >
-                            <Share2 className="h-3 w-3" />
-                          </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if ('lat' in itemToEdit) {
-                              handleDeletePin(itemToEdit.id);
-                            } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
-                              if ('fillVisible' in itemToEdit) {
-                                handleDeleteArea(itemToEdit.id);
-                              } else {
-                                handleDeleteLine(itemToEdit.id);
-                              }
-                            }
-                            setItemToEdit(null);
+                        {/* Delete button with confirmation */}
+                        <Popover 
+                          open={deleteConfirmItem?.id === itemToEdit.id}
+                          onOpenChange={(open) => {
+                            if (!open) setDeleteConfirmItem(null);
                           }}
-                          className="h-8 px-2 text-destructive hover:text-destructive"
                         >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={async () => {
+                                // Check if pin has data
+                                let hasData = false;
+                                if ('lat' in itemToEdit) {
+                                  const pinFiles = pinFileMetadata[itemToEdit.id];
+                                  hasData = pinFiles && pinFiles.length > 0;
+                                }
+                                setDeleteConfirmItem({ 
+                                  id: itemToEdit.id, 
+                                  type: 'lat' in itemToEdit ? 'pin' : 'fillVisible' in itemToEdit ? 'area' : 'line',
+                                  hasData 
+                                });
+                              }}
+                              className="h-8 px-2 text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent 
+                            className="w-auto p-2 z-[9999]" 
+                            align="start"
+                            side="bottom"
+                          >
+                            <div className="flex flex-col gap-2">
+                              <p className="text-xs font-medium">
+                                Delete {deleteConfirmItem?.type}?
+                              </p>
+                              {deleteConfirmItem?.hasData && (
+                                <p className="text-xs text-amber-600">
+                                  ⚠️ Data files attached will be deleted
+                                </p>
+                              )}
+                              <div className="flex gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="h-6 text-xs px-2"
+                                  onClick={() => {
+                                    if ('lat' in itemToEdit) {
+                                      handleDeletePin(itemToEdit.id);
+                                    } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
+                                      if ('fillVisible' in itemToEdit) {
+                                        handleDeleteArea(itemToEdit.id);
+                                      } else {
+                                        handleDeleteLine(itemToEdit.id);
+                                      }
+                                    }
+                                    setItemToEdit(null);
+                                    setDeleteConfirmItem(null);
+                                  }}
+                                >
+                                  Yes, delete
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 text-xs px-2"
+                                  onClick={() => setDeleteConfirmItem(null)}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       </div>
                       
                       {/* Share Popover - Only for Pins */}
@@ -2572,40 +2728,87 @@ export default function MapDrawingPage() {
                                                     
                                                     {/* Delete button - only show for database files */}
                                                     {dbMetadata && (
-                                                      <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={async (e) => {
-                                                          e.stopPropagation();
-                                                          if (confirm(`Delete ${file.name}?`)) {
-                                                            const success = await fileStorageService.deleteFile(dbMetadata.id);
-                                                            if (success) {
-                                                              toast({
-                                                                title: "File Deleted",
-                                                                description: `${file.name} has been deleted.`
-                                                              });
-                                                              // Refresh the pin files
-                                                              if (selectedPinForExplore) {
-                                                                const updatedFiles = await fileStorageService.getPinFiles(selectedPinForExplore);
-                                                                setPinFileMetadata(prev => ({
-                                                                  ...prev,
-                                                                  [selectedPinForExplore]: updatedFiles
-                                                                }));
-                                                              }
-                                                            } else {
-                                                              toast({
-                                                                variant: "destructive",
-                                                                title: "Delete Failed",
-                                                                description: `Failed to delete ${file.name}.`
-                                                              });
-                                                            }
-                                                          }
+                                                      <Popover 
+                                                        open={deleteConfirmFile?.id === dbMetadata.id}
+                                                        onOpenChange={(open) => {
+                                                          if (!open) setDeleteConfirmFile(null);
                                                         }}
-                                                        className="h-6 w-6 p-0 flex-shrink-0"
-                                                        title={`Delete ${file.name}`}
                                                       >
-                                                        <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                                                      </Button>
+                                                        <PopoverTrigger asChild>
+                                                          <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              setDeleteConfirmFile({ id: dbMetadata.id, name: file.name });
+                                                            }}
+                                                            className="h-6 w-6 p-0 flex-shrink-0"
+                                                            title={`Delete ${file.name}`}
+                                                          >
+                                                            <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                                          </Button>
+                                                        </PopoverTrigger>
+                                                        <PopoverContent 
+                                                          className="w-auto p-2 z-[9999]" 
+                                                          align="start"
+                                                          side="left"
+                                                        >
+                                                          <div className="flex flex-col gap-1">
+                                                            <p className="text-xs font-medium">Delete file?</p>
+                                                            <div className="flex gap-1">
+                                                              <Button
+                                                                size="sm"
+                                                                variant="destructive"
+                                                                className="h-6 text-xs px-2"
+                                                                onClick={async () => {
+                                                                  console.log('Deleting file:', dbMetadata.id, file.name);
+                                                                  // Try the simpler delete method first
+                                                                  const success = await fileStorageService.deleteFileSimple(dbMetadata.id);
+                                                                  console.log('Delete result:', success);
+                                                                  
+                                                                  if (success) {
+                                                                    toast({
+                                                                      title: "File Deleted",
+                                                                      description: `${file.name} has been deleted.`
+                                                                    });
+                                                                    // Refresh the pin files
+                                                                    if (selectedPinForExplore) {
+                                                                      console.log('Refreshing files for pin:', selectedPinForExplore);
+                                                                      const updatedFiles = await fileStorageService.getPinFiles(selectedPinForExplore);
+                                                                      console.log('Updated files:', updatedFiles);
+                                                                      setPinFileMetadata(prev => {
+                                                                        const newState = {
+                                                                          ...prev,
+                                                                          [selectedPinForExplore]: updatedFiles
+                                                                        };
+                                                                        console.log('New pinFileMetadata state:', newState);
+                                                                        return newState;
+                                                                      });
+                                                                    }
+                                                                  } else {
+                                                                    toast({
+                                                                      variant: "destructive",
+                                                                      title: "Delete Failed",
+                                                                      description: `Failed to delete ${file.name}.`
+                                                                    });
+                                                                  }
+                                                                  setDeleteConfirmFile(null);
+                                                                }}
+                                                              >
+                                                                Yes
+                                                              </Button>
+                                                              <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                className="h-6 text-xs px-2"
+                                                                onClick={() => setDeleteConfirmFile(null)}
+                                                              >
+                                                                No
+                                                              </Button>
+                                                            </div>
+                                                          </div>
+                                                        </PopoverContent>
+                                                      </Popover>
                                                     )}
                                                   </div>
                                                 );
@@ -3893,6 +4096,16 @@ export default function MapDrawingPage() {
           pinLabel={selectedPinForShare.label}
         />
       )}
+
+      {/* Data Restore Dialog */}
+      <DataRestoreDialog 
+        isOpen={showDataRestore}
+        onComplete={() => {
+          setShowDataRestore(false);
+          // Force refresh of data after restore
+          forceSync();
+        }}
+      />
 
     </>
   );

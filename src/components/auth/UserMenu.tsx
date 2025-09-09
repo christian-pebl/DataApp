@@ -14,12 +14,21 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { SunMoon, Settings, LogOut, Ruler, Map, BarChart3 } from 'lucide-react'
+import { SunMoon, Settings, LogOut, Ruler, Map, BarChart3, Loader2, Save } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { useSettings } from '@/hooks/use-settings'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
+import { dataSyncService } from '@/lib/supabase/data-sync-service'
+import { useToast } from '@/hooks/use-toast'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 interface UserMenuProps {
   user: User
@@ -29,8 +38,13 @@ export default function UserMenu({ user }: UserMenuProps) {
   const supabase = createClient()
   const router = useRouter()
   const pathname = usePathname()
+  const { toast } = useToast()
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const { settings, setSettings } = useSettings()
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [showSyncDialog, setShowSyncDialog] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<'backing-up' | 'logging-out' | ''>('')
+  const [syncDetails, setSyncDetails] = useState<any>(null)
 
   // Theme management
   useEffect(() => {
@@ -61,30 +75,76 @@ export default function UserMenu({ user }: UserMenuProps) {
   }
 
   const handleSignOut = async () => {
+    setShowSyncDialog(true)
+    setIsSyncing(true)
+    setSyncStatus('backing-up')
+    setSyncDetails(null)
+
     try {
+      // Step 1: Backup all data
+      console.log('Starting data backup before logout...')
+      const backupResult = await dataSyncService.backupUserData()
+      
+      setSyncDetails(backupResult.details)
+      
+      if (!backupResult.success) {
+        // Show warning but allow logout
+        toast({
+          variant: "destructive",
+          title: "Backup Warning",
+          description: backupResult.message,
+        })
+      } else {
+        toast({
+          title: "Data Backed Up",
+          description: `Saved ${backupResult.details?.pins || 0} pins, ${backupResult.details?.lines || 0} lines, ${backupResult.details?.areas || 0} areas`,
+        })
+      }
+
+      // Step 2: Sign out
+      setSyncStatus('logging-out')
       await supabase.auth.signOut()
-      router.push('/auth')
-      router.refresh()
+      
+      // Step 3: Clear local data after successful backup
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('map-drawing-pins')
+        localStorage.removeItem('map-drawing-lines')
+        localStorage.removeItem('map-drawing-areas')
+        localStorage.removeItem('map-drawing-projects')
+        localStorage.removeItem('map-drawing-tags')
+      }
+
+      // Step 4: Redirect
+      setTimeout(() => {
+        router.push('/auth')
+        router.refresh()
+      }, 1000)
+      
     } catch (error) {
-      console.error('Error signing out:', error)
-      // Still try to redirect even if sign out fails
-      router.push('/auth')
-      router.refresh()
+      console.error('Error during sign out:', error)
+      toast({
+        variant: "destructive",
+        title: "Sign Out Error",
+        description: "There was an error signing out. Please try again.",
+      })
+      setIsSyncing(false)
+      setShowSyncDialog(false)
     }
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-9 w-9 rounded-full">
-          <Avatar className="h-9 w-9">
-            <AvatarImage src={user.user_metadata.avatar_url} alt={user.email} />
-            <AvatarFallback className="bg-primary text-primary-foreground">
-              {user.email?.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-        </Button>
-      </DropdownMenuTrigger>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+            <Avatar className="h-9 w-9">
+              <AvatarImage src={user.user_metadata.avatar_url} alt={user.email} />
+              <AvatarFallback className="bg-primary text-primary-foreground">
+                {user.email?.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          </Button>
+        </DropdownMenuTrigger>
       <DropdownMenuContent className="w-64 z-[10000] user-dropdown-menu" align="end" forceMount>
         {/* User Info */}
         <DropdownMenuLabel className="font-normal">
@@ -161,5 +221,56 @@ export default function UserMenu({ user }: UserMenuProps) {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+
+    {/* Sync Dialog */}
+    <Dialog open={showSyncDialog} onOpenChange={setShowSyncDialog}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {syncStatus === 'backing-up' && (
+              <>
+                <Save className="h-5 w-5 animate-pulse" />
+                Backing Up Your Data
+              </>
+            )}
+            {syncStatus === 'logging-out' && (
+              <>
+                <LogOut className="h-5 w-5" />
+                Signing Out
+              </>
+            )}
+          </DialogTitle>
+          <DialogDescription>
+            {syncStatus === 'backing-up' && (
+              <div className="space-y-3 mt-4">
+                <p>Saving all your pins, lines, and areas to the cloud...</p>
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+                {syncDetails && (
+                  <div className="bg-muted p-3 rounded-lg space-y-1 text-sm">
+                    <p>✓ Pins backed up: {syncDetails.pins || 0}</p>
+                    <p>✓ Lines backed up: {syncDetails.lines || 0}</p>
+                    <p>✓ Areas backed up: {syncDetails.areas || 0}</p>
+                    {syncDetails.errors && syncDetails.errors.length > 0 && (
+                      <p className="text-destructive">⚠ Errors: {syncDetails.errors.length}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {syncStatus === 'logging-out' && (
+              <div className="space-y-3 mt-4">
+                <p>Your data has been saved. Signing you out...</p>
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              </div>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }
