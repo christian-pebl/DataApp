@@ -2675,15 +2675,23 @@ export default function MapDrawingPage() {
                                       return availableTypes.map(([fileType, files]) => {
                                         const timeWindow = getTimeWindowSummary(files);
                                         
-                                        // Extract date from filename (format: FPOD_YYYY_MM_DD_*.csv)
+                                        // Extract shortened name showing date range and suffix
+                                        // e.g., "FPOD_Alga_Control_W_2406-2407_24_hours_v3.csv" -> "2406-2407_24_hours_v3"
                                         const getDateFromFileName = (fileName: string) => {
-                                          const match = fileName.match(/(\d{4})_(\d{2})_(\d{2})/);
+                                          // Look for pattern YYMM-YYMM and everything after it
+                                          const match = fileName.match(/(\d{4}-\d{4}.*)\.csv$/i);
                                           if (match) {
-                                            const [_, year, month, day] = match;
-                                            const date = new Date(`${year}-${month}-${day}`);
-                                            return format(date, 'dd MMM yyyy');
+                                            return match[1]; // Return the date range and everything after it
                                           }
-                                          return fileName;
+                                          
+                                          // Fallback: try to find any 4-digit pattern that might be a date
+                                          const fallbackMatch = fileName.match(/(\d{4}.*)\.csv$/i);
+                                          if (fallbackMatch) {
+                                            return fallbackMatch[1];
+                                          }
+                                          
+                                          // If no pattern found, return filename without extension
+                                          return fileName.replace(/\.csv$/i, '');
                                         };
                                         
                                         return (
@@ -2748,7 +2756,7 @@ export default function MapDrawingPage() {
                                                       ) : (
                                                         <Calendar className="h-3 w-3 flex-shrink-0" />
                                                       )}
-                                                      <span className="truncate max-w-[120px]" title={getDateFromFileName(file.name)}>
+                                                      <span className="truncate max-w-[150px]" title={file.name}>
                                                         {getDateFromFileName(file.name)}
                                                       </span>
                                                       <span className="text-muted-foreground ml-auto flex-shrink-0 text-[10px]">
