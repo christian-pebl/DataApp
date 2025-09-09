@@ -57,7 +57,10 @@ class FileStorageService {
 
       // Upload file to Supabase Storage
       console.log(`📤 Uploading file to storage: ${filePath}`);
-      const { error: uploadError } = await this.supabase.storage
+      console.log(`   File size: ${(file.size / 1024).toFixed(2)} KB`);
+      console.log(`   File type: ${file.type || 'text/csv'}`);
+      
+      const { data: uploadData, error: uploadError } = await this.supabase.storage
         .from('pin-files')
         .upload(filePath, file, {
           cacheControl: '3600',
@@ -66,9 +69,29 @@ class FileStorageService {
 
       if (uploadError) {
         console.error('❌ File upload error:', uploadError)
-        console.error('Bucket:', 'pin-files', 'Path:', filePath);
+        console.error('Error details:', {
+          message: uploadError.message,
+          statusCode: uploadError.statusCode,
+          error: uploadError.error,
+          bucket: 'pin-files',
+          path: filePath,
+          fileSize: file.size,
+          fileName: file.name
+        });
+        
+        // Check for specific error types
+        if (uploadError.message?.includes('row-level security')) {
+          console.error('🔒 RLS Policy Error: Check Supabase storage policies');
+        } else if (uploadError.message?.includes('size')) {
+          console.error('📏 File Size Error: File may be too large');
+        } else if (uploadError.statusCode === 403) {
+          console.error('🚫 Permission Error: Check bucket permissions');
+        }
+        
         return null
       }
+      
+      console.log('✅ Upload data:', uploadData);
       console.log('✅ File uploaded to storage successfully');
 
       // Save file metadata to database (using snake_case column names)
@@ -211,10 +234,19 @@ class FileStorageService {
   }
 
   /**
+   * Alias for downloadFile for clarity when downloading pin files
+   */
+  async downloadPinFile(filePath: string): Promise<Blob | null> {
+    return this.downloadFile(filePath)
+  }
+
+  /**
    * Delete a file from storage and database (with user authentication check)
    */
   async deleteFile(fileId: string): Promise<boolean> {
     try {
+      console.log('Starting file deletion for ID:', fileId)
+      
       // Get current user to ensure they have access
       const { data: { user }, error: authError } = await this.supabase.auth.getUser()
       
@@ -222,53 +254,164 @@ class FileStorageService {
         console.error('Authentication required to delete pin files:', authError)
         return false
       }
+      
+      console.log('Authenticated user:', user.id)
 
-      // Get file metadata and verify user ownership through pin ownership
+      // Get file metadata first
       const { data: fileData, error: getError } = await this.supabase
         .from('pin_files')
-        .select(`
-          file_path,
-          pin_id,
-          pins!inner(user_id)
-        `)
+        .select('file_path, pin_id')
         .eq('id', fileId)
         .single()
 
       if (getError || !fileData) {
         console.error('Get file data error:', getError)
+        console.error('File ID:', fileId)
+        return false
+      }
+      
+      console.log('File data retrieved:', fileData)
+
+      // Verify user owns the pin
+      const { data: pinData, error: pinError } = await this.supabase
+        .from('pins')
+        .select('user_id')
+        .eq('id', fileData.pin_id)
+        .single()
+
+      if (pinError || !pinData) {
+        console.error('Get pin data error:', pinError)
         return false
       }
 
       // Check if user owns the pin associated with this file
-      if (fileData.pins.user_id !== user.id) {
+      if (pinData.user_id !== user.id) {
         console.error('User does not have permission to delete this file')
+        console.error('File owner:', pinData.user_id, 'Current user:', user.id)
         return false
       }
 
-      // Delete from storage
+      // Try to delete from storage first (it's okay if it fails - file might not exist)
+      console.log('Deleting from storage:', fileData.file_path)
       const { error: storageError } = await this.supabase.storage
         .from('pin-files')
         .remove([fileData.file_path])
 
       if (storageError) {
-        console.error('Storage delete error:', storageError)
-        return false
+        console.warn('Storage delete warning (continuing anyway):', storageError)
+        // Continue with database deletion even if storage fails
+      } else {
+        console.log('Storage deletion successful')
       }
 
-      // Delete from database - RLS policies will handle additional filtering
-      const { error: dbError } = await this.supabase
+      // Delete from database - this is the critical part
+      console.log('Deleting from database, file ID:', fileId)
+      const { data: deleteResult, error: dbError } = await this.supabase
         .from('pin_files')
         .delete()
         .eq('id', fileId)
+        .eq('pin_id', fileData.pin_id) // Add extra safety check
+        .select() // Return deleted rows to confirm
 
       if (dbError) {
         console.error('Database delete error:', dbError)
+        console.error('Error details:', {
+          code: dbError.code,
+          message: dbError.message,
+          details: dbError.details,
+          hint: dbError.hint
+        })
         return false
       }
+      
+      console.log('Database deletion result:', deleteResult)
+      
+      if (!deleteResult || deleteResult.length === 0) {
+        console.error('No rows were deleted - file may not exist or RLS policy blocking')
+        return false
+      }
+      
+      console.log('Database deletion successful')
 
       return true
     } catch (error) {
       console.error('Delete file error:', error)
+      return false
+    }
+  }
+
+  /**
+   * Alternative delete method - more direct approach
+   */
+  async deleteFileSimple(fileId: string): Promise<boolean> {
+    try {
+      console.log('Simple delete - Starting for file ID:', fileId)
+      
+      // Get current user first to ensure authentication
+      const { data: { user }, error: authError } = await this.supabase.auth.getUser()
+      
+      if (authError || !user) {
+        console.error('Simple delete - Authentication required:', authError)
+        return false
+      }
+      
+      console.log('Simple delete - Authenticated user:', user.id)
+      
+      // Get the file info first to get the storage path
+      const { data: fileInfo, error: fileError } = await this.supabase
+        .from('pin_files')
+        .select('file_path')
+        .eq('id', fileId)
+        .single()
+      
+      if (fileError) {
+        console.error('Simple delete - Could not get file info:', fileError)
+      }
+      
+      // Delete from database
+      const { data: deleteResult, error: dbError } = await this.supabase
+        .from('pin_files')
+        .delete()
+        .eq('id', fileId)
+        .select()
+      
+      if (dbError) {
+        console.error('Simple delete - Database error:', dbError)
+        console.error('Simple delete - Error details:', {
+          message: dbError.message,
+          code: dbError.code,
+          details: dbError.details,
+          hint: dbError.hint
+        })
+        return false
+      }
+      
+      console.log('Simple delete - Database delete result:', deleteResult)
+      console.log('Simple delete - Number of rows deleted:', deleteResult?.length || 0)
+      
+      if (deleteResult && deleteResult.length > 0) {
+        // Try to clean up storage (don't fail if this doesn't work)
+        const filePath = fileInfo?.file_path || deleteResult[0].file_path
+        if (filePath) {
+          console.log('Simple delete - Cleaning up storage file:', filePath)
+          const { error: storageError } = await this.supabase.storage
+            .from('pin-files')
+            .remove([filePath])
+          
+          if (storageError) {
+            console.warn('Simple delete - Storage cleanup failed:', storageError)
+          } else {
+            console.log('Simple delete - Storage file cleaned up successfully')
+          }
+        }
+        console.log('Simple delete - Successfully deleted file from database')
+        return true
+      }
+      
+      console.log('Simple delete - No rows deleted, file may not exist or permission denied')
+      return false
+    } catch (error) {
+      console.error('Simple delete error:', error)
       return false
     }
   }

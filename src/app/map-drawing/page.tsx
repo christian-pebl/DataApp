@@ -414,6 +414,7 @@ export default function MapDrawingPage() {
   const [selectedPinForExplore, setSelectedPinForExplore] = useState<string | null>(null);
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<{ id: string; name: string } | null>(null);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<{ id: string; type: 'pin' | 'line' | 'area'; hasData?: boolean } | null>(null);
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
   
   // Data restoration state
   const [showDataRestore, setShowDataRestore] = useState(false);
@@ -1814,8 +1815,11 @@ export default function MapDrawingPage() {
   // Initialize sharing state when item is selected
   const handleOpenShare = () => {
     if (itemToEdit && 'lat' in itemToEdit) {
-      setSharePrivacyLevel(itemToEdit.privacyLevel || 'private');
-      setShowSharePopover(true);
+      setSelectedPinForShare({
+        id: itemToEdit.id,
+        label: itemToEdit.label || 'Unnamed Pin'
+      });
+      setShowShareDialog(true);
     }
   };
 
@@ -1976,6 +1980,7 @@ export default function MapDrawingPage() {
   // Handle file upload for pins
   const handleFileUpload = async (pinId: string) => {
     // First check if user is authenticated
+    const supabase = createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     
     if (authError || !user) {
@@ -2045,12 +2050,6 @@ export default function MapDrawingPage() {
               ...prev,
               [pinId]: [...(prev[pinId] || []), ...uploadResults]
             }));
-            
-            // Keep local files for backward compatibility (for now)
-            setPinFiles(prev => ({
-              ...prev,
-              [pinId]: [...(prev[pinId] || []), ...csvFiles]
-            }));
           }
           
           // Show success/failure toast
@@ -2097,9 +2096,8 @@ export default function MapDrawingPage() {
 
   // Handle explore data with file type selection
   const handleExploreData = (pinId: string) => {
-    const localFiles = pinFiles[pinId] || [];
     const dbFiles = pinFileMetadata[pinId] || [];
-    const totalFiles = localFiles.length + dbFiles.length;
+    const totalFiles = dbFiles.length;
     
     if (totalFiles === 0) {
       toast({
@@ -2119,16 +2117,15 @@ export default function MapDrawingPage() {
     setSelectedFiles(files);
     setShowMarineDeviceModal(true);
     
-    // Close object properties panel when opening marine device modal
-    setItemToEdit(null);
-    setShowDataDropdown(false);
-    setShowExploreDropdown(false);
+    // Keep all UI elements open - don't close anything
+    // The modal will overlay on top of the existing UI
   }, []);
 
   const closeMarineDeviceModal = useCallback(() => {
     setShowMarineDeviceModal(false);
     setSelectedFileType(null);
     setSelectedFiles([]);
+    // UI state is already preserved, no need to reopen anything
   }, []);
 
   // Handle request to return to file selection from Add New Plot button
@@ -2137,6 +2134,9 @@ export default function MapDrawingPage() {
     setShowMarineDeviceModal(false);
     setSelectedFileType(null);
     setSelectedFiles([]);
+    
+    // UI state is already preserved, no need to reopen anything
+    // The explore dropdown and object properties should still be open
     
     // Reopen the object properties with the file selector
     // We need to find the original pin that was being edited
@@ -2186,9 +2186,8 @@ export default function MapDrawingPage() {
     const categorizedFiles = categorizeFiles(allFiles);
     const selectedFiles = categorizedFiles[fileType];
     
-    setShowExploreDropdown(false);
-    setShowDataDropdown(false);
-    setSelectedPinForExplore(null);
+    // Don't close any dropdowns - keep the UI state
+    // The modal will overlay on top
     
     if (selectedFiles.length > 0) {
       // Open the Marine Device Modal instead of showing toast
@@ -2650,8 +2649,7 @@ export default function MapDrawingPage() {
                                 {showExploreDropdown && selectedPinForExplore === itemToEdit.id && (
                                   <div className="absolute top-full left-0 mt-1 w-full min-w-[200px] bg-background border rounded-lg shadow-lg z-[1300] p-1">
                                     {(() => {
-                                      // Combine local files and files from database
-                                      const localFiles = pinFiles[selectedPinForExplore] || [];
+                                      // Use files from database only (no more local files duplication)
                                       const dbFiles = pinFileMetadata[selectedPinForExplore] || [];
                                       
                                       // Convert database files to File-like objects for categorization
@@ -2661,8 +2659,8 @@ export default function MapDrawingPage() {
                                         type: f.fileType || 'text/csv'
                                       }));
                                       
-                                      // Combine both sources
-                                      const allFiles = [...localFiles, ...dbFilesAsFileObjects];
+                                      // Use database files only
+                                      const allFiles = dbFilesAsFileObjects;
                                       const categorizedFiles = categorizeFiles(allFiles);
                                       const availableTypes = Object.entries(categorizedFiles).filter(([_, files]) => files.length > 0);
                                       
@@ -2708,122 +2706,146 @@ export default function MapDrawingPage() {
                                                     <Button
                                                       variant="ghost"
                                                       size="sm"
-                                                      onClick={() => {
-                                                        // Open modal with just this specific file
-                                                        setShowExploreDropdown(false);
-                                                        setShowDataDropdown(false);
-                                                        setSelectedPinForExplore(null);
-                                                        openMarineDeviceModal(fileType as 'GP' | 'FPOD' | 'Subcam', [file]);
+                                                      onClick={async () => {
+                                                        // Download file from Supabase if it's a database file
+                                                        if (dbMetadata) {
+                                                          setDownloadingFileId(dbMetadata.id);
+                                                          try {
+                                                            const fileContent = await fileStorageService.downloadPinFile(dbMetadata.filePath);
+                                                            if (fileContent) {
+                                                              // Convert blob to File object
+                                                              const actualFile = new File([fileContent], dbMetadata.fileName, {
+                                                                type: dbMetadata.fileType || 'text/csv'
+                                                              });
+                                                              
+                                                              // Open modal with the downloaded file
+                                                              // Don't close anything - keep the UI state
+                                                              openMarineDeviceModal(fileType as 'GP' | 'FPOD' | 'Subcam', [actualFile]);
+                                                            } else {
+                                                              toast({
+                                                                variant: "destructive",
+                                                                title: "Download Failed",
+                                                                description: "Could not download file from storage."
+                                                              });
+                                                            }
+                                                          } catch (error) {
+                                                            console.error('Error downloading file:', error);
+                                                            toast({
+                                                              variant: "destructive",
+                                                              title: "Download Error",
+                                                              description: "Failed to download file. Please try again."
+                                                            });
+                                                          } finally {
+                                                            setDownloadingFileId(null);
+                                                          }
+                                                        }
                                                       }}
+                                                      disabled={downloadingFileId === dbMetadata?.id}
                                                       className="flex-1 min-w-0 justify-start gap-1 h-7 text-xs hover:bg-accent/50 px-2"
                                                     >
-                                                      <Calendar className="h-3 w-3 flex-shrink-0" />
+                                                      {downloadingFileId === dbMetadata?.id ? (
+                                                        <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin" />
+                                                      ) : (
+                                                        <Calendar className="h-3 w-3 flex-shrink-0" />
+                                                      )}
                                                       <span className="truncate max-w-[120px]" title={getDateFromFileName(file.name)}>
                                                         {getDateFromFileName(file.name)}
                                                       </span>
                                                       <span className="text-muted-foreground ml-auto flex-shrink-0 text-[10px]">
-                                                        {(file.size / 1024).toFixed(0)}KB
+                                                        {downloadingFileId === dbMetadata?.id ? 'Loading...' : `${(file.size / 1024).toFixed(0)}KB`}
                                                       </span>
                                                     </Button>
                                                     
                                                     {/* Delete button - only show for database files */}
                                                     {dbMetadata && (
-                                                      <Popover 
-                                                        open={deleteConfirmFile?.id === dbMetadata.id}
-                                                        onOpenChange={(open) => {
-                                                          if (!open) setDeleteConfirmFile(null);
-                                                        }}
-                                                      >
-                                                        <PopoverTrigger asChild>
+                                                      deleteConfirmFile?.id === dbMetadata.id ? (
+                                                        // Show inline confirmation
+                                                        <div className="flex items-center gap-1">
+                                                          <span className="text-xs mr-1">Delete?</span>
                                                           <Button
-                                                            variant="ghost"
                                                             size="sm"
+                                                            variant="destructive"
+                                                            className="h-5 text-[10px] px-1"
+                                                            onClick={async (e) => {
+                                                              e.stopPropagation();
+                                                              console.log('Delete YES clicked for file:', dbMetadata.id, file.name);
+                                                              
+                                                              // Close the confirmation
+                                                              setDeleteConfirmFile(null);
+                                                              
+                                                              try {
+                                                                console.log('Calling deleteFileSimple with ID:', dbMetadata.id);
+                                                                const success = await fileStorageService.deleteFileSimple(dbMetadata.id);
+                                                                console.log('Delete result from service:', success);
+                                                                
+                                                                if (success) {
+                                                                  console.log('Delete successful, updating UI...');
+                                                                  // Update the state immediately to remove the file from UI
+                                                                  setPinFileMetadata(prev => ({
+                                                                    ...prev,
+                                                                    [selectedPinForExplore]: prev[selectedPinForExplore]?.filter(f => f.id !== dbMetadata.id) || []
+                                                                  }));
+                                                                  
+                                                                  toast({
+                                                                    title: "File Deleted",
+                                                                    description: `${file.name} has been deleted.`
+                                                                  });
+                                                                  
+                                                                  // Keep the explore dropdown open
+                                                                  setShowExploreDropdown(true);
+                                                                } else {
+                                                                  toast({
+                                                                    variant: "destructive",
+                                                                    title: "Delete Failed",
+                                                                    description: `Failed to delete ${file.name}. Please try again.`
+                                                                  });
+                                                                }
+                                                              } catch (error) {
+                                                                console.error('Error during file deletion:', error);
+                                                                toast({
+                                                                  variant: "destructive",
+                                                                  title: "Delete Error",
+                                                                  description: "An error occurred while deleting the file."
+                                                                });
+                                                              }
+                                                            }}
+                                                          >
+                                                            Yes
+                                                          </Button>
+                                                          <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="h-5 text-[10px] px-1"
                                                             onClick={(e) => {
                                                               e.stopPropagation();
-                                                              setDeleteConfirmFile({ id: dbMetadata.id, name: file.name });
+                                                              console.log('Delete NO clicked');
+                                                              setDeleteConfirmFile(null);
                                                             }}
-                                                            className="h-6 w-6 p-0 flex-shrink-0"
-                                                            title={`Delete ${file.name}`}
                                                           >
-                                                            <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                                            No
                                                           </Button>
-                                                        </PopoverTrigger>
-                                                        <PopoverContent 
-                                                          className="w-auto p-2 z-[9999]" 
-                                                          align="start"
-                                                          side="left"
+                                                        </div>
+                                                      ) : (
+                                                        // Show delete button
+                                                        <Button
+                                                          variant="ghost"
+                                                          size="sm"
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            console.log('Delete button clicked for file:', dbMetadata.id, file.name);
+                                                            setDeleteConfirmFile({ id: dbMetadata.id, name: file.name });
+                                                          }}
+                                                          className="h-6 w-6 p-0 flex-shrink-0"
+                                                          title={`Delete ${file.name}`}
                                                         >
-                                                          <div className="flex flex-col gap-1">
-                                                            <p className="text-xs font-medium">Delete file?</p>
-                                                            <div className="flex gap-1">
-                                                              <Button
-                                                                size="sm"
-                                                                variant="destructive"
-                                                                className="h-6 text-xs px-2"
-                                                                onClick={async () => {
-                                                                  console.log('Deleting file:', dbMetadata.id, file.name);
-                                                                  // Try the simpler delete method first
-                                                                  const success = await fileStorageService.deleteFileSimple(dbMetadata.id);
-                                                                  console.log('Delete result:', success);
-                                                                  
-                                                                  if (success) {
-                                                                    toast({
-                                                                      title: "File Deleted",
-                                                                      description: `${file.name} has been deleted.`
-                                                                    });
-                                                                    // Refresh the pin files
-                                                                    if (selectedPinForExplore) {
-                                                                      console.log('Refreshing files for pin:', selectedPinForExplore);
-                                                                      const updatedFiles = await fileStorageService.getPinFiles(selectedPinForExplore);
-                                                                      console.log('Updated files:', updatedFiles);
-                                                                      setPinFileMetadata(prev => {
-                                                                        const newState = {
-                                                                          ...prev,
-                                                                          [selectedPinForExplore]: updatedFiles
-                                                                        };
-                                                                        console.log('New pinFileMetadata state:', newState);
-                                                                        return newState;
-                                                                      });
-                                                                    }
-                                                                  } else {
-                                                                    toast({
-                                                                      variant: "destructive",
-                                                                      title: "Delete Failed",
-                                                                      description: `Failed to delete ${file.name}.`
-                                                                    });
-                                                                  }
-                                                                  setDeleteConfirmFile(null);
-                                                                }}
-                                                              >
-                                                                Yes
-                                                              </Button>
-                                                              <Button
-                                                                size="sm"
-                                                                variant="outline"
-                                                                className="h-6 text-xs px-2"
-                                                                onClick={() => setDeleteConfirmFile(null)}
-                                                              >
-                                                                No
-                                                              </Button>
-                                                            </div>
-                                                          </div>
-                                                        </PopoverContent>
-                                                      </Popover>
+                                                          <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                                        </Button>
+                                                      )
                                                     )}
                                                   </div>
                                                 );
                                               })}
                                             </div>
-                                            
-                                            {/* Show all files button */}
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => handleFileTypeSelection(fileType as 'GP' | 'FPOD' | 'Subcam')}
-                                              className="w-full justify-center gap-2 h-7 text-xs mt-1"
-                                            >
-                                              View All {fileType} Files
-                                            </Button>
                                           </div>
                                         );
                                       });
@@ -4065,8 +4087,24 @@ export default function MapDrawingPage() {
       </Dialog>
 
       {/* Marine Device Data Modal */}
-      <Dialog open={showMarineDeviceModal} onOpenChange={setShowMarineDeviceModal}>
+      <Dialog 
+        open={showMarineDeviceModal} 
+        onOpenChange={(open) => {
+          setShowMarineDeviceModal(open);
+          if (!open) {
+            // Clear the selected files when closing
+            setSelectedFileType(null);
+            setSelectedFiles([]);
+            // UI state is preserved - all panels stay as they were
+          }
+        }}
+      >
         <DialogContent className="max-w-6xl h-[80vh] marine-device-modal" data-marine-modal>
+          <DialogHeader className="sr-only">
+            <DialogTitle>
+              {selectedFileType ? `${selectedFileType} Data Analysis` : 'Data Viewer'}
+            </DialogTitle>
+          </DialogHeader>
           <div className="flex-1 overflow-hidden">
             {selectedFileType && selectedFiles.length > 0 ? (
               <PinMarineDeviceData 
