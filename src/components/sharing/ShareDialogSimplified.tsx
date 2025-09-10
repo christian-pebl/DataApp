@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 // Select components removed - using fixed "Copy" mode only
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
@@ -26,7 +25,6 @@ import {
   generateInvitationLink,
   sendInvitationEmail 
 } from '@/lib/supabase/user-validation-service';
-import { notificationService } from '@/lib/supabase/notification-service';
 import { pinCopyService } from '@/lib/supabase/pin-copy-service';
 import {
   Users,
@@ -40,12 +38,6 @@ import {
   UserPlus,
   Mail,
   AlertCircle,
-  ChevronDown,
-  ChevronUp,
-  Database,
-  Share2,
-  Bell,
-  FileText,
   X as CloseIcon,
 } from 'lucide-react';
 
@@ -81,7 +73,7 @@ interface ShareToken {
 
 export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: ShareDialogProps) {
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('users');
+  const [shareMode, setShareMode] = useState<'users' | 'link'>('users');
   const [supabase] = useState(() => createClient());
   
   // User sharing state
@@ -100,45 +92,24 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
   // Current user
   const [currentUser, setCurrentUser] = useState<any>(null);
   
-  // Process visibility state
-  const [showProcessLog, setShowProcessLog] = useState(false);
-  const [processSteps, setProcessSteps] = useState<Array<{
-    step: string;
-    status: 'pending' | 'in-progress' | 'success' | 'error';
-    message: string;
-    details?: any;
-  }>>([]);
   const [shareSuccess, setShareSuccess] = useState<{
     show: boolean;
     pinData?: any;
     shareData?: any;
-    notificationData?: any;
   }>({ show: false });
 
   useEffect(() => {
     if (open) {
       loadCurrentUser();
       loadShares();
-      setProcessSteps([]);
       setShareSuccess({ show: false });
     }
   }, [open, pinId]);
 
-  // Helper function to update process steps
-  const updateProcessStep = (step: string, status: 'pending' | 'in-progress' | 'success' | 'error', message: string, details?: any) => {
-    setProcessSteps(prev => {
-      const existing = prev.find(s => s.step === step);
-      if (existing) {
-        return prev.map(s => s.step === step ? { step, status, message, details } : s);
-      } else {
-        return [...prev, { step, status, message, details }];
-      }
-    });
-  };
 
   // Helper function to verify pin data accessibility
   const verifyPinAccess = async (userId: string) => {
-    updateProcessStep('verify-access', 'in-progress', 'Verifying pin access for recipient...');
+    console.log('Verifying pin access for recipient...');
     
     try {
       // Check if user has access to the pin
@@ -152,7 +123,7 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
         .single();
 
       if (pinError) {
-        updateProcessStep('verify-access', 'error', `Failed to retrieve pin data: ${pinError.message}`);
+        console.error(`Failed to retrieve pin data: ${pinError.message}`);
         return { success: false, error: pinError.message };
       }
 
@@ -174,14 +145,11 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
         permission: accessCheck.permission
       };
 
-      updateProcessStep('verify-access', 'success', 
-        `Pin access verified: ${fileData?.length || 0} files, ${accessCheck.permission} permission`,
-        verificationData
-      );
+      console.log(`Pin access verified: ${fileData?.length || 0} files, ${accessCheck.permission} permission`);
 
       return { success: true, data: verificationData };
     } catch (error) {
-      updateProcessStep('verify-access', 'error', `Access verification failed: ${error}`);
+      console.error(`Access verification failed: ${error}`);
       return { success: false, error };
     }
   };
@@ -280,32 +248,30 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
     }
 
     setLoading(true);
-    setProcessSteps([]);
-    setShowProcessLog(true);
 
     try {
       if (validationState === 'exists' && validatedUser?.userId) {
         // Step 1: Validate user and permission
-        updateProcessStep('validate', 'in-progress', `Validating user ${email}...`);
-        updateProcessStep('validate', 'success', `User validated: ${validatedUser.fullName || email} (will create copy)`);
+        console.log(`Validating user ${email}...`);
+        console.log(`User validated: ${validatedUser.fullName || email} (will create copy)`);
 
         // Step 2: Enhanced share with granular logging
-        updateProcessStep('enhanced-sharing', 'in-progress', 'Starting enhanced sharing process...');
+        console.log('Starting enhanced sharing process...');
         
         const result = await pinCopyService.copyPinToUser(
           pinId,
           email,
           (progress) => {
-            // Update progress from the copy service
+            // Log progress from the copy service
             if (progress.length > 0) {
               const latestStep = progress[progress.length - 1];
-              updateProcessStep(latestStep.step, latestStep.status, latestStep.message, latestStep.details);
+              console.log(`[${latestStep.step}] ${latestStep.status}: ${latestStep.message}`);
             }
           }
         );
 
         if (!result.success) {
-          updateProcessStep('enhanced-sharing', 'error', result.error || 'Enhanced sharing failed');
+          console.error('Enhanced sharing failed:', result.error);
           toast.error(result.error || 'Failed to share pin');
           
           // Show detailed error information
@@ -318,10 +284,10 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
           return;
         }
 
-        updateProcessStep('enhanced-sharing', 'success', 'Pin copy completed successfully!');
+        console.log('Pin copy completed successfully!');
 
         // Step 3: Verify the copied pin exists
-        updateProcessStep('final-verification', 'in-progress', 'Verifying copied pin...');
+        console.log('Verifying copied pin...');
         
         try {
           const { data: copiedPin } = await supabase
@@ -331,28 +297,24 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
             .single();
             
           if (copiedPin) {
-            updateProcessStep('final-verification', 'success', 
-              `Pin copy verified: "${copiedPin.label}"`, 
-              copiedPin
-            );
+            console.log(`Pin copy verified: "${copiedPin.label}"`);
           } else {
-            updateProcessStep('final-verification', 'error', 'Could not verify copied pin in database');
+            console.error('Could not verify copied pin in database');
           }
         } catch (verifyError) {
-          updateProcessStep('final-verification', 'warning', `Verification warning: ${verifyError}`);
+          console.warn(`Verification warning: ${verifyError}`);
         }
         
         // Step 4: Final verification (Notification already handled by pin-copy-service)
-        updateProcessStep('final-check', 'in-progress', 'Performing final verification...');
+        console.log('Performing final verification...');
         await new Promise(resolve => setTimeout(resolve, 500)); // Small delay for UX
-        updateProcessStep('final-check', 'success', 'Share process completed successfully!');
+        console.log('Share process completed successfully!');
 
         // Show success state
         setShareSuccess({
           show: true,
           pinData: null, // We can add pin verification later if needed
-          shareData: { shareId: result.copiedPinId, permission, recipient: validatedUser },
-          notificationData: processSteps.find(s => s.step === 'send-notification')?.details
+          shareData: { shareId: result.copiedPinId, permission, recipient: validatedUser }
         });
           
         // Show success toast
@@ -375,7 +337,7 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
 
       } else if (validationState === 'not-exists') {
         // Handle invitation flow (existing logic)
-        updateProcessStep('create-invitation', 'in-progress', `Creating invitation for ${email}...`);
+        console.log(`Creating invitation for ${email}...`);
         
         const invitation = await createInvitation({
           pinId,
@@ -387,8 +349,8 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
         if (invitation.success && invitation.invitationToken) {
           const invitationLink = generateInvitationLink(invitation.invitationToken);
           
-          updateProcessStep('create-invitation', 'success', 'Invitation created successfully');
-          updateProcessStep('send-invitation', 'in-progress', 'Sending invitation email...');
+          console.log('Invitation created successfully');
+          console.log('Sending invitation email...');
           
           await sendInvitationEmail(
             email,
@@ -397,7 +359,7 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
             invitationLink
           );
           
-          updateProcessStep('send-invitation', 'success', 'Invitation email sent');
+          console.log('Invitation email sent');
           
           toast.success('Invitation sent! The user will receive the pin once they sign up.');
           
@@ -410,13 +372,13 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
           setValidationState('idle');
           // permission is always 'copy'
         } else {
-          updateProcessStep('create-invitation', 'error', invitation.error || 'Failed to create invitation');
+          console.error('Failed to create invitation:', invitation.error);
           toast.error(invitation.error || 'Failed to send invitation');
         }
       }
     } catch (error) {
       console.error('Error sharing:', error);
-      updateProcessStep('error', 'error', `Sharing failed: ${error}`);
+      console.error(`Sharing failed: ${error}`);
       toast.error('Failed to share pin');
     } finally {
       setLoading(false);
@@ -515,19 +477,28 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="users" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Users
-            </TabsTrigger>
-            <TabsTrigger value="link" className="flex items-center gap-2">
-              <Link className="h-4 w-4" />
-              Public Link
-            </TabsTrigger>
-          </TabsList>
+        {/* Share Mode Buttons */}
+        <div className="flex gap-2 mb-4">
+          <Button
+            variant={shareMode === 'users' ? 'default' : 'outline'}
+            onClick={() => setShareMode('users')}
+            className="flex items-center gap-2 flex-1"
+          >
+            <Users className="h-4 w-4" />
+            Users
+          </Button>
+          <Button
+            variant={shareMode === 'link' ? 'default' : 'outline'}
+            onClick={() => setShareMode('link')}
+            className="flex items-center gap-2 flex-1"
+          >
+            <Link className="h-4 w-4" />
+            Public Link
+          </Button>
+        </div>
 
-          <TabsContent value="users" className="space-y-3">
+        {shareMode === 'users' && (
+          <div className="space-y-3">
             <div className="space-y-3">
               <div className="space-y-1">
                 <Label htmlFor="email" className="text-sm">Email Address</Label>
@@ -601,104 +572,15 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
               </Button>
             </div>
 
-            {/* Process Visibility Section */}
-            {(processSteps.length > 0 || shareSuccess.show) && (
-              <div className="space-y-3">
-                {/* Process Log Toggle */}
-                {processSteps.length > 0 && (
-                  <div className="border rounded-lg">
-                    <button
-                      onClick={() => setShowProcessLog(!showProcessLog)}
-                      className="w-full flex items-center justify-between p-3 hover:bg-muted/50 rounded-lg transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Database className="h-4 w-4" />
-                        <span className="font-medium">Process Log</span>
-                        <Badge variant="outline" className="text-xs">
-                          {processSteps.filter(s => s.status === 'success').length}/{processSteps.length}
-                        </Badge>
-                      </div>
-                      {showProcessLog ? (
-                        <ChevronUp className="h-4 w-4" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4" />
-                      )}
-                    </button>
-                    
-                    {showProcessLog && (
-                      <div className="border-t p-3 space-y-2 bg-muted/20">
-                        {processSteps.map((step, index) => (
-                          <div key={index} className="flex items-start gap-2 text-xs">
-                            <div className="flex-shrink-0 mt-0.5">
-                              {step.status === 'success' && <Check className="h-3 w-3 text-green-600" />}
-                              {step.status === 'error' && <CloseIcon className="h-3 w-3 text-red-600" />}
-                              {step.status === 'in-progress' && <Loader2 className="h-3 w-3 animate-spin text-blue-600" />}
-                              {step.status === 'pending' && <div className="h-3 w-3 border-2 border-muted rounded-full" />}
-                            </div>
-                            <div className="flex-1">
-                              <div className={`font-medium ${
-                                step.status === 'success' ? 'text-green-700 dark:text-green-400' :
-                                step.status === 'error' ? 'text-red-700 dark:text-red-400' :
-                                step.status === 'in-progress' ? 'text-blue-700 dark:text-blue-400' :
-                                'text-muted-foreground'
-                              }`}>
-                                {step.message}
-                              </div>
-                              {step.details && (
-                                <div className="mt-1 text-xs text-muted-foreground font-mono bg-muted/50 rounded p-1.5 max-h-16 overflow-y-auto">
-                                  {typeof step.details === 'object' ? 
-                                    JSON.stringify(step.details, null, 2) : 
-                                    step.details
-                                  }
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Success Summary */}
-                {shareSuccess.show && (
-                  <div className="border rounded-lg bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
-                    <div className="p-4">
-                      <div className="flex items-start gap-3">
-                        <Check className="h-5 w-5 text-green-600 mt-0.5" />
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-green-900 dark:text-green-100">
-                            Pin Shared Successfully!
-                          </h4>
-                          <div className="mt-2 space-y-2 text-sm text-green-800 dark:text-green-200">
-                            {shareSuccess.shareData && (
-                              <div className="flex items-center gap-2">
-                                <Share2 className="h-4 w-4" />
-                                <span>
-                                  {shareSuccess.shareData.permission} access granted to {shareSuccess.shareData.recipient?.fullName || shareSuccess.shareData.recipient?.email}
-                                </span>
-                              </div>
-                            )}
-                            {shareSuccess.notificationData && (
-                              <div className="flex items-center gap-2">
-                                <Bell className="h-4 w-4" />
-                                <span>Notification sent successfully</span>
-                              </div>
-                            )}
-                            {shareSuccess.pinData && (
-                              <div className="flex items-center gap-2">
-                                <FileText className="h-4 w-4" />
-                                <span>
-                                  Pin data verified: {shareSuccess.pinData.fileCount || 0} associated files
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
+            {/* Simple Success Message */}
+            {shareSuccess.show && (
+              <div className="border rounded-lg bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 p-3">
+                <div className="flex items-center gap-2">
+                  <Check className="h-4 w-4 text-green-600" />
+                  <span className="text-sm text-green-800 dark:text-green-200 font-medium">
+                    Pin shared successfully with {shareSuccess.shareData?.recipient?.fullName || shareSuccess.shareData?.recipient?.email || email}!
+                  </span>
+                </div>
               </div>
             )}
 
@@ -740,9 +622,11 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
                 </div>
               </div>
             )}
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="link" className="space-y-3">
+        {shareMode === 'link' && (
+          <div className="space-y-3">
             <div className="space-y-3">
               <div className="bg-green-50 dark:bg-green-900/20 p-2 rounded-md border border-green-200 dark:border-green-800">
                 <div className="flex items-center gap-2 text-green-800 dark:text-green-200">
@@ -855,8 +739,8 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
                 </div>
               </div>
             )}
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

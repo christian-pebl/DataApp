@@ -1,5 +1,4 @@
 import { createClient } from './client';
-import { notificationService } from './notification-service';
 
 export interface CopyProgress {
   step: string;
@@ -83,28 +82,8 @@ class PinCopyService {
         logStep('copy-files', 'success', 'No files to copy');
       }
 
-      // Step 4: Send success notification to target user
-      logStep('notify-user', 'in-progress', 'Sending notification to target user...');
-      
-      try {
-        await notificationService.createNotification({
-          user_id: targetUser.user_id,
-          title: 'Pin Copied to Your Account',
-          message: `A pin has been copied to your account.`,
-          notification_type: 'pin_copy',
-          action_url: '/map-drawing',
-          metadata: {
-            original_pin_id: originalPinId,
-            copied_pin_id: newPinId,
-            from_user: await this.getCurrentUserEmail()
-          }
-        });
-        
-        logStep('notify-user', 'success', 'Notification sent successfully');
-      } catch (notifyError) {
-        logStep('notify-user', 'error', 'Failed to send notification', { error: notifyError });
-        // Don't fail the whole process for notification errors
-      }
+      // Step 4: Skip notification (notification system removed)
+      logStep('notify-user', 'success', 'Skipped notification - notification system removed');
 
       // Success!
       logStep('complete', 'success', `Pin successfully copied to ${targetUserEmail}!`);
