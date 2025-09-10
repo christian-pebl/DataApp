@@ -531,7 +531,7 @@ const LeafletMap = ({
                         color: areaColor,
                         weight: area.size || 2,
                         fillColor: areaColor,
-                        fillOpacity: area.fillVisible !== false ? 0.2 : 0
+                        fillOpacity: area.fillVisible !== false ? (area.transparency !== undefined ? area.transparency / 100 : 0.2) : 0
                     }).addTo(layer);
                     
                     // Add click handler for area
@@ -1060,8 +1060,8 @@ const LeafletMap = ({
                 ];
                 
                 liveAreaPreviewRef.current = L.polyline(previewPath, {
-                    color: '#8b5cf6',
-                    weight: 3,
+                    color: '#3b82f6',
+                    weight: 4,
                     opacity: 0.7,
                     dashArray: '8, 8'
                 }).addTo(mapRef.current);
@@ -1126,17 +1126,17 @@ const LeafletMap = ({
             // If we have 3+ points, show filled polygon area
             if (pendingAreaPath.length >= 3) {
                 previewAreaRef.current = L.polygon(areaCoords, {
-                    color: '#8b5cf6',
-                    weight: 2,
+                    color: '#3b82f6',
+                    weight: 4,
                     opacity: 0.8,
-                    fillColor: '#8b5cf6',
+                    fillColor: '#3b82f6',
                     fillOpacity: 0.2
                 }).addTo(mapRef.current);
             } else {
                 // For 2 points, just show the line
                 previewAreaLineRef.current = L.polyline(areaCoords, {
-                    color: '#8b5cf6',
-                    weight: 2,
+                    color: '#3b82f6',
+                    weight: 4,
                     opacity: 0.8
                 }).addTo(mapRef.current);
             }

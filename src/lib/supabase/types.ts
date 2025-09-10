@@ -283,4 +283,5 @@ export interface Area {
   tagIds?: string[]
   color?: string
   size?: number
+  transparency?: number
 }

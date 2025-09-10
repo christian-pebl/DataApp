@@ -1,0 +1,9 @@
+timestamp,temperature,humidity,pressure,wind_speed,location
+2024-01-15T10:00:00Z,22.5,65,1013.25,5.2,Test Location 1
+2024-01-15T11:00:00Z,23.1,63,1013.50,5.5,Test Location 1
+2024-01-15T12:00:00Z,24.2,61,1013.75,6.1,Test Location 1
+2024-01-15T13:00:00Z,25.0,59,1014.00,6.8,Test Location 1
+2024-01-15T14:00:00Z,25.5,58,1014.25,7.2,Test Location 1
+2024-01-15T15:00:00Z,24.8,60,1014.00,6.5,Test Location 1
+2024-01-15T16:00:00Z,23.9,62,1013.75,5.8,Test Location 1
+2024-01-15T17:00:00Z,22.7,64,1013.50,5.0,Test Location 1

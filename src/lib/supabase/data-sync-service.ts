@@ -233,15 +233,20 @@ export class DataSyncService {
         }
       }
 
-      // Update user's last sync timestamp
-      await this.supabase
-        .from('user_profiles')
-        .upsert({
-          id: user.id,
-          email: user.email,
-          last_sync: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
+      // Update user's last sync timestamp (optional - table might not exist)
+      try {
+        await this.supabase
+          .from('user_profiles')
+          .upsert({
+            id: user.id,
+            email: user.email,
+            last_sync: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+      } catch (error) {
+        // Silently ignore if user_profiles table doesn't exist
+        // This is not critical for the backup functionality
+      }
 
       console.log('DataSyncService: Backup completed', {
         pinsBackedUp,

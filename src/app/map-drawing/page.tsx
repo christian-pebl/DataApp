@@ -49,7 +49,7 @@ import { useMapData } from '@/hooks/use-map-data';
 import { getTimeWindowSummary } from '@/lib/dateParser';
 import { fileStorageService, type PinFile } from '@/lib/supabase/file-storage-service';
 import { mapDataService } from '@/lib/supabase/map-data-service';
-import { ShareDialog } from '@/components/sharing/ShareDialog';
+import { ShareDialogSimplified } from '@/components/sharing/ShareDialogSimplified';
 import { DataRestoreDialog } from '@/components/auth/DataRestoreDialog';
 import { createClient } from '@/lib/supabase/client';
 import type { DateRange } from "react-day-picker";
@@ -479,6 +479,10 @@ export default function MapDrawingPage() {
   const [pendingLine, setPendingLine] = useState<{ path: LatLng[] } | null>(null);
   const [pendingArea, setPendingArea] = useState<{ path: LatLng[] } | null>(null);
   
+  // New state for enhanced features
+  const [editingAreaCoords, setEditingAreaCoords] = useState<string[][]>([]);
+  const [editingTransparency, setEditingTransparency] = useState(20);
+  
   // Refs to prevent duplicate operations
   const lineConfirmInProgressRef = useRef<boolean>(false);
   const labelInputRef = useRef<HTMLInputElement>(null);
@@ -848,7 +852,8 @@ export default function MapDrawingPage() {
       notes,
       projectId: activeProjectId,
       tagIds: tagId ? [tagId] : [],
-      labelVisible: true
+      labelVisible: true,
+      size: 2 // Default to thinner lines
     };
     
     try {
@@ -886,7 +891,10 @@ export default function MapDrawingPage() {
       projectId: activeProjectId,
       tagIds: tagId ? [tagId] : [],
       labelVisible: true,
-      fillVisible: true
+      fillVisible: true,
+      color: '#3b82f6', // Default to blue instead of red
+      size: 2, // Default to thinner lines
+      transparency: 20 // Default to 20% transparency
     };
     
     try {
@@ -1493,15 +1501,33 @@ export default function MapDrawingPage() {
             setEditingLng(itemToEdit.lng.toString());
             break;
         }
-        setEditingColor('#3b82f6'); // Blue for pins
+        setEditingColor(itemToEdit.color || '#3b82f6'); // Use stored color or blue for pins
       } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
         if ('fillVisible' in itemToEdit) {
-          setEditingColor('#ef4444'); // Red for areas
+          // This is an area - initialize area-specific state
+          setEditingColor(itemToEdit.color || '#3b82f6'); // Use stored color or blue for areas
+          setEditingTransparency(itemToEdit.transparency || 20); // Use stored transparency or default
+          
+          // Initialize area coordinates for editing
+          const areaCoords = itemToEdit.path.map(point => {
+            const latFormats = getCoordinateFormats(point.lat);
+            const lngFormats = getCoordinateFormats(point.lng);
+            
+            switch (coordinateFormat) {
+              case 'degreeMinutes':
+                return [latFormats.degreeMinutes, lngFormats.degreeMinutes];
+              case 'degreeMinutesSeconds':
+                return [latFormats.degreeMinutesSeconds, lngFormats.degreeMinutesSeconds];
+              default:
+                return [point.lat.toString(), point.lng.toString()];
+            }
+          });
+          setEditingAreaCoords(areaCoords);
         } else {
-          setEditingColor('#10b981'); // Green for lines
+          setEditingColor(itemToEdit.color || '#10b981'); // Use stored color or green for lines
         }
       }
-      setEditingSize(6); // Default size
+      setEditingSize(itemToEdit.size || 2); // Use stored size or default to thinner
       
       // Auto-expand notes if there are existing notes
       setShowNotesSection(Boolean(itemToEdit.notes && itemToEdit.notes.trim()));
@@ -1698,7 +1724,7 @@ export default function MapDrawingPage() {
         });
         
       } else {
-        // For lines and areas, no coordinate editing
+        // For lines and areas, handle coordinate editing and updates
         const updatedObject = {
           ...itemToEdit,
           label: editingLabel.trim() || undefined,
@@ -1707,12 +1733,29 @@ export default function MapDrawingPage() {
           size: editingSize
         };
 
-        if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
-          if ('fillVisible' in itemToEdit) {
-            updateAreaData(itemToEdit.id, updatedObject);
-          } else {
-            updateLineData(itemToEdit.id, updatedObject);
+        // Handle area coordinate editing
+        if ('path' in itemToEdit && Array.isArray(itemToEdit.path) && 'fillVisible' in itemToEdit) {
+          // This is an area - add coordinate editing support
+          if (editingAreaCoords.length > 0) {
+            // Parse coordinate strings and update path
+            const newPath = editingAreaCoords.map(coordPair => {
+              const lat = parseCoordinateInput(coordPair[0]);
+              const lng = parseCoordinateInput(coordPair[1]);
+              return { lat: lat || 0, lng: lng || 0 };
+            }).filter(coord => coord.lat !== 0 || coord.lng !== 0);
+            
+            if (newPath.length >= 3) {
+              updatedObject.path = newPath;
+            }
           }
+          
+          // Add transparency support for areas
+          updatedObject.transparency = editingTransparency;
+          
+          updateAreaData(itemToEdit.id, updatedObject);
+        } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
+          // This is a line - no coordinate editing for now
+          updateLineData(itemToEdit.id, updatedObject);
         }
       }
 
@@ -1725,7 +1768,9 @@ export default function MapDrawingPage() {
     setEditingLabel('');
     setEditingNotes('');
     setEditingColor('#3b82f6');
-    setEditingSize(6);
+    setEditingSize(2); // Updated default to thinner
+    setEditingAreaCoords([]); // Clear area coordinates
+    setEditingTransparency(20); // Reset transparency
   };
 
   // Move pin to current map center (crosshair position)
@@ -3156,6 +3201,102 @@ export default function MapDrawingPage() {
                         </>
                       )}
                       
+                      {/* Area coordinate editing */}
+                      {itemToEdit && 'path' in itemToEdit && 'fillVisible' in itemToEdit && Array.isArray(itemToEdit.path) && (
+                        <>
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-xs text-muted-foreground">Area Coordinates:</label>
+                              <div className="flex items-center gap-1">
+                                <Popover open={showCoordinateFormatPopover} onOpenChange={setShowCoordinateFormatPopover}>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-4 w-4 p-0 text-muted-foreground hover:text-foreground"
+                                    >
+                                      <Settings className="h-3 w-3" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-60 p-2 z-[9999]" align="end">
+                                    <div className="space-y-2">
+                                      <div className="text-xs font-medium">Coordinate Format</div>
+                                      <div className="space-y-1">
+                                        {(Object.keys(COORDINATE_FORMAT_LABELS) as CoordinateFormat[]).map((format) => (
+                                          <button
+                                            key={format}
+                                            onClick={() => {
+                                              handleCoordinateFormatChange(format);
+                                              setShowCoordinateFormatPopover(false);
+                                            }}
+                                            className={cn(
+                                              "w-full text-left px-2 py-1 rounded text-xs",
+                                              coordinateFormat === format
+                                                ? "bg-primary text-primary-foreground"
+                                                : "hover:bg-muted"
+                                            )}
+                                          >
+                                            <div className="font-medium">{COORDINATE_FORMAT_LABELS[format]}</div>
+                                            <div className="text-xs opacity-75">{COORDINATE_FORMAT_EXAMPLES[format]}</div>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            </div>
+                            <div className="space-y-2 max-h-40 overflow-y-auto">
+                              {itemToEdit.path.map((point, index) => {
+                                const latFormats = getCoordinateFormats(point.lat);
+                                const lngFormats = getCoordinateFormats(point.lng);
+                                
+                                return (
+                                  <div key={index} className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="text-xs text-muted-foreground">
+                                        Corner {index + 1} Lat:
+                                      </label>
+                                      <Input
+                                        value={editingAreaCoords[index]?.[0] || latFormats[coordinateFormat]}
+                                        onChange={(e) => {
+                                          const newCoords = [...editingAreaCoords];
+                                          while (newCoords.length <= index) {
+                                            newCoords.push(['', '']);
+                                          }
+                                          newCoords[index][0] = e.target.value;
+                                          setEditingAreaCoords(newCoords);
+                                        }}
+                                        placeholder={COORDINATE_FORMAT_EXAMPLES[coordinateFormat]}
+                                        className="h-7 text-xs"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-xs text-muted-foreground">
+                                        Corner {index + 1} Lng:
+                                      </label>
+                                      <Input
+                                        value={editingAreaCoords[index]?.[1] || lngFormats[coordinateFormat]}
+                                        onChange={(e) => {
+                                          const newCoords = [...editingAreaCoords];
+                                          while (newCoords.length <= index) {
+                                            newCoords.push(['', '']);
+                                          }
+                                          newCoords[index][1] = e.target.value;
+                                          setEditingAreaCoords(newCoords);
+                                        }}
+                                        placeholder={COORDINATE_FORMAT_EXAMPLES[coordinateFormat]}
+                                        className="h-7 text-xs"
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      
                       <div>
                         <label className="text-xs text-muted-foreground">Color & Size:</label>
                         <div className="flex items-center gap-2 mt-1">
@@ -3170,43 +3311,80 @@ export default function MapDrawingPage() {
                               </Button>
                             </PopoverTrigger>
                             <PopoverContent 
-                              className="w-64 p-4 z-[1100]" 
+                              className="w-72 p-3 z-[1100]" 
                               side="right" 
                               align="start"
                               sideOffset={8}
                             >
-                              <div className="space-y-4">
+                              <div className="space-y-3">
                                 <div>
-                                  <label className="text-sm font-medium">Choose Color</label>
-                                  <div className="flex items-center gap-2 mt-2">
-                                    <input
-                                      type="color"
-                                      value={editingColor}
-                                      onChange={(e) => {
-                                        setEditingColor(e.target.value);
-                                        // Auto-apply color change
-                                        if (itemToEdit) {
-                                          if ('lat' in itemToEdit) {
-                                            updatePinData(itemToEdit.id, { color: e.target.value, size: editingSize });
-                                          } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
-                                            if ('fillVisible' in itemToEdit) {
-                                              updateAreaData(itemToEdit.id, { color: e.target.value, size: editingSize });
-                                            } else {
-                                              updateLineData(itemToEdit.id, { color: e.target.value, size: editingSize });
+                                  <label className="text-sm font-medium mb-2 block">Preset Colors</label>
+                                  <div className="grid grid-cols-6 gap-1.5">
+                                    {[
+                                      '#ef4444', // Red
+                                      '#f97316', // Orange  
+                                      '#eab308', // Yellow
+                                      '#22c55e', // Green
+                                      '#3b82f6', // Blue
+                                      '#6366f1', // Indigo
+                                      '#8b5cf6', // Violet
+                                      '#ec4899', // Pink
+                                      '#06b6d4', // Cyan
+                                      '#10b981', // Emerald
+                                      '#84cc16', // Lime
+                                      '#64748b', // Slate
+                                    ].map((color) => (
+                                      <button
+                                        key={color}
+                                        onClick={() => {
+                                          setEditingColor(color);
+                                          // Auto-apply color change
+                                          if (itemToEdit) {
+                                            if ('lat' in itemToEdit) {
+                                              updatePinData(itemToEdit.id, { color: color, size: editingSize });
+                                            } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
+                                              if ('fillVisible' in itemToEdit) {
+                                                updateAreaData(itemToEdit.id, { color: color, size: editingSize });
+                                              } else {
+                                                updateLineData(itemToEdit.id, { color: color, size: editingSize });
+                                              }
                                             }
                                           }
-                                        }
-                                      }}
-                                      className="w-full h-10 rounded border cursor-pointer"
-                                    />
+                                        }}
+                                        className={cn(
+                                          "w-8 h-8 rounded border-2 transition-all hover:scale-110",
+                                          editingColor === color ? "border-white ring-2 ring-primary" : "border-gray-200"
+                                        )}
+                                        style={{ backgroundColor: color }}
+                                        title={color}
+                                      />
+                                    ))}
                                   </div>
                                 </div>
-                                <div className="flex items-center justify-between">
-                                  <div className="text-xs text-muted-foreground">
+                                <div>
+                                  <label className="text-sm font-medium mb-2 block">Custom Color</label>
+                                  <input
+                                    type="color"
+                                    value={editingColor}
+                                    onChange={(e) => {
+                                      setEditingColor(e.target.value);
+                                      // Auto-apply color change
+                                      if (itemToEdit) {
+                                        if ('lat' in itemToEdit) {
+                                          updatePinData(itemToEdit.id, { color: e.target.value, size: editingSize });
+                                        } else if ('path' in itemToEdit && Array.isArray(itemToEdit.path)) {
+                                          if ('fillVisible' in itemToEdit) {
+                                            updateAreaData(itemToEdit.id, { color: e.target.value, size: editingSize });
+                                          } else {
+                                            updateLineData(itemToEdit.id, { color: e.target.value, size: editingSize });
+                                          }
+                                        }
+                                      }
+                                    }}
+                                    className="w-full h-8 rounded border cursor-pointer"
+                                  />
+                                  <div className="text-xs text-muted-foreground mt-1 text-center">
                                     {editingColor.toUpperCase()}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    Changes apply automatically
                                   </div>
                                 </div>
                               </div>
@@ -3233,19 +3411,86 @@ export default function MapDrawingPage() {
                           >
                             <SelectTrigger className="h-8 text-xs flex-1">
                               <SelectValue>
-                                {editingSize === 3 ? 'Size: Small' : 
-                                 editingSize === 6 ? 'Size: Medium' : 
-                                 editingSize === 10 ? 'Size: Large' : 'Size: Medium'}
+                                {editingSize === 2 ? 'Size: Small' : 
+                                 editingSize === 4 ? 'Size: Medium' : 
+                                 editingSize === 8 ? 'Size: Large' : 'Size: Small'}
                               </SelectValue>
                             </SelectTrigger>
                             <SelectContent className="z-[1200]">
-                              <SelectItem value="3">Small</SelectItem>
-                              <SelectItem value="6">Medium</SelectItem>
-                              <SelectItem value="10">Large</SelectItem>
+                              <SelectItem value="2">Small</SelectItem>
+                              <SelectItem value="4">Medium</SelectItem>
+                              <SelectItem value="8">Large</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                       </div>
+                      
+                      {/* Fill Transparency - only show for areas */}
+                      {itemToEdit && 'path' in itemToEdit && 'fillVisible' in itemToEdit && (
+                        <div>
+                          <label className="text-xs text-muted-foreground">Fill Transparency:</label>
+                          <div className="mt-1">
+                            <Select 
+                              value={editingTransparency.toString()} 
+                              onValueChange={(value) => {
+                                const newTransparency = parseInt(value);
+                                setEditingTransparency(newTransparency);
+                                // Auto-apply transparency change
+                                if (itemToEdit) {
+                                  updateAreaData(itemToEdit.id, { transparency: newTransparency });
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue>
+                                  {editingTransparency}% opacity
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent className="z-[1200]">
+                                <SelectItem value="0">0% (Transparent)</SelectItem>
+                                <SelectItem value="20">20%</SelectItem>
+                                <SelectItem value="50">50%</SelectItem>
+                                <SelectItem value="75">75%</SelectItem>
+                                <SelectItem value="100">100% (Opaque)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Label visibility toggle - show for all object types */}
+                      {itemToEdit && (
+                        <div>
+                          <label className="text-xs text-muted-foreground">Display Options:</label>
+                          <div className="mt-1 space-y-2">
+                            <div className="flex items-center space-x-2">
+                              <Checkbox 
+                                id="show-label"
+                                checked={itemToEdit.labelVisible !== false}
+                                onCheckedChange={(checked) => {
+                                  const objectType = 'lat' in itemToEdit ? 'pin' : 
+                                                   'fillVisible' in itemToEdit ? 'area' : 'line';
+                                  handleToggleLabel(itemToEdit.id, objectType);
+                                }}
+                              />
+                              <Label htmlFor="show-label" className="text-xs">Show label on map</Label>
+                            </div>
+                            {/* Fill visibility toggle - only show for areas */}
+                            {itemToEdit && 'path' in itemToEdit && 'fillVisible' in itemToEdit && (
+                              <div className="flex items-center space-x-2">
+                                <Checkbox 
+                                  id="show-fill"
+                                  checked={itemToEdit.fillVisible !== false}
+                                  onCheckedChange={() => {
+                                    handleToggleFill(itemToEdit.id);
+                                  }}
+                                />
+                                <Label htmlFor="show-fill" className="text-xs">Show area fill</Label>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     
                     <div className="flex gap-2 pt-2 border-t">
@@ -4135,11 +4380,11 @@ export default function MapDrawingPage() {
 
       {/* Share Dialog */}
       {selectedPinForShare && (
-        <ShareDialog
+        <ShareDialogSimplified
           open={showShareDialog}
           onOpenChange={setShowShareDialog}
           pinId={selectedPinForShare.id}
-          pinLabel={selectedPinForShare.label}
+          pinName={selectedPinForShare.label}
         />
       )}
 

@@ -85,67 +85,68 @@ export function DataRestoreDialog({ isOpen, onComplete }: DataRestoreDialogProps
             <Cloud className="h-5 w-5" />
             Welcome Back!
           </DialogTitle>
-          <DialogDescription>
-            <div className="space-y-4 mt-4">
-              {restoreStatus === 'loading' && (
-                <>
-                  <p>Restoring your saved pins, lines, and areas...</p>
-                  <div className="flex items-center justify-center py-6">
-                    <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                  </div>
-                  <p className="text-sm text-muted-foreground text-center">
-                    This may take a few moments...
-                  </p>
-                </>
-              )}
-              
-              {restoreStatus === 'success' && (
-                <>
-                  <div className="flex items-center justify-center py-6">
-                    <CheckCircle2 className="h-12 w-12 text-green-500" />
-                  </div>
-                  <p className="text-center font-medium">Data Restored Successfully!</p>
-                  {restoreDetails && (
-                    <div className="bg-muted p-4 rounded-lg space-y-2 text-sm">
-                      <p className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-green-500" />
-                        Pins loaded: {restoreDetails.pins || 0}
-                      </p>
-                      <p className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-green-500" />
-                        Lines loaded: {restoreDetails.lines || 0}
-                      </p>
-                      <p className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-green-500" />
-                        Areas loaded: {restoreDetails.areas || 0}
-                      </p>
-                    </div>
-                  )}
-                </>
-              )}
-              
-              {restoreStatus === 'error' && (
-                <>
-                  <div className="flex items-center justify-center py-6">
-                    <AlertCircle className="h-12 w-12 text-destructive" />
-                  </div>
-                  <p className="text-center">Failed to restore some data</p>
-                  <p className="text-sm text-muted-foreground text-center">
-                    You can continue with your local data or try again.
-                  </p>
-                  <div className="flex gap-2 justify-center pt-2">
-                    <Button onClick={handleRetry} variant="default">
-                      Try Again
-                    </Button>
-                    <Button onClick={onComplete} variant="outline">
-                      Continue
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
+          <DialogDescription className="sr-only">
+            Data restoration dialog
           </DialogDescription>
         </DialogHeader>
+        <div className="space-y-4 mt-4">
+          {restoreStatus === 'loading' && (
+            <>
+              <p>Restoring your saved pins, lines, and areas...</p>
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="h-10 w-10 animate-spin text-primary" />
+              </div>
+              <p className="text-sm text-muted-foreground text-center">
+                This may take a few moments...
+              </p>
+            </>
+          )}
+          
+          {restoreStatus === 'success' && (
+            <>
+              <div className="flex items-center justify-center py-6">
+                <CheckCircle2 className="h-12 w-12 text-green-500" />
+              </div>
+              <p className="text-center font-medium">Data Restored Successfully!</p>
+              {restoreDetails && (
+                <div className="bg-muted p-4 rounded-lg space-y-2 text-sm">
+                  <p className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    Pins loaded: {restoreDetails.pins || 0}
+                  </p>
+                  <p className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    Lines loaded: {restoreDetails.lines || 0}
+                  </p>
+                  <p className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    Areas loaded: {restoreDetails.areas || 0}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+          
+          {restoreStatus === 'error' && (
+            <>
+              <div className="flex items-center justify-center py-6">
+                <AlertCircle className="h-12 w-12 text-destructive" />
+              </div>
+              <p className="text-center">Failed to restore some data</p>
+              <p className="text-sm text-muted-foreground text-center">
+                You can continue with your local data or try again.
+              </p>
+              <div className="flex gap-2 justify-center pt-2">
+                <Button onClick={handleRetry} variant="default">
+                  Try Again
+                </Button>
+                <Button onClick={onComplete} variant="outline">
+                  Continue
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   )

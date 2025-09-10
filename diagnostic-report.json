@@ -1,0 +1,17 @@
+{
+  "timestamp": "2025-09-09T10:59:24.903Z",
+  "issues": [
+    {
+      "type": "DATABASE_PIN_FILES",
+      "message": "Cannot query pin_files table",
+      "error": "Could not find a relationship between 'pin_files' and 'pins' in the schema cache"
+    }
+  ],
+  "findings": {
+    "storageFiles": 0,
+    "totalPins": 0
+  },
+  "recommendations": [
+    "Check if pin_files table exists and has proper schema"
+  ]
+}

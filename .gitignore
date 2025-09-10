@@ -43,3 +43,19 @@ next-env.d.ts
 # firebase
 firebase-debug.log
 firestore-debug.log
+
+# test credentials
+test-credentials.json
+test-credentials.env
+*.credentials.json
+
+# test artifacts
+real-login-test.png
+real-login-errors.json
+console-errors-report.json
+login-errors-report.json
+login-flow-test.png
+auth-page-console-check.png
+test-screenshots/
+playwright-report/
+test-results/

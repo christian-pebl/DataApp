@@ -1,0 +1,26 @@
+{
+  "timestamp": "2025-09-09T08:40:08.010Z",
+  "results": {
+    "passed": [
+      "Application loaded",
+      "Account 1: Login successful",
+      "Account 2: Login successful",
+      "Account 1: Login successful"
+    ],
+    "failed": [
+      "Failed to create pin: Test Pin with File",
+      "Failed to create pin: Account 2 Private Pin"
+    ],
+    "warnings": [],
+    "screenshots": [
+      "C:\\Users\\Christian Abulhawa\\DeployApp\\data-app-sep25\\account1-complete.png",
+      "C:\\Users\\Christian Abulhawa\\DeployApp\\data-app-sep25\\account2-complete.png",
+      "C:\\Users\\Christian Abulhawa\\DeployApp\\data-app-sep25\\data-isolation-verified.png"
+    ]
+  },
+  "consoleErrors": [],
+  "accounts": [
+    "christian@pebl-cic.co.uk",
+    "christiannberger@gmail.com"
+  ]
+}

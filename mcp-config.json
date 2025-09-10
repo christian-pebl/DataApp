@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "playwright-browser": {
+      "command": "node",
+      "args": ["mcp-servers/playwright-browser/dist/index.js"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    },
+    "pin-sharing": {
+      "command": "node",
+      "args": ["mcp-servers/pin-sharing/dist/index.js"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}
