@@ -224,18 +224,8 @@ export class MapDataService {
     })
     console.log('MapDataService: Database connection is working!')
 
-    // Validate project_id format if provided
-    let validatedProjectId = null
-    if (pin.projectId) {
-      // Check if projectId is a valid UUID format
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      if (uuidRegex.test(pin.projectId)) {
-        validatedProjectId = pin.projectId
-      } else {
-        console.warn('MapDataService: Invalid project_id format:', pin.projectId, 'Setting to null')
-        validatedProjectId = null
-      }
-    }
+    // Accept project_id as-is (string identifiers like 'milfordhaven')
+    const validatedProjectId = pin.projectId || null
 
     const insertData = {
       lat: pin.lat,
@@ -328,18 +318,10 @@ export class MapDataService {
       labelValue: updates.label
     })
     
-    // Validate project_id format if provided
-    let validatedProjectId = null
-    if (updates.projectId) {
-      // Check if projectId is a valid UUID format
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      if (uuidRegex.test(updates.projectId)) {
-        validatedProjectId = updates.projectId
-        console.log('MapDataService: Valid project_id for update:', validatedProjectId)
-      } else {
-        console.warn('MapDataService: Invalid project_id format in update:', updates.projectId, 'Setting to null')
-        validatedProjectId = null
-      }
+    // Accept project_id as-is (string identifiers like 'milfordhaven')
+    const validatedProjectId = updates.projectId !== undefined ? updates.projectId : undefined
+    if (validatedProjectId !== undefined) {
+      console.log('MapDataService: Project_id for update:', validatedProjectId)
     }
     
     const updateData: any = {
@@ -352,7 +334,7 @@ export class MapDataService {
     if (updates.label !== undefined) updateData.label = updates.label
     if (updates.notes !== undefined) updateData.notes = updates.notes || null
     if (updates.labelVisible !== undefined) updateData.label_visible = updates.labelVisible
-    if (updates.projectId !== undefined) updateData.project_id = validatedProjectId
+    if (updates.projectId !== undefined) updateData.project_id = updates.projectId || null
     
     console.log('MapDataService: About to update pin with data:', updateData)
     console.log('MapDataService: Label being saved:', updateData.label)
@@ -440,7 +422,7 @@ export class MapDataService {
             label: newPinData.label,
             notes: newPinData.notes || null,
             label_visible: newPinData.labelVisible,
-            project_id: validatedProjectId,
+            project_id: updates.projectId || null,
             user_id: user.id,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
@@ -475,7 +457,7 @@ export class MapDataService {
           label: updates.label !== undefined ? updates.label : existingPin.label,
           labelVisible: updates.labelVisible !== undefined ? updates.labelVisible : (existingPin.label_visible ?? true),
           notes: updates.notes !== undefined ? updates.notes : (existingPin.notes || undefined),
-          projectId: validatedProjectId !== null ? validatedProjectId : (existingPin.project_id || undefined),
+          projectId: updates.projectId !== undefined ? updates.projectId : (existingPin.project_id || undefined),
           tagIds: updates.tagIds || []
         }
       }
