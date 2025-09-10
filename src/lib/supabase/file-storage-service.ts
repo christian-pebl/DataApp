@@ -44,8 +44,11 @@ class FileStorageService {
         .single()
 
       if (pinError || !pinData) {
-        console.error('❌ Pin not found or user does not have upload access:', pinError)
-        console.error('Pin ID:', pinId, 'User ID:', user.id);
+        console.log('⚠️ Pin not accessible for upload:', {
+          pinId,
+          userId: user.id,
+          error: pinError?.message || 'Pin not found or upload access denied'
+        })
         return null
       }
       console.log('✅ Pin ownership verified');
@@ -168,8 +171,11 @@ class FileStorageService {
         .single()
 
       if (pinError || !pinData) {
-        console.error('❌ Pin not found or user does not have access:', pinError)
-        console.error('Pin ID:', pinId, 'User ID:', user.id);
+        console.log('⚠️ Pin not accessible to user:', {
+          pinId,
+          userId: user.id,
+          error: pinError?.message || 'Pin not found or access denied'
+        })
         return []
       }
       console.log('✅ Pin ownership verified for retrieval');
