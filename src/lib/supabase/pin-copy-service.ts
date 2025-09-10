@@ -67,17 +67,104 @@ class PinCopyService {
       const newPinId = copyResult[0].copied_pin_id;
       logStep('copy-pin', 'success', `Pin copy created with ID: ${newPinId}`);
 
-      // Step 3: Copy pin files if any exist (optional - can be expanded later)
+      // Step 3: Copy pin files if any exist
       logStep('copy-files', 'in-progress', 'Checking for pin files...');
       
+      // Note: Using pin_files table (not pin_data_files)
       const { data: originalFiles, error: filesError } = await this.supabase
-        .from('pin_data_files')
+        .from('pin_files')
         .select('*')
         .eq('pin_id', originalPinId);
 
       if (!filesError && originalFiles && originalFiles.length > 0) {
-        logStep('copy-files', 'success', `Found ${originalFiles.length} files - file copying not implemented yet`);
-        // TODO: Implement file copying logic later
+        logStep('copy-files', 'in-progress', `Found ${originalFiles.length} file(s) to copy`);
+        
+        // Step 2: Copy files with actual content
+        let copiedCount = 0;
+        let failedCount = 0;
+        
+        for (const originalFile of originalFiles) {
+          try {
+            // Generate new file path for the copied pin
+            const newFilePath = originalFile.file_path.replace(
+              `pins/${originalPinId}/`,
+              `pins/${newPinId}/`
+            );
+            
+            logStep('copy-files', 'in-progress', 
+              `Copying file: ${originalFile.file_name}`);
+            
+            // Step 2a: Download the original file from storage
+            console.log(`📥 Downloading original file: ${originalFile.file_path}`);
+            const { data: fileBlob, error: downloadError } = await this.supabase.storage
+              .from('pin-files')
+              .download(originalFile.file_path);
+            
+            if (downloadError || !fileBlob) {
+              console.error(`Failed to download file ${originalFile.file_name}:`, downloadError);
+              failedCount++;
+              continue;
+            }
+            
+            console.log(`✅ Downloaded file: ${originalFile.file_name} (${fileBlob.size} bytes)`);
+            
+            // Step 2b: Upload the file to the new location
+            console.log(`📤 Uploading to new location: ${newFilePath}`);
+            const { error: uploadError } = await this.supabase.storage
+              .from('pin-files')
+              .upload(newFilePath, fileBlob, {
+                cacheControl: '3600',
+                upsert: false,
+                contentType: originalFile.file_type || 'text/csv'
+              });
+            
+            if (uploadError) {
+              console.error(`Failed to upload file ${originalFile.file_name}:`, uploadError);
+              failedCount++;
+              continue;
+            }
+            
+            console.log(`✅ Uploaded file to new location: ${newFilePath}`);
+            
+            // Step 2c: Create metadata entry for the copied file
+            const newFileData = {
+              pin_id: newPinId,
+              file_name: originalFile.file_name,
+              file_path: newFilePath,
+              file_size: originalFile.file_size,
+              file_type: originalFile.file_type,
+              project_id: originalFile.project_id
+            };
+            
+            const { error: insertError } = await this.supabase
+              .from('pin_files')
+              .insert(newFileData);
+            
+            if (insertError) {
+              console.error(`Failed to create file metadata for ${originalFile.file_name}:`, insertError);
+              // Try to clean up the uploaded file
+              await this.supabase.storage
+                .from('pin-files')
+                .remove([newFilePath]);
+              failedCount++;
+            } else {
+              copiedCount++;
+              console.log(`✅ File fully copied: ${originalFile.file_name}`);
+            }
+            
+          } catch (fileError) {
+            console.error(`Error copying file ${originalFile.file_name}:`, fileError);
+            failedCount++;
+          }
+        }
+        
+        if (copiedCount > 0) {
+          logStep('copy-files', 'success', 
+            `Successfully copied ${copiedCount} file(s)${failedCount > 0 ? `, ${failedCount} failed` : ''}`);
+        } else if (failedCount > 0) {
+          logStep('copy-files', 'error', `Failed to copy files (0/${originalFiles.length} succeeded)`);
+        }
+        
       } else {
         logStep('copy-files', 'success', 'No files to copy');
       }
