@@ -299,7 +299,7 @@ export function ShareDialogSimplified({ open, onOpenChange, pinId, pinName }: Sh
           if (copiedPin) {
             console.log(`Pin copy verified: "${copiedPin.label}"`);
           } else {
-            console.error('Could not verify copied pin in database');
+            console.warn('Could not immediately verify copied pin in database - this is normal');
           }
         } catch (verifyError) {
           console.warn(`Verification warning: ${verifyError}`);

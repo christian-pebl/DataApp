@@ -14,7 +14,7 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { SunMoon, Settings, LogOut, Ruler, Map, BarChart3, Loader2, Save } from 'lucide-react'
+import { SunMoon, Settings, LogOut, Ruler, Map, BarChart3, Loader2, Save, Lock, Check, X } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { useSettings } from '@/hooks/use-settings'
@@ -29,6 +29,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 interface UserMenuProps {
   user: User
@@ -45,6 +47,15 @@ export default function UserMenu({ user }: UserMenuProps) {
   const [showSyncDialog, setShowSyncDialog] = useState(false)
   const [syncStatus, setSyncStatus] = useState<'backing-up' | 'logging-out' | ''>('')
   const [syncDetails, setSyncDetails] = useState<any>(null)
+  
+  // Account Settings state
+  const [showAccountSettings, setShowAccountSettings] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [passwordError, setPasswordError] = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState(false)
 
   // Theme management
   useEffect(() => {
@@ -71,6 +82,78 @@ export default function UserMenu({ user }: UserMenuProps) {
         ...settings,
         units: settings.units === 'metric' ? 'imperial' : 'metric'
       })
+    }
+  }
+
+  const handlePasswordChange = async () => {
+    // Reset error and success states
+    setPasswordError('')
+    setPasswordSuccess(false)
+    
+    // Validate inputs
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError('All fields are required')
+      return
+    }
+    
+    if (newPassword.length < 6) {
+      setPasswordError('New password must be at least 6 characters')
+      return
+    }
+    
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New passwords do not match')
+      return
+    }
+    
+    setIsChangingPassword(true)
+    
+    try {
+      // First verify current password by attempting to sign in
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email!,
+        password: currentPassword
+      })
+      
+      if (signInError) {
+        setPasswordError('Current password is incorrect')
+        setIsChangingPassword(false)
+        return
+      }
+      
+      // Update password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword
+      })
+      
+      if (updateError) {
+        setPasswordError(updateError.message)
+        setIsChangingPassword(false)
+        return
+      }
+      
+      // Success
+      setPasswordSuccess(true)
+      toast({
+        title: "Password Changed",
+        description: "Your password has been successfully updated."
+      })
+      
+      // Clear form and close dialog after delay
+      setTimeout(() => {
+        setCurrentPassword('')
+        setNewPassword('')
+        setConfirmPassword('')
+        setPasswordError('')
+        setPasswordSuccess(false)
+        setShowAccountSettings(false)
+      }, 2000)
+      
+    } catch (error) {
+      console.error('Error changing password:', error)
+      setPasswordError('An unexpected error occurred')
+    } finally {
+      setIsChangingPassword(false)
     }
   }
 
@@ -206,10 +289,13 @@ export default function UserMenu({ user }: UserMenuProps) {
         
         <DropdownMenuSeparator />
         
-        {/* Settings */}
-        <DropdownMenuItem className="cursor-pointer">
+        {/* Account Settings */}
+        <DropdownMenuItem 
+          className="cursor-pointer"
+          onClick={() => setShowAccountSettings(true)}
+        >
           <Settings className="mr-2 h-4 w-4" />
-          <span>Settings</span>
+          <span>Account Settings</span>
         </DropdownMenuItem>
         
         <DropdownMenuSeparator />
@@ -270,6 +356,139 @@ export default function UserMenu({ user }: UserMenuProps) {
             </div>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+
+    {/* Account Settings Dialog */}
+    <Dialog open={showAccountSettings} onOpenChange={setShowAccountSettings}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Account Settings</DialogTitle>
+          <DialogDescription>
+            Manage your account preferences and security settings
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-6 py-4">
+          {/* User Information */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">Account Information</h3>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Email:</span>
+                <span>{user.email}</span>
+              </div>
+              {user.user_metadata.full_name && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Name:</span>
+                  <span>{user.user_metadata.full_name}</span>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="border-t pt-4">
+            <h3 className="text-sm font-medium mb-4">Change Password</h3>
+            
+            {passwordSuccess ? (
+              <Alert className="bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800">
+                <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+                <AlertDescription className="text-green-600 dark:text-green-400">
+                  Password changed successfully!
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="current-password">Current Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="current-password"
+                      type="password"
+                      placeholder="Enter current password"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className="pl-10"
+                      disabled={isChangingPassword}
+                    />
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="new-password">New Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="new-password"
+                      type="password"
+                      placeholder="Enter new password (min 6 characters)"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="pl-10"
+                      disabled={isChangingPassword}
+                    />
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-password">Confirm New Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="confirm-password"
+                      type="password"
+                      placeholder="Confirm new password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="pl-10"
+                      disabled={isChangingPassword}
+                    />
+                  </div>
+                </div>
+                
+                {passwordError && (
+                  <Alert variant="destructive">
+                    <X className="h-4 w-4" />
+                    <AlertDescription>
+                      {passwordError}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                
+                <div className="flex justify-end space-x-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowAccountSettings(false)
+                      setCurrentPassword('')
+                      setNewPassword('')
+                      setConfirmPassword('')
+                      setPasswordError('')
+                      setPasswordSuccess(false)
+                    }}
+                    disabled={isChangingPassword}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handlePasswordChange}
+                    disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}
+                  >
+                    {isChangingPassword ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Changing...
+                      </>
+                    ) : (
+                      'Change Password'
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
     </>

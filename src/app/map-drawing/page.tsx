@@ -396,6 +396,7 @@ export default function MapDrawingPage() {
   const [editingLabel, setEditingLabel] = useState('');
   const [editingNotes, setEditingNotes] = useState('');
   const [editingColor, setEditingColor] = useState('#3b82f6');
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingSize, setEditingSize] = useState(6);
   const [editingLat, setEditingLat] = useState('');
   const [editingLng, setEditingLng] = useState('');
@@ -1512,6 +1513,7 @@ export default function MapDrawingPage() {
     if (itemToEdit && isEditingObject) {
       setEditingLabel(itemToEdit.label || '');
       setEditingNotes(itemToEdit.notes || '');
+      setEditingProjectId(itemToEdit.projectId || null);
       // Initialize coordinates and colors based on object type
       if ('lat' in itemToEdit && 'lng' in itemToEdit) {
         console.log('Initializing coordinates:', itemToEdit.lat, itemToEdit.lng, 'format:', coordinateFormat);
@@ -1682,6 +1684,7 @@ export default function MapDrawingPage() {
       setIsEditingObject(true);
       setEditingLabel(itemToEdit.label || '');
       setEditingNotes(itemToEdit.notes || '');
+      setEditingProjectId(itemToEdit.projectId || null);
       // Set current coordinates and colors based on object type
       if ('lat' in itemToEdit && 'lng' in itemToEdit) {
         console.log('DEBUG: handleStartEdit - Setting coordinates from itemToEdit - lat:', itemToEdit.lat, 'lng:', itemToEdit.lng);
@@ -1744,7 +1747,8 @@ export default function MapDrawingPage() {
           label: editingLabel.trim() || undefined,
           notes: editingNotes.trim() || undefined,
           color: editingColor,
-          size: editingSize
+          size: editingSize,
+          projectId: editingProjectId || undefined
         };
 
         console.log('DEBUG: Original itemToEdit:', itemToEdit);
@@ -1765,7 +1769,8 @@ export default function MapDrawingPage() {
           label: editingLabel.trim() || undefined,
           notes: editingNotes.trim() || undefined,
           color: editingColor,
-          size: editingSize
+          size: editingSize,
+          projectId: editingProjectId || undefined
         };
 
         // Handle area coordinate editing
@@ -1806,6 +1811,7 @@ export default function MapDrawingPage() {
     setEditingSize(2); // Updated default to thinner
     setEditingAreaCoords([]); // Clear area coordinates
     setEditingTransparency(20); // Reset transparency
+    setEditingProjectId(null); // Reset project assignment
   };
 
   // Move pin to current map center (crosshair position)
@@ -3118,6 +3124,38 @@ export default function MapDrawingPage() {
                         />
                       </div>
                       
+                      {/* Project Assignment */}
+                      <div>
+                        <label className="text-xs text-muted-foreground">Project:</label>
+                        <Select
+                          value={editingProjectId || 'unassigned'}
+                          onValueChange={(value) => setEditingProjectId(value === 'unassigned' ? null : value)}
+                        >
+                          <SelectTrigger className="mt-1 h-8">
+                            <SelectValue placeholder="Select a project">
+                              {editingProjectId 
+                                ? PROJECT_LOCATIONS[editingProjectId as keyof typeof PROJECT_LOCATIONS]?.name 
+                                : 'Unassigned'}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent className="z-[9999]">
+                            <SelectItem value="unassigned">
+                              Unassigned
+                            </SelectItem>
+                            {Object.entries(PROJECT_LOCATIONS).map(([key, location]) => (
+                              <SelectItem key={key} value={key}>
+                                {location.name} {key === activeProjectId ? '(Active)' : ''}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {itemToEdit && itemToEdit.projectId && (
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Currently: {PROJECT_LOCATIONS[itemToEdit.projectId as keyof typeof PROJECT_LOCATIONS]?.name || 'Unknown'}
+                          </div>
+                        )}
+                      </div>
+                      
                       {/* Notes section - collapsible */}
                       <div>
                         <div className="flex items-center justify-between">
@@ -3718,11 +3756,11 @@ export default function MapDrawingPage() {
                   </div>
                   
                   {/* Collapse button */}
-                  <div className="absolute top-1/2 -translate-y-1/2 -right-3 z-10">
+                  <div className="absolute top-1/2 -translate-y-1/2 -right-2.5 z-10">
                     <Button
                       variant="ghost"
                       onClick={() => setShowMainMenu(false)}
-                      className="h-8 w-3 rounded-r-md rounded-l-none bg-background/95 border border-l-0 hover:bg-muted/80 flex items-center justify-center shadow-sm"
+                      className="h-8 w-2.5 rounded-r-md rounded-l-none bg-background/95 border border-l-0 hover:bg-muted/80 flex items-center justify-center shadow-sm p-0"
                     >
                       <ChevronRight className="h-2.5 w-2.5 rotate-180 text-muted-foreground" />
                     </Button>
@@ -3766,7 +3804,123 @@ export default function MapDrawingPage() {
                               className="flex-1 justify-between gap-3 h-auto p-3 text-left hover:bg-muted/30"
                             >
                               <div className="flex items-center gap-2">
-                                <Crosshair className="h-4 w-4 text-accent" />
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0 hover:bg-accent/20"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          // Calculate bounding box and optimal zoom for all active project objects
+                                          if (totalObjects > 0 && mapRef.current) {
+                                            let minLat = Infinity;
+                                            let maxLat = -Infinity;
+                                            let minLng = Infinity;
+                                            let maxLng = -Infinity;
+                                            
+                                            // Process pins
+                                            projectPins.forEach(pin => {
+                                              minLat = Math.min(minLat, pin.lat);
+                                              maxLat = Math.max(maxLat, pin.lat);
+                                              minLng = Math.min(minLng, pin.lng);
+                                              maxLng = Math.max(maxLng, pin.lng);
+                                            });
+                                            
+                                            // Process line points
+                                            projectLines.forEach(line => {
+                                              line.path.forEach(point => {
+                                                minLat = Math.min(minLat, point.lat);
+                                                maxLat = Math.max(maxLat, point.lat);
+                                                minLng = Math.min(minLng, point.lng);
+                                                maxLng = Math.max(maxLng, point.lng);
+                                              });
+                                            });
+                                            
+                                            // Process area points
+                                            projectAreas.forEach(area => {
+                                              area.path.forEach(point => {
+                                                minLat = Math.min(minLat, point.lat);
+                                                maxLat = Math.max(maxLat, point.lat);
+                                                minLng = Math.min(minLng, point.lng);
+                                                maxLng = Math.max(maxLng, point.lng);
+                                              });
+                                            });
+                                            
+                                            // Calculate center
+                                            const centerLat = (minLat + maxLat) / 2;
+                                            const centerLng = (minLng + maxLng) / 2;
+                                            
+                                            // Calculate the bounds span
+                                            const latSpan = maxLat - minLat;
+                                            const lngSpan = maxLng - minLng;
+                                            
+                                            // Calculate zoom level to fit bounds
+                                            // Account for map container size (estimate viewport dimensions)
+                                            const mapContainer = document.querySelector('.leaflet-container');
+                                            const mapWidth = mapContainer?.clientWidth || 800;
+                                            const mapHeight = mapContainer?.clientHeight || 600;
+                                            
+                                            // Account for sidebar if open (reduce effective width)
+                                            const effectiveWidth = sidebarWidth > 0 ? mapWidth - sidebarWidth : mapWidth;
+                                            
+                                            // Calculate zoom level (simplified formula, works for most cases)
+                                            const WORLD_DIM = { height: 256, width: 256 };
+                                            const ZOOM_MAX = 18;
+                                            
+                                            function latRad(lat: number) {
+                                              const sin = Math.sin(lat * Math.PI / 180);
+                                              const radX2 = Math.log((1 + sin) / (1 - sin)) / 2;
+                                              return Math.max(Math.min(radX2, Math.PI), -Math.PI) / 2;
+                                            }
+                                            
+                                            function zoom(mapPx: number, worldPx: number, fraction: number) {
+                                              return Math.floor(Math.log(mapPx / worldPx / fraction) / Math.LN2);
+                                            }
+                                            
+                                            const latFraction = (latRad(maxLat) - latRad(minLat)) / Math.PI;
+                                            const lngDiff = maxLng - minLng;
+                                            const lngFraction = ((lngDiff < 0) ? (lngDiff + 360) : lngDiff) / 360;
+                                            
+                                            const latZoom = zoom(mapHeight, WORLD_DIM.height, latFraction);
+                                            const lngZoom = zoom(effectiveWidth, WORLD_DIM.width, lngFraction);
+                                            
+                                            let finalZoom = Math.min(latZoom, lngZoom, ZOOM_MAX);
+                                            
+                                            // Add some padding (zoom out slightly to ensure everything is visible)
+                                            finalZoom = Math.max(1, finalZoom - 1);
+                                            
+                                            // If bounds are very small (single point or close points), use default zoom
+                                            if (latSpan < 0.001 && lngSpan < 0.001) {
+                                              finalZoom = 15;
+                                            }
+                                            
+                                            mapRef.current.setView([centerLat, centerLng], finalZoom);
+                                            toast({
+                                              title: "Map Centered",
+                                              description: `Showing all ${totalObjects} objects in ${activeProject.name}`,
+                                              duration: 2000
+                                            });
+                                          } else if (mapRef.current) {
+                                            // No objects, center on project location
+                                            mapRef.current.setView([activeProject.lat, activeProject.lon], 12);
+                                            toast({
+                                              title: "Map Centered",
+                                              description: `Centered on ${activeProject.name} location`,
+                                              duration: 2000
+                                            });
+                                          }
+                                        }}
+                                      >
+                                        <Crosshair className="h-4 w-4 text-accent" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right">
+                                      <p>Center map on project</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
                                 <div>
                                   <div className="text-sm font-medium text-foreground">
                                     {activeProject.name}
