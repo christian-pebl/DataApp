@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -346,6 +347,7 @@ export default function MapDrawingPage() {
   const { view, setView } = useMapView('dev-user');
   const { settings, setSettings } = useSettings();
   const { toast, dismiss } = useToast();
+  const searchParams = useSearchParams();
 
   
   // Use the integrated map data hook
@@ -528,9 +530,42 @@ export default function MapDrawingPage() {
   const [itemToEdit, setItemToEdit] = useState<Pin | Line | Area | null>(null);
   const [editingGeometry, setEditingGeometry] = useState<Line | Area | null>(null);
   
-  
-
-  
+  // Handle URL parameters for centering on pin
+  useEffect(() => {
+    const centerPinId = searchParams.get('centerPin');
+    if (centerPinId && pins.length > 0 && mapRef.current) {
+      // Find the pin to center on
+      const targetPin = pins.find(pin => pin.id === centerPinId);
+      if (targetPin) {
+        // Center the map on the pin
+        mapRef.current.setView([targetPin.lat, targetPin.lng], 16);
+        
+        // Set the pin as the item to edit (opens properties dialog)
+        setItemToEdit(targetPin);
+        
+        // Show notification
+        toast({
+          title: "Centered on pin",
+          description: `Map centered on "${targetPin.label || 'New pin'}"`,
+        });
+        
+        // Remove URL parameters to clean up the URL
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('centerPin');
+          url.searchParams.delete('notification');
+          window.history.replaceState({}, '', url.toString());
+        }
+      } else {
+        // Pin not found, show error
+        toast({
+          title: "Pin not found",
+          description: "The requested pin could not be found on the map.",
+          variant: "destructive"
+        });
+      }
+    }
+  }, [searchParams, pins, mapRef, toast]);
   
   // Show migration prompt for existing localStorage data
   const [showMigrationPrompt, setShowMigrationPrompt] = useState(false);

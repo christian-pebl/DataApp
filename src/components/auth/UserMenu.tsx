@@ -38,7 +38,21 @@ interface UserMenuProps {
 }
 
 // Notification section component
-function NotificationSection() {
+function NotificationSection({ 
+  showArchiveDialog, 
+  setShowArchiveDialog, 
+  historyNotifications, 
+  setHistoryNotifications, 
+  getStatusIcon, 
+  centerOnPin 
+}: { 
+  showArchiveDialog: boolean, 
+  setShowArchiveDialog: (show: boolean) => void,
+  historyNotifications: Notification[],
+  setHistoryNotifications: (notifications: Notification[]) => void,
+  getStatusIcon: (status: string) => JSX.Element,
+  centerOnPin: (notification: Notification) => Promise<void>
+}) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -46,7 +60,6 @@ function NotificationSection() {
   const [importProgress, setImportProgress] = useState<{[key: string]: string}>({});
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
   const [showHistory, setShowHistory] = useState(false);
-  const [historyNotifications, setHistoryNotifications] = useState<Notification[]>([]);
   const { toast } = useToast();
   const supabase = createClient();
 
@@ -194,12 +207,17 @@ function NotificationSection() {
     
     setLoading(true);
     try {
+      console.log('🔔 Loading notifications for user:', userId);
       // Get all recent notifications
       const allNotifs = await notificationService.getNotifications(userId, 20);
+      console.log('🔔 Loaded notifications:', allNotifs.length, allNotifs);
       
       // Separate unread (active) and read (history) notifications
       const unreadNotifs = allNotifs.filter(n => !n.is_read);
       const readNotifs = allNotifs.filter(n => n.is_read);
+      
+      console.log('🔔 Unread notifications:', unreadNotifs.length);
+      console.log('🔔 Read notifications:', readNotifs.length);
       
       setNotifications(unreadNotifs);
       setHistoryNotifications(readNotifs);
@@ -224,8 +242,14 @@ function NotificationSection() {
         // Remove from active notifications
         setNotifications(prev => prev.filter(n => n.id !== notificationId));
         
-        // Add to history notifications
+        // Add to history notifications at the beginning
         setHistoryNotifications(prev => [readNotification, ...prev]);
+        
+        // Show confirmation toast
+        toast({
+          title: "Notification archived",
+          description: "Notification moved to archive",
+        });
       }
       
       // Refresh the indicator
@@ -234,6 +258,11 @@ function NotificationSection() {
       }
     } catch (error) {
       console.error('Error marking notification as read:', error);
+      toast({
+        title: "Error",
+        description: "Failed to archive notification",
+        variant: "destructive"
+      });
     }
   };
 
@@ -249,15 +278,6 @@ function NotificationSection() {
     });
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed': return <CheckCircle className="h-4 w-4 text-green-600" />;
-      case 'failed': return <AlertCircle className="h-4 w-4 text-red-600" />;
-      case 'in_progress': return <Loader2 className="h-4 w-4 animate-spin text-blue-600" />;
-      default: return <Clock className="h-4 w-4 text-gray-600" />;
-    }
-  };
-
   const getStepStatusIcon = (status: string) => {
     switch (status) {
       case 'success': return <CheckCircle className="h-3 w-3 text-green-600" />;
@@ -266,6 +286,8 @@ function NotificationSection() {
       default: return <Clock className="h-3 w-3 text-gray-600" />;
     }
   };
+
+  console.log('🔔 NotificationSection render - loading:', loading, 'notifications:', notifications.length, 'historyNotifications:', historyNotifications.length, 'userId:', userId);
 
   if (loading) {
     return (
@@ -278,12 +300,100 @@ function NotificationSection() {
     );
   }
 
-  if (notifications.length === 0) {
+  if (notifications.length === 0 && historyNotifications.length === 0) {
+    console.log('🔔 Showing "No notifications" - both arrays empty');
     return (
       <div className="px-2 py-1.5">
         <div className="flex items-center space-x-2 text-sm text-muted-foreground">
           <Bell className="h-4 w-4" />
-          <span>No new notifications</span>
+          <span>No notifications</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Show recent notifications (both unread and recently read)
+  const recentNotifications = [...notifications, ...historyNotifications].slice(0, 5);
+  
+  if (recentNotifications.length > 0) {
+    console.log('🔔 Showing recent notifications - total recent:', recentNotifications.length);
+    return (
+      <div className="px-2 py-1.5">
+        <div className="flex items-center justify-between text-sm font-medium mb-2">
+          <div className="flex items-center space-x-2">
+            <Bell className="h-4 w-4" />
+            <span>{notifications.length > 0 ? 'Notifications' : 'Recent Notifications'}</span>
+          </div>
+          {historyNotifications.length > 0 && (
+            <button
+              onClick={() => setShowArchiveDialog(true)}
+              className="flex items-center space-x-1 text-xs text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+              title={`View ${historyNotifications.length} archived notifications`}
+            >
+              <History className="h-3 w-3" />
+              <span>Archive ({historyNotifications.length})</span>
+            </button>
+          )}
+        </div>
+        <div className="space-y-2">
+          {recentNotifications.map((notification) => {
+            const importStatus = notification.metadata?.import_status;
+            const importProgressLog = notification.metadata?.import_progress || [];
+            const isExpanded = expandedLogs.has(notification.id);
+            const pinId = notification.metadata?.pin_id;
+            const isCurrentlyImporting = importingPins.has(pinId);
+            const currentProgress = importProgress[pinId];
+
+            return (
+              <div
+                key={notification.id}
+                className={`p-2 rounded-md text-xs border ${
+                  notification.is_read 
+                    ? 'bg-gray-50 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700' 
+                    : 'bg-blue-50 dark:bg-blue-900/20 text-foreground border-blue-200 dark:border-blue-800'
+                }`}
+              >
+                {/* Main notification content */}
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{notification.title}</span>
+                      {importStatus && getStatusIcon(importStatus)}
+                    </div>
+                    <div className="mt-1 text-gray-600 dark:text-gray-400">
+                      {notification.message}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-2 mt-2">
+                  {notification.notification_type === 'pin_shared' && (
+                    <button
+                      onClick={() => centerOnPin(notification)}
+                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-xs underline"
+                    >
+                      Center on pin
+                    </button>
+                  )}
+                  
+                  {!notification.is_read && (
+                    <button
+                      onClick={() => markAsRead(notification.id)}
+                      className="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 text-xs underline"
+                    >
+                      Mark as read
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {recentNotifications.length >= 5 && historyNotifications.length > (5 - notifications.length) && (
+            <div className="text-xs text-center text-gray-500 mt-2">
+              {historyNotifications.length - (5 - notifications.length)} more in archive...
+            </div>
+          )}
         </div>
       </div>
     );
@@ -291,144 +401,14 @@ function NotificationSection() {
 
   return (
     <div className="px-2 py-1.5">
-      <div className="flex items-center justify-between text-sm font-medium mb-2">
-        <div className="flex items-center space-x-2">
-          <Bell className="h-4 w-4" />
-          <span>Notifications</span>
-        </div>
-        {historyNotifications.length > 0 && (
-          <button
-            onClick={() => setShowHistory(true)}
-            className="flex items-center space-x-1 text-xs text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
-            title={`View ${historyNotifications.length} read notifications`}
-          >
-            <History className="h-3 w-3" />
-            <span>({historyNotifications.length})</span>
-          </button>
-        )}
-      </div>
-      <div className="space-y-2">
-        {notifications.map((notification) => {
-          const importStatus = notification.metadata?.import_status;
-          const importProgressLog = notification.metadata?.import_progress || [];
-          const isExpanded = expandedLogs.has(notification.id);
-          const pinId = notification.metadata?.pin_id;
-          const isCurrentlyImporting = importingPins.has(pinId);
-          const currentProgress = importProgress[pinId];
-
-          return (
-            <div
-              key={notification.id}
-              className={`p-2 rounded-md text-xs border ${
-                notification.is_read 
-                  ? 'bg-gray-50 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700' 
-                  : 'bg-blue-50 dark:bg-blue-900/20 text-foreground border-blue-200 dark:border-blue-800'
-              }`}
-            >
-              {/* Main notification content */}
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{notification.title}</span>
-                    {importStatus && getStatusIcon(importStatus)}
-                  </div>
-                  <div className={`mt-1 ${notification.is_read ? "text-gray-600 dark:text-gray-400" : "text-muted-foreground"}`}>
-                    {notification.message}
-                  </div>
-                  
-                  {/* Current import progress */}
-                  {isCurrentlyImporting && currentProgress && (
-                    <div className="mt-2 p-2 bg-blue-100 dark:bg-blue-900/30 rounded text-xs">
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        <span>{currentProgress}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                {/* Progress log toggle button */}
-                {(importProgressLog.length > 0 || isCurrentlyImporting) && (
-                  <button
-                    onClick={() => toggleProgressLog(notification.id)}
-                    className="ml-2 p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                  >
-                    {isExpanded ? 
-                      <ChevronUp className="h-3 w-3" /> : 
-                      <ChevronDown className="h-3 w-3" />
-                    }
-                  </button>
-                )}
-              </div>
-
-              {/* Expanded progress log */}
-              {isExpanded && importProgressLog.length > 0 && (
-                <div className="mt-3 border-t pt-2 space-y-1">
-                  <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
-                    Import Progress Log
-                  </div>
-                  <div className="space-y-1 max-h-48 overflow-y-auto">
-                    {importProgressLog.map((step: any, index: number) => (
-                      <div key={index} className="flex items-start gap-2 text-xs">
-                        <div className="flex-shrink-0 mt-0.5">
-                          {getStepStatusIcon(step.status)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-800 dark:text-gray-200">
-                            {step.step}
-                          </div>
-                          <div className="text-gray-600 dark:text-gray-400">
-                            {step.message}
-                          </div>
-                          {step.details && (
-                            <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                              {typeof step.details === 'object' ? 
-                                JSON.stringify(step.details, null, 2) : 
-                                step.details
-                              }
-                            </div>
-                          )}
-                          {step.timestamp && (
-                            <div className="text-xs text-gray-400 dark:text-gray-500">
-                              {new Date(step.timestamp).toLocaleTimeString()}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Action buttons */}
-              <div className="flex items-center gap-2 mt-2">
-                {!notification.is_read && (
-                  <button
-                    onClick={() => markAsRead(notification.id)}
-                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-xs underline"
-                  >
-                    Mark as read
-                  </button>
-                )}
-                
-                {notification.notification_type === 'pin_shared' && 
-                 importStatus !== 'completed' && 
-                 !isCurrentlyImporting && (
-                  <button
-                    onClick={() => importPin(notification)}
-                    className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 text-xs underline"
-                  >
-                    Import Pin
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+        <Bell className="h-4 w-4" />
+        <span>No notifications found</span>
       </div>
     </div>
   );
 }
+
 
 export default function UserMenu({ user }: UserMenuProps) {
   const supabase = createClient()
@@ -441,6 +421,37 @@ export default function UserMenu({ user }: UserMenuProps) {
   const [showSyncDialog, setShowSyncDialog] = useState(false)
   const [syncStatus, setSyncStatus] = useState<'backing-up' | 'logging-out' | ''>('')
   const [syncDetails, setSyncDetails] = useState<any>(null)
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false)
+  const [historyNotifications, setHistoryNotifications] = useState<Notification[]>([])
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed': return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case 'failed': return <AlertCircle className="h-4 w-4 text-red-600" />;
+      case 'in_progress': return <Loader2 className="h-4 w-4 animate-spin text-blue-600" />;
+      default: return <Clock className="h-4 w-4 text-gray-600" />;
+    }
+  };
+
+  const centerOnPin = async (notification: Notification) => {
+    if (!notification.metadata?.pin_id) {
+      toast({ title: "Error", description: "Pin ID not found in notification", variant: "destructive" });
+      return;
+    }
+
+    const pinId = notification.metadata.pin_id;
+    const pinName = notification.metadata.pin_name || "pin";
+    
+    // Navigate to map-drawing page with pin centering parameters
+    const url = `/map-drawing?centerPin=${pinId}&notification=${notification.id}`;
+    window.location.href = url;
+    
+    // Show immediate feedback
+    toast({
+      title: "Navigating to Map",
+      description: `Centering on ${pinName}...`,
+    });
+  };
 
   // Theme management
   useEffect(() => {
@@ -556,7 +567,14 @@ export default function UserMenu({ user }: UserMenuProps) {
         <DropdownMenuSeparator />
         
         {/* Notifications Section */}
-        <NotificationSection />
+        <NotificationSection 
+          showArchiveDialog={showArchiveDialog} 
+          setShowArchiveDialog={setShowArchiveDialog}
+          historyNotifications={historyNotifications}
+          setHistoryNotifications={setHistoryNotifications}
+          getStatusIcon={getStatusIcon}
+          centerOnPin={centerOnPin}
+        />
         
         <DropdownMenuSeparator />
         
@@ -672,6 +690,84 @@ export default function UserMenu({ user }: UserMenuProps) {
             </div>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+
+    {/* Notification Archive Dialog */}
+    <Dialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
+      <DialogContent className="sm:max-w-md max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <History className="h-5 w-5" />
+            Notification Archive
+          </DialogTitle>
+          <DialogDescription>
+            View your archived notifications
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="flex-1 overflow-y-auto pr-2">
+          {historyNotifications.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <History className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No archived notifications</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {historyNotifications.map((notification) => {
+                const importStatus = notification.metadata?.import_status;
+                
+                return (
+                  <div
+                    key={notification.id}
+                    className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-800/50 text-sm"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                            {notification.title}
+                          </span>
+                          {importStatus && getStatusIcon(importStatus)}
+                        </div>
+                        <p className="text-gray-600 dark:text-gray-400 text-xs">
+                          {notification.message}
+                        </p>
+                        <p className="text-gray-500 dark:text-gray-500 text-xs mt-2">
+                          Archived: {new Date(notification.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* Action buttons for archived notifications */}
+                    <div className="flex items-center gap-2 mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+                      {notification.notification_type === 'pin_shared' && (
+                        <button
+                          onClick={() => {
+                            setShowArchiveDialog(false);
+                            centerOnPin(notification);
+                          }}
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-xs underline"
+                        >
+                          Center on pin
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        
+        <div className="border-t pt-4 flex justify-between items-center">
+          <span className="text-sm text-muted-foreground">
+            {historyNotifications.length} archived notification{historyNotifications.length !== 1 ? 's' : ''}
+          </span>
+          <Button variant="outline" onClick={() => setShowArchiveDialog(false)}>
+            Close
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
     </>
