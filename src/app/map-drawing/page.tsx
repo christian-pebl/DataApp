@@ -345,6 +345,95 @@ const PinMeteoPlotRow = React.memo(({
 
 PinMeteoPlotRow.displayName = 'PinMeteoPlotRow';
 
+// Component for rendering file rows with date analysis
+const FileDateRow: React.FC<{
+  file: PinFile & { pinLabel: string };
+  getFileDateRange: (file: PinFile) => Promise<{
+    totalDays: number | null;
+    startDate: string | null;
+    endDate: string | null;
+    error?: string;
+  }>;
+}> = ({ file, getFileDateRange }) => {
+  const [dateInfo, setDateInfo] = useState<{
+    totalDays: number | null;
+    startDate: string | null;
+    endDate: string | null;
+    error?: string;
+    loading?: boolean;
+  }>({ totalDays: null, startDate: null, endDate: null, loading: true });
+
+  useEffect(() => {
+    const analyzeDateRange = async () => {
+      try {
+        const result = await getFileDateRange(file);
+        setDateInfo({ ...result, loading: false });
+      } catch (error) {
+        setDateInfo({
+          totalDays: null,
+          startDate: null,
+          endDate: null,
+          error: error instanceof Error ? error.message : 'Analysis failed',
+          loading: false
+        });
+      }
+    };
+
+    analyzeDateRange();
+  }, [file, getFileDateRange]);
+
+  return (
+    <tr className="border-b hover:bg-muted/30">
+      <td className="p-2 font-mono text-xs">
+        {file.fileName}
+      </td>
+      <td className="p-2">
+        {file.pinLabel}
+      </td>
+      <td className="p-2 text-muted-foreground">
+        {file.fileSize ? `${(file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}
+      </td>
+      <td className="p-2 text-muted-foreground">
+        {dateInfo.loading ? (
+          <div className="flex items-center gap-1">
+            <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+            <span className="text-xs">Analyzing...</span>
+          </div>
+        ) : dateInfo.error ? (
+          <span className="text-xs text-destructive" title={dateInfo.error}>
+            Error
+          </span>
+        ) : dateInfo.totalDays !== null ? (
+          <span className="text-xs">{dateInfo.totalDays} days</span>
+        ) : (
+          <span className="text-xs text-muted-foreground">-</span>
+        )}
+      </td>
+      <td className="p-2 text-muted-foreground">
+        {dateInfo.loading ? (
+          <span className="text-xs text-muted-foreground">-</span>
+        ) : dateInfo.startDate ? (
+          <span className="text-xs">{dateInfo.startDate}</span>
+        ) : (
+          <span className="text-xs text-muted-foreground">-</span>
+        )}
+      </td>
+      <td className="p-2 text-muted-foreground">
+        {dateInfo.loading ? (
+          <span className="text-xs text-muted-foreground">-</span>
+        ) : dateInfo.endDate ? (
+          <span className="text-xs">{dateInfo.endDate}</span>
+        ) : (
+          <span className="text-xs text-muted-foreground">-</span>
+        )}
+      </td>
+      <td className="p-2 text-muted-foreground">
+        {format(new Date(file.uploadedAt), 'MMM d, yyyy')}
+      </td>
+    </tr>
+  );
+};
+
 export default function MapDrawingPage() {
   const { view, setView } = useMapView('dev-user');
   const { settings, setSettings } = useSettings();
@@ -431,6 +520,9 @@ export default function MapDrawingPage() {
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isUpdatingProject, setIsUpdatingProject] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
+  
+  // Initialize Supabase client for CSV analysis
+  const supabase = createClient();
   
   // Data restoration state
   const [showDataRestore, setShowDataRestore] = useState(false);
@@ -1402,9 +1494,9 @@ export default function MapDrawingPage() {
     const location = dynamicProjects[locationKey];
     if (location && mapRef.current) {
       // Get all objects for this project
-      const projectPins = pins.filter(pin => pin.project === locationKey);
-      const projectLines = lines.filter(line => line.project === locationKey);
-      const projectAreas = areas.filter(area => area.project === locationKey);
+      const projectPins = pins.filter(pin => pin.projectId === locationKey);
+      const projectLines = lines.filter(line => line.projectId === locationKey);
+      const projectAreas = areas.filter(area => area.projectId === locationKey);
       const totalObjects = projectPins.length + projectLines.length + projectAreas.length;
       
       if (totalObjects > 0) {
@@ -1530,7 +1622,7 @@ export default function MapDrawingPage() {
     const targetProjectId = projectId || activeProjectId;
     if (!targetProjectId) return [];
     
-    const projectPins = pins.filter(pin => pin.project === targetProjectId);
+    const projectPins = pins.filter(pin => pin.projectId === targetProjectId);
     const allFiles: PinFile[] = [];
     
     projectPins.forEach(pin => {
@@ -1540,6 +1632,265 @@ export default function MapDrawingPage() {
     
     return allFiles;
   }, [activeProjectId, pins, pinFileMetadata]);
+
+  // CSV Date Analysis Functions
+  const analyzeCSVDateRange = useCallback(async (file: PinFile): Promise<{
+    totalDays: number | null;
+    startDate: string | null;
+    endDate: string | null;
+    error?: string;
+  }> => {
+    try {
+      console.log('🔍 Analyzing CSV date range for file:', {
+        fileName: file.fileName,
+        fileId: file.id,
+        filePath: file.filePath,
+        fileKeys: Object.keys(file)
+      });
+
+      // Use the correct property name for file path
+      const storagePath = file.filePath || (file as any).storagePath || (file as any).storage_path;
+      
+      if (!storagePath) {
+        return {
+          totalDays: null,
+          startDate: null,
+          endDate: null,
+          error: 'No storage path available'
+        };
+      }
+
+      console.log('📁 Using storage path:', storagePath);
+
+      // Download file content from Supabase Storage
+      const { data: fileData, error: downloadError } = await supabase.storage
+        .from('pin-files')
+        .download(storagePath);
+
+      if (downloadError) {
+        console.error('❌ File download error:', {
+          fileName: file.fileName,
+          storagePath: storagePath,
+          error: downloadError
+        });
+        return {
+          totalDays: null,
+          startDate: null,
+          endDate: null,
+          error: `Download failed: ${downloadError.message}`
+        };
+      }
+
+      console.log('✅ File downloaded successfully:', file.fileName);
+
+      // Convert blob to text
+      const text = await fileData.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        return {
+          totalDays: null,
+          startDate: null,
+          endDate: null,
+          error: 'File has no data rows'
+        };
+      }
+
+      // Parse CSV header
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      
+      // Find date/time columns
+      const dateTimeColumns = headers.map((header, index) => ({ header, index }))
+        .filter(({ header }) => 
+          header.includes('date') || 
+          header.includes('time') || 
+          header.includes('day') || 
+          header.includes('datetime') ||
+          header.includes('timestamp') ||
+          header.includes('year') ||
+          header.includes('month')
+        );
+
+      if (dateTimeColumns.length === 0) {
+        return {
+          totalDays: null,
+          startDate: null,
+          endDate: null,
+          error: 'No date/time columns found'
+        };
+      }
+
+      // Parse date values from all data rows
+      const dates: Date[] = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const row = lines[i].split(',');
+        
+        // Try each date column to find valid dates
+        for (const { index } of dateTimeColumns) {
+          if (index < row.length) {
+            const value = row[index].trim();
+            if (value) {
+              const parsedDate = parseCSVDate(value);
+              if (parsedDate && !isNaN(parsedDate.getTime())) {
+                dates.push(parsedDate);
+                break; // Found a valid date for this row, move to next row
+              }
+            }
+          }
+        }
+      }
+
+      if (dates.length === 0) {
+        return {
+          totalDays: null,
+          startDate: null,
+          endDate: null,
+          error: 'No valid dates could be parsed'
+        };
+      }
+
+      // Sort dates and calculate range
+      dates.sort((a, b) => a.getTime() - b.getTime());
+      const startDate = dates[0];
+      const endDate = dates[dates.length - 1];
+      
+      // Calculate total days
+      const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+      return {
+        totalDays,
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0],
+      };
+
+    } catch (error) {
+      console.error('❌ CSV analysis error:', {
+        fileName: file.fileName,
+        error: error,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        errorStack: error instanceof Error ? error.stack : undefined
+      });
+      return {
+        totalDays: null,
+        startDate: null,
+        endDate: null,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }, []);
+
+  // Parse various date formats commonly found in CSV files
+  const parseCSVDate = (value: string): Date | null => {
+    if (!value || value.trim() === '') return null;
+    
+    const cleanValue = value.trim();
+    
+    // Try different date parsing strategies
+    const parsers = [
+      // ISO format (2023-06-15, 2023-06-15T10:30:00)
+      () => new Date(cleanValue),
+      
+      // Unix timestamp (seconds)
+      () => {
+        const num = parseFloat(cleanValue);
+        if (!isNaN(num) && num > 1000000000 && num < 2000000000) {
+          return new Date(num * 1000);
+        }
+        return null;
+      },
+      
+      // Unix timestamp (milliseconds)
+      () => {
+        const num = parseFloat(cleanValue);
+        if (!isNaN(num) && num > 1000000000000) {
+          return new Date(num);
+        }
+        return null;
+      },
+      
+      // Excel date format (days since 1900-01-01)
+      () => {
+        const num = parseFloat(cleanValue);
+        if (!isNaN(num) && num > 1 && num < 100000) {
+          // Excel date: days since 1900-01-01 (accounting for Excel's leap year bug)
+          const excelEpoch = new Date('1899-12-30'); // Excel's epoch is off by 1 day
+          return new Date(excelEpoch.getTime() + (num * 86400000));
+        }
+        return null;
+      },
+      
+      // Common date formats with manual parsing
+      () => {
+        // DD/MM/YYYY or MM/DD/YYYY or DD-MM-YYYY or MM-DD-YYYY
+        const datePatterns = [
+          /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/,
+          /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/,
+        ];
+        
+        for (const pattern of datePatterns) {
+          const match = cleanValue.match(pattern);
+          if (match) {
+            const [, part1, part2, part3] = match;
+            // Try different interpretations
+            const attempts = [
+              new Date(parseInt(part3), parseInt(part2) - 1, parseInt(part1)), // DD/MM/YYYY
+              new Date(parseInt(part3), parseInt(part1) - 1, parseInt(part2)), // MM/DD/YYYY
+              new Date(parseInt(part1), parseInt(part2) - 1, parseInt(part3)), // YYYY/MM/DD
+            ];
+            
+            for (const attempt of attempts) {
+              if (!isNaN(attempt.getTime()) && attempt.getFullYear() > 1990 && attempt.getFullYear() < 2100) {
+                return attempt;
+              }
+            }
+          }
+        }
+        return null;
+      }
+    ];
+
+    // Try each parser
+    for (const parser of parsers) {
+      try {
+        const result = parser();
+        if (result && !isNaN(result.getTime()) && result.getFullYear() > 1990 && result.getFullYear() < 2100) {
+          return result;
+        }
+      } catch (e) {
+        // Continue to next parser
+      }
+    }
+    
+    return null;
+  };
+
+  // Cache for file date analysis to avoid re-analyzing the same files
+  const [fileDateCache, setFileDateCache] = useState<Record<string, {
+    totalDays: number | null;
+    startDate: string | null;
+    endDate: string | null;
+    error?: string;
+  }>>({});
+
+  // Function to get or analyze file date range
+  const getFileDateRange = useCallback(async (file: PinFile) => {
+    const cacheKey = `${file.id}-${file.fileName}`;
+    
+    if (fileDateCache[cacheKey]) {
+      return fileDateCache[cacheKey];
+    }
+
+    const result = await analyzeCSVDateRange(file);
+    
+    // Cache the result
+    setFileDateCache(prev => ({
+      ...prev,
+      [cacheKey]: result
+    }));
+    
+    return result;
+  }, [analyzeCSVDateRange, fileDateCache]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -4857,25 +5208,19 @@ export default function MapDrawingPage() {
                                 <th className="text-left p-2 font-medium">File Name</th>
                                 <th className="text-left p-2 font-medium">Pin</th>
                                 <th className="text-left p-2 font-medium">Size</th>
+                                <th className="text-left p-2 font-medium">Total Days</th>
+                                <th className="text-left p-2 font-medium">Start Date</th>
+                                <th className="text-left p-2 font-medium">End Date</th>
                                 <th className="text-left p-2 font-medium">Uploaded</th>
                               </tr>
                             </thead>
                             <tbody>
                               {files.map((file, idx) => (
-                                <tr key={`${file.id}-${idx}`} className="border-b hover:bg-muted/30">
-                                  <td className="p-2 font-mono text-xs">
-                                    {file.fileName}
-                                  </td>
-                                  <td className="p-2">
-                                    {file.pinLabel}
-                                  </td>
-                                  <td className="p-2 text-muted-foreground">
-                                    {file.fileSize ? `${(file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}
-                                  </td>
-                                  <td className="p-2 text-muted-foreground">
-                                    {format(new Date(file.uploadedAt), 'MMM d, yyyy')}
-                                  </td>
-                                </tr>
+                                <FileDateRow 
+                                  key={`${file.id}-${idx}`} 
+                                  file={file}
+                                  getFileDateRange={getFileDateRange}
+                                />
                               ))}
                             </tbody>
                           </table>
