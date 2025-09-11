@@ -60,6 +60,7 @@ import type { CombinedDataPoint, LogStep as ApiLogStep, CombinedParameterKey } f
 import { ALL_PARAMETERS, PARAMETER_CONFIG } from '../om-marine-explorer/shared';
 import { fetchCombinedDataAction } from '../om-marine-explorer/actions';
 import { MarinePlotsGrid } from '@/components/marine/MarinePlotsGrid';
+import { DataTimeline } from '@/components/pin-data/DataTimeline';
 import { DatePickerWithRange } from '@/components/ui/date-picker-with-range';
 import { 
   parseCoordinateInput, 
@@ -345,94 +346,6 @@ const PinMeteoPlotRow = React.memo(({
 
 PinMeteoPlotRow.displayName = 'PinMeteoPlotRow';
 
-// Component for rendering file rows with date analysis
-const FileDateRow: React.FC<{
-  file: PinFile & { pinLabel: string };
-  getFileDateRange: (file: PinFile) => Promise<{
-    totalDays: number | null;
-    startDate: string | null;
-    endDate: string | null;
-    error?: string;
-  }>;
-}> = ({ file, getFileDateRange }) => {
-  const [dateInfo, setDateInfo] = useState<{
-    totalDays: number | null;
-    startDate: string | null;
-    endDate: string | null;
-    error?: string;
-    loading?: boolean;
-  }>({ totalDays: null, startDate: null, endDate: null, loading: true });
-
-  useEffect(() => {
-    const analyzeDateRange = async () => {
-      try {
-        const result = await getFileDateRange(file);
-        setDateInfo({ ...result, loading: false });
-      } catch (error) {
-        setDateInfo({
-          totalDays: null,
-          startDate: null,
-          endDate: null,
-          error: error instanceof Error ? error.message : 'Analysis failed',
-          loading: false
-        });
-      }
-    };
-
-    analyzeDateRange();
-  }, [file, getFileDateRange]);
-
-  return (
-    <tr className="border-b hover:bg-muted/30">
-      <td className="p-2 font-mono text-xs">
-        {file.fileName}
-      </td>
-      <td className="p-2">
-        {file.pinLabel}
-      </td>
-      <td className="p-2 text-muted-foreground">
-        {file.fileSize ? `${(file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}
-      </td>
-      <td className="p-2 text-muted-foreground">
-        {dateInfo.loading ? (
-          <div className="flex items-center gap-1">
-            <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-            <span className="text-xs">Analyzing...</span>
-          </div>
-        ) : dateInfo.error ? (
-          <span className="text-xs text-destructive" title={dateInfo.error}>
-            Error
-          </span>
-        ) : dateInfo.totalDays !== null ? (
-          <span className="text-xs">{dateInfo.totalDays} days</span>
-        ) : (
-          <span className="text-xs text-muted-foreground">-</span>
-        )}
-      </td>
-      <td className="p-2 text-muted-foreground">
-        {dateInfo.loading ? (
-          <span className="text-xs text-muted-foreground">-</span>
-        ) : dateInfo.startDate ? (
-          <span className="text-xs">{dateInfo.startDate}</span>
-        ) : (
-          <span className="text-xs text-muted-foreground">-</span>
-        )}
-      </td>
-      <td className="p-2 text-muted-foreground">
-        {dateInfo.loading ? (
-          <span className="text-xs text-muted-foreground">-</span>
-        ) : dateInfo.endDate ? (
-          <span className="text-xs">{dateInfo.endDate}</span>
-        ) : (
-          <span className="text-xs text-muted-foreground">-</span>
-        )}
-      </td>
-      <td className="p-2 text-muted-foreground">
-        {format(new Date(file.uploadedAt), 'MMM d, yyyy')}
-      </td>
-    </tr>
-  );
-};
 
 export default function MapDrawingPage() {
   const { view, setView } = useMapView('dev-user');
@@ -5190,44 +5103,15 @@ export default function MapDrawingPage() {
                 );
               }
               
+              // Flatten all files for timeline display
+              const allFiles = Object.values(groupedFiles).flat();
+              
               return (
                 <div className="space-y-6">
-                  {Object.entries(groupedFiles).map(([type, files]) => {
-                    if (files.length === 0) return null;
-                    
-                    return (
-                      <div key={type} className="space-y-2">
-                        <h3 className="font-semibold text-sm flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-sm bg-accent" />
-                          {type} Files ({files.length})
-                        </h3>
-                        <div className="border rounded-lg overflow-hidden">
-                          <table className="w-full text-sm">
-                            <thead className="bg-muted/50">
-                              <tr className="border-b">
-                                <th className="text-left p-2 font-medium">File Name</th>
-                                <th className="text-left p-2 font-medium">Pin</th>
-                                <th className="text-left p-2 font-medium">Size</th>
-                                <th className="text-left p-2 font-medium">Total Days</th>
-                                <th className="text-left p-2 font-medium">Start Date</th>
-                                <th className="text-left p-2 font-medium">End Date</th>
-                                <th className="text-left p-2 font-medium">Uploaded</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {files.map((file, idx) => (
-                                <FileDateRow 
-                                  key={`${file.id}-${idx}`} 
-                                  file={file}
-                                  getFileDateRange={getFileDateRange}
-                                />
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  <DataTimeline 
+                    files={allFiles}
+                    getFileDateRange={getFileDateRange}
+                  />
                 </div>
               );
             })()}
