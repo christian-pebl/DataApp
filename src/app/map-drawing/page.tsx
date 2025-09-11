@@ -47,11 +47,13 @@ import {
 import { useMapView } from '@/hooks/use-map-view';
 import { useSettings } from '@/hooks/use-settings';
 import { useMapData } from '@/hooks/use-map-data';
+import { useActiveProject } from '@/hooks/use-active-project';
+import { projectService } from '@/lib/supabase/project-service';
 import { getTimeWindowSummary } from '@/lib/dateParser';
 import { fileStorageService, type PinFile } from '@/lib/supabase/file-storage-service';
 import { mapDataService } from '@/lib/supabase/map-data-service';
 import { ShareDialogSimplified } from '@/components/sharing/ShareDialogSimplified';
-import { DataRestoreDialog } from '@/components/auth/DataRestoreDialog';
+import { DataRestoreNotifications } from '@/components/auth/DataRestoreDialog';
 import { createClient } from '@/lib/supabase/client';
 import type { DateRange } from "react-day-picker";
 import type { CombinedDataPoint, LogStep as ApiLogStep, CombinedParameterKey } from '../om-marine-explorer/shared';
@@ -418,6 +420,17 @@ export default function MapDrawingPage() {
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<{ id: string; name: string } | null>(null);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<{ id: string; type: 'pin' | 'line' | 'area'; hasData?: boolean } | null>(null);
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
+  const [showProjectDataDialog, setShowProjectDataDialog] = useState(false);
+  const [showProjectSettingsDialog, setShowProjectSettingsDialog] = useState(false);
+  const [projectNameEdit, setProjectNameEdit] = useState('');
+  const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
+  const [currentProjectContext, setCurrentProjectContext] = useState<string>('');
+  const [showAddProjectDialog, setShowAddProjectDialog] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectDescription, setNewProjectDescription] = useState('');
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [isUpdatingProject, setIsUpdatingProject] = useState(false);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
   
   // Data restoration state
   const [showDataRestore, setShowDataRestore] = useState(false);
@@ -454,6 +467,10 @@ export default function MapDrawingPage() {
   const [selectedFileType, setSelectedFileType] = useState<'GP' | 'FPOD' | 'Subcam' | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   
+  // Dynamic projects state (combines hardcoded + database projects)
+  const [dynamicProjects, setDynamicProjects] = useState<Record<string, { name: string; lat?: number; lon?: number; isDynamic?: boolean }>>(PROJECT_LOCATIONS);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
+
   // Project management state
   const [projectVisibility, setProjectVisibility] = useState<Record<string, boolean>>(() => {
     // Initialize all projects as visible
@@ -462,10 +479,59 @@ export default function MapDrawingPage() {
       return acc;
     }, {} as Record<string, boolean>);
   });
-  const [activeProjectId, setActiveProjectId] = useState<string>(() => {
-    // Set the first project (milfordhaven) as default active
-    return Object.keys(PROJECT_LOCATIONS)[0] || 'milfordhaven';
-  });
+  // Use persistent active project hook
+  const { activeProject: persistentActiveProject, setActiveProject: setPersistentActiveProject, isLoading: isLoadingActiveProject } = useActiveProject();
+  
+  // Manage active project with fallback to default
+  const activeProjectId = persistentActiveProject || Object.keys(dynamicProjects)[0] || 'milfordhaven';
+  const setActiveProjectId = (projectId: string) => {
+    setPersistentActiveProject(projectId);
+  };
+
+  // Load dynamic projects from database
+  const loadDynamicProjects = useCallback(async () => {
+    console.log('🔄 Loading dynamic projects from database...');
+    setIsLoadingProjects(true);
+    try {
+      const databaseProjects = await projectService.getProjects();
+      console.log('📂 Found database projects:', databaseProjects);
+      
+      // Combine hardcoded projects with database projects
+      const combinedProjects = { ...PROJECT_LOCATIONS };
+      
+      databaseProjects.forEach(project => {
+        // Use project ID as key, add isDynamic flag
+        combinedProjects[project.id] = {
+          name: project.name,
+          isDynamic: true
+        };
+      });
+      
+      console.log('✅ Combined projects:', combinedProjects);
+      setDynamicProjects(combinedProjects);
+      
+      // Update project visibility to include new projects
+      setProjectVisibility(prev => {
+        const updated = { ...prev };
+        databaseProjects.forEach(project => {
+          if (!(project.id in updated)) {
+            updated[project.id] = true; // Make new projects visible by default
+          }
+        });
+        return updated;
+      });
+      
+    } catch (error) {
+      console.error('Failed to load dynamic projects:', error);
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  }, []);
+
+  // Load dynamic projects on component mount
+  useEffect(() => {
+    loadDynamicProjects();
+  }, [loadDynamicProjects]);
   
   // Drawing state
   const [drawingMode, setDrawingMode] = useState<DrawingMode>('none');
@@ -1333,7 +1399,7 @@ export default function MapDrawingPage() {
   }, []);
 
   const goToProjectLocation = useCallback((locationKey: string) => {
-    const location = PROJECT_LOCATIONS[locationKey as keyof typeof PROJECT_LOCATIONS];
+    const location = dynamicProjects[locationKey];
     if (location && mapRef.current) {
       // Get all objects for this project
       const projectPins = pins.filter(pin => pin.project === locationKey);
@@ -1393,19 +1459,26 @@ export default function MapDrawingPage() {
           description: `Showing all ${totalObjects} project objects`,
           duration: 3000
         });
-      } else {
-        // Fallback to project location if no objects
+      } else if (location.lat && location.lon) {
+        // Fallback to project location if no objects (only for hardcoded projects with coordinates)
         mapRef.current.setView([location.lat, location.lon], 12);
         toast({
           title: `Navigated to ${location.name}`,
           description: `No objects found - showing project location`,
           duration: 3000
         });
+      } else {
+        // For dynamic projects without coordinates, just show a message
+        toast({
+          title: location.name,
+          description: `This project has no objects or location to display`,
+          duration: 3000
+        });
       }
       
       setShowProjectsDialog(false);
     }
-  }, [toast, pins, lines, areas]);
+  }, [toast, pins, lines, areas, dynamicProjects]);
 
   // Project management handlers
   const toggleProjectVisibility = useCallback((projectKey: string) => {
@@ -1419,10 +1492,54 @@ export default function MapDrawingPage() {
     setActiveProjectId(projectKey);
     toast({
       title: "Active Project Changed",
-      description: `${PROJECT_LOCATIONS[projectKey as keyof typeof PROJECT_LOCATIONS]?.name} is now the active project`,
+      description: `${dynamicProjects[projectKey]?.name} is now the active project`,
       duration: 3000
     });
   }, [toast]);
+
+  // Function to group files by type (FPOD, SubCam, GP)
+  const groupFilesByType = useCallback((files: PinFile[]) => {
+    const grouped = {
+      FPOD: [] as Array<PinFile & { pinLabel: string }>,
+      SubCam: [] as Array<PinFile & { pinLabel: string }>,
+      GP: [] as Array<PinFile & { pinLabel: string }>,
+      Other: [] as Array<PinFile & { pinLabel: string }>
+    };
+
+    files.forEach(file => {
+      const pin = pins.find(p => p.id === file.pinId);
+      const fileWithPinLabel = { ...file, pinLabel: pin?.label || 'Unnamed Pin' };
+      
+      const fileName = file.fileName.toUpperCase();
+      if (fileName.includes('FPOD') || fileName.startsWith('FPOD_')) {
+        grouped.FPOD.push(fileWithPinLabel);
+      } else if (fileName.includes('SUBCAM') || fileName.includes('SUB_CAM') || fileName.startsWith('SUBCAM_')) {
+        grouped.SubCam.push(fileWithPinLabel);
+      } else if (fileName.includes('GP') || fileName.startsWith('GP_') || fileName.includes('GPS')) {
+        grouped.GP.push(fileWithPinLabel);
+      } else {
+        grouped.Other.push(fileWithPinLabel);
+      }
+    });
+
+    return grouped;
+  }, [pins]);
+
+  // Function to get all project files
+  const getProjectFiles = useCallback((projectId?: string) => {
+    const targetProjectId = projectId || activeProjectId;
+    if (!targetProjectId) return [];
+    
+    const projectPins = pins.filter(pin => pin.project === targetProjectId);
+    const allFiles: PinFile[] = [];
+    
+    projectPins.forEach(pin => {
+      const pinFilesMetadata = pinFileMetadata[pin.id] || [];
+      allFiles.push(...pinFilesMetadata);
+    });
+    
+    return allFiles;
+  }, [activeProjectId, pins, pinFileMetadata]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -3134,7 +3251,7 @@ export default function MapDrawingPage() {
                           <SelectTrigger className="mt-1 h-8">
                             <SelectValue placeholder="Select a project">
                               {editingProjectId 
-                                ? PROJECT_LOCATIONS[editingProjectId as keyof typeof PROJECT_LOCATIONS]?.name 
+                                ? dynamicProjects[editingProjectId]?.name 
                                 : 'Unassigned'}
                             </SelectValue>
                           </SelectTrigger>
@@ -3142,7 +3259,7 @@ export default function MapDrawingPage() {
                             <SelectItem value="unassigned">
                               Unassigned
                             </SelectItem>
-                            {Object.entries(PROJECT_LOCATIONS).map(([key, location]) => (
+                            {Object.entries(dynamicProjects).map(([key, location]) => (
                               <SelectItem key={key} value={key}>
                                 {location.name} {key === activeProjectId ? '(Active)' : ''}
                               </SelectItem>
@@ -3151,7 +3268,7 @@ export default function MapDrawingPage() {
                         </Select>
                         {itemToEdit && itemToEdit.projectId && (
                           <div className="text-xs text-muted-foreground mt-1">
-                            Currently: {PROJECT_LOCATIONS[itemToEdit.projectId as keyof typeof PROJECT_LOCATIONS]?.name || 'Unknown'}
+                            Currently: {dynamicProjects[itemToEdit.projectId]?.name || 'Unknown'}
                           </div>
                         )}
                       </div>
@@ -3785,7 +3902,7 @@ export default function MapDrawingPage() {
                   {/* Active Project - First Item */}
                   <div className="space-y-2">
                     {(() => {
-                      const activeProject = PROJECT_LOCATIONS[activeProjectId as keyof typeof PROJECT_LOCATIONS];
+                      const activeProject = dynamicProjects[activeProjectId];
                       if (!activeProject) return null;
                       
                       const projectPins = pins.filter(p => p.projectId === activeProjectId);
@@ -3797,150 +3914,178 @@ export default function MapDrawingPage() {
                         <div className="border-l-4 border-accent rounded-sm mb-4 pl-2">
                           {/* Clickable header with arrow and separate center button */}
                           <div className="flex items-center gap-1">
-                            <Button 
-                              variant="ghost"
-                              size="sm" 
-                              onClick={() => setShowProjectInfo(showProjectInfo === activeProjectId ? null : activeProjectId)}
-                              className="flex-1 justify-between gap-3 h-auto p-3 text-left hover:bg-muted/30"
-                            >
-                              <div className="flex items-center gap-2">
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0 hover:bg-accent/20"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          // Calculate bounding box and optimal zoom for all active project objects
-                                          if (totalObjects > 0 && mapRef.current) {
-                                            let minLat = Infinity;
-                                            let maxLat = -Infinity;
-                                            let minLng = Infinity;
-                                            let maxLng = -Infinity;
-                                            
-                                            // Process pins
-                                            projectPins.forEach(pin => {
-                                              minLat = Math.min(minLat, pin.lat);
-                                              maxLat = Math.max(maxLat, pin.lat);
-                                              minLng = Math.min(minLng, pin.lng);
-                                              maxLng = Math.max(maxLng, pin.lng);
-                                            });
-                                            
-                                            // Process line points
-                                            projectLines.forEach(line => {
-                                              line.path.forEach(point => {
-                                                minLat = Math.min(minLat, point.lat);
-                                                maxLat = Math.max(maxLat, point.lat);
-                                                minLng = Math.min(minLng, point.lng);
-                                                maxLng = Math.max(maxLng, point.lng);
-                                              });
-                                            });
-                                            
-                                            // Process area points
-                                            projectAreas.forEach(area => {
-                                              area.path.forEach(point => {
-                                                minLat = Math.min(minLat, point.lat);
-                                                maxLat = Math.max(maxLat, point.lat);
-                                                minLng = Math.min(minLng, point.lng);
-                                                maxLng = Math.max(maxLng, point.lng);
-                                              });
-                                            });
-                                            
-                                            // Calculate center
-                                            const centerLat = (minLat + maxLat) / 2;
-                                            const centerLng = (minLng + maxLng) / 2;
-                                            
-                                            // Calculate the bounds span
-                                            const latSpan = maxLat - minLat;
-                                            const lngSpan = maxLng - minLng;
-                                            
-                                            // Calculate zoom level to fit bounds
-                                            // Account for map container size (estimate viewport dimensions)
-                                            const mapContainer = document.querySelector('.leaflet-container');
-                                            const mapWidth = mapContainer?.clientWidth || 800;
-                                            const mapHeight = mapContainer?.clientHeight || 600;
-                                            
-                                            // Account for sidebar if open (reduce effective width)
-                                            const effectiveWidth = sidebarWidth > 0 ? mapWidth - sidebarWidth : mapWidth;
-                                            
-                                            // Calculate zoom level (simplified formula, works for most cases)
-                                            const WORLD_DIM = { height: 256, width: 256 };
-                                            const ZOOM_MAX = 18;
-                                            
-                                            function latRad(lat: number) {
-                                              const sin = Math.sin(lat * Math.PI / 180);
-                                              const radX2 = Math.log((1 + sin) / (1 - sin)) / 2;
-                                              return Math.max(Math.min(radX2, Math.PI), -Math.PI) / 2;
-                                            }
-                                            
-                                            function zoom(mapPx: number, worldPx: number, fraction: number) {
-                                              return Math.floor(Math.log(mapPx / worldPx / fraction) / Math.LN2);
-                                            }
-                                            
-                                            const latFraction = (latRad(maxLat) - latRad(minLat)) / Math.PI;
-                                            const lngDiff = maxLng - minLng;
-                                            const lngFraction = ((lngDiff < 0) ? (lngDiff + 360) : lngDiff) / 360;
-                                            
-                                            const latZoom = zoom(mapHeight, WORLD_DIM.height, latFraction);
-                                            const lngZoom = zoom(effectiveWidth, WORLD_DIM.width, lngFraction);
-                                            
-                                            let finalZoom = Math.min(latZoom, lngZoom, ZOOM_MAX);
-                                            
-                                            // Add some padding (zoom out slightly to ensure everything is visible)
-                                            finalZoom = Math.max(1, finalZoom - 1);
-                                            
-                                            // If bounds are very small (single point or close points), use default zoom
-                                            if (latSpan < 0.001 && lngSpan < 0.001) {
-                                              finalZoom = 15;
-                                            }
-                                            
-                                            mapRef.current.setView([centerLat, centerLng], finalZoom);
-                                            toast({
-                                              title: "Map Centered",
-                                              description: `Showing all ${totalObjects} objects in ${activeProject.name}`,
-                                              duration: 2000
-                                            });
-                                          } else if (mapRef.current) {
-                                            // No objects, center on project location
-                                            mapRef.current.setView([activeProject.lat, activeProject.lon], 12);
-                                            toast({
-                                              title: "Map Centered",
-                                              description: `Centered on ${activeProject.name} location`,
-                                              duration: 2000
-                                            });
-                                          }
-                                        }}
-                                      >
-                                        <Crosshair className="h-4 w-4 text-accent" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="right">
-                                      <p>Center map on project</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                                <div>
-                                  <div className="text-sm font-medium text-foreground">
-                                    {activeProject.name}
-                                  </div>
-                                  <div className="text-xs text-accent font-medium">
-                                    Active Project
-                                  </div>
-                                  {totalObjects > 0 && (
-                                    <div className="text-xs text-muted-foreground">
-                                      {totalObjects} objects ({projectPins.length} pins, {projectLines.length} lines, {projectAreas.length} areas)
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    className="h-6 w-6 p-0 hover:bg-accent/20 rounded inline-flex items-center justify-center"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      // Calculate bounding box and optimal zoom for all active project objects
+                                      if (totalObjects > 0 && mapRef.current) {
+                                        let minLat = Infinity;
+                                        let maxLat = -Infinity;
+                                        let minLng = Infinity;
+                                        let maxLng = -Infinity;
+                                        
+                                        // Process pins
+                                        projectPins.forEach(pin => {
+                                          minLat = Math.min(minLat, pin.lat);
+                                          maxLat = Math.max(maxLat, pin.lat);
+                                          minLng = Math.min(minLng, pin.lng);
+                                          maxLng = Math.max(maxLng, pin.lng);
+                                        });
+                                        
+                                        // Process line points
+                                        projectLines.forEach(line => {
+                                          line.path.forEach(point => {
+                                            minLat = Math.min(minLat, point.lat);
+                                            maxLat = Math.max(maxLat, point.lat);
+                                            minLng = Math.min(minLng, point.lng);
+                                            maxLng = Math.max(maxLng, point.lng);
+                                          });
+                                        });
+                                        
+                                        // Process area points
+                                        projectAreas.forEach(area => {
+                                          area.path.forEach(point => {
+                                            minLat = Math.min(minLat, point.lat);
+                                            maxLat = Math.max(maxLat, point.lat);
+                                            minLng = Math.min(minLng, point.lng);
+                                            maxLng = Math.max(maxLng, point.lng);
+                                          });
+                                        });
+                                        
+                                        // Calculate center
+                                        const centerLat = (minLat + maxLat) / 2;
+                                        const centerLng = (minLng + maxLng) / 2;
+                                        
+                                        // Calculate the bounds span
+                                        const latSpan = maxLat - minLat;
+                                        const lngSpan = maxLng - minLng;
+                                        
+                                        // Calculate zoom level to fit bounds
+                                        // Account for map container size (estimate viewport dimensions)
+                                        const mapContainer = document.querySelector('.leaflet-container');
+                                        const mapWidth = mapContainer?.clientWidth || 800;
+                                        const mapHeight = mapContainer?.clientHeight || 600;
+                                        
+                                        // Account for sidebar if open (reduce effective width)
+                                        const effectiveWidth = sidebarWidth > 0 ? mapWidth - sidebarWidth : mapWidth;
+                                        
+                                        // Calculate zoom level (simplified formula, works for most cases)
+                                        const WORLD_DIM = { height: 256, width: 256 };
+                                        const ZOOM_MAX = 18;
+                                        
+                                        function latRad(lat: number) {
+                                          const sin = Math.sin(lat * Math.PI / 180);
+                                          const radX2 = Math.log((1 + sin) / (1 - sin)) / 2;
+                                          return Math.max(Math.min(radX2, Math.PI), -Math.PI) / 2;
+                                        }
+                                        
+                                        function zoom(mapPx: number, worldPx: number, fraction: number) {
+                                          return Math.floor(Math.log(mapPx / worldPx / fraction) / Math.LN2);
+                                        }
+                                        
+                                        const latFraction = (latRad(maxLat) - latRad(minLat)) / Math.PI;
+                                        const lngDiff = maxLng - minLng;
+                                        const lngFraction = ((lngDiff < 0) ? (lngDiff + 360) : lngDiff) / 360;
+                                        
+                                        const latZoom = zoom(mapHeight, WORLD_DIM.height, latFraction);
+                                        const lngZoom = zoom(effectiveWidth, WORLD_DIM.width, lngFraction);
+                                        
+                                        let finalZoom = Math.min(latZoom, lngZoom, ZOOM_MAX);
+                                        
+                                        // Add some padding (zoom out slightly to ensure everything is visible)
+                                        finalZoom = Math.max(1, finalZoom - 1);
+                                        
+                                        // If bounds are very small (single point or close points), use default zoom
+                                        if (latSpan < 0.001 && lngSpan < 0.001) {
+                                          finalZoom = 15;
+                                        }
+                                        
+                                        mapRef.current.setView([centerLat, centerLng], finalZoom);
+                                        toast({
+                                          title: "Map Centered",
+                                          description: `Showing all ${totalObjects} objects in ${activeProject.name}`,
+                                          duration: 2000
+                                        });
+                                      } else if (mapRef.current) {
+                                        // No objects, center on project location
+                                        mapRef.current.setView([activeProject.lat, activeProject.lon], 12);
+                                        toast({
+                                          title: "Map Centered",
+                                          description: `Centered on ${activeProject.name} location`,
+                                          duration: 2000
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    <Crosshair className="h-4 w-4 text-accent" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="right">
+                                  <p>Center map on project</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <div className="flex-1">
+                              <Button 
+                                variant="ghost"
+                                size="sm" 
+                                onClick={() => setShowProjectInfo(showProjectInfo === activeProjectId ? null : activeProjectId)}
+                                className="w-full justify-between gap-3 h-auto p-3 text-left hover:bg-muted/30"
+                              >
+                                <div className="flex items-center gap-2 ml-2">
+                                  <div>
+                                    <div className="text-sm font-medium text-foreground">
+                                      {activeProject.name}
                                     </div>
-                                  )}
+                                    <div className="text-xs text-accent font-medium">
+                                      Active Project
+                                    </div>
+                                    {totalObjects > 0 && (
+                                      <div className="text-xs text-muted-foreground">
+                                        {totalObjects} objects ({projectPins.length} pins, {projectLines.length} lines, {projectAreas.length} areas)
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
+                                {showProjectInfo === activeProjectId ? (
+                                  <ChevronDown className="h-4 w-4 text-accent" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4 text-accent" />
+                                )}
+                              </Button>
+                              <div className="flex gap-1 mt-2 px-3">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-xs px-2"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCurrentProjectContext(activeProjectId);
+                                    setShowProjectDataDialog(true);
+                                  }}
+                                >
+                                  <Database className="h-3 w-3 mr-1" />
+                                  Project Data
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCurrentProjectContext(activeProjectId);
+                                    setProjectNameEdit(dynamicProjects[activeProjectId]?.name || '');
+                                    setShowProjectSettingsDialog(true);
+                                  }}
+                                >
+                                  <Settings className="h-3 w-3" />
+                                </Button>
                               </div>
-                              {showProjectInfo === activeProjectId ? (
-                                <ChevronDown className="h-4 w-4 text-accent" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4 text-accent" />
-                              )}
-                            </Button>
+                            </div>
                             
                           </div>
                           
@@ -4028,11 +4173,11 @@ export default function MapDrawingPage() {
                     {showProjectsDropdown && (
                       <div className="ml-4 space-y-1 border-l-2 border-muted pl-4">
                         <div className="text-xs text-muted-foreground mb-2">
-                          <strong>Active:</strong> {PROJECT_LOCATIONS[activeProjectId as keyof typeof PROJECT_LOCATIONS]?.name || 'None'}
+                          <strong>Active:</strong> {dynamicProjects[activeProjectId]?.name || 'None'}
                         </div>
                         
                         {/* Sort projects with active project first */}
-                        {Object.entries(PROJECT_LOCATIONS)
+                        {Object.entries(dynamicProjects)
                           .sort(([keyA], [keyB]) => {
                             if (keyA === activeProjectId) return -1;
                             if (keyB === activeProjectId) return 1;
@@ -4136,13 +4281,15 @@ export default function MapDrawingPage() {
                                 
                                 {/* Project Info Dropdown */}
                                 {showProjectMenuInfo === key && (
-                                  <div className="ml-2 p-3 bg-muted/40 rounded text-xs space-y-2 border-l-2 border-primary/30">
-                                    <div>
-                                      <span className="font-medium text-muted-foreground">GPS Coordinates:</span>
-                                      <div className="mt-1 font-mono text-foreground">
-                                        {location.lat.toFixed(6)}, {location.lon.toFixed(6)}
+                                  <div className="ml-2 p-3 bg-muted/40 rounded text-xs space-y-3 border-l-2 border-primary/30">
+                                    {location.lat && location.lon && (
+                                      <div>
+                                        <span className="font-medium text-muted-foreground">GPS Coordinates:</span>
+                                        <div className="mt-1 font-mono text-foreground">
+                                          {location.lat.toFixed(6)}, {location.lon.toFixed(6)}
+                                        </div>
                                       </div>
-                                    </div>
+                                    )}
                                     <div>
                                       <span className="font-medium text-muted-foreground">Objects:</span>
                                       <div className="mt-1 text-foreground">
@@ -4153,12 +4300,62 @@ export default function MapDrawingPage() {
                                         )}
                                       </div>
                                     </div>
+                                    {/* Project Data and Settings Buttons */}
+                                    {totalObjects > 0 && (
+                                      <div className="pt-2 border-t border-muted-foreground/20">
+                                        <div className="flex gap-2">
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 text-xs px-2 flex-1"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setCurrentProjectContext(key);
+                                              setShowProjectDataDialog(true);
+                                            }}
+                                          >
+                                            <Database className="h-3 w-3 mr-1" />
+                                            Project Data
+                                          </Button>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 w-7 p-0"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setCurrentProjectContext(key);
+                                              setProjectNameEdit(dynamicProjects[key]?.name || '');
+                                              setShowProjectSettingsDialog(true);
+                                            }}
+                                          >
+                                            <Settings className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                                 
                               </div>
                             );
                           })}
+                        
+                        {/* Add New Project Button */}
+                        <div className="border-t border-muted-foreground/20 pt-3 mt-3">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full justify-center gap-2 h-8"
+                            onClick={() => {
+                              setNewProjectName('');
+                              setNewProjectDescription('');
+                              setShowAddProjectDialog(true);
+                            }}
+                          >
+                            <Plus className="h-3 w-3" />
+                            Add New Project
+                          </Button>
+                        </div>
                       </div>
                     )}
                     
@@ -4334,13 +4531,13 @@ export default function MapDrawingPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="text-sm text-muted-foreground">
-              <p className="mb-2"><strong>Active Project:</strong> {PROJECT_LOCATIONS[activeProjectId as keyof typeof PROJECT_LOCATIONS]?.name || 'None'}</p>
+              <p className="mb-2"><strong>Active Project:</strong> {dynamicProjects[activeProjectId]?.name || 'None'}</p>
               <p className="text-xs">All new objects will be assigned to the active project.</p>
             </div>
             
             <div className="space-y-3">
               {/* Sort projects with active project first */}
-              {Object.entries(PROJECT_LOCATIONS)
+              {Object.entries(dynamicProjects)
                 .sort(([keyA], [keyB]) => {
                   if (keyA === activeProjectId) return -1;
                   if (keyB === activeProjectId) return 1;
@@ -4370,9 +4567,11 @@ export default function MapDrawingPage() {
                                 </span>
                               )}
                             </div>
-                            <div className="text-xs text-muted-foreground">
-                              {location.lat.toFixed(6)}, {location.lon.toFixed(6)}
-                            </div>
+                            {location.lat && location.lon && (
+                              <div className="text-xs text-muted-foreground">
+                                {location.lat.toFixed(6)}, {location.lon.toFixed(6)}
+                              </div>
+                            )}
                           </div>
                           
                           {/* Show Objects Dropdown - Only for active project */}
@@ -4481,6 +4680,38 @@ export default function MapDrawingPage() {
                                 ))}
                               </div>
                             )}
+                            
+                            {/* Project Data and Settings Buttons */}
+                            <div className="pt-3 border-t border-muted-foreground/20 mt-3">
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs px-2 flex-1"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCurrentProjectContext(key);
+                                    setShowProjectDataDialog(true);
+                                  }}
+                                >
+                                  <Database className="h-3 w-3 mr-1" />
+                                  Project Data
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 w-7 p-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCurrentProjectContext(key);
+                                    setProjectNameEdit(dynamicProjects[key]?.name || '');
+                                    setShowProjectSettingsDialog(true);
+                                  }}
+                                >
+                                  <Settings className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -4577,9 +4808,363 @@ export default function MapDrawingPage() {
         />
       )}
 
-      {/* Data Restore Dialog */}
-      <DataRestoreDialog 
-        isOpen={showDataRestore}
+      {/* Project Data Dialog */}
+      <Dialog open={showProjectDataDialog} onOpenChange={(open) => {
+        if (!open) setCurrentProjectContext('');
+        setShowProjectDataDialog(open);
+      }}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden z-[9999]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5" />
+              Project Data Files
+            </DialogTitle>
+            <DialogDescription>
+              All data files grouped by type for {dynamicProjects[currentProjectContext || activeProjectId]?.name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-y-auto">
+            {(() => {
+              const projectFiles = getProjectFiles(currentProjectContext || activeProjectId);
+              const groupedFiles = groupFilesByType(projectFiles);
+              const hasFiles = projectFiles.length > 0;
+              
+              if (!hasFiles) {
+                return (
+                  <div className="text-center py-8">
+                    <Database className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p className="text-muted-foreground">No data files in this project</p>
+                  </div>
+                );
+              }
+              
+              return (
+                <div className="space-y-6">
+                  {Object.entries(groupedFiles).map(([type, files]) => {
+                    if (files.length === 0) return null;
+                    
+                    return (
+                      <div key={type} className="space-y-2">
+                        <h3 className="font-semibold text-sm flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-sm bg-accent" />
+                          {type} Files ({files.length})
+                        </h3>
+                        <div className="border rounded-lg overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted/50">
+                              <tr className="border-b">
+                                <th className="text-left p-2 font-medium">File Name</th>
+                                <th className="text-left p-2 font-medium">Pin</th>
+                                <th className="text-left p-2 font-medium">Size</th>
+                                <th className="text-left p-2 font-medium">Uploaded</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {files.map((file, idx) => (
+                                <tr key={`${file.id}-${idx}`} className="border-b hover:bg-muted/30">
+                                  <td className="p-2 font-mono text-xs">
+                                    {file.fileName}
+                                  </td>
+                                  <td className="p-2">
+                                    {file.pinLabel}
+                                  </td>
+                                  <td className="p-2 text-muted-foreground">
+                                    {file.fileSize ? `${(file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}
+                                  </td>
+                                  <td className="p-2 text-muted-foreground">
+                                    {format(new Date(file.uploadedAt), 'MMM d, yyyy')}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Project Settings Dialog */}
+      <Dialog open={showProjectSettingsDialog} onOpenChange={(open) => {
+        if (!open) setCurrentProjectContext('');
+        setShowProjectSettingsDialog(open);
+      }}>
+        <DialogContent className="sm:max-w-md z-[9999]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Project Settings
+            </DialogTitle>
+            <DialogDescription>
+              Manage settings for {dynamicProjects[currentProjectContext || activeProjectId]?.name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Project Name */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Project Name</label>
+              <Input
+                value={projectNameEdit}
+                onChange={(e) => setProjectNameEdit(e.target.value)}
+                placeholder="Enter project name"
+              />
+              <p className="text-xs text-muted-foreground">
+                Note: This application currently uses predefined projects. Full project management will be available in a future update.
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-between pt-4 border-t">
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  setShowProjectSettingsDialog(false);
+                  setShowDeleteConfirmDialog(true);
+                }}
+                className="flex items-center gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Project
+              </Button>
+              
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowProjectSettingsDialog(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    // TODO: Implement project rename functionality
+                    toast({
+                      title: "Feature Coming Soon",
+                      description: "Project renaming will be available in a future update.",
+                      duration: 3000
+                    });
+                    setShowProjectSettingsDialog(false);
+                  }}
+                >
+                  Save Changes
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Project Confirmation Dialog */}
+      <Dialog open={showDeleteConfirmDialog} onOpenChange={(open) => {
+        if (!open) setCurrentProjectContext('');
+        setShowDeleteConfirmDialog(open);
+      }}>
+        <DialogContent className="sm:max-w-md z-[9999]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              Delete Project
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{dynamicProjects[currentProjectContext || activeProjectId]?.name}"?
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
+              <p className="text-sm text-destructive font-medium mb-2">This action will permanently delete:</p>
+              <ul className="text-sm text-destructive space-y-1 ml-4 list-disc">
+                <li>All pins, lines, and areas in this project</li>
+                <li>All uploaded data files</li>
+                <li>All project settings and configurations</li>
+              </ul>
+              <p className="text-sm text-destructive font-medium mt-2">This action cannot be undone.</p>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowDeleteConfirmDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={async () => {
+                  console.log('🗑️ Delete Project button clicked');
+                  console.log('📂 Project context:', currentProjectContext);
+                  
+                  const projectId = currentProjectContext || activeProjectId;
+                  if (!projectId) {
+                    console.log('❌ No project ID available for deletion');
+                    toast({
+                      title: "Error",
+                      description: "No project selected for deletion.",
+                      variant: "destructive"
+                    });
+                    return;
+                  }
+
+                  console.log('⏳ Setting isDeletingProject to true');
+                  setIsDeletingProject(true);
+                  try {
+                    console.log('🚀 Calling projectService.deleteProject...');
+                    await projectService.deleteProject(projectId);
+                    console.log('✅ Project deleted successfully');
+
+                    toast({
+                      title: "Project Deleted",
+                      description: `Project "${dynamicProjects[projectId]?.name}" has been deleted successfully.`,
+                      duration: 3000
+                    });
+
+                    setShowDeleteConfirmDialog(false);
+                    setCurrentProjectContext('');
+                    
+                    // Refresh project list to remove deleted project
+                    console.log('🔄 Refreshing project list after deletion...');
+                    await loadDynamicProjects();
+                    
+                  } catch (error) {
+                    console.error('Failed to delete project:', error);
+                    toast({
+                      title: "Deletion Failed",
+                      description: error instanceof Error ? error.message : "Failed to delete project. Please try again.",
+                      variant: "destructive",
+                      duration: 5000
+                    });
+                  } finally {
+                    setIsDeletingProject(false);
+                  }
+                }}
+                disabled={isDeletingProject}
+                className="flex items-center gap-2"
+              >
+                {isDeletingProject && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {isDeletingProject ? 'Deleting...' : 'Delete Project'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add New Project Dialog */}
+      <Dialog open={showAddProjectDialog} onOpenChange={(open) => {
+        if (!open) {
+          setNewProjectName('');
+          setNewProjectDescription('');
+        }
+        setShowAddProjectDialog(open);
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5" />
+              Add New Project
+            </DialogTitle>
+            <DialogDescription>
+              Create a new project to organize your pins, lines, and areas.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Project Name */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Project Name *</label>
+              <Input
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="Enter project name"
+                required
+              />
+            </div>
+            
+            {/* Project Description */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Description</label>
+              <Textarea
+                value={newProjectDescription}
+                onChange={(e) => setNewProjectDescription(e.target.value)}
+                placeholder="Optional description"
+                rows={3}
+              />
+            </div>
+            
+
+            {/* Actions */}
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setShowAddProjectDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  console.log('🔄 Create Project button clicked');
+                  console.log('📝 Project name:', newProjectName);
+                  console.log('📝 Project description:', newProjectDescription);
+                  
+                  if (!newProjectName.trim()) {
+                    console.log('❌ Project name is empty, aborting');
+                    return;
+                  }
+                  
+                  console.log('⏳ Setting isCreatingProject to true');
+                  setIsCreatingProject(true);
+                  try {
+                    console.log('🚀 Calling projectService.createProject...');
+                    const newProject = await projectService.createProject({
+                      name: newProjectName.trim(),
+                      description: newProjectDescription.trim() || undefined
+                    });
+                    console.log('✅ Project created successfully:', newProject);
+
+                    toast({
+                      title: "Project Created",
+                      description: `"${newProject.name}" has been created successfully.`,
+                      duration: 3000
+                    });
+
+                    setShowAddProjectDialog(false);
+                    setNewProjectName('');
+                    setNewProjectDescription('');
+                    
+                    // Refresh project list to show new project
+                    console.log('🔄 Refreshing project list after creation...');
+                    await loadDynamicProjects();
+                    
+                  } catch (error) {
+                    console.error('Failed to create project:', error);
+                    toast({
+                      title: "Creation Failed",
+                      description: error instanceof Error ? error.message : "Failed to create project. Please try again.",
+                      variant: "destructive",
+                      duration: 5000
+                    });
+                  } finally {
+                    setIsCreatingProject(false);
+                  }
+                }}
+                disabled={!newProjectName.trim() || isCreatingProject}
+              >
+                {isCreatingProject && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {isCreatingProject ? 'Creating...' : 'Create Project'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Data Restore Notifications */}
+      <DataRestoreNotifications 
+        isActive={showDataRestore}
         onComplete={() => {
           setShowDataRestore(false);
           // Force refresh of data after restore

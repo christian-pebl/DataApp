@@ -29,6 +29,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useSyncNotifications } from '@/components/ui/sync-notifications'
+import { SyncNotificationsContainer } from '@/components/ui/sync-notifications-container'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
@@ -43,10 +45,7 @@ export default function UserMenu({ user }: UserMenuProps) {
   const { toast } = useToast()
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const { settings, setSettings } = useSettings()
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [showSyncDialog, setShowSyncDialog] = useState(false)
-  const [syncStatus, setSyncStatus] = useState<'backing-up' | 'logging-out' | ''>('')
-  const [syncDetails, setSyncDetails] = useState<any>(null)
+  const { notifications, showNotification, updateNotification, removeNotification } = useSyncNotifications()
   
   // Account Settings state
   const [showAccountSettings, setShowAccountSettings] = useState(false)
@@ -158,34 +157,44 @@ export default function UserMenu({ user }: UserMenuProps) {
   }
 
   const handleSignOut = async () => {
-    setShowSyncDialog(true)
-    setIsSyncing(true)
-    setSyncStatus('backing-up')
-    setSyncDetails(null)
+    // Show backup notification
+    const backupNotificationId = showNotification({
+      type: 'backup',
+      status: 'loading',
+      title: 'Backing Up Data',
+      message: 'Saving your pins, lines, and areas to the cloud...'
+    })
 
     try {
       // Step 1: Backup all data
       console.log('Starting data backup before logout...')
       const backupResult = await dataSyncService.backupUserData()
       
-      setSyncDetails(backupResult.details)
-      
       if (!backupResult.success) {
-        // Show warning but allow logout
-        toast({
-          variant: "destructive",
-          title: "Backup Warning",
-          description: backupResult.message,
+        // Update to error state
+        updateNotification(backupNotificationId, {
+          status: 'error',
+          title: 'Backup Warning',
+          message: backupResult.message
         })
       } else {
-        toast({
-          title: "Data Backed Up",
-          description: `Saved ${backupResult.details?.pins || 0} pins, ${backupResult.details?.lines || 0} lines, ${backupResult.details?.areas || 0} areas`,
+        // Update to success state
+        updateNotification(backupNotificationId, {
+          status: 'success',
+          title: 'Data Backed Up',
+          message: 'All your data has been saved successfully',
+          details: backupResult.details
         })
       }
 
-      // Step 2: Sign out
-      setSyncStatus('logging-out')
+      // Step 2: Show logout notification
+      const logoutNotificationId = showNotification({
+        type: 'logout',
+        status: 'loading',
+        title: 'Signing Out',
+        message: 'Clearing session and local data...'
+      })
+
       await supabase.auth.signOut()
       
       // Step 3: Clear local data after successful backup
@@ -197,11 +206,18 @@ export default function UserMenu({ user }: UserMenuProps) {
         localStorage.removeItem('map-drawing-tags')
       }
 
-      // Step 4: Redirect
+      // Update logout notification to success
+      updateNotification(logoutNotificationId, {
+        status: 'success',
+        title: 'Signed Out',
+        message: 'You have been successfully signed out'
+      })
+
+      // Step 4: Redirect after brief delay
       setTimeout(() => {
         router.push('/auth')
         router.refresh()
-      }, 1000)
+      }, 1500)
       
     } catch (error) {
       console.error('Error during sign out:', error)
@@ -210,8 +226,6 @@ export default function UserMenu({ user }: UserMenuProps) {
         title: "Sign Out Error",
         description: "There was an error signing out. Please try again.",
       })
-      setIsSyncing(false)
-      setShowSyncDialog(false)
     }
   }
 
@@ -308,56 +322,11 @@ export default function UserMenu({ user }: UserMenuProps) {
       </DropdownMenuContent>
     </DropdownMenu>
 
-    {/* Sync Dialog */}
-    <Dialog open={showSyncDialog} onOpenChange={setShowSyncDialog}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {syncStatus === 'backing-up' && (
-              <>
-                <Save className="h-5 w-5 animate-pulse" />
-                Backing Up Your Data
-              </>
-            )}
-            {syncStatus === 'logging-out' && (
-              <>
-                <LogOut className="h-5 w-5" />
-                Signing Out
-              </>
-            )}
-          </DialogTitle>
-          <DialogDescription className="sr-only">
-            Data synchronization dialog
-          </DialogDescription>
-        </DialogHeader>
-        {syncStatus === 'backing-up' && (
-          <div className="space-y-3 mt-4">
-            <p>Saving all your pins, lines, and areas to the cloud...</p>
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-            {syncDetails && (
-              <div className="bg-muted p-3 rounded-lg space-y-1 text-sm">
-                <p>✓ Pins backed up: {syncDetails.pins || 0}</p>
-                <p>✓ Lines backed up: {syncDetails.lines || 0}</p>
-                <p>✓ Areas backed up: {syncDetails.areas || 0}</p>
-                {syncDetails.errors && syncDetails.errors.length > 0 && (
-                  <p className="text-destructive">⚠ Errors: {syncDetails.errors.length}</p>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-        {syncStatus === 'logging-out' && (
-          <div className="space-y-3 mt-4">
-            <p>Your data has been saved. Signing you out...</p>
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
+    {/* Sync Notifications */}
+    <SyncNotificationsContainer 
+      notifications={notifications}
+      onRemove={removeNotification}
+    />
 
     {/* Account Settings Dialog */}
     <Dialog open={showAccountSettings} onOpenChange={setShowAccountSettings}>
