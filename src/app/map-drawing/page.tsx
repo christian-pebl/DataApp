@@ -565,9 +565,9 @@ export default function MapDrawingPage() {
   useEffect(() => {
     if (showDataDropdown && showMeteoDataSection) {
       // Store the current width if not already stored
-      if (sidebarWidth <= 800) {
+      if (sidebarWidth <= 450) {
         setOriginalSidebarWidth(sidebarWidth);
-        setSidebarWidth(800); // Much wider for better data visibility
+        setSidebarWidth(450); // Moderately wider for better data visibility
       }
     } else if (!showDataDropdown) {
       // Restore original width when closing the data dropdown
@@ -1671,10 +1671,18 @@ export default function MapDrawingPage() {
       // Calculate total days
       const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
+      // Format dates in dd/mm/yy format for CSV files
+      const formatDateForCSV = (date: Date): string => {
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = String(date.getFullYear()).slice(-2); // Get last 2 digits of year
+        return `${day}/${month}/${year}`;
+      };
+
       return {
         totalDays,
-        startDate: startDate.toISOString().split('T')[0],
-        endDate: endDate.toISOString().split('T')[0],
+        startDate: formatDateForCSV(startDate),
+        endDate: formatDateForCSV(endDate),
       };
 
     } catch (error) {
@@ -5106,11 +5114,122 @@ export default function MapDrawingPage() {
               // Flatten all files for timeline display
               const allFiles = Object.values(groupedFiles).flat();
               
+              // Handler for clicking file names in timeline
+              const handleTimelineFileClick = async (file: PinFile & { pinLabel: string }) => {
+                try {
+                  // Determine file type from filename
+                  let fileType: 'GP' | 'FPOD' | 'Subcam' = 'FPOD';
+                  if (file.fileName.includes('GP')) {
+                    fileType = 'GP';
+                  } else if (file.fileName.includes('Subcam')) {
+                    fileType = 'Subcam';
+                  }
+                  
+                  // Download file content
+                  const fileContent = await fileStorageService.downloadFile(file.filePath);
+                  if (fileContent) {
+                    // Convert blob to File object
+                    const actualFile = new File([fileContent], file.fileName, {
+                      type: file.fileType || 'text/csv'
+                    });
+                    
+                    // Open modal with the downloaded file
+                    openMarineDeviceModal(fileType, [actualFile]);
+                  } else {
+                    toast({
+                      variant: "destructive",
+                      title: "Download Failed",
+                      description: "Could not download file from storage."
+                    });
+                  }
+                } catch (error) {
+                  console.error('Error downloading file:', error);
+                  toast({
+                    variant: "destructive",
+                    title: "Error",
+                    description: "Failed to open file."
+                  });
+                }
+              };
+              
+              // Calculate project summary statistics
+              const projectStats = {
+                totalFiles: allFiles.length,
+                fileTypes: Object.entries(groupedFiles).map(([type, files]) => ({
+                  type: type,
+                  count: files.length
+                })).filter(({ count }) => count > 0),
+                totalSize: allFiles.reduce((sum, file) => sum + (file.fileSize || 0), 0),
+                uniquePins: Array.from(new Set(allFiles.map(file => file.pinLabel))).length
+              };
+
               return (
                 <div className="space-y-6">
+                  {/* Project Summary Info Section */}
+                  <div className="bg-muted/20 rounded-lg p-4 border border-border/30">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Info className="h-5 w-5 text-muted-foreground" />
+                      <h3 className="text-sm font-semibold">Project Summary</h3>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {/* Total Files */}
+                      <div className="flex items-center gap-2">
+                        <Database className="h-4 w-4 text-blue-500" />
+                        <div className="text-xs">
+                          <div className="font-medium">{projectStats.totalFiles} Files</div>
+                          <div className="text-muted-foreground">Total Data Files</div>
+                        </div>
+                      </div>
+                      
+                      {/* Unique Pins */}
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-green-500" />
+                        <div className="text-xs">
+                          <div className="font-medium">{projectStats.uniquePins} Pins</div>
+                          <div className="text-muted-foreground">Data Sources</div>
+                        </div>
+                      </div>
+                      
+                      {/* Total Size */}
+                      <div className="flex items-center gap-2">
+                        <Upload className="h-4 w-4 text-orange-500" />
+                        <div className="text-xs">
+                          <div className="font-medium">{(projectStats.totalSize / (1024 * 1024)).toFixed(1)} MB</div>
+                          <div className="text-muted-foreground">Total Size</div>
+                        </div>
+                      </div>
+                      
+                      {/* File Types */}
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4 text-purple-500" />
+                        <div className="text-xs">
+                          <div className="font-medium">{projectStats.fileTypes.length} Types</div>
+                          <div className="text-muted-foreground">
+                            {projectStats.fileTypes.map(ft => ft.type).join(', ')}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* File Type Breakdown */}
+                    {projectStats.fileTypes.length > 1 && (
+                      <div className="mt-3 pt-3 border-t border-border/20">
+                        <div className="text-xs text-muted-foreground mb-2">File Type Distribution:</div>
+                        <div className="flex flex-wrap gap-2">
+                          {projectStats.fileTypes.map(({ type, count }, index) => (
+                            <div key={type} className="bg-muted px-2 py-1 rounded-sm text-xs">
+                              <span className="font-medium">{type}</span>: {count} files
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
                   <DataTimeline 
                     files={allFiles}
                     getFileDateRange={getFileDateRange}
+                    onFileClick={handleTimelineFileClick}
                   />
                 </div>
               );

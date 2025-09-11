@@ -99,6 +99,7 @@ export function PinPlotInstance({
               timeColumn={parseResult.summary.timeColumn}
               showYAxisLabels={true}
               fileName={files.length > 0 ? files[0].name : undefined}
+              dataSource="csv"
             />
           </div>
         ) : (

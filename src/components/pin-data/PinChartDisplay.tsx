@@ -6,7 +6,9 @@ import { format, parseISO, isValid } from 'date-fns';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { ChevronUp, ChevronDown, BarChart3, Info } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon } from "lucide-react";
 import { cn } from '@/lib/utils';
 import type { ParsedDataPoint } from './csvParser';
 
@@ -16,6 +18,7 @@ interface PinChartDisplayProps {
   timeColumn: string | null;
   showYAxisLabels?: boolean;
   fileName?: string;
+  dataSource?: 'csv' | 'marine';
 }
 
 // Color palette matching the marine data theme
@@ -29,17 +32,34 @@ interface ParameterState {
   color: string;
 }
 
-const formatDateTick = (timeValue: string | number): string => {
+const formatDateTick = (timeValue: string | number, dataSource?: 'csv' | 'marine'): string => {
   try {
     const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
     if (!isValid(dateObj)) return String(timeValue);
-    return format(dateObj, 'EEE, dd/MM');
+    // Use different formats based on data source
+    if (dataSource === 'marine') {
+      return format(dateObj, 'EEE, dd/MM');
+    } else {
+      // Default format for CSV data
+      return format(dateObj, 'dd/MM/yy');
+    }
   } catch (e) {
     return String(timeValue);
   }
 };
 
-export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = false, fileName }: PinChartDisplayProps) {
+export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = false, fileName, dataSource = 'csv' }: PinChartDisplayProps) {
+  // Toggle state for switching between chart and table view
+  const [showTable, setShowTable] = useState(false);
+  
+  // Get all parameters (for table view)
+  const allParameters = useMemo(() => {
+    if (data.length === 0) return [];
+    
+    const firstRow = data[0];
+    return Object.keys(firstRow).filter(key => key !== 'time' && key !== timeColumn);
+  }, [data, timeColumn]);
+  
   // Get all numeric parameters (excluding time)
   const numericParameters = useMemo(() => {
     if (data.length === 0) return [];
@@ -137,15 +157,75 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
   }
 
   return (
-    <div className="flex gap-3">
-      {/* Main Chart - Takes up most space */}
-      <div className="flex-1 space-y-3">
-        {/* File name at the top */}
+    <div className="space-y-3">
+      {/* Toggle Switch - at the top */}
+      <div className="flex items-center justify-between">
+        {/* File name */}
         {fileName && (
           <div className="text-xs text-muted-foreground font-medium">
             {fileName}
           </div>
         )}
+        
+        {/* View Toggle */}
+        <div className="flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Chart</span>
+          <Switch 
+            checked={showTable} 
+            onCheckedChange={setShowTable}
+            className="h-5 w-9"
+          />
+          <span className="text-xs text-muted-foreground">Table</span>
+          <TableIcon className="h-4 w-4 text-muted-foreground" />
+        </div>
+      </div>
+
+      {/* Chart or Table View */}
+      {showTable ? (
+        // Table View
+        <div className="h-96 overflow-auto border rounded-md">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Time</TableHead>
+                {allParameters.map(param => (
+                  <TableHead key={param} className="text-xs">{param}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.slice(0, 100).map((row, index) => (
+                <TableRow key={index}>
+                  <TableCell className="text-xs font-mono">
+                    {row.time ? formatDateTick(row.time, dataSource) : 'N/A'}
+                  </TableCell>
+                  {allParameters.map(param => (
+                    <TableCell key={param} className="text-xs">
+                      {row[param] !== null && row[param] !== undefined 
+                        ? (typeof row[param] === 'number' 
+                          ? Number(row[param]).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 3})
+                          : String(row[param])
+                        )
+                        : 'N/A'
+                      }
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {data.length > 100 && (
+            <div className="p-2 text-xs text-center text-muted-foreground border-t">
+              Showing first 100 of {data.length} rows
+            </div>
+          )}
+        </div>
+      ) : (
+        // Chart View (existing chart code)
+        <div className="flex gap-3">
+          {/* Main Chart - Takes up most space */}
+          <div className="flex-1 space-y-3">
       {visibleParameters.length > 0 && (
         <div className="h-64 w-full border rounded-md bg-card p-2">
           <ResponsiveContainer width="100%" height="100%">
@@ -156,7 +236,7 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
                 dataKey="time" 
                 tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }}
                 stroke="hsl(var(--border))"
-                tickFormatter={formatDateTick}
+                tickFormatter={(value) => formatDateTick(value, dataSource)}
               />
               
               <YAxis
@@ -224,7 +304,7 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
             <LineChart data={data} margin={{ top: 5, right: 15, left: 15, bottom: 0 }}>
               <XAxis
                 dataKey="time"
-                tickFormatter={formatDateTick}
+                tickFormatter={(value) => formatDateTick(value, dataSource)}
                 stroke="hsl(var(--muted-foreground))"
                 tick={{ fontSize: '0.6rem' }}
                 height={12}
@@ -247,64 +327,66 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
         </div>
       )}
 
-      </div>
+          </div>
 
-      {/* Parameter Controls - On the right side */}
-      <div className="w-64 space-y-2">
-        <p className="text-xs font-medium">Parameters ({visibleParameters.length} visible)</p>
-        
-        <div className="space-y-1 max-h-80 overflow-y-auto">
-          {numericParameters.map((parameter, index) => {
-            const state = parameterStates[parameter];
-            if (!state) return null;
+          {/* Parameter Controls - On the right side */}
+          <div className="w-64 space-y-2">
+            <p className="text-xs font-medium">Parameters ({visibleParameters.length} visible)</p>
+            
+            <div className="space-y-1 max-h-80 overflow-y-auto">
+              {numericParameters.map((parameter, index) => {
+                const state = parameterStates[parameter];
+                if (!state) return null;
 
-            return (
-              <div key={parameter} className="flex items-center justify-between p-1.5 rounded border bg-card/50">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <Checkbox
-                    id={`param-${parameter}`}
-                    checked={state.visible}
-                    onCheckedChange={() => toggleParameterVisibility(parameter)}
-                    className="h-3 w-3"
-                  />
-                  <Label 
-                    htmlFor={`param-${parameter}`} 
-                    className="text-xs cursor-pointer truncate flex-1"
-                    title={parameter}
-                  >
-                    {parameter}
-                  </Label>
-                  <div 
-                    className="w-3 h-3 rounded-full border"
-                    style={{ backgroundColor: `hsl(var(${state.color}))` }}
-                  />
-                </div>
-                
-                <div className="flex items-center">
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-5 w-5" 
-                    onClick={() => moveParameter(parameter, 'up')}
-                    disabled={index === 0}
-                  >
-                    <ChevronUp className="h-3 w-3" />
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-5 w-5" 
-                    onClick={() => moveParameter(parameter, 'down')}
-                    disabled={index === numericParameters.length - 1}
-                  >
-                    <ChevronDown className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+                return (
+                  <div key={parameter} className="flex items-center justify-between p-1.5 rounded border bg-card/50">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Checkbox
+                        id={`param-${parameter}`}
+                        checked={state.visible}
+                        onCheckedChange={() => toggleParameterVisibility(parameter)}
+                        className="h-3 w-3"
+                      />
+                      <Label 
+                        htmlFor={`param-${parameter}`} 
+                        className="text-xs cursor-pointer truncate flex-1"
+                        title={parameter}
+                      >
+                        {parameter}
+                      </Label>
+                      <div 
+                        className="w-3 h-3 rounded-full border"
+                        style={{ backgroundColor: `hsl(var(${state.color}))` }}
+                      />
+                    </div>
+                    
+                    <div className="flex items-center">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-5 w-5" 
+                        onClick={() => moveParameter(parameter, 'up')}
+                        disabled={index === 0}
+                      >
+                        <ChevronUp className="h-3 w-3" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-5 w-5" 
+                        onClick={() => moveParameter(parameter, 'down')}
+                        disabled={index === numericParameters.length - 1}
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

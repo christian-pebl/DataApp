@@ -15,6 +15,7 @@ interface DataTimelineProps {
     endDate: string | null;
     error?: string;
   }>;
+  onFileClick: (file: PinFile & { pinLabel: string }) => void;
 }
 
 interface FileWithDateRange {
@@ -41,14 +42,66 @@ const COLORS = [
   '#6366f1', // indigo
 ];
 
-// Helper function to parse yyyy-dd-mm format to proper Date
+// Shimmer loading component
+const Shimmer = ({ className }: { className?: string }) => (
+  <div className={`animate-shimmer bg-gradient-to-r from-muted/50 via-muted/80 to-muted/50 bg-[length:200%_100%] rounded ${className}`} />
+);
+
+// Skeleton row component for smooth loading
+const SkeletonTableRow = ({ index }: { index: number }) => (
+  <div 
+    className="grid grid-cols-12 gap-2 py-1.5 text-xs opacity-0 animate-[fadeIn_0.3s_ease-in-out_forwards]"
+    style={{ animationDelay: `${index * 50}ms` }}
+  >
+    {/* Pin indicator skeleton */}
+    <div className="col-span-1 flex items-center">
+      <Shimmer className="w-3 h-3" />
+    </div>
+    
+    {/* File name skeleton */}
+    <div className="col-span-5 flex items-center">
+      <Shimmer className="h-4 w-full max-w-[200px]" />
+    </div>
+    
+    {/* Date/Duration section skeleton */}
+    <div className="col-span-5 grid grid-cols-3 gap-1 bg-muted/5 px-2 py-1 rounded-sm">
+      <div className="flex items-center justify-center">
+        <Shimmer className="h-3 w-16" />
+      </div>
+      <div className="flex items-center justify-center">
+        <Shimmer className="h-3 w-16" />
+      </div>
+      <div className="flex items-center justify-center">
+        <Shimmer className="h-4 w-12" />
+      </div>
+    </div>
+    
+    {/* Info button skeleton */}
+    <div className="col-span-1 flex items-center">
+      <Shimmer className="h-4 w-4" />
+    </div>
+  </div>
+);
+
+// Helper function to parse various date formats to proper Date
 const parseCustomDate = (dateString: string): Date | null => {
   if (!dateString) return null;
   
+  // Handle dd/mm/yy format (from CSV files)
+  const slashParts = dateString.split('/');
+  if (slashParts.length === 3) {
+    const [day, month, year] = slashParts;
+    // Convert 2-digit year to 4-digit year (assume 20xx for years 00-99)
+    const fullYear = year.length === 2 ? `20${year}` : year;
+    const standardFormat = `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    const parsed = parseISO(standardFormat);
+    return isValid(parsed) ? parsed : null;
+  }
+  
   // Handle yyyy-dd-mm format by converting to yyyy-mm-dd
-  const parts = dateString.split('-');
-  if (parts.length === 3) {
-    const [year, day, month] = parts;
+  const dashParts = dateString.split('-');
+  if (dashParts.length === 3) {
+    const [year, day, month] = dashParts;
     const standardFormat = `${year}-${month}-${day}`;
     const parsed = parseISO(standardFormat);
     return isValid(parsed) ? parsed : null;
@@ -71,9 +124,11 @@ const getCorrectDuration = (startDateString: string | null, endDateString: strin
   return differenceInDays(endDate, startDate) + 1;
 };
 
-export function DataTimeline({ files, getFileDateRange }: DataTimelineProps) {
+export function DataTimeline({ files, getFileDateRange, onFileClick }: DataTimelineProps) {
   const [filesWithDates, setFilesWithDates] = useState<FileWithDateRange[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'timeline'>('table');
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
 
   // Create pin-based color mapping
   const pinColorMap = useMemo(() => {
@@ -85,8 +140,15 @@ export function DataTimeline({ files, getFileDateRange }: DataTimelineProps) {
     return colorMap;
   }, [files]);
 
-  // Initialize files with loading state
+  // Load date ranges for all files with smooth progress tracking
   useEffect(() => {
+    if (files.length === 0) {
+      setFilesWithDates([]);
+      setIsInitialLoad(false);
+      return;
+    }
+
+    // Initialize all files with loading state immediately
     const initialFiles = files.map(file => ({
       file,
       dateRange: {
@@ -97,39 +159,56 @@ export function DataTimeline({ files, getFileDateRange }: DataTimelineProps) {
       }
     }));
     setFilesWithDates(initialFiles);
-  }, [files]);
+    setIsInitialLoad(true);
+    setLoadingProgress(0);
 
-  // Load date ranges for all files
-  useEffect(() => {
     const loadDateRanges = async () => {
-      const updatedFiles = await Promise.all(
-        files.map(async (file, index) => {
-          try {
-            const result = await getFileDateRange(file);
-            return {
-              file,
-              dateRange: { ...result, loading: false }
-            };
-          } catch (error) {
-            return {
-              file,
-              dateRange: {
-                totalDays: null,
-                startDate: null,
-                endDate: null,
-                error: error instanceof Error ? error.message : 'Analysis failed',
-                loading: false
-              }
-            };
-          }
-        })
-      );
-      setFilesWithDates(updatedFiles);
+      const results: FileWithDateRange[] = [];
+      let completedCount = 0;
+
+      // Process files sequentially for smooth progress updates
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+          const result = await getFileDateRange(file);
+          results.push({
+            file,
+            dateRange: { ...result, loading: false }
+          });
+        } catch (error) {
+          results.push({
+            file,
+            dateRange: {
+              totalDays: null,
+              startDate: null,
+              endDate: null,
+              error: error instanceof Error ? error.message : 'Analysis failed',
+              loading: false
+            }
+          });
+        }
+        
+        completedCount++;
+        const progress = (completedCount / files.length) * 100;
+        setLoadingProgress(progress);
+        
+        // Update files with current progress - replace the loading file with completed
+        setFilesWithDates(prevFiles => {
+          const updated = [...prevFiles];
+          updated[i] = results[i];
+          return updated;
+        });
+        
+        // Small delay to make progress visible
+        if (completedCount < files.length) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
+      
+      setIsInitialLoad(false);
     };
 
-    if (files.length > 0) {
-      loadDateRanges();
-    }
+    loadDateRanges();
   }, [files, getFileDateRange]);
 
   // Calculate timeline bounds and headers
@@ -226,29 +305,8 @@ export function DataTimeline({ files, getFileDateRange }: DataTimelineProps) {
     const daysFromStart = differenceInDays(startDate, timelineData.minDate);
     const barDuration = differenceInDays(endDate, startDate) + 1;
 
-    // Update the dateRange totalDays if it doesn't match our calculation
-    if (file.dateRange.totalDays !== barDuration) {
-      console.log(`Correcting duration for ${file.file.fileName}: ${file.dateRange.totalDays} -> ${barDuration} days`);
-    }
-
     const left = Math.max(0, (daysFromStart / timelineData.totalDays) * 100);
     const width = Math.max(0.1, (barDuration / timelineData.totalDays) * 100);
-
-    // Debug logging for first few files
-    if (filesWithDates.indexOf(file) < 3) {
-      console.log(`Timeline metrics for ${file.file.fileName}:`, {
-        fileName: file.file.fileName,
-        pinLabel: file.file.pinLabel,
-        startDate: file.dateRange.startDate,
-        endDate: file.dateRange.endDate,
-        daysFromStart,
-        barDuration,
-        left: left.toFixed(1) + '%',
-        width: width.toFixed(1) + '%',
-        timelineMinDate: format(timelineData.minDate, 'yyyy-MM-dd'),
-        timelineTotalDays: timelineData.totalDays
-      });
-    }
 
     return { left, width };
   };
@@ -293,129 +351,190 @@ export function DataTimeline({ files, getFileDateRange }: DataTimelineProps) {
       {viewMode === 'table' && (
         <div className="space-y-1">
           {filesWithDates.length > 0 && (
-            <div className="bg-muted/20 rounded p-3">
+            <div className="bg-muted/20 rounded p-3 transition-all duration-300">
+              {/* Loading Progress Bar */}
+              {isInitialLoad && (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Analyzing date ranges...
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {Math.round(loadingProgress)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-muted/30 rounded-full h-1.5 overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-primary/60 to-primary transition-all duration-300 ease-out"
+                      style={{ width: `${loadingProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              
               {/* Table Header */}
               <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border/30 text-xs font-medium text-muted-foreground">
                 <div className="col-span-1">Pin</div>
-                <div className="col-span-4">File Name</div>
-                <div className="col-span-2">Start Date</div>
-                <div className="col-span-2">End Date</div>
-                <div className="col-span-2">Duration</div>
+                <div className="col-span-5">File Name</div>
+                {/* Grouped Date/Duration Section */}
+                <div className="col-span-5 grid grid-cols-3 gap-1 bg-muted/10 px-2 py-1 rounded-sm border border-border/20">
+                  <div className="text-center">Start Date</div>
+                  <div className="text-center">End Date</div>
+                  <div className="text-center">Duration</div>
+                </div>
                 <div className="col-span-1">Info</div>
               </div>
               
-              {/* Table Rows */}
-              {filesWithDates.map((fileWithDate, index) => {
-                const { file, dateRange } = fileWithDate;
-                const color = pinColorMap.get(file.pinLabel) || COLORS[0];
-                
-                return (
-                  <div key={`table-${file.id}-${index}`} className="grid grid-cols-12 gap-2 py-1.5 text-xs hover:bg-muted/30 rounded">
-                    {/* Pin indicator */}
-                    <div className="col-span-1 flex items-center">
+              {/* Table Content */}
+              <div className="space-y-0.5">
+                {isInitialLoad ? (
+                  // Show skeleton rows during initial load
+                  Array.from({ length: Math.min(files.length, 5) }, (_, index) => (
+                    <SkeletonTableRow key={`skeleton-${index}`} index={index} />
+                  ))
+                ) : (
+                  // Show actual data rows with fade-in
+                  filesWithDates.map((fileWithDate, index) => {
+                    const { file, dateRange } = fileWithDate;
+                    const color = pinColorMap.get(file.pinLabel) || COLORS[0];
+                    
+                    return (
                       <div 
-                        className="w-3 h-3 rounded-sm"
-                        style={{ backgroundColor: color }}
-                        title={file.pinLabel}
-                      />
-                    </div>
-                    
-                    {/* File name */}
-                    <div className="col-span-4 flex items-center">
-                      <span className="font-mono truncate" title={file.fileName}>
-                        {file.fileName.replace(/^FPOD_/, '')}
-                      </span>
-                    </div>
-                    
-                    {/* Start Date */}
-                    <div className="col-span-2 flex items-center">
-                      {dateRange.loading ? (
-                        <div className="h-2 w-2 animate-spin rounded-full border border-muted-foreground border-t-transparent" />
-                      ) : dateRange.error ? (
-                        <span className="text-muted-foreground">-</span>
-                      ) : (
-                        <span className="font-mono">{dateRange.startDate || '-'}</span>
-                      )}
-                    </div>
-                    
-                    {/* End Date */}
-                    <div className="col-span-2 flex items-center">
-                      {dateRange.loading ? (
-                        <div className="h-2 w-2 animate-spin rounded-full border border-muted-foreground border-t-transparent" />
-                      ) : dateRange.error ? (
-                        <span className="text-muted-foreground">-</span>
-                      ) : (
-                        <span className="font-mono">{dateRange.endDate || '-'}</span>
-                      )}
-                    </div>
-                    
-                    {/* Duration */}
-                    <div className="col-span-2 flex items-center">
-                      {(() => {
-                        const correctedDays = getCorrectDuration(dateRange.startDate, dateRange.endDate);
-                        return correctedDays !== null ? (
-                          <span className="bg-muted px-1.5 py-0.5 rounded text-xs">
-                            {correctedDays} days
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        );
-                      })()}
-                    </div>
-                    
-                    {/* Info button */}
-                    <div className="col-span-1 flex items-center">
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-muted">
-                            <Info className="h-3 w-3 text-muted-foreground" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-72">
-                          <div className="space-y-3">
-                            <div className="flex items-center gap-2">
-                              <div 
-                                className="w-3 h-3 rounded-sm"
-                                style={{ backgroundColor: color }}
-                              />
-                              <span className="text-sm font-medium">{file.pinLabel}</span>
-                            </div>
-                            <div className="space-y-2 text-xs">
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">File:</span>
-                                <span className="font-mono">{file.fileName}</span>
+                        key={`table-${file.id}-${index}`} 
+                        className="grid grid-cols-12 gap-2 py-1.5 text-xs hover:bg-muted/30 rounded opacity-0 animate-[fadeIn_0.4s_ease-in-out_forwards] transition-colors"
+                        style={{ animationDelay: `${index * 30}ms` }}
+                      >
+                        {/* Pin indicator */}
+                        <div className="col-span-1 flex items-center">
+                          <div 
+                            className="w-3 h-3 rounded-sm transition-transform hover:scale-110"
+                            style={{ backgroundColor: color }}
+                            title={file.pinLabel}
+                          />
+                        </div>
+                        
+                        {/* File name - Clickable */}
+                        <div className="col-span-5 flex items-center">
+                          <button 
+                            className="font-mono truncate text-left hover:text-primary hover:underline transition-colors cursor-pointer"
+                            title={`Click to open ${file.fileName}`}
+                            onClick={() => onFileClick(fileWithDate.file)}
+                          >
+                            {file.fileName.replace(/^FPOD_/, '')}
+                          </button>
+                        </div>
+                        
+                        {/* Grouped Date/Duration Section */}
+                        <div className="col-span-5 grid grid-cols-3 gap-1 bg-muted/5 px-2 py-1 rounded-sm">
+                          {/* Start Date */}
+                          <div className="flex items-center justify-center">
+                            {dateRange.loading ? (
+                              <div className="relative">
+                                <Shimmer className="h-3 w-16" />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <div className="h-1.5 w-1.5 bg-primary/60 rounded-full animate-pulse" />
+                                </div>
                               </div>
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Size:</span>
-                                <span>{file.fileSize ? `${(file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Uploaded:</span>
-                                <span>{format(new Date(file.uploadedAt), 'MMM d, yyyy')}</span>
-                              </div>
-                              {(() => {
-                                const correctedDays = getCorrectDuration(dateRange.startDate, dateRange.endDate);
-                                return correctedDays !== null && (
-                                  <>
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">Period:</span>
-                                      <span>{dateRange.startDate} to {dateRange.endDate}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">Duration:</span>
-                                      <span>{correctedDays} days</span>
-                                    </div>
-                                  </>
-                                );
-                              })()}
-                            </div>
+                            ) : dateRange.error ? (
+                              <span className="text-muted-foreground">-</span>
+                            ) : (
+                              <span className="font-mono text-center">{dateRange.startDate || '-'}</span>
+                            )}
                           </div>
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                  </div>
-                );
-              })}
+                          
+                          {/* End Date */}
+                          <div className="flex items-center justify-center">
+                            {dateRange.loading ? (
+                              <div className="relative">
+                                <Shimmer className="h-3 w-16" />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <div className="h-1.5 w-1.5 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                                </div>
+                              </div>
+                            ) : dateRange.error ? (
+                              <span className="text-muted-foreground">-</span>
+                            ) : (
+                              <span className="font-mono text-center">{dateRange.endDate || '-'}</span>
+                            )}
+                          </div>
+                          
+                          {/* Duration */}
+                          <div className="flex items-center justify-center">
+                            {dateRange.loading ? (
+                              <div className="relative">
+                                <Shimmer className="h-4 w-12 rounded" />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <div className="h-1.5 w-1.5 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                                </div>
+                              </div>
+                            ) : (() => {
+                              const correctedDays = getCorrectDuration(dateRange.startDate, dateRange.endDate);
+                              return correctedDays !== null ? (
+                                <span className="bg-primary/10 px-1.5 py-0.5 rounded text-xs font-medium text-center animate-[fadeIn_0.3s_ease-in-out]">
+                                  {correctedDays} days
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                        
+                        {/* Info button */}
+                        <div className="col-span-1 flex items-center">
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-muted transition-colors">
+                                <Info className="h-3 w-3 text-muted-foreground" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-72">
+                              <div className="space-y-3">
+                                <div className="flex items-center gap-2">
+                                  <div 
+                                    className="w-3 h-3 rounded-sm"
+                                    style={{ backgroundColor: color }}
+                                  />
+                                  <span className="text-sm font-medium">{file.pinLabel}</span>
+                                </div>
+                                <div className="space-y-2 text-xs">
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">File:</span>
+                                    <span className="font-mono">{file.fileName}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Size:</span>
+                                    <span>{file.fileSize ? `${(file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Uploaded:</span>
+                                    <span>{format(new Date(file.uploadedAt), 'MMM d, yyyy')}</span>
+                                  </div>
+                                  {(() => {
+                                    const correctedDays = getCorrectDuration(dateRange.startDate, dateRange.endDate);
+                                    return correctedDays !== null && (
+                                      <>
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">Period:</span>
+                                          <span>{dateRange.startDate} to {dateRange.endDate}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">Duration:</span>
+                                          <span>{correctedDays} days</span>
+                                        </div>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -445,13 +564,14 @@ export function DataTimeline({ files, getFileDateRange }: DataTimelineProps) {
                       title={`Pin: ${file.pinLabel}`}
                     />
                     
-                    {/* File name */}
-                    <span 
-                      className="text-xs font-mono flex-1 truncate" 
-                      title={file.fileName}
+                    {/* File name - Clickable */}
+                    <button
+                      className="text-xs font-mono flex-1 truncate text-left hover:text-primary hover:underline transition-colors cursor-pointer"
+                      title={`Click to open ${file.fileName}`}
+                      onClick={() => onFileClick(fileWithDate.file)}
                     >
                       {file.fileName.replace(/^FPOD_/, '')}
-                    </span>
+                    </button>
                     
                     {/* Duration badge */}
                     {(() => {
@@ -604,7 +724,7 @@ export function DataTimeline({ files, getFileDateRange }: DataTimelineProps) {
                       <div className="relative h-4 bg-muted/30 rounded">
                         {dateRange.loading ? (
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="h-2 w-2 animate-spin rounded-full border border-muted-foreground border-t-transparent" />
+                            <Shimmer className="h-2 w-8" />
                           </div>
                         ) : dateRange.error ? (
                           <div className="absolute inset-0 flex items-center justify-center">
@@ -647,12 +767,26 @@ export function DataTimeline({ files, getFileDateRange }: DataTimelineProps) {
         </div>
       )}
 
-      {/* Loading state */}
-      {filesWithDates.some(({ dateRange }) => dateRange.loading) && (
-        <div className="text-center py-2 text-muted-foreground">
-          <div className="flex items-center justify-center gap-1">
-            <div className="h-2 w-2 animate-spin rounded-full border border-muted-foreground border-t-transparent" />
-            <span className="text-xs">Analyzing...</span>
+      {/* Enhanced Loading state with file count */}
+      {filesWithDates.some(({ dateRange }) => dateRange.loading) && !isInitialLoad && (
+        <div className="text-center py-3 text-muted-foreground">
+          <div className="flex items-center justify-center gap-2">
+            <div className="relative">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+              <div className="absolute inset-0 h-4 w-4 animate-pulse rounded-full border border-primary/20" />
+            </div>
+            <div className="text-sm">
+              <span className="font-medium">Processing files...</span>
+              <br />
+              <span className="text-xs text-muted-foreground/80">
+                {(() => {
+                  const totalFiles = filesWithDates.length;
+                  const loadingFiles = filesWithDates.filter(({ dateRange }) => dateRange.loading).length;
+                  const completedFiles = totalFiles - loadingFiles;
+                  return `${completedFiles} of ${totalFiles} files completed`;
+                })()}
+              </span>
+            </div>
           </div>
         </div>
       )}
