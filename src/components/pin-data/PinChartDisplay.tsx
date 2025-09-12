@@ -40,8 +40,8 @@ const formatDateTick = (timeValue: string | number, dataSource?: 'csv' | 'marine
     if (dataSource === 'marine') {
       return format(dateObj, 'EEE, dd/MM');
     } else {
-      // Default format for CSV data
-      return format(dateObj, 'dd/MM/yy');
+      // Format for CSV data - using DD/MM for chart readability
+      return format(dateObj, 'dd/MM');
     }
   } catch (e) {
     return String(timeValue);
@@ -198,7 +198,7 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
               {data.slice(0, 100).map((row, index) => (
                 <TableRow key={index}>
                   <TableCell className="text-xs font-mono">
-                    {row.time ? formatDateTick(row.time, dataSource) : 'N/A'}
+                    {row.time || 'N/A'}
                   </TableCell>
                   {allParameters.map(param => (
                     <TableCell key={param} className="text-xs">

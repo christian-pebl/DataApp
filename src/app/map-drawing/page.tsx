@@ -1612,17 +1612,31 @@ export default function MapDrawingPage() {
       // Parse CSV header
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
       
-      // Find date/time columns
-      const dateTimeColumns = headers.map((header, index) => ({ header, index }))
+      // Find date/time columns (case-insensitive)
+      const dateTimeColumns = headers.map((header, index) => ({ 
+        header: header.toLowerCase(), 
+        originalHeader: header,
+        index 
+      }))
         .filter(({ header }) => 
-          header.includes('date') || 
-          header.includes('time') || 
-          header.includes('day') || 
-          header.includes('datetime') ||
           header.includes('timestamp') ||
+          header.includes('datetime') ||
+          header.includes('time') || 
+          header.includes('date') || 
+          header.includes('day') || 
           header.includes('year') ||
           header.includes('month')
-        );
+        )
+        .sort((a, b) => {
+          // Prioritize timestamp and datetime columns for ISO format
+          const aPriority = a.header.includes('timestamp') ? 0 : 
+                           a.header.includes('datetime') ? 1 : 
+                           a.header.includes('time') ? 2 : 3;
+          const bPriority = b.header.includes('timestamp') ? 0 : 
+                           b.header.includes('datetime') ? 1 : 
+                           b.header.includes('time') ? 2 : 3;
+          return aPriority - bPriority;
+        });
 
       if (dateTimeColumns.length === 0) {
         return {
@@ -1671,18 +1685,33 @@ export default function MapDrawingPage() {
       // Calculate total days
       const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
-      // Format dates in dd/mm/yy format for CSV files
+      // Format dates in DD/MM/YYYY format for CSV files
       const formatDateForCSV = (date: Date): string => {
         const day = String(date.getDate()).padStart(2, '0');
         const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = String(date.getFullYear()).slice(-2); // Get last 2 digits of year
+        const year = String(date.getFullYear()); // Full 4-digit year
         return `${day}/${month}/${year}`;
       };
 
+      const formattedStartDate = formatDateForCSV(startDate);
+      const formattedEndDate = formatDateForCSV(endDate);
+      
+      // Minimal debugging - only log if there seems to be an issue
+      if (totalDays > 365 || totalDays < 1) {
+        console.warn('⚠️ Unusual duration detected:', {
+          fileName: file.fileName,
+          startDate: formattedStartDate,
+          endDate: formattedEndDate,
+          totalDays,
+          rawStart: startDate.toISOString(),
+          rawEnd: endDate.toISOString()
+        });
+      }
+
       return {
         totalDays,
-        startDate: formatDateForCSV(startDate),
-        endDate: formatDateForCSV(endDate),
+        startDate: formattedStartDate,
+        endDate: formattedEndDate,
       };
 
     } catch (error) {
@@ -1701,6 +1730,23 @@ export default function MapDrawingPage() {
     }
   }, []);
 
+  // Self-test on page load to verify our date parsing
+  React.useEffect(() => {
+    const testISO = "2024-08-01T00:00:00.000Z";
+    const testDate = new Date(testISO);
+    const formatDateForCSV = (date: Date): string => {
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = String(date.getFullYear());
+      return `${day}/${month}/${year}`;
+    };
+    console.log('🧪 Date parsing self-test:');
+    console.log('Input ISO:', testISO);
+    console.log('Parsed Date:', testDate.toISOString());
+    console.log('Formatted Output:', formatDateForCSV(testDate));
+    console.log('Expected: 01/08/2024');
+  }, []);
+
   // Parse various date formats commonly found in CSV files
   const parseCSVDate = (value: string): Date | null => {
     if (!value || value.trim() === '') return null;
@@ -1709,8 +1755,21 @@ export default function MapDrawingPage() {
     
     // Try different date parsing strategies
     const parsers = [
-      // ISO format (2023-06-15, 2023-06-15T10:30:00)
-      () => new Date(cleanValue),
+      // ISO format with Z suffix (2024-06-08T12:00:00.000Z)
+      () => {
+        // First try direct ISO parsing which should handle the Z suffix
+        const date = new Date(cleanValue);
+        return isNaN(date.getTime()) ? null : date;
+      },
+      
+      // ISO format without Z (2023-06-15T10:30:00, 2023-06-15)
+      () => {
+        if (cleanValue.includes('T') && !cleanValue.includes('Z')) {
+          const date = new Date(cleanValue + 'Z'); // Add Z to treat as UTC
+          return isNaN(date.getTime()) ? null : date;
+        }
+        return null;
+      },
       
       // Unix timestamp (seconds)
       () => {
@@ -5230,6 +5289,49 @@ export default function MapDrawingPage() {
                     files={allFiles}
                     getFileDateRange={getFileDateRange}
                     onFileClick={handleTimelineFileClick}
+                    onDeleteFile={async (file) => {
+                      console.log('Timeline delete request for file:', file.id, file.fileName);
+                      
+                      try {
+                        console.log('Calling deleteFileSimple with ID:', file.id);
+                        const success = await fileStorageService.deleteFileSimple(file.id);
+                        console.log('Delete result from service:', success);
+                        
+                        if (success) {
+                          console.log('Delete successful, updating UI...');
+                          // Find which pin this file belongs to and update that pin's metadata
+                          const pinId = Object.keys(pinFileMetadata).find(pinId => 
+                            pinFileMetadata[pinId]?.some(f => f.id === file.id)
+                          );
+                          
+                          if (pinId) {
+                            // Update the state immediately to remove the file from UI
+                            setPinFileMetadata(prev => ({
+                              ...prev,
+                              [pinId]: prev[pinId]?.filter(f => f.id !== file.id) || []
+                            }));
+                          }
+                          
+                          toast({
+                            title: "File Deleted",
+                            description: `${file.fileName} has been deleted.`
+                          });
+                        } else {
+                          toast({
+                            variant: "destructive",
+                            title: "Delete Failed",
+                            description: "Failed to delete the file. Please try again."
+                          });
+                        }
+                      } catch (error) {
+                        console.error('Delete file error:', error);
+                        toast({
+                          variant: "destructive",
+                          title: "Delete Error",
+                          description: "An error occurred while deleting the file."
+                        });
+                      }
+                    }}
                   />
                 </div>
               );

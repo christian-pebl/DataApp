@@ -40,6 +40,15 @@ body {
   z-index: 10001 !important;
 }
 
+/* Data Timeline Info Popover - Ensure it appears above the timeline */
+[data-radix-popover-content] {
+  z-index: 10002 !important;
+}
+
+.data-timeline-popover {
+  z-index: 10002 !important;
+}
+
 .pebl-subheading {
   font-family: 'Futura', 'Trebuchet MS', 'Avenir Next', 'Helvetica Neue', Arial, sans-serif;
   font-weight: bold;
