@@ -251,6 +251,7 @@ export interface Pin {
   lng: number
   label: string
   labelVisible?: boolean
+  objectVisible?: boolean
   notes?: string
   projectId?: string
   tagIds?: string[]
@@ -265,6 +266,7 @@ export interface Line {
   path: { lat: number; lng: number }[]
   label: string
   labelVisible?: boolean
+  objectVisible?: boolean
   notes?: string
   projectId?: string
   tagIds?: string[]
@@ -277,6 +279,7 @@ export interface Area {
   path: { lat: number; lng: number }[]
   label: string
   labelVisible?: boolean
+  objectVisible?: boolean
   notes?: string
   fillVisible?: boolean
   projectId?: string

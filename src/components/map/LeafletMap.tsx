@@ -14,9 +14,9 @@ if (typeof window !== 'undefined') {
 
 type Project = { id: string; name: string; description?: string; createdAt: any; };
 type Tag = { id: string; name: string; color: string; projectId: string; };
-type Pin = { id: string; lat: number; lng: number; label: string; labelVisible?: boolean; notes?: string; projectId?: string; tagIds?: string[]; };
-type Line = { id:string; path: { lat: number; lng: number }[]; label: string; labelVisible?: boolean; notes?: string; projectId?: string; tagIds?: string[]; };
-type Area = { id: string; path: { lat: number; lng: number }[]; label: string; labelVisible?: boolean; notes?: string; fillVisible?: boolean; projectId?: string; tagIds?: string[]; };
+type Pin = { id: string; lat: number; lng: number; label: string; labelVisible?: boolean; objectVisible?: boolean; notes?: string; projectId?: string; tagIds?: string[]; };
+type Line = { id:string; path: { lat: number; lng: number }[]; label: string; labelVisible?: boolean; objectVisible?: boolean; notes?: string; projectId?: string; tagIds?: string[]; };
+type Area = { id: string; path: { lat: number; lng: number }[]; label: string; labelVisible?: boolean; objectVisible?: boolean; notes?: string; fillVisible?: boolean; projectId?: string; tagIds?: string[]; };
 
 interface LeafletMapProps {
     mapRef: React.MutableRefObject<LeafletMap | null>;
@@ -71,6 +71,13 @@ interface LeafletMapProps {
     disableDefaultPopups?: boolean;
     forceUseEditCallback?: boolean;
     popupMode?: 'none' | 'default';
+    // Line Edit Mode props
+    lineEditMode?: 'none' | 'endpoints';
+    editingLineId?: string | null;
+    tempLinePath?: { lat: number; lng: number }[] | null;
+    onLinePointDrag?: (pointIndex: number, newPosition: LatLng) => void;
+    onLineEditComplete?: () => void;
+    onLineEditCancel?: () => void;
 }
 
 // Coordinate and distance conversion helpers
@@ -157,8 +164,8 @@ function calculatePolygonArea(path: { lat: number; lng: number }[]): number {
     return areaSqMeters / 10000; // Convert to hectares
 }
 
-const LeafletMap = ({ 
-    mapRef, center, zoom, pins, lines, areas, projects, tags, settings, currentLocation, 
+const LeafletMap = ({
+    mapRef, center, zoom, pins, lines, areas, projects, tags, settings, currentLocation,
     onLocationFound, onLocationError, onMove, isDrawingLine, lineStartPoint, currentMousePosition,
     isDrawingArea, onMapClick, onMapMouseMove, pendingAreaPath, areaStartPoint, currentAreaEndPoint,
     pendingPin, onPinSave, onPinCancel,
@@ -167,7 +174,8 @@ const LeafletMap = ({
     onUpdatePin, onDeletePin, onUpdateLine, onDeleteLine, onUpdateArea, onDeleteArea, onToggleLabel, onToggleFill,
     itemToEdit, onEditItem, activeProjectId, projectVisibility,
     editingGeometry, onEditGeometry, onUpdateGeometry,
-    showPopups = true, useEditPanel = false, disableDefaultPopups = false, forceUseEditCallback = false, popupMode = 'default'
+    showPopups = true, useEditPanel = false, disableDefaultPopups = false, forceUseEditCallback = false, popupMode = 'default',
+    lineEditMode = 'none', editingLineId = null, tempLinePath = null, onLinePointDrag, onLineEditComplete, onLineEditCancel
 }: LeafletMapProps) => {
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const pinLayerRef = useRef<LayerGroup | null>(null);
@@ -285,9 +293,10 @@ const LeafletMap = ({
             const layer = pinLayerRef.current;
             layer.clearLayers();
 
-            pins.filter(pin => typeof pin.lat === 'number' && typeof pin.lng === 'number' && 
+            pins.filter(pin => typeof pin.lat === 'number' && typeof pin.lng === 'number' &&
                                !isNaN(pin.lat) && !isNaN(pin.lng) &&
-                               isFinite(pin.lat) && isFinite(pin.lng)).forEach(pin => {
+                               isFinite(pin.lat) && isFinite(pin.lng) &&
+                               pin.objectVisible !== false).forEach(pin => {
                 const color = pin.color || '#3b82f6'; // Use pin color or default blue
                 const size = pin.size || 6; // Use pin size or default medium
                 const markerIcon = createCustomIcon(color, size);
@@ -377,7 +386,7 @@ const LeafletMap = ({
             const layer = lineLayerRef.current;
             layer.clearLayers();
 
-            lines.forEach(line => {
+            lines.filter(line => line.objectVisible !== false).forEach(line => {
                 const lineCoords = line.path
                     .filter(p => typeof p.lat === 'number' && typeof p.lng === 'number' && 
                                 !isNaN(p.lat) && !isNaN(p.lng) &&
@@ -513,13 +522,118 @@ const LeafletMap = ({
         }
     }, [lines, onEditItem, useEditPanel, disableDefaultPopups, forceUseEditCallback, popupMode]);
 
+    // Line Edit Mode
+    useEffect(() => {
+        if (!mapRef.current || !L || lineEditMode === 'none' || !editingLineId || !tempLinePath) {
+            return;
+        }
+
+        console.log('🎯 Line Edit Mode: Setting up draggable markers for line', editingLineId);
+        console.log('🎯 Initial temp path:', tempLinePath);
+
+        const editMarkers: Marker[] = [];
+        let tempLineLayer: Polyline | null = null;
+
+        // Create a mutable copy of the path for real-time updates
+        const mutablePath = [...tempLinePath];
+
+        // Draw the temporary line first
+        tempLineLayer = L.polyline(
+            mutablePath.map(p => [p.lat, p.lng] as [number, number]),
+            {
+                color: '#3b82f6',
+                weight: 4,
+                opacity: 0.6,
+                dashArray: '10, 5'
+            }
+        ).addTo(mapRef.current);
+
+        // Function to update the temporary line
+        const updateTempLine = (index: number, newPos: LatLng) => {
+            mutablePath[index] = {
+                lat: newPos.lat,
+                lng: newPos.lng
+            };
+
+            if (tempLineLayer) {
+                tempLineLayer.setLatLngs(mutablePath.map(p => [p.lat, p.lng] as [number, number]));
+            }
+        };
+
+        // Create draggable markers for endpoints
+        tempLinePath.forEach((point, index) => {
+            // Only show endpoints for now
+            if (index === 0 || index === tempLinePath.length - 1) {
+                const marker = L.marker([point.lat, point.lng], {
+                    draggable: true,
+                    icon: L.divIcon({
+                        className: 'line-edit-point',
+                        html: `<div style="width: 16px; height: 16px; background: #3b82f6; border: 3px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3); cursor: grab;"></div>`,
+                        iconSize: [16, 16],
+                        iconAnchor: [8, 8]
+                    }),
+                    // Important: Keep marker on top
+                    zIndexOffset: 1000
+                }).addTo(mapRef.current!);
+
+                let isDragging = false;
+
+                marker.on('dragstart', (e: any) => {
+                    isDragging = true;
+                    console.log(`🎯 Started dragging point ${index} at:`, e.target.getLatLng());
+                });
+
+                marker.on('drag', (e: any) => {
+                    if (!isDragging) return;
+
+                    const newPos = e.target.getLatLng();
+                    // console.log(`🎯 Dragging point ${index} to:`, newPos); // Commented out to reduce console spam
+
+                    // Update the line visualization immediately
+                    updateTempLine(index, newPos);
+
+                    // Throttle the parent handler call
+                    if (onLinePointDrag) {
+                        onLinePointDrag(index, newPos);
+                    }
+                });
+
+                marker.on('dragend', (e: any) => {
+                    isDragging = false;
+                    const finalPos = e.target.getLatLng();
+                    console.log(`🎯 Finished dragging point ${index} at:`, finalPos);
+
+                    // Final update to ensure sync
+                    updateTempLine(index, finalPos);
+
+                    if (onLinePointDrag) {
+                        onLinePointDrag(index, finalPos);
+                    }
+                });
+
+                editMarkers.push(marker);
+            }
+        });
+
+        console.log(`🎯 Line Edit Mode: Created ${editMarkers.length} draggable markers`);
+
+        return () => {
+            console.log('🎯 Line Edit Mode: Cleaning up');
+            // Cleanup
+            editMarkers.forEach(marker => marker.remove());
+            if (tempLineLayer) {
+                tempLineLayer.remove();
+            }
+        };
+    }, [lineEditMode, editingLineId, tempLinePath, onLinePointDrag]);
+
     // Render areas
     useEffect(() => {
         if (areaLayerRef.current) {
             const layer = areaLayerRef.current;
             layer.clearLayers();
 
-            areas.forEach(area => {
+            areas.filter(area => area.objectVisible !== false).forEach(area => {
                 const areaCoords = area.path
                     .filter(p => typeof p.lat === 'number' && typeof p.lng === 'number' && 
                                 !isNaN(p.lat) && !isNaN(p.lng) &&

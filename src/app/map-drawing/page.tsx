@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X, Search, CheckCircle2, XCircle, ChevronUp, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle } from 'lucide-react';
+import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X, Search, CheckCircle2, XCircle, ChevronUp, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle, Move3D } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line as RechartsLine, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, Brush, LabelList, ReferenceLine } from 'recharts';
 import type { LucideIcon } from "lucide-react";
 import { Checkbox } from '@/components/ui/checkbox';
@@ -44,6 +44,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useMapView } from '@/hooks/use-map-view';
 import { useSettings } from '@/hooks/use-settings';
 import { useMapData } from '@/hooks/use-map-data';
@@ -374,6 +380,9 @@ export default function MapDrawingPage() {
     createArea: createAreaData,
     updateArea: updateAreaData,
     deleteArea: deleteAreaData,
+    batchUpdatePins,
+    batchUpdateLines,
+    batchUpdateAreas,
     clearAll: clearAllData,
     forceSync,
     migrateToDatabase
@@ -471,6 +480,12 @@ export default function MapDrawingPage() {
   const [showMarineDeviceModal, setShowMarineDeviceModal] = useState(false);
   const [selectedFileType, setSelectedFileType] = useState<'GP' | 'FPOD' | 'Subcam' | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+
+  // Line Edit Mode State
+  const [lineEditMode, setLineEditMode] = useState<'none' | 'endpoints'>('none');
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
+  const [tempLinePath, setTempLinePath] = useState<{ lat: number; lng: number }[] | null>(null);
+  const [draggedPointIndex, setDraggedPointIndex] = useState<number | null>(null);
   
   // Dynamic projects state (combines hardcoded + database projects)
   const [dynamicProjects, setDynamicProjects] = useState<Record<string, { name: string; lat?: number; lon?: number; isDynamic?: boolean }>>(PROJECT_LOCATIONS);
@@ -1250,10 +1265,100 @@ export default function MapDrawingPage() {
       }
     } catch (error) {
       console.error('Error toggling fill:', error);
-      toast({ 
+      toast({
         variant: "destructive",
-        title: "Error", 
-        description: "Failed to toggle fill visibility." 
+        title: "Error",
+        description: "Failed to toggle fill visibility."
+      });
+    }
+  };
+
+  const handleToggleObjectVisibility = async (id: string, type: 'pin' | 'line' | 'area') => {
+    try {
+      if (type === 'pin') {
+        const pin = pins.find(p => p.id === id);
+        if (pin) {
+          await updatePinData(id, { objectVisible: !pin.objectVisible });
+        }
+      } else if (type === 'line') {
+        const line = lines.find(l => l.id === id);
+        if (line) {
+          await updateLineData(id, { objectVisible: !line.objectVisible });
+        }
+      } else if (type === 'area') {
+        const area = areas.find(a => a.id === id);
+        if (area) {
+          await updateAreaData(id, { objectVisible: !area.objectVisible });
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling object visibility:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to toggle object visibility."
+      });
+    }
+  };
+
+  const handleToggleAllLabels = async (projectId: string, visible: boolean) => {
+    try {
+      const projectPins = pins.filter(p => p.projectId === projectId);
+      const projectLines = lines.filter(l => l.projectId === projectId);
+      const projectAreas = areas.filter(a => a.projectId === projectId);
+
+      const pinIds = projectPins.map(p => p.id);
+      const lineIds = projectLines.map(l => l.id);
+      const areaIds = projectAreas.map(a => a.id);
+
+      // Batch update all objects in parallel
+      await Promise.all([
+        pinIds.length > 0 && batchUpdatePins(pinIds, { labelVisible: visible }),
+        lineIds.length > 0 && batchUpdateLines(lineIds, { labelVisible: visible }),
+        areaIds.length > 0 && batchUpdateAreas(areaIds, { labelVisible: visible })
+      ]);
+
+      toast({
+        title: visible ? "Labels Shown" : "Labels Hidden",
+        description: `All labels ${visible ? 'shown' : 'hidden'} for this project.`
+      });
+    } catch (error) {
+      console.error('Error toggling all labels:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to toggle all labels."
+      });
+    }
+  };
+
+  const handleToggleAllObjects = async (projectId: string, visible: boolean) => {
+    try {
+      const projectPins = pins.filter(p => p.projectId === projectId);
+      const projectLines = lines.filter(l => l.projectId === projectId);
+      const projectAreas = areas.filter(a => a.projectId === projectId);
+
+      const pinIds = projectPins.map(p => p.id);
+      const lineIds = projectLines.map(l => l.id);
+      const areaIds = projectAreas.map(a => a.id);
+
+      // Batch update all objects in parallel
+      await Promise.all([
+        pinIds.length > 0 && batchUpdatePins(pinIds, { objectVisible: visible }),
+        lineIds.length > 0 && batchUpdateLines(lineIds, { objectVisible: visible }),
+        areaIds.length > 0 && batchUpdateAreas(areaIds, { objectVisible: visible })
+      ]);
+
+      toast({
+        title: visible ? "Objects Shown" : "Objects Hidden",
+        description: `All objects ${visible ? 'shown' : 'hidden'} for this project.`
+      });
+    } catch (error) {
+      console.error('Error toggling all objects:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to toggle all objects."
       });
     }
   };
@@ -1393,13 +1498,23 @@ export default function MapDrawingPage() {
 
   const zoomIn = useCallback(() => {
     if (mapRef.current) {
-      mapRef.current.zoomIn();
+      const currentZoom = mapRef.current.getZoom();
+      const newZoom = currentZoom + 0.5; // Smaller increment (was 1.0 by default)
+      mapRef.current.setView(mapRef.current.getCenter(), newZoom, {
+        animate: true,
+        duration: 0.25
+      });
     }
   }, []);
 
   const zoomOut = useCallback(() => {
     if (mapRef.current) {
-      mapRef.current.zoomOut();
+      const currentZoom = mapRef.current.getZoom();
+      const newZoom = currentZoom - 0.5; // Smaller decrement (was 1.0 by default)
+      mapRef.current.setView(mapRef.current.getCenter(), newZoom, {
+        animate: true,
+        duration: 0.25
+      });
     }
   }, []);
 
@@ -2262,6 +2377,69 @@ export default function MapDrawingPage() {
     setEditingProjectId(null); // Reset project assignment
   };
 
+  // Line Edit Mode Handlers
+  const handleLinePointDrag = (pointIndex: number, newPosition: LatLng) => {
+    if (!tempLinePath) return;
+
+    console.log(`📍 handleLinePointDrag: Updating point ${pointIndex} to:`, newPosition);
+
+    setTempLinePath(prevPath => {
+      if (!prevPath) return prevPath;
+      const updatedPath = [...prevPath];
+      updatedPath[pointIndex] = {
+        lat: newPosition.lat,
+        lng: newPosition.lng
+      };
+      console.log(`📍 Updated path:`, updatedPath);
+      return updatedPath;
+    });
+  };
+
+  const handleLineEditComplete = async () => {
+    if (!editingLineId || !tempLinePath) return;
+
+    console.log('💾 Saving line with new path:', tempLinePath);
+    console.log('💾 Line ID:', editingLineId);
+
+    try {
+      // Update the line with new path
+      const updateData = { path: tempLinePath };
+      console.log('💾 Update data being sent:', updateData);
+
+      await updateLineData(editingLineId, updateData);
+
+      // Update local state
+      setLines(prev => prev.map(line =>
+        line.id === editingLineId
+          ? { ...line, path: tempLinePath }
+          : line
+      ));
+
+      // Reset edit mode
+      setLineEditMode('none');
+      setEditingLineId(null);
+      setTempLinePath(null);
+
+      toast({
+        title: 'Line location updated',
+        description: 'The line position has been saved.'
+      });
+    } catch (error) {
+      console.error('💾 Error saving line:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to update line',
+        description: 'Could not save the line location.'
+      });
+    }
+  };
+
+  const handleLineEditCancel = () => {
+    setLineEditMode('none');
+    setEditingLineId(null);
+    setTempLinePath(null);
+  };
+
   // Move pin to current map center (crosshair position)
   const handleMovePinToCenter = async () => {
     if (itemToEdit && 'lat' in itemToEdit && mapRef.current) {
@@ -2836,6 +3014,12 @@ export default function MapDrawingPage() {
             disableDefaultPopups={true}
             forceUseEditCallback={true}
             popupMode="none"
+            lineEditMode={lineEditMode}
+            editingLineId={editingLineId}
+            tempLinePath={tempLinePath}
+            onLinePointDrag={handleLinePointDrag}
+            onLineEditComplete={handleLineEditComplete}
+            onLineEditCancel={handleLineEditCancel}
           />
 
           {/* Center Crosshairs */}
@@ -2847,6 +3031,28 @@ export default function MapDrawingPage() {
             {/* Center dot for perfect accuracy */}
             <div className="absolute w-1 h-1 bg-red-500 rounded-full -translate-x-1/2 -translate-y-1/2 shadow-lg shadow-black/50"></div>
           </div>
+
+          {/* Line Edit Mode Toolbar */}
+          {lineEditMode !== 'none' && (
+            <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-[1000] bg-background/95 border rounded-lg shadow-lg p-2 flex gap-2">
+              <Button
+                onClick={handleLineEditComplete}
+                size="sm"
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <Check className="h-4 w-4 mr-1" />
+                Save Changes
+              </Button>
+              <Button
+                onClick={handleLineEditCancel}
+                size="sm"
+                variant="outline"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Cancel
+              </Button>
+            </div>
+          )}
           
           {/* Main Menu Button */}
           <div className="absolute top-8 left-4 z-[1000]">
@@ -2924,15 +3130,50 @@ export default function MapDrawingPage() {
                     
                     <div className="space-y-2">
                       <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleStartEdit}
-                          className="flex-1 h-8"
-                        >
-                          <Edit3 className="h-3 w-3 mr-1" />
-                          Edit
-                        </Button>
+                        {/* Edit button - with dropdown for lines */}
+                        {itemToEdit && 'path' in itemToEdit && !('fillVisible' in itemToEdit) ? (
+                          // Line - show dropdown with Edit Location option
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 h-8"
+                              >
+                                <Edit3 className="h-3 w-3 mr-1" />
+                                Edit
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="z-[1100]">
+                              <DropdownMenuItem onClick={handleStartEdit}>
+                                <Edit3 className="h-3 w-3 mr-2" />
+                                Edit Properties
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setLineEditMode('endpoints');
+                                  setEditingLineId(itemToEdit.id);
+                                  setTempLinePath([...itemToEdit.path]);
+                                  setItemToEdit(null); // Close properties panel
+                                }}
+                              >
+                                <Move3D className="h-3 w-3 mr-2" />
+                                Edit Location
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : (
+                          // Pin or Area - regular edit button
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleStartEdit}
+                            className="flex-1 h-8"
+                          >
+                            <Edit3 className="h-3 w-3 mr-1" />
+                            Edit
+                          </Button>
+                        )}
                         
                         {/* Share button - only for pins */}
                         {itemToEdit && 'lat' in itemToEdit && (
@@ -4402,6 +4643,58 @@ export default function MapDrawingPage() {
                                   <Database className="h-3 w-3 mr-1" />
                                   Project Data
                                 </Button>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const allLabelsVisible = [...projectPins, ...projectLines, ...projectAreas]
+                                            .every(obj => obj.labelVisible !== false);
+                                          handleToggleAllLabels(activeProjectId, !allLabelsVisible);
+                                        }}
+                                      >
+                                        {(() => {
+                                          const allLabelsVisible = [...projectPins, ...projectLines, ...projectAreas]
+                                            .every(obj => obj.labelVisible !== false);
+                                          return allLabelsVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />;
+                                        })()}
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right">
+                                      <p>Toggle all labels</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const allObjectsVisible = [...projectPins, ...projectLines, ...projectAreas]
+                                            .every(obj => obj.objectVisible !== false);
+                                          handleToggleAllObjects(activeProjectId, !allObjectsVisible);
+                                        }}
+                                      >
+                                        {(() => {
+                                          const allObjectsVisible = [...projectPins, ...projectLines, ...projectAreas]
+                                            .every(obj => obj.objectVisible !== false);
+                                          return allObjectsVisible ? <MapPin className="h-3 w-3" /> : <MapPin className="h-3 w-3 opacity-40" />;
+                                        })()}
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right">
+                                      <p>Toggle all objects</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -4437,19 +4730,12 @@ export default function MapDrawingPage() {
                                     ...projectLines.map(line => ({ ...line, type: 'line' as const })),
                                     ...projectAreas.map(area => ({ ...area, type: 'area' as const }))
                                   ].map(object => (
-                                    <Button
+                                    <div
                                       key={object.id}
-                                      variant="ghost"
-                                      onClick={() => {
-                                        // Set selected state for visual feedback
-                                        setSelectedObjectId(selectedObjectId === object.id ? null : object.id);
-                                        // Trigger the same behavior as clicking on the map object
-                                        setItemToEdit(object);
-                                      }}
                                       className={`w-full flex items-center gap-2 p-2 rounded text-xs transition-all ${
-                                        selectedObjectId === object.id 
-                                          ? 'bg-accent/20 border border-accent/40 text-accent-foreground' 
-                                          : 'bg-muted/30 hover:bg-muted/50'
+                                        selectedObjectId === object.id
+                                          ? 'bg-accent/20 border border-accent/40'
+                                          : 'bg-muted/30'
                                       }`}
                                     >
                                       {object.type === 'pin' && (
@@ -4461,18 +4747,76 @@ export default function MapDrawingPage() {
                                       {object.type === 'area' && (
                                         <div className="w-3 h-3 bg-red-500/30 border border-red-500 flex-shrink-0"></div>
                                       )}
-                                      <span className="truncate flex-1 text-left">{object.label || `Unnamed ${object.type.charAt(0).toUpperCase() + object.type.slice(1)}`}</span>
-                                      
-                                      {/* Data indicator for pins with uploaded files */}
-                                      {object.type === 'pin' && (pinFiles[object.id]?.length > 0 || pinFileMetadata[object.id]?.length > 0) && (
-                                        <div className="flex items-center gap-1 ml-auto">
-                                          <Database className="h-3 w-3 text-accent" />
-                                          <span className="text-xs text-accent font-medium">
-                                            {pinFileMetadata[object.id]?.length || pinFiles[object.id]?.length || 0}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </Button>
+                                      <button
+                                        onClick={() => {
+                                          setSelectedObjectId(selectedObjectId === object.id ? null : object.id);
+                                          setItemToEdit(object);
+                                        }}
+                                        className="truncate flex-1 text-left hover:text-accent"
+                                      >
+                                        {object.label || `Unnamed ${object.type.charAt(0).toUpperCase() + object.type.slice(1)}`}
+                                      </button>
+
+                                      <div className="flex items-center gap-1 ml-auto">
+                                        {/* Data indicator for pins with uploaded files */}
+                                        {object.type === 'pin' && (pinFiles[object.id]?.length > 0 || pinFileMetadata[object.id]?.length > 0) && (
+                                          <div className="flex items-center gap-1">
+                                            <Database className="h-3 w-3 text-accent" />
+                                            <span className="text-xs text-accent font-medium">
+                                              {pinFileMetadata[object.id]?.length || pinFiles[object.id]?.length || 0}
+                                            </span>
+                                          </div>
+                                        )}
+
+                                        {/* Label visibility toggle */}
+                                        <TooltipProvider>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleToggleLabel(object.id, object.type);
+                                                }}
+                                                className="p-1 hover:bg-accent/20 rounded"
+                                              >
+                                                {object.labelVisible !== false ? (
+                                                  <Eye className="h-3 w-3" />
+                                                ) : (
+                                                  <EyeOff className="h-3 w-3 opacity-40" />
+                                                )}
+                                              </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right">
+                                              <p>Toggle label</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+
+                                        {/* Object visibility toggle */}
+                                        <TooltipProvider>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleToggleObjectVisibility(object.id, object.type);
+                                                }}
+                                                className="p-1 hover:bg-accent/20 rounded"
+                                              >
+                                                {object.objectVisible !== false ? (
+                                                  <MapPin className="h-3 w-3" />
+                                                ) : (
+                                                  <MapPin className="h-3 w-3 opacity-40" />
+                                                )}
+                                              </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right">
+                                              <p>Toggle visibility</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+                                      </div>
+                                    </div>
                                   ))}
                                 </div>
                               )}

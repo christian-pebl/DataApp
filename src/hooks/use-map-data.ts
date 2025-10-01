@@ -505,6 +505,76 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
     }
   }, [areas, enableSync, isAuthenticated, isOnline, saveToLocalStorage, toast])
 
+  // Batch operations
+  const batchUpdatePins = useCallback(async (pinIds: string[], updates: Partial<Omit<Pin, 'id'>>) => {
+    // Update local state
+    const updatedPins = pins.map(pin =>
+      pinIds.includes(pin.id) ? { ...pin, ...updates } : pin
+    )
+    setPins(updatedPins)
+    saveToLocalStorage('map-drawing-pins', updatedPins)
+
+    // Sync to database if online and authenticated
+    if (enableSync && isAuthenticated && isOnline) {
+      try {
+        await mapDataService.batchUpdatePins(pinIds, updates)
+      } catch (error) {
+        console.error('Error syncing batch pin updates to database:', error)
+        toast({
+          variant: "destructive",
+          title: "Sync Error",
+          description: "Pins updated locally but failed to sync to database."
+        })
+      }
+    }
+  }, [pins, enableSync, isAuthenticated, isOnline, saveToLocalStorage, toast])
+
+  const batchUpdateLines = useCallback(async (lineIds: string[], updates: Partial<Omit<Line, 'id'>>) => {
+    // Update local state
+    const updatedLines = lines.map(line =>
+      lineIds.includes(line.id) ? { ...line, ...updates } : line
+    )
+    setLines(updatedLines)
+    saveToLocalStorage('map-drawing-lines', updatedLines)
+
+    // Sync to database if online and authenticated
+    if (enableSync && isAuthenticated && isOnline) {
+      try {
+        await mapDataService.batchUpdateLines(lineIds, updates)
+      } catch (error) {
+        console.error('Error syncing batch line updates to database:', error)
+        toast({
+          variant: "destructive",
+          title: "Sync Error",
+          description: "Lines updated locally but failed to sync to database."
+        })
+      }
+    }
+  }, [lines, enableSync, isAuthenticated, isOnline, saveToLocalStorage, toast])
+
+  const batchUpdateAreas = useCallback(async (areaIds: string[], updates: Partial<Omit<Area, 'id'>>) => {
+    // Update local state
+    const updatedAreas = areas.map(area =>
+      areaIds.includes(area.id) ? { ...area, ...updates } : area
+    )
+    setAreas(updatedAreas)
+    saveToLocalStorage('map-drawing-areas', updatedAreas)
+
+    // Sync to database if online and authenticated
+    if (enableSync && isAuthenticated && isOnline) {
+      try {
+        await mapDataService.batchUpdateAreas(areaIds, updates)
+      } catch (error) {
+        console.error('Error syncing batch area updates to database:', error)
+        toast({
+          variant: "destructive",
+          title: "Sync Error",
+          description: "Areas updated locally but failed to sync to database."
+        })
+      }
+    }
+  }, [areas, enableSync, isAuthenticated, isOnline, saveToLocalStorage, toast])
+
   // Clear all data
   const clearAll = useCallback(async () => {
     setPins([])
@@ -548,28 +618,33 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
     pins,
     lines,
     areas,
-    
+
     // State
     isLoading,
     isOnline,
     isAuthenticated,
     lastSyncTime,
-    
+
     // Pin operations
     createPin,
     updatePin,
     deletePin,
-    
+
     // Line operations
     createLine,
     updateLine,
     deleteLine,
-    
+
     // Area operations
     createArea,
     updateArea,
     deleteArea,
-    
+
+    // Batch operations
+    batchUpdatePins,
+    batchUpdateLines,
+    batchUpdateAreas,
+
     // Utility operations
     clearAll,
     forceSync,

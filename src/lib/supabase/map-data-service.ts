@@ -185,6 +185,7 @@ export class MapDataService {
       lng: pin.lng,
       label: pin.label || 'New Pin',  // Provide default if label is null
       labelVisible: pin.label_visible ?? true,
+      objectVisible: pin.object_visible ?? true,
       notes: pin.notes || undefined,
       projectId: pin.project_id || undefined,
       tagIds: (pin as any).pin_tags?.map((pt: any) => pt.tag_id) || [],
@@ -233,6 +234,7 @@ export class MapDataService {
       label: pin.label,
       notes: pin.notes || null,
       label_visible: pin.labelVisible ?? true,
+      object_visible: pin.objectVisible ?? true,
       project_id: validatedProjectId,
       user_id: userId
       // privacy_level: 'private' // Temporarily removed until DB is updated
@@ -334,6 +336,7 @@ export class MapDataService {
     if (updates.label !== undefined) updateData.label = updates.label
     if (updates.notes !== undefined) updateData.notes = updates.notes || null
     if (updates.labelVisible !== undefined) updateData.label_visible = updates.labelVisible
+    if (updates.objectVisible !== undefined) updateData.object_visible = updates.objectVisible
     if (updates.projectId !== undefined) updateData.project_id = updates.projectId || null
     
     console.log('MapDataService: About to update pin with data:', updateData)
@@ -548,15 +551,18 @@ export class MapDataService {
       path: line.path as { lat: number; lng: number }[],
       label: line.label,
       labelVisible: line.label_visible ?? true,
+      objectVisible: line.object_visible ?? true,
       notes: line.notes || undefined,
       projectId: line.project_id || undefined,
-      tagIds: (line as any).line_tags?.map((lt: any) => lt.tag_id) || []
+      tagIds: (line as any).line_tags?.map((lt: any) => lt.tag_id) || [],
+      color: line.color || '#10b981',
+      size: line.size || 3
     }))
   }
 
   async createLine(line: Omit<Line, 'id'>): Promise<Line> {
     console.log('MapDataService: Creating line with data:', line)
-    
+
     // Get current user ID
     const { data: { user } } = await this.supabase.auth.getUser()
     const userId = user?.id || 'admin-shared-data'
@@ -567,8 +573,11 @@ export class MapDataService {
       label: line.label,
       notes: line.notes || null,
       label_visible: line.labelVisible ?? true,
+      object_visible: line.objectVisible ?? true,
       project_id: line.projectId || null,
-      user_id: userId
+      user_id: userId,
+      color: line.color || '#10b981',
+      size: line.size || 3
     }
     console.log('MapDataService: Insert data:', insertData)
 
@@ -579,8 +588,19 @@ export class MapDataService {
       .single()
 
     if (error) {
-      console.error('MapDataService: Database error:', error)
-      throw new Error(`Database error: ${error.message}`)
+      console.error('MapDataService: Database error details:', {
+        error,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      })
+      throw new Error(`Database error: ${error.message || 'Unknown error'}`)
+    }
+
+    if (!data) {
+      console.error('MapDataService: No data returned from insert')
+      throw new Error('No data returned from database insert')
     }
 
     // Handle tag associations
@@ -602,28 +622,53 @@ export class MapDataService {
       path: data.path as { lat: number; lng: number }[],
       label: data.label,
       labelVisible: data.label_visible ?? true,
+      objectVisible: data.object_visible ?? true,
       notes: data.notes || undefined,
       projectId: data.project_id || undefined,
-      tagIds: line.tagIds || []
+      tagIds: line.tagIds || [],
+      color: data.color || '#10b981',
+      size: data.size || 3
     }
   }
 
   async updateLine(id: string, updates: Partial<Omit<Line, 'id'>>): Promise<Line> {
+    console.log('🔄 MapDataService.updateLine - ID:', id);
+    console.log('🔄 MapDataService.updateLine - Updates:', updates);
+
+    const updatePayload = {
+      path: updates.path,
+      label: updates.label,
+      notes: updates.notes || null,
+      label_visible: updates.labelVisible,
+      object_visible: updates.objectVisible,
+      project_id: updates.projectId || null,
+      color: updates.color,
+      size: updates.size,
+      updated_at: new Date().toISOString()
+    };
+
+    // Remove undefined fields
+    Object.keys(updatePayload).forEach(key => {
+      if (updatePayload[key as keyof typeof updatePayload] === undefined) {
+        delete updatePayload[key as keyof typeof updatePayload];
+      }
+    });
+
+    console.log('🔄 MapDataService.updateLine - Payload being sent:', updatePayload);
+
     const { data, error } = await this.supabase
       .from('lines')
-      .update({
-        path: updates.path,
-        label: updates.label,
-        notes: updates.notes || null,
-        label_visible: updates.labelVisible,
-        project_id: updates.projectId || null,
-        updated_at: new Date().toISOString()
-      })
+      .update(updatePayload)
       .eq('id', id)
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      console.error('🔄 MapDataService.updateLine - Error:', error);
+      throw error;
+    }
+
+    console.log('🔄 MapDataService.updateLine - Success, returned data:', data);
 
     // Handle tag updates if provided
     if (updates.tagIds !== undefined) {
@@ -653,7 +698,9 @@ export class MapDataService {
       labelVisible: data.label_visible ?? true,
       notes: data.notes || undefined,
       projectId: data.project_id || undefined,
-      tagIds: updates.tagIds || []
+      tagIds: updates.tagIds || [],
+      color: data.color || '#10b981',
+      size: data.size || 3
     }
   }
 
@@ -693,33 +740,61 @@ export class MapDataService {
       path: area.path as { lat: number; lng: number }[],
       label: area.label,
       labelVisible: area.label_visible ?? true,
+      objectVisible: area.object_visible ?? true,
       notes: area.notes || undefined,
       fillVisible: area.fill_visible ?? true,
       projectId: area.project_id || undefined,
-      tagIds: (area as any).area_tags?.map((at: any) => at.tag_id) || []
+      tagIds: (area as any).area_tags?.map((at: any) => at.tag_id) || [],
+      color: area.color || '#8b5cf6',
+      size: area.size || 2,
+      transparency: area.transparency || 20
     }))
   }
 
   async createArea(area: Omit<Area, 'id'>): Promise<Area> {
+    console.log('MapDataService: Creating area with data:', area)
+
     // Get current user ID
     const { data: { user } } = await this.supabase.auth.getUser()
     const userId = user?.id || 'admin-shared-data'
 
+    console.log('MapDataService: Using user ID:', userId)
+    const insertData = {
+      path: area.path,
+      label: area.label,
+      notes: area.notes || null,
+      label_visible: area.labelVisible ?? true,
+      object_visible: area.objectVisible ?? true,
+      fill_visible: area.fillVisible ?? true,
+      project_id: area.projectId || null,
+      user_id: userId,
+      color: area.color || '#8b5cf6',
+      size: area.size || 2,
+      transparency: area.transparency || 20
+    }
+    console.log('MapDataService: Insert data:', insertData)
+
     const { data, error } = await this.supabase
       .from('areas')
-      .insert({
-        path: area.path,
-        label: area.label,
-        notes: area.notes || null,
-        label_visible: area.labelVisible ?? true,
-        fill_visible: area.fillVisible ?? true,
-        project_id: area.projectId || null,
-        user_id: userId
-      })
+      .insert(insertData)
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      console.error('MapDataService: Database error details (area):', {
+        error,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      })
+      throw new Error(`Database error: ${error.message || 'Unknown error'}`)
+    }
+
+    if (!data) {
+      console.error('MapDataService: No data returned from area insert')
+      throw new Error('No data returned from database insert')
+    }
 
     // Handle tag associations
     if (area.tagIds && area.tagIds.length > 0) {
@@ -740,25 +815,42 @@ export class MapDataService {
       path: data.path as { lat: number; lng: number }[],
       label: data.label,
       labelVisible: data.label_visible ?? true,
+      objectVisible: data.object_visible ?? true,
       notes: data.notes || undefined,
       fillVisible: data.fill_visible ?? true,
       projectId: data.project_id || undefined,
-      tagIds: area.tagIds || []
+      tagIds: area.tagIds || [],
+      color: data.color || '#8b5cf6',
+      size: data.size || 2,
+      transparency: data.transparency || 20
     }
   }
 
   async updateArea(id: string, updates: Partial<Omit<Area, 'id'>>): Promise<Area> {
+    const updatePayload = {
+      path: updates.path,
+      label: updates.label,
+      notes: updates.notes || null,
+      label_visible: updates.labelVisible,
+      object_visible: updates.objectVisible,
+      fill_visible: updates.fillVisible,
+      project_id: updates.projectId || null,
+      color: updates.color,
+      size: updates.size,
+      transparency: updates.transparency,
+      updated_at: new Date().toISOString()
+    };
+
+    // Remove undefined fields
+    Object.keys(updatePayload).forEach(key => {
+      if (updatePayload[key as keyof typeof updatePayload] === undefined) {
+        delete updatePayload[key as keyof typeof updatePayload];
+      }
+    });
+
     const { data, error } = await this.supabase
       .from('areas')
-      .update({
-        path: updates.path,
-        label: updates.label,
-        notes: updates.notes || null,
-        label_visible: updates.labelVisible,
-        fill_visible: updates.fillVisible,
-        project_id: updates.projectId || null,
-        updated_at: new Date().toISOString()
-      })
+      .update(updatePayload)
       .eq('id', id)
       .select()
       .single()
@@ -794,7 +886,10 @@ export class MapDataService {
       notes: data.notes || undefined,
       fillVisible: data.fill_visible ?? true,
       projectId: data.project_id || undefined,
-      tagIds: updates.tagIds || []
+      tagIds: updates.tagIds || [],
+      color: data.color || '#8b5cf6',
+      size: data.size || 2,
+      transparency: data.transparency || 20
     }
   }
 
@@ -803,6 +898,52 @@ export class MapDataService {
       .from('areas')
       .delete()
       .eq('id', id)
+
+    if (error) throw error
+  }
+
+  // Batch update operations for performance
+  async batchUpdatePins(pinIds: string[], updates: Partial<Omit<Pin, 'id'>>): Promise<void> {
+    if (pinIds.length === 0) return
+
+    const updateData: any = { updated_at: new Date().toISOString() }
+    if (updates.labelVisible !== undefined) updateData.label_visible = updates.labelVisible
+    if (updates.objectVisible !== undefined) updateData.object_visible = updates.objectVisible
+
+    const { error } = await this.supabase
+      .from('pins')
+      .update(updateData)
+      .in('id', pinIds)
+
+    if (error) throw error
+  }
+
+  async batchUpdateLines(lineIds: string[], updates: Partial<Omit<Line, 'id'>>): Promise<void> {
+    if (lineIds.length === 0) return
+
+    const updateData: any = { updated_at: new Date().toISOString() }
+    if (updates.labelVisible !== undefined) updateData.label_visible = updates.labelVisible
+    if (updates.objectVisible !== undefined) updateData.object_visible = updates.objectVisible
+
+    const { error } = await this.supabase
+      .from('lines')
+      .update(updateData)
+      .in('id', lineIds)
+
+    if (error) throw error
+  }
+
+  async batchUpdateAreas(areaIds: string[], updates: Partial<Omit<Area, 'id'>>): Promise<void> {
+    if (areaIds.length === 0) return
+
+    const updateData: any = { updated_at: new Date().toISOString() }
+    if (updates.labelVisible !== undefined) updateData.label_visible = updates.labelVisible
+    if (updates.objectVisible !== undefined) updateData.object_visible = updates.objectVisible
+
+    const { error } = await this.supabase
+      .from('areas')
+      .update(updateData)
+      .in('id', areaIds)
 
     if (error) throw error
   }

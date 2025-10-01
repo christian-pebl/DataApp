@@ -342,3 +342,16 @@ header, footer, main, section, article, aside, nav {
   background-size: 200% 100%;
   animation: shimmer 2s infinite;
 }
+
+/* Line Edit Mode Styles */
+.line-edit-point {
+  transition: transform 0.2s ease;
+}
+
+.line-edit-point:hover {
+  transform: scale(1.2);
+}
+
+.line-edit-point div:active {
+  cursor: grabbing !important;
+}
