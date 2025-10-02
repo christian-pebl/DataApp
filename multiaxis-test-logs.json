@@ -1,0 +1,256 @@
+{
+  "testResults": {
+    "passed": [
+      "Application loaded",
+      "No console errors on initial load",
+      "Navigated to map-drawing page"
+    ],
+    "failed": [],
+    "warnings": [
+      "Still on auth page - may need verification",
+      "1 total console errors detected",
+      "No pins found - need to create a pin with data first",
+      "Time series chart not found - may need data with time column",
+      "No Y-axis elements found"
+    ]
+  },
+  "testLogs": {
+    "consoleErrors": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 400 ()",
+        "time": "2025-10-01T15:17:24.400Z"
+      }
+    ],
+    "consoleWarnings": [
+      {
+        "type": "warning",
+        "text": "Image with src \"http://localhost:9002/logos/PEBL%20Logo-1.svg\" has either width or height modified, but not the other. If you use CSS to change the size of your image, also include the styles 'width: \"auto\"' or 'height: \"auto\"' to maintain the aspect ratio.",
+        "time": "2025-10-01T15:17:19.578Z"
+      },
+      {
+        "type": "warning",
+        "text": "Image with src \"http://localhost:9002/logos/PEBL%20Logo-1.svg\" has either width or height modified, but not the other. If you use CSS to change the size of your image, also include the styles 'width: \"auto\"' or 'height: \"auto\"' to maintain the aspect ratio.",
+        "time": "2025-10-01T15:17:29.726Z"
+      }
+    ],
+    "pageErrors": [],
+    "networkErrors": [
+      {
+        "url": "http://localhost:9002/",
+        "status": 307,
+        "statusText": "Temporary Redirect",
+        "time": "2025-10-01T15:17:18.633Z"
+      },
+      {
+        "url": "https://tujjhrliibqgstbrohfn.supabase.co/auth/v1/token?grant_type=password",
+        "status": 400,
+        "statusText": "",
+        "time": "2025-10-01T15:17:24.400Z"
+      }
+    ],
+    "allConsole": [
+      {
+        "type": "info",
+        "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+        "time": "2025-10-01T15:17:19.500Z"
+      },
+      {
+        "type": "warning",
+        "text": "Image with src \"http://localhost:9002/logos/PEBL%20Logo-1.svg\" has either width or height modified, but not the other. If you use CSS to change the size of your image, also include the styles 'width: \"auto\"' or 'height: \"auto\"' to maintain the aspect ratio.",
+        "time": "2025-10-01T15:17:19.578Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] rebuilding",
+        "time": "2025-10-01T15:17:19.593Z"
+      },
+      {
+        "type": "log",
+        "text": "Auth state changed: INITIAL_SESSION no user",
+        "time": "2025-10-01T15:17:19.611Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] done in 104ms",
+        "time": "2025-10-01T15:17:19.697Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] rebuilding",
+        "time": "2025-10-01T15:17:20.627Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] done in 42ms",
+        "time": "2025-10-01T15:17:20.668Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] rebuilding",
+        "time": "2025-10-01T15:17:21.096Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] done in 44ms",
+        "time": "2025-10-01T15:17:21.141Z"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 400 ()",
+        "time": "2025-10-01T15:17:24.400Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] rebuilding",
+        "time": "2025-10-01T15:17:27.595Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] done in 1616ms",
+        "time": "2025-10-01T15:17:29.211Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] rebuilding",
+        "time": "2025-10-01T15:17:29.217Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] done in 283ms",
+        "time": "2025-10-01T15:17:29.498Z"
+      },
+      {
+        "type": "info",
+        "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+        "time": "2025-10-01T15:17:29.579Z"
+      },
+      {
+        "type": "log",
+        "text": "🔄 Loading dynamic projects from database...",
+        "time": "2025-10-01T15:17:29.632Z"
+      },
+      {
+        "type": "log",
+        "text": "🔍 No pins to load files for",
+        "time": "2025-10-01T15:17:29.632Z"
+      },
+      {
+        "type": "log",
+        "text": "🧪 Date parsing self-test:",
+        "time": "2025-10-01T15:17:29.632Z"
+      },
+      {
+        "type": "log",
+        "text": "Input ISO: 2024-08-01T00:00:00.000Z",
+        "time": "2025-10-01T15:17:29.632Z"
+      },
+      {
+        "type": "log",
+        "text": "Parsed Date: 2024-08-01T00:00:00.000Z",
+        "time": "2025-10-01T15:17:29.633Z"
+      },
+      {
+        "type": "log",
+        "text": "Formatted Output: 01/08/2024",
+        "time": "2025-10-01T15:17:29.633Z"
+      },
+      {
+        "type": "log",
+        "text": "Expected: 01/08/2024",
+        "time": "2025-10-01T15:17:29.633Z"
+      },
+      {
+        "type": "warning",
+        "text": "Image with src \"http://localhost:9002/logos/PEBL%20Logo-1.svg\" has either width or height modified, but not the other. If you use CSS to change the size of your image, also include the styles 'width: \"auto\"' or 'height: \"auto\"' to maintain the aspect ratio.",
+        "time": "2025-10-01T15:17:29.726Z"
+      },
+      {
+        "type": "log",
+        "text": "Auth check result: false",
+        "time": "2025-10-01T15:17:29.775Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] rebuilding",
+        "time": "2025-10-01T15:17:29.775Z"
+      },
+      {
+        "type": "log",
+        "text": "Auth state changed: INITIAL_SESSION false",
+        "time": "2025-10-01T15:17:29.783Z"
+      },
+      {
+        "type": "log",
+        "text": "Initializing Leaflet map...",
+        "time": "2025-10-01T15:17:29.803Z"
+      },
+      {
+        "type": "log",
+        "text": "Leaflet map initialized successfully",
+        "time": "2025-10-01T15:17:29.809Z"
+      },
+      {
+        "type": "log",
+        "text": "🎯 STEP 3: pendingLine useEffect {pendingLine: false, mapRef: true, linePopupActive: false, lineSaving: false, popupsInDOM: 0}",
+        "time": "2025-10-01T15:17:29.810Z"
+      },
+      {
+        "type": "log",
+        "text": "Initializing Leaflet map...",
+        "time": "2025-10-01T15:17:29.812Z"
+      },
+      {
+        "type": "log",
+        "text": "Leaflet map initialized successfully",
+        "time": "2025-10-01T15:17:29.814Z"
+      },
+      {
+        "type": "log",
+        "text": "🎯 STEP 3: pendingLine useEffect {pendingLine: false, mapRef: true, linePopupActive: false, lineSaving: false, popupsInDOM: 0}",
+        "time": "2025-10-01T15:17:29.814Z"
+      },
+      {
+        "type": "log",
+        "text": "📂 Found database projects: []",
+        "time": "2025-10-01T15:17:29.825Z"
+      },
+      {
+        "type": "log",
+        "text": "✅ Combined projects: {milfordhaven: Object, ramseysound: Object, bidefordbay: Object, blakeneyoverfalls: Object, pabayinnersound: Object}",
+        "time": "2025-10-01T15:17:29.825Z"
+      },
+      {
+        "type": "log",
+        "text": "Auth state changed: INITIAL_SESSION no user",
+        "time": "2025-10-01T15:17:29.892Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] done in 214ms",
+        "time": "2025-10-01T15:17:29.988Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] rebuilding",
+        "time": "2025-10-01T15:17:33.004Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] done in 42ms",
+        "time": "2025-10-01T15:17:33.046Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] rebuilding",
+        "time": "2025-10-01T15:17:33.262Z"
+      },
+      {
+        "type": "log",
+        "text": "[Fast Refresh] done in 42ms",
+        "time": "2025-10-01T15:17:33.304Z"
+      }
+    ]
+  },
+  "timestamp": "2025-10-01T15:17:33.500Z"
+}

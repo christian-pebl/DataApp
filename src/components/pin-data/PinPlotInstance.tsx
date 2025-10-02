@@ -12,9 +12,16 @@ import { PinChartDisplay } from "./PinChartDisplay";
 interface PinPlotInstanceProps {
   instanceId: string;
   initialPlotTitle: string;
-  onRemovePlot: (id: string) => void;
+  onRemovePlot?: (id: string) => void; // Optional - undefined means can't remove
   fileType: 'GP' | 'FPOD' | 'Subcam';
   files: File[];
+  // Time synchronization props
+  timeAxisMode?: 'separate' | 'common';
+  globalTimeRange?: { min: Date | null; max: Date | null };
+  globalBrushRange?: { startIndex: number; endIndex: number | undefined };
+  onDataParsed?: (plotId: string, parseResult: ParseResult) => void;
+  onBrushChange?: (brushData: { startIndex?: number; endIndex?: number }) => void;
+  isLastPlot?: boolean;
 }
 
 
@@ -23,7 +30,13 @@ export function PinPlotInstance({
   initialPlotTitle,
   onRemovePlot,
   fileType,
-  files
+  files,
+  timeAxisMode,
+  globalTimeRange,
+  globalBrushRange,
+  onDataParsed,
+  onBrushChange,
+  isLastPlot
 }: PinPlotInstanceProps) {
   const { toast } = useToast();
   const componentId = useId();
@@ -45,11 +58,16 @@ export function PinPlotInstance({
   const processCSVFiles = async (csvFiles: File[]) => {
     setIsProcessingFiles(true);
     setParseResult(null);
-    
+
     try {
       const result = await parseMultipleCSVFiles(csvFiles, fileType);
       setParseResult(result);
-      
+
+      // Notify parent of parsed data for synchronization
+      if (onDataParsed) {
+        onDataParsed(instanceId, result);
+      }
+
       if (result.errors.length > 0) {
         toast({
           variant: result.data.length > 0 ? "default" : "destructive",
@@ -62,7 +80,7 @@ export function PinPlotInstance({
           description: `Loaded ${result.data.length} data points from ${csvFiles.length} file${csvFiles.length > 1 ? 's' : ''}`
         });
       }
-      
+
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to process CSV files';
       setParseResult({
@@ -82,7 +100,19 @@ export function PinPlotInstance({
   };
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm relative">
+      {/* Remove button - only show if onRemovePlot is provided */}
+      {onRemovePlot && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute top-2 right-2 h-6 w-6 z-10"
+          onClick={() => onRemovePlot(instanceId)}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      )}
+
       <CardContent className="p-3">
         {isProcessingFiles ? (
           <div className="flex items-center justify-center h-32">
@@ -92,14 +122,19 @@ export function PinPlotInstance({
             </div>
           </div>
         ) : parseResult ? (
-          <div className="min-h-[300px]">
-            <PinChartDisplay 
+          <div className="min-h-[285px]">
+            <PinChartDisplay
               data={parseResult.data}
               fileType={fileType}
               timeColumn={parseResult.summary.timeColumn}
               showYAxisLabels={true}
               fileName={files.length > 0 ? files[0].name : undefined}
               dataSource="csv"
+              timeAxisMode={timeAxisMode}
+              globalTimeRange={globalTimeRange}
+              globalBrushRange={globalBrushRange}
+              onBrushChange={onBrushChange}
+              isLastPlot={isLastPlot}
             />
           </div>
         ) : (

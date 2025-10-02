@@ -426,6 +426,65 @@ export default function MapDrawingPage() {
   const [pinFiles, setPinFiles] = useState<Record<string, File[]>>({});
   const [pinFileMetadata, setPinFileMetadata] = useState<Record<string, PinFile[]>>({});
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+
+  // Transform pinFileMetadata into availableFiles format for PinMarineDeviceData
+  const availableFilesForPlots = React.useMemo(() => {
+    const fileOptions: Array<{
+      pinId: string;
+      pinName: string;
+      pinLocation?: { lat: number; lng: number };
+      fileType: 'GP' | 'FPOD' | 'Subcam';
+      files: File[];
+      fileName: string;
+      metadata?: PinFile; // Include metadata for downloading
+    }> = [];
+
+    console.log('Building availableFilesForPlots...', {
+      pinFileMetadataKeys: Object.keys(pinFileMetadata),
+      pinFilesKeys: Object.keys(pinFiles),
+      pinsCount: pins.length
+    });
+
+    for (const [pinId, metadata] of Object.entries(pinFileMetadata)) {
+      const pin = pins.find(p => p.id === pinId);
+      if (!pin) {
+        console.log(`Pin ${pinId} not found in pins list`);
+        continue;
+      }
+
+      console.log(`Processing ${metadata.length} files for pin ${pin.label}`);
+
+      for (const fileMeta of metadata) {
+        // Determine file type from filename
+        let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+        if (fileMeta.fileName.toLowerCase().includes('fpod')) {
+          fileType = 'FPOD';
+        } else if (fileMeta.fileName.toLowerCase().includes('subcam')) {
+          fileType = 'Subcam';
+        } else if (fileMeta.fileName.toLowerCase().startsWith('gp')) {
+          fileType = 'GP';
+        }
+
+        // Check if we have the actual File object
+        const actualFiles = pinFiles[pinId] || [];
+        const matchingFile = actualFiles.find(f => f.name === fileMeta.fileName);
+
+        // Add to list with metadata for on-demand downloading
+        fileOptions.push({
+          pinId,
+          pinName: pin.label || 'Unnamed Pin',
+          pinLocation: pin.location,
+          fileType,
+          files: matchingFile ? [matchingFile] : [], // Empty array if not loaded yet
+          fileName: fileMeta.fileName,
+          metadata: fileMeta // Store metadata for downloading
+        });
+      }
+    }
+
+    console.log(`Generated ${fileOptions.length} file options for plots`);
+    return fileOptions;
+  }, [pinFileMetadata, pins, pinFiles]);
   const [showExploreDropdown, setShowExploreDropdown] = useState(false);
   const [selectedPinForExplore, setSelectedPinForExplore] = useState<string | null>(null);
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<{ id: string; name: string } | null>(null);
@@ -2866,6 +2925,73 @@ export default function MapDrawingPage() {
       }
     }
   }, [selectedPinForExplore, pinFiles, pins]);
+
+  // Handle on-demand file download for plots
+  const handleDownloadFileForPlot = useCallback(async (
+    pinId: string,
+    fileName: string
+  ): Promise<File | null> => {
+    try {
+      console.log(`📥 Downloading file for plot: ${fileName} (pin: ${pinId})`);
+
+      // Get file metadata
+      const fileMetadata = pinFileMetadata[pinId]?.find(
+        f => f.fileName === fileName
+      );
+
+      if (!fileMetadata) {
+        console.error('❌ File metadata not found:', { pinId, fileName });
+        toast({
+          variant: "destructive",
+          title: "Download Failed",
+          description: "File metadata not found"
+        });
+        return null;
+      }
+
+      // Download from storage using fileStorageService.downloadFile()
+      console.log(`📦 Downloading from storage: ${fileMetadata.filePath}`);
+      const blob = await fileStorageService.downloadPinFile(fileMetadata.filePath);
+
+      if (!blob) {
+        console.error('❌ Failed to download file from storage');
+        toast({
+          variant: "destructive",
+          title: "Download Failed",
+          description: `Could not download ${fileName}`
+        });
+        return null;
+      }
+
+      // Convert to File object
+      const file = new File([blob], fileName, {
+        type: fileMetadata.fileType || 'text/csv'
+      });
+
+      console.log(`✅ File downloaded successfully: ${fileName} (${(file.size / 1024).toFixed(2)} KB)`);
+
+      // Cache it in pinFiles state
+      setPinFiles(prev => ({
+        ...prev,
+        [pinId]: [...(prev[pinId] || []), file]
+      }));
+
+      toast({
+        title: "File Downloaded",
+        description: `${fileName} is ready for plotting`
+      });
+
+      return file;
+    } catch (error) {
+      console.error('❌ Download error:', error);
+      toast({
+        variant: "destructive",
+        title: "Download Failed",
+        description: error instanceof Error ? error.message : 'Unknown error'
+      });
+      return null;
+    }
+  }, [pinFileMetadata, toast]);
 
   // Handle file type selection
   const handleFileTypeSelection = async (fileType: 'GP' | 'FPOD' | 'Subcam') => {
@@ -5455,10 +5581,12 @@ export default function MapDrawingPage() {
           </DialogHeader>
           <div className="flex-1 overflow-hidden">
             {selectedFileType && selectedFiles.length > 0 ? (
-              <PinMarineDeviceData 
+              <PinMarineDeviceData
                 fileType={selectedFileType}
                 files={selectedFiles}
                 onRequestFileSelection={handleRequestFileSelection}
+                availableFiles={availableFilesForPlots}
+                onDownloadFile={handleDownloadFileForPlot}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-center">

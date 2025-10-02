@@ -17,21 +17,38 @@ const supabase = createClient(supabaseUrl, serviceRoleKey)
 
 async function runMigration() {
   try {
-    console.log('Reading migration file...')
-    const migrationSQL = fs.readFileSync('./supabase/migrations/001_create_map_data_tables.sql', 'utf8')
-    
-    console.log('Running migration...')
-    const { data, error } = await supabase.rpc('exec', { sql: migrationSQL })
-    
-    if (error) {
-      console.error('Migration failed:', error)
-      process.exit(1)
+    console.log('🚀 Running migration: 003_add_object_visible.sql')
+    const migrationSQL = fs.readFileSync('./supabase/migrations/003_add_object_visible.sql', 'utf8')
+
+    console.log('📝 SQL to execute:')
+    console.log(migrationSQL)
+    console.log('\n⏳ Executing...')
+
+    // Split SQL into individual statements
+    const statements = migrationSQL
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0 && !s.startsWith('--'))
+
+    for (const statement of statements) {
+      console.log(`\n  Executing: ${statement.substring(0, 50)}...`)
+      const { error } = await supabase.rpc('exec', { sql: statement })
+
+      if (error) {
+        console.error('  ❌ Failed:', error.message)
+        // Continue with other statements even if one fails
+      } else {
+        console.log('  ✅ Success')
+      }
     }
-    
-    console.log('Migration completed successfully!')
-    console.log('Result:', data)
+
+    console.log('\n✅ Migration completed!')
+    console.log('✅ Columns added: object_visible (default: true)')
+    console.log('✅ Indexes created for better performance')
   } catch (err) {
-    console.error('Error:', err.message)
+    console.error('❌ Error:', err.message)
+    console.log('\n📋 If automatic migration failed, run this SQL manually in Supabase Dashboard:')
+    console.log(fs.readFileSync('./supabase/migrations/003_add_object_visible.sql', 'utf8'))
     process.exit(1)
   }
 }

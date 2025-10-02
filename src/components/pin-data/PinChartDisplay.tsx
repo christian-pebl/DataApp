@@ -19,6 +19,12 @@ interface PinChartDisplayProps {
   showYAxisLabels?: boolean;
   fileName?: string;
   dataSource?: 'csv' | 'marine';
+  // Time synchronization props
+  timeAxisMode?: 'separate' | 'common';
+  globalTimeRange?: { min: Date | null; max: Date | null };
+  globalBrushRange?: { startIndex: number; endIndex: number | undefined };
+  onBrushChange?: (brushData: { startIndex?: number; endIndex?: number }) => void;
+  isLastPlot?: boolean;
 }
 
 // Color palette matching the marine data theme
@@ -48,9 +54,24 @@ const formatDateTick = (timeValue: string | number, dataSource?: 'csv' | 'marine
   }
 };
 
-export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = false, fileName, dataSource = 'csv' }: PinChartDisplayProps) {
+export function PinChartDisplay({
+  data,
+  fileType,
+  timeColumn,
+  showYAxisLabels = false,
+  fileName,
+  dataSource = 'csv',
+  timeAxisMode = 'separate',
+  globalTimeRange,
+  globalBrushRange,
+  onBrushChange,
+  isLastPlot = true
+}: PinChartDisplayProps) {
   // Toggle state for switching between chart and table view
   const [showTable, setShowTable] = useState(false);
+
+  // Axis mode state - single or multi axis
+  const [axisMode, setAxisMode] = useState<'single' | 'multi'>('single');
   
   // Get all parameters (for table view)
   const allParameters = useMemo(() => {
@@ -88,7 +109,7 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
     return initialState;
   });
 
-  // Brush state for time range selection
+  // Brush state for time range selection (local state for separate mode)
   const [brushStartIndex, setBrushStartIndex] = useState<number>(0);
   const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
 
@@ -97,14 +118,70 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
     return numericParameters.filter(param => parameterStates[param]?.visible);
   }, [numericParameters, parameterStates]);
 
+  // Determine which brush indices to use based on mode
+  const activeBrushStart = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.startIndex : brushStartIndex;
+  const activeBrushEnd = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.endIndex : brushEndIndex;
+
   // Get data slice for current brush selection
   const displayData = useMemo(() => {
     if (data.length === 0) return [];
-    
-    const start = Math.max(0, brushStartIndex);
-    const end = Math.min(data.length - 1, brushEndIndex ?? data.length - 1);
+
+    const start = Math.max(0, activeBrushStart);
+    const end = Math.min(data.length - 1, activeBrushEnd ?? data.length - 1);
     return data.slice(start, end + 1);
-  }, [data, brushStartIndex, brushEndIndex]);
+  }, [data, activeBrushStart, activeBrushEnd]);
+
+  // Calculate Y-axis domain based on visible parameters in displayData (for single axis mode)
+  const yAxisDomain = useMemo(() => {
+    if (displayData.length === 0 || visibleParameters.length === 0) {
+      return [0, 100]; // Default domain
+    }
+
+    let min = Infinity;
+    let max = -Infinity;
+
+    displayData.forEach(point => {
+      visibleParameters.forEach(param => {
+        const value = point[param];
+        if (typeof value === 'number' && !isNaN(value)) {
+          min = Math.min(min, value);
+          max = Math.max(max, value);
+        }
+      });
+    });
+
+    // Add 5% padding to top and bottom
+    const padding = (max - min) * 0.05;
+    return [min - padding, max + padding];
+  }, [displayData, visibleParameters]);
+
+  // Calculate individual Y-axis domains for each parameter (for multi-axis mode)
+  const parameterDomains = useMemo(() => {
+    const domains: Record<string, [number, number]> = {};
+
+    if (displayData.length === 0) {
+      return domains;
+    }
+
+    visibleParameters.forEach(param => {
+      let min = Infinity;
+      let max = -Infinity;
+
+      displayData.forEach(point => {
+        const value = point[param];
+        if (typeof value === 'number' && !isNaN(value)) {
+          min = Math.min(min, value);
+          max = Math.max(max, value);
+        }
+      });
+
+      // Add 5% padding to top and bottom
+      const padding = (max - min) * 0.05;
+      domains[param] = [min - padding, max + padding];
+    });
+
+    return domains;
+  }, [displayData, visibleParameters]);
 
   // Set initial brush end index
   React.useEffect(() => {
@@ -114,8 +191,14 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
   }, [data.length, brushEndIndex]);
 
   const handleBrushChange = (brushData: { startIndex?: number; endIndex?: number }) => {
-    setBrushStartIndex(brushData.startIndex ?? 0);
-    setBrushEndIndex(brushData.endIndex);
+    if (timeAxisMode === 'common' && onBrushChange) {
+      // In common mode, propagate to parent
+      onBrushChange(brushData);
+    } else {
+      // In separate mode, update local state
+      setBrushStartIndex(brushData.startIndex ?? 0);
+      setBrushEndIndex(brushData.endIndex);
+    }
   };
 
   const toggleParameterVisibility = (parameter: string) => {
@@ -158,26 +241,42 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
 
   return (
     <div className="space-y-3">
-      {/* Toggle Switch - at the top */}
-      <div className="flex items-center justify-between">
+      {/* Toggle Switches - at the top */}
+      <div className="flex items-center justify-between pr-12">
         {/* File name */}
         {fileName && (
           <div className="text-xs text-muted-foreground font-medium">
             {fileName}
           </div>
         )}
-        
-        {/* View Toggle */}
-        <div className="flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">Chart</span>
-          <Switch 
-            checked={showTable} 
-            onCheckedChange={setShowTable}
-            className="h-5 w-9"
-          />
-          <span className="text-xs text-muted-foreground">Table</span>
-          <TableIcon className="h-4 w-4 text-muted-foreground" />
+
+        {/* View Toggles */}
+        <div className="flex items-center gap-4">
+          {/* Chart/Table Toggle */}
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Chart</span>
+            <Switch
+              checked={showTable}
+              onCheckedChange={setShowTable}
+              className="h-5 w-9"
+            />
+            <span className="text-xs text-muted-foreground">Table</span>
+            <TableIcon className="h-4 w-4 text-muted-foreground" />
+          </div>
+
+          {/* Single/Multi Axis Toggle - only show in chart mode */}
+          {!showTable && (
+            <div className="flex items-center gap-2 pl-4 border-l">
+              <span className="text-xs text-muted-foreground">Single</span>
+              <Switch
+                checked={axisMode === 'multi'}
+                onCheckedChange={(checked) => setAxisMode(checked ? 'multi' : 'single')}
+                className="h-5 w-9"
+              />
+              <span className="text-xs text-muted-foreground">Multi</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -228,77 +327,192 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
           <div className="flex-1 space-y-3">
       {visibleParameters.length > 0 && (
         <div className="h-64 w-full border rounded-md bg-card p-2">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={displayData} margin={{ top: 5, right: 12, left: 5, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
-              
-              <XAxis 
-                dataKey="time" 
-                tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }}
-                stroke="hsl(var(--border))"
-                tickFormatter={(value) => formatDateTick(value, dataSource)}
-              />
-              
-              <YAxis
-                tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }}
-                stroke="hsl(var(--border))"
-                width={showYAxisLabels ? 80 : 50}
-                label={showYAxisLabels ? { 
-                  value: 'Value', 
-                  angle: -90, 
-                  position: 'insideLeft',
-                  style: { textAnchor: 'middle', fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }
-                } : undefined}
-              />
-              
-              <RechartsTooltip
-                contentStyle={{ 
-                  backgroundColor: 'hsl(var(--background))', 
-                  border: '1px solid hsl(var(--border))', 
-                  fontSize: '0.7rem',
-                  padding: '8px',
-                  borderRadius: '6px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+          {/* Warning for too many parameters in multi-axis mode */}
+          {axisMode === 'multi' && visibleParameters.length > 4 && (
+            <div className="mb-2 p-2 text-xs bg-yellow-500/10 border border-yellow-500/20 rounded flex items-center gap-2">
+              <Info className="h-3 w-3 text-yellow-600" />
+              <span className="text-yellow-700">Multi-axis works best with 4 or fewer parameters. Consider deselecting some for better visibility.</span>
+            </div>
+          )}
+
+          {/* Single Axis Mode */}
+          {axisMode === 'single' && (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={displayData}
+                margin={{ top: 5, right: 12, left: 5, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
+
+                <XAxis
+                  dataKey="time"
+                  tick={timeAxisMode === 'common' && !isLastPlot ? false : { fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 10 }}
+                  stroke="hsl(var(--border))"
+                  tickFormatter={(value) => formatDateTick(value, dataSource)}
+                  height={timeAxisMode === 'common' && !isLastPlot ? 0 : 50}
+                />
+
+                <YAxis
+                  tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }}
+                  stroke="hsl(var(--border))"
+                  width={showYAxisLabels ? 80 : 50}
+                  domain={yAxisDomain}
+                  label={showYAxisLabels ? {
+                    value: 'Value',
+                    angle: -90,
+                    position: 'insideLeft',
+                    style: { textAnchor: 'middle', fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }
+                  } : undefined}
+                />
+
+                <RechartsTooltip
+                  contentStyle={{
+                    backgroundColor: 'hsl(var(--background))',
+                    border: '1px solid hsl(var(--border))',
+                    fontSize: '0.7rem',
+                    padding: '8px',
+                    borderRadius: '6px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                  }}
+                  itemStyle={{ color: 'hsl(var(--foreground))' }}
+                  formatter={(value: number, name: string) => [
+                    typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:3}) : 'N/A',
+                    name
+                  ]}
+                  labelFormatter={(label) => {
+                    try {
+                      const date = parseISO(String(label));
+                      return isValid(date) ? format(date, 'EEE, MMM dd, HH:mm:ss') : String(label);
+                    } catch {
+                      return String(label);
+                    }
+                  }}
+                  isAnimationActive={false}
+                />
+
+                {visibleParameters.map((parameter) => {
+                  const state = parameterStates[parameter];
+                  return (
+                    <Line
+                      key={parameter}
+                      type="monotone"
+                      dataKey={parameter}
+                      stroke={`hsl(var(${state.color}))`}
+                      strokeWidth={1.5}
+                      dot={false}
+                      connectNulls={false}
+                      name={parameter}
+                      isAnimationActive={false}
+                    />
+                  );
+                })}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+
+          {/* Multi Axis Mode */}
+          {axisMode === 'multi' && (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={displayData}
+                margin={{
+                  top: 5,
+                  right: Math.ceil(visibleParameters.length / 2) * 35,
+                  left: 35,
+                  bottom: 5
                 }}
-                itemStyle={{ color: 'hsl(var(--foreground))' }}
-                formatter={(value: number, name: string) => [
-                  typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:3}) : 'N/A',
-                  name
-                ]}
-                labelFormatter={(label) => {
-                  try {
-                    const date = parseISO(String(label));
-                    return isValid(date) ? format(date, 'EEE, MMM dd, HH:mm:ss') : String(label);
-                  } catch {
-                    return String(label);
-                  }
-                }}
-                isAnimationActive={false}
-              />
-              
-              {visibleParameters.map((parameter) => {
-                const state = parameterStates[parameter];
-                return (
-                  <Line
-                    key={parameter}
-                    type="monotone"
-                    dataKey={parameter}
-                    stroke={`hsl(var(${state.color}))`}
-                    strokeWidth={1.5}
-                    dot={false}
-                    connectNulls={false}
-                    name={parameter}
-                    isAnimationActive={false}
-                  />
-                );
-              })}
-            </LineChart>
-          </ResponsiveContainer>
+              >
+                <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
+
+                <XAxis
+                  dataKey="time"
+                  tick={timeAxisMode === 'common' && !isLastPlot ? false : { fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 10 }}
+                  stroke="hsl(var(--border))"
+                  tickFormatter={(value) => formatDateTick(value, dataSource)}
+                  height={timeAxisMode === 'common' && !isLastPlot ? 0 : 50}
+                />
+
+                {/* One YAxis per visible parameter */}
+                {visibleParameters.map((parameter, index) => {
+                  const orientation = index % 2 === 0 ? 'left' : 'right';
+                  const yAxisId = `axis-${parameter}`;
+
+                  return (
+                    <YAxis
+                      key={yAxisId}
+                      yAxisId={yAxisId}
+                      orientation={orientation}
+                      tick={{ fontSize: '0.55rem', fill: `hsl(var(${parameterStates[parameter].color}))` }}
+                      stroke={`hsl(var(${parameterStates[parameter].color}))`}
+                      width={32}
+                      label={{
+                        value: parameter,
+                        angle: -90,
+                        position: orientation === 'left' ? 'insideLeft' : 'insideRight',
+                        style: {
+                          textAnchor: 'middle',
+                          fontSize: '0.55rem',
+                          fill: `hsl(var(${parameterStates[parameter].color}))`,
+                          fontWeight: 500
+                        }
+                      }}
+                      domain={parameterDomains[parameter] || ['auto', 'auto']}
+                    />
+                  );
+                })}
+
+                <RechartsTooltip
+                  contentStyle={{
+                    backgroundColor: 'hsl(var(--background))',
+                    border: '1px solid hsl(var(--border))',
+                    fontSize: '0.7rem',
+                    padding: '8px',
+                    borderRadius: '6px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                  }}
+                  itemStyle={{ color: 'hsl(var(--foreground))' }}
+                  formatter={(value: number, name: string) => [
+                    typeof value === 'number' ? value.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:3}) : 'N/A',
+                    name
+                  ]}
+                  labelFormatter={(label) => {
+                    try {
+                      const date = parseISO(String(label));
+                      return isValid(date) ? format(date, 'EEE, MMM dd, HH:mm:ss') : String(label);
+                    } catch {
+                      return String(label);
+                    }
+                  }}
+                  isAnimationActive={false}
+                />
+
+                {visibleParameters.map((parameter) => {
+                  const state = parameterStates[parameter];
+                  const yAxisId = `axis-${parameter}`;
+
+                  return (
+                    <Line
+                      key={parameter}
+                      type="monotone"
+                      dataKey={parameter}
+                      yAxisId={yAxisId}
+                      stroke={`hsl(var(${state.color}))`}
+                      strokeWidth={1.5}
+                      dot={false}
+                      connectNulls={false}
+                      name={parameter}
+                      isAnimationActive={false}
+                    />
+                  );
+                })}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
       )}
 
-      {/* Time Range Brush */}
-      {data.length > 10 && (
+      {/* Time Range Brush - only show in separate mode OR if last plot in common mode */}
+      {data.length > 10 && (timeAxisMode === 'separate' || isLastPlot) && (
         <div className="h-12 w-full border rounded-md bg-card p-1">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 5, right: 15, left: 15, bottom: 0 }}>
@@ -317,8 +531,8 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
                 fill="transparent"
                 tickFormatter={() => ""}
                 travellerWidth={10}
-                startIndex={brushStartIndex}
-                endIndex={brushEndIndex}
+                startIndex={activeBrushStart}
+                endIndex={activeBrushEnd}
                 onChange={handleBrushChange}
                 y={15}
               />
@@ -331,12 +545,21 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
 
           {/* Parameter Controls - On the right side */}
           <div className="w-64 space-y-2">
-            <p className="text-xs font-medium">Parameters ({visibleParameters.length} visible)</p>
-            
+            <p className="text-xs font-medium">
+              Parameters ({visibleParameters.length} visible)
+              {axisMode === 'multi' && visibleParameters.length > 0 && (
+                <span className="text-muted-foreground font-normal ml-1">- Multi-axis</span>
+              )}
+            </p>
+
             <div className="space-y-1 max-h-80 overflow-y-auto">
               {numericParameters.map((parameter, index) => {
                 const state = parameterStates[parameter];
                 if (!state) return null;
+
+                // Get axis position for this parameter in multi-axis mode
+                const visibleIndex = visibleParameters.indexOf(parameter);
+                const axisPosition = visibleIndex >= 0 ? (visibleIndex % 2 === 0 ? 'L' : 'R') : null;
 
                 return (
                   <div key={parameter} className="flex items-center justify-between p-1.5 rounded border bg-card/50">
@@ -347,33 +570,42 @@ export function PinChartDisplay({ data, fileType, timeColumn, showYAxisLabels = 
                         onCheckedChange={() => toggleParameterVisibility(parameter)}
                         className="h-3 w-3"
                       />
-                      <Label 
-                        htmlFor={`param-${parameter}`} 
+                      <Label
+                        htmlFor={`param-${parameter}`}
                         className="text-xs cursor-pointer truncate flex-1"
                         title={parameter}
                       >
                         {parameter}
                       </Label>
-                      <div 
+                      {/* Show axis indicator in multi-axis mode */}
+                      {axisMode === 'multi' && state.visible && axisPosition && (
+                        <span
+                          className="text-[0.6rem] font-semibold px-1 rounded"
+                          style={{ color: `hsl(var(${state.color}))`, backgroundColor: `hsl(var(${state.color}) / 0.1)` }}
+                        >
+                          {axisPosition}
+                        </span>
+                      )}
+                      <div
                         className="w-3 h-3 rounded-full border"
                         style={{ backgroundColor: `hsl(var(${state.color}))` }}
                       />
                     </div>
-                    
+
                     <div className="flex items-center">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-5 w-5" 
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
                         onClick={() => moveParameter(parameter, 'up')}
                         disabled={index === 0}
                       >
                         <ChevronUp className="h-3 w-3" />
                       </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-5 w-5" 
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
                         onClick={() => moveParameter(parameter, 'down')}
                         disabled={index === numericParameters.length - 1}
                       >
