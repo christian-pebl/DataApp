@@ -42,16 +42,38 @@ const formatDateTick = (timeValue: string | number, dataSource?: 'csv' | 'marine
   try {
     const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
     if (!isValid(dateObj)) return String(timeValue);
-    // Use different formats based on data source
-    if (dataSource === 'marine') {
-      return format(dateObj, 'EEE, dd/MM');
-    } else {
-      // Format for CSV data - using DD/MM for chart readability
-      return format(dateObj, 'dd/MM');
-    }
+    // Use dd/MM format for both CSV and marine data
+    return format(dateObj, 'dd/MM');
   } catch (e) {
     return String(timeValue);
   }
+};
+
+// Intelligent Y-axis formatter with nice rounded tick spacings
+const formatYAxisTick = (value: number, dataRange: number, dataMax: number): string => {
+  if (!isFinite(value) || isNaN(value)) return '0';
+
+  const absMax = Math.abs(dataMax);
+  const absValue = Math.abs(value);
+
+  // Determine decimal places based on data scale
+  let decimals = 0;
+
+  if (absMax >= 1000) {
+    decimals = 0; // Large values: no decimals (e.g., 1500)
+  } else if (absMax >= 100) {
+    decimals = dataRange < 10 ? 1 : 0; // Medium-large: 1 decimal if small range
+  } else if (absMax >= 10) {
+    decimals = dataRange < 1 ? 2 : 1; // Medium: 1-2 decimals
+  } else if (absMax >= 1) {
+    decimals = dataRange < 0.5 ? 2 : 1; // Small: 1-2 decimals
+  } else if (absMax >= 0.1) {
+    decimals = 2; // Tiny: 2 decimals
+  } else {
+    decimals = 3; // Very tiny: 3 decimals
+  }
+
+  return value.toFixed(decimals);
 };
 
 export function PinChartDisplay({
@@ -126,10 +148,24 @@ export function PinChartDisplay({
   const displayData = useMemo(() => {
     if (data.length === 0) return [];
 
+    // In common mode with global time range, filter by actual time values for marine data
+    if (timeAxisMode === 'common' && globalTimeRange && globalTimeRange.min && globalTimeRange.max && dataSource === 'marine') {
+      return data.filter(point => {
+        try {
+          const pointDate = parseISO(point.time);
+          if (!isValid(pointDate)) return false;
+          return pointDate >= globalTimeRange.min! && pointDate <= globalTimeRange.max!;
+        } catch {
+          return false;
+        }
+      });
+    }
+
+    // For CSV data or separate mode, use brush indices
     const start = Math.max(0, activeBrushStart);
     const end = Math.min(data.length - 1, activeBrushEnd ?? data.length - 1);
     return data.slice(start, end + 1);
-  }, [data, activeBrushStart, activeBrushEnd]);
+  }, [data, activeBrushStart, activeBrushEnd, timeAxisMode, globalTimeRange, dataSource]);
 
   // Calculate Y-axis domain based on visible parameters in displayData (for single axis mode)
   const yAxisDomain = useMemo(() => {
@@ -154,6 +190,16 @@ export function PinChartDisplay({
     const padding = (max - min) * 0.05;
     return [min - padding, max + padding];
   }, [displayData, visibleParameters]);
+
+  // Calculate data range and max for Y-axis formatting
+  const dataRange = useMemo(() => {
+    if (yAxisDomain[1] - yAxisDomain[0] === 0) return 1;
+    return Math.abs(yAxisDomain[1] - yAxisDomain[0]);
+  }, [yAxisDomain]);
+
+  const dataMax = useMemo(() => {
+    return Math.max(Math.abs(yAxisDomain[0]), Math.abs(yAxisDomain[1]));
+  }, [yAxisDomain]);
 
   // Calculate individual Y-axis domains for each parameter (for multi-axis mode)
   const parameterDomains = useMemo(() => {
@@ -326,7 +372,7 @@ export function PinChartDisplay({
           {/* Main Chart - Takes up most space */}
           <div className="flex-1 space-y-3">
       {visibleParameters.length > 0 && (
-        <div className="h-64 w-full border rounded-md bg-card p-2">
+        <div className="h-52 w-full border rounded-md bg-card p-2">
           {/* Warning for too many parameters in multi-axis mode */}
           {axisMode === 'multi' && visibleParameters.length > 4 && (
             <div className="mb-2 p-2 text-xs bg-yellow-500/10 border border-yellow-500/20 rounded flex items-center gap-2">
@@ -340,16 +386,16 @@ export function PinChartDisplay({
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={displayData}
-                margin={{ top: 5, right: 12, left: 5, bottom: 5 }}
+                margin={{ top: 5, right: 12, left: 5, bottom: 0 }}
               >
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
 
                 <XAxis
                   dataKey="time"
-                  tick={timeAxisMode === 'common' && !isLastPlot ? false : { fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 10 }}
+                  tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 8 }}
                   stroke="hsl(var(--border))"
                   tickFormatter={(value) => formatDateTick(value, dataSource)}
-                  height={timeAxisMode === 'common' && !isLastPlot ? 0 : 50}
+                  height={45}
                 />
 
                 <YAxis
@@ -357,6 +403,7 @@ export function PinChartDisplay({
                   stroke="hsl(var(--border))"
                   width={showYAxisLabels ? 80 : 50}
                   domain={yAxisDomain}
+                  tickFormatter={(value) => formatYAxisTick(value, dataRange, dataMax)}
                   label={showYAxisLabels ? {
                     value: 'Value',
                     angle: -90,
@@ -419,23 +466,26 @@ export function PinChartDisplay({
                   top: 5,
                   right: Math.ceil(visibleParameters.length / 2) * 35,
                   left: 35,
-                  bottom: 5
+                  bottom: 0
                 }}
               >
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
 
                 <XAxis
                   dataKey="time"
-                  tick={timeAxisMode === 'common' && !isLastPlot ? false : { fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 10 }}
+                  tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 8 }}
                   stroke="hsl(var(--border))"
                   tickFormatter={(value) => formatDateTick(value, dataSource)}
-                  height={timeAxisMode === 'common' && !isLastPlot ? 0 : 50}
+                  height={45}
                 />
 
                 {/* One YAxis per visible parameter */}
                 {visibleParameters.map((parameter, index) => {
                   const orientation = index % 2 === 0 ? 'left' : 'right';
                   const yAxisId = `axis-${parameter}`;
+                  const domain = parameterDomains[parameter] || [0, 100];
+                  const paramRange = Math.abs(domain[1] - domain[0]);
+                  const paramMax = Math.max(Math.abs(domain[0]), Math.abs(domain[1]));
 
                   return (
                     <YAxis
@@ -445,6 +495,7 @@ export function PinChartDisplay({
                       tick={{ fontSize: '0.55rem', fill: `hsl(var(${parameterStates[parameter].color}))` }}
                       stroke={`hsl(var(${parameterStates[parameter].color}))`}
                       width={32}
+                      tickFormatter={(value) => formatYAxisTick(value, paramRange, paramMax)}
                       label={{
                         value: parameter,
                         angle: -90,
@@ -456,7 +507,7 @@ export function PinChartDisplay({
                           fontWeight: 500
                         }
                       }}
-                      domain={parameterDomains[parameter] || ['auto', 'auto']}
+                      domain={domain}
                     />
                   );
                 })}
@@ -513,20 +564,20 @@ export function PinChartDisplay({
 
       {/* Time Range Brush - only show in separate mode OR if last plot in common mode */}
       {data.length > 10 && (timeAxisMode === 'separate' || isLastPlot) && (
-        <div className="h-12 w-full border rounded-md bg-card p-1">
+        <div className="h-10 w-full border rounded-md bg-card p-1">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 5, right: 15, left: 15, bottom: 0 }}>
+            <LineChart data={data} margin={{ top: 2, right: 15, left: 15, bottom: 0 }}>
               <XAxis
                 dataKey="time"
                 tickFormatter={(value) => formatDateTick(value, dataSource)}
                 stroke="hsl(var(--muted-foreground))"
                 tick={{ fontSize: '0.6rem' }}
-                height={12}
+                height={10}
                 interval="preserveStartEnd"
               />
               <Brush
                 dataKey="time"
-                height={18}
+                height={16}
                 stroke="hsl(var(--primary))"
                 fill="transparent"
                 tickFormatter={() => ""}
@@ -534,7 +585,7 @@ export function PinChartDisplay({
                 startIndex={activeBrushStart}
                 endIndex={activeBrushEnd}
                 onChange={handleBrushChange}
-                y={15}
+                y={12}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -544,7 +595,7 @@ export function PinChartDisplay({
           </div>
 
           {/* Parameter Controls - On the right side */}
-          <div className="w-64 space-y-2">
+          <div className="w-40 space-y-2">
             <p className="text-xs font-medium">
               Parameters ({visibleParameters.length} visible)
               {axisMode === 'multi' && visibleParameters.length > 0 && (
@@ -552,7 +603,7 @@ export function PinChartDisplay({
               )}
             </p>
 
-            <div className="space-y-1 max-h-80 overflow-y-auto">
+            <div className="space-y-1 h-[238px] overflow-y-auto">
               {numericParameters.map((parameter, index) => {
                 const state = parameterStates[parameter];
                 if (!state) return null;

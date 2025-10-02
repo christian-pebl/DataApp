@@ -540,6 +540,10 @@ export default function MapDrawingPage() {
   const [selectedFileType, setSelectedFileType] = useState<'GP' | 'FPOD' | 'Subcam' | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
+  // Store object GPS coordinates for marine/meteo data
+  const [objectGpsCoords, setObjectGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [objectName, setObjectName] = useState<string>('');
+
   // Line Edit Mode State
   const [lineEditMode, setLineEditMode] = useState<'none' | 'endpoints'>('none');
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
@@ -3504,7 +3508,37 @@ export default function MapDrawingPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setShowDataDropdown(!showDataDropdown)}
+                            onClick={() => {
+                              setShowDataDropdown(!showDataDropdown);
+
+                              // Capture GPS coordinates when Data is accessed
+                              if (!showDataDropdown && 'lat' in itemToEdit && 'lng' in itemToEdit) {
+                                // For pins, use direct coordinates
+                                setObjectGpsCoords({ lat: itemToEdit.lat, lng: itemToEdit.lng });
+                                setObjectName(itemToEdit.label || 'Object');
+                                console.log('📍 Captured GPS coords:', { lat: itemToEdit.lat, lng: itemToEdit.lng, name: itemToEdit.label });
+                              } else if (!showDataDropdown && 'path' in itemToEdit) {
+                                // For lines, use center of path
+                                const path = itemToEdit.path;
+                                if (path && path.length > 0) {
+                                  const centerLat = path.reduce((sum, p) => sum + p.lat, 0) / path.length;
+                                  const centerLng = path.reduce((sum, p) => sum + p.lng, 0) / path.length;
+                                  setObjectGpsCoords({ lat: centerLat, lng: centerLng });
+                                  setObjectName(itemToEdit.label || 'Line');
+                                  console.log('📍 Captured GPS coords (line center):', { lat: centerLat, lng: centerLng, name: itemToEdit.label });
+                                }
+                              } else if (!showDataDropdown && 'path' in itemToEdit) {
+                                // For areas, use center of path
+                                const path = itemToEdit.path;
+                                if (path && path.length > 0) {
+                                  const centerLat = path.reduce((sum, p) => sum + p.lat, 0) / path.length;
+                                  const centerLng = path.reduce((sum, p) => sum + p.lng, 0) / path.length;
+                                  setObjectGpsCoords({ lat: centerLat, lng: centerLng });
+                                  setObjectName(itemToEdit.label || 'Area');
+                                  console.log('📍 Captured GPS coords (area center):', { lat: centerLat, lng: centerLng, name: itemToEdit.label });
+                                }
+                              }
+                            }}
                             className="w-full h-8 flex items-center gap-2"
                           >
                             <Database className="h-3 w-3" />
@@ -5581,13 +5615,24 @@ export default function MapDrawingPage() {
           </DialogHeader>
           <div className="flex-1 overflow-hidden">
             {selectedFileType && selectedFiles.length > 0 ? (
-              <PinMarineDeviceData
-                fileType={selectedFileType}
-                files={selectedFiles}
-                onRequestFileSelection={handleRequestFileSelection}
-                availableFiles={availableFilesForPlots}
-                onDownloadFile={handleDownloadFileForPlot}
-              />
+              (() => {
+                console.log('📍 Object location for marine/meteo:', {
+                  objectGpsCoords,
+                  objectName,
+                  hasCoords: !!objectGpsCoords
+                });
+                return (
+                  <PinMarineDeviceData
+                    fileType={selectedFileType}
+                    files={selectedFiles}
+                    onRequestFileSelection={handleRequestFileSelection}
+                    availableFiles={availableFilesForPlots}
+                    onDownloadFile={handleDownloadFileForPlot}
+                    objectLocation={objectGpsCoords}
+                    objectName={objectName}
+                  />
+                );
+              })()
             ) : (
               <div className="flex items-center justify-center h-full text-center">
                 <div className="text-muted-foreground">

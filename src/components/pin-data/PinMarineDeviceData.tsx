@@ -7,16 +7,26 @@ import { Switch } from "@/components/ui/switch";
 import { PlusCircle, LayoutGrid, Minus, AlignHorizontalJustifyCenter } from "lucide-react";
 
 import { PinPlotInstance } from "./PinPlotInstance";
+import { PinMarineMeteoPlot } from "./PinMarineMeteoPlot";
 import { FileSelector } from "./FileSelector";
-import { parseISO, isValid } from 'date-fns';
+import { PlotTypeSelector } from "./PlotTypeSelector";
+import { parseISO, isValid, formatISO } from 'date-fns';
+import { useToast } from "@/hooks/use-toast";
 import type { ParseResult } from "./csvParser";
+import type { CombinedDataPoint } from "@/app/om-marine-explorer/shared";
 
 interface PlotConfig {
   id: string;
   title: string;
-  fileType: 'GP' | 'FPOD' | 'Subcam';
-  files: File[];
-  fileName: string; // Display name of the file(s)
+  type: 'device' | 'marine-meteo';
+  // For device plots
+  fileType?: 'GP' | 'FPOD' | 'Subcam';
+  files?: File[];
+  fileName?: string; // Display name of the file(s)
+  // For marine/meteo plots
+  location?: { lat: number; lon: number };
+  locationName?: string;
+  timeRange?: { startDate: string; endDate: string };
 }
 
 interface PinFile {
@@ -48,13 +58,19 @@ interface PinMarineDeviceDataProps {
   // Props for multi-file support
   availableFiles?: FileOption[];
   onDownloadFile?: (pinId: string, fileName: string) => Promise<File | null>; // Callback to download file on-demand
+  // Props for marine/meteo integration
+  objectLocation?: { lat: number; lng: number };
+  objectName?: string;
 }
 
-export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile }: PinMarineDeviceDataProps) {
+export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, objectLocation, objectName }: PinMarineDeviceDataProps) {
+  const { toast } = useToast();
+
   // State for managing plots with file data
   const [plots, setPlots] = useState<PlotConfig[]>([]);
   const plotsInitialized = useRef(false);
   const [showFileSelector, setShowFileSelector] = useState(false);
+  const [showPlotTypeSelector, setShowPlotTypeSelector] = useState(false);
 
   // Time axis synchronization state
   const [timeAxisMode, setTimeAxisMode] = useState<'separate' | 'common'>('separate');
@@ -69,43 +85,67 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     return `${fileList.length} files`;
   };
 
-  // Calculate global time range from all plots' data
+  // Calculate global time range from brush-selected range of first plot
   const calculateGlobalTimeRange = useCallback(() => {
-    const allTimestamps: Date[] = [];
+    // Get first plot's data as reference
+    if (plots.length === 0) return { min: null, max: null };
 
-    Object.values(plotsData).forEach((result) => {
-      result.data.forEach((point) => {
-        const date = parseISO(point.time);
-        if (isValid(date)) {
-          allTimestamps.push(date);
-        }
-      });
-    });
+    const firstPlot = plots[0];
+    const firstPlotData = plotsData[firstPlot.id];
 
-    if (allTimestamps.length === 0) {
+    if (!firstPlotData || firstPlotData.data.length === 0) {
+      return { min: null, max: null };
+    }
+
+    // Use brush range to determine visible time range
+    const startIdx = Math.max(0, globalBrushRange.startIndex);
+    const endIdx = Math.min(
+      firstPlotData.data.length - 1,
+      globalBrushRange.endIndex ?? firstPlotData.data.length - 1
+    );
+
+    const startDate = parseISO(firstPlotData.data[startIdx].time);
+    const endDate = parseISO(firstPlotData.data[endIdx].time);
+
+    if (!isValid(startDate) || !isValid(endDate)) {
       return { min: null, max: null };
     }
 
     return {
-      min: new Date(Math.min(...allTimestamps.map((d) => d.getTime()))),
-      max: new Date(Math.max(...allTimestamps.map((d) => d.getTime()))),
+      min: startDate,
+      max: endDate,
     };
-  }, [plotsData]);
+  }, [plots, plotsData, globalBrushRange]);
 
-  // Update global time range when plots data changes or mode changes
+  // Update global time range when plots data changes, mode changes, or brush changes
   useEffect(() => {
     if (timeAxisMode === 'common') {
       const range = calculateGlobalTimeRange();
       setGlobalTimeRange(range);
     }
-  }, [timeAxisMode, plotsData, calculateGlobalTimeRange]);
+  }, [timeAxisMode, plotsData, globalBrushRange, calculateGlobalTimeRange]);
 
   // Callback for plots to register their data
-  const handlePlotDataParsed = useCallback((plotId: string, parseResult: ParseResult) => {
-    setPlotsData((prev) => ({
-      ...prev,
-      [plotId]: parseResult,
-    }));
+  const handlePlotDataParsed = useCallback((plotId: string, data: ParseResult | CombinedDataPoint[]) => {
+    // Convert CombinedDataPoint[] to ParseResult format for marine/meteo
+    if (Array.isArray(data) && data.length > 0 && 'waveHeight' in data[0]) {
+      // Marine/meteo data - convert to ParseResult format
+      const marineParseResult: ParseResult = {
+        data: data.map(d => ({ time: d.time, ...d })) as any,
+        headers: Object.keys(data[0]),
+        errors: [],
+        summary: {
+          totalRows: data.length,
+          validRows: data.length,
+          columns: Object.keys(data[0]).length,
+          timeColumn: 'time'
+        }
+      };
+      setPlotsData((prev) => ({ ...prev, [plotId]: marineParseResult }));
+    } else {
+      // Device data (existing logic)
+      setPlotsData((prev) => ({ ...prev, [plotId]: data as ParseResult }));
+    }
   }, []);
 
   // Callback for brush changes in common mode
@@ -116,16 +156,54 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     });
   }, []);
 
+  // Helper to extract time range from first plot
+  const extractTimeRangeFromPlotData = useCallback((parseResult: ParseResult): { startDate: string; endDate: string } | null => {
+    try {
+      const dates = parseResult.data
+        .map(d => parseISO(d.time))
+        .filter(isValid);
+
+      if (dates.length === 0) return null;
+
+      const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
+      const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
+
+      return {
+        startDate: formatISO(minDate, { representation: 'date' }),
+        endDate: formatISO(maxDate, { representation: 'date' })
+      };
+    } catch (e) {
+      console.error('Error extracting time range:', e);
+      return null;
+    }
+  }, []);
+
   // Plot management functions
-  const addPlot = useCallback((fileType: 'GP' | 'FPOD' | 'Subcam', files: File[], customTitle?: string) => {
+  const addPlot = useCallback((
+    type: 'device' | 'marine-meteo',
+    files: File[] = [],
+    options?: {
+      fileType?: 'GP' | 'FPOD' | 'Subcam';
+      customTitle?: string;
+      location?: { lat: number; lon: number };
+      locationName?: string;
+      timeRange?: { startDate: string; endDate: string };
+    }
+  ) => {
     setPlots((prevPlots) => [
       ...prevPlots,
       {
         id: `pin-plot-${Date.now()}-${prevPlots.length}`,
-        title: customTitle || `${fileType} Data Plot ${prevPlots.length + 1}`,
-        fileType,
-        files,
-        fileName: getFileName(files)
+        title: options?.customTitle || `Plot ${prevPlots.length + 1}`,
+        type,
+        // Device plot properties
+        fileType: options?.fileType,
+        files: type === 'device' ? files : undefined,
+        fileName: type === 'device' ? getFileName(files) : undefined,
+        // Marine/meteo plot properties
+        location: options?.location,
+        locationName: options?.locationName,
+        timeRange: options?.timeRange,
       },
     ]);
   }, []);
@@ -134,10 +212,70 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     setPlots((prevPlots) => prevPlots.filter((plot) => plot.id !== idToRemove));
   }, []);
 
+  // Handler for adding marine/meteo plot
+  const handleAddMarineMeteoPlot = useCallback(() => {
+    // Check prerequisites
+    if (plots.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Cannot Add Marine/Meteo Data",
+        description: "Please add at least one device data plot first."
+      });
+      return;
+    }
+
+    if (!objectLocation) {
+      toast({
+        variant: "destructive",
+        title: "Cannot Add Marine/Meteo Data",
+        description: "Object location is not available."
+      });
+      return;
+    }
+
+    // Extract time range from first plot
+    const firstPlot = plots[0];
+    const firstPlotData = plotsData[firstPlot.id];
+
+    if (!firstPlotData) {
+      toast({
+        variant: "destructive",
+        title: "Cannot Add Marine/Meteo Data",
+        description: "First plot data not loaded yet. Please wait."
+      });
+      return;
+    }
+
+    const timeRange = extractTimeRangeFromPlotData(firstPlotData);
+
+    if (!timeRange) {
+      toast({
+        variant: "destructive",
+        title: "Cannot Add Marine/Meteo Data",
+        description: "Could not extract time range from first plot."
+      });
+      return;
+    }
+
+    // Add marine/meteo plot
+    addPlot('marine-meteo', [], {
+      location: { lat: objectLocation.lat, lon: objectLocation.lng },
+      locationName: objectName || 'Object Location',
+      timeRange
+    });
+
+    setShowPlotTypeSelector(false);
+
+    toast({
+      title: "Marine/Meteo Plot Added",
+      description: `Time range: ${timeRange.startDate} to ${timeRange.endDate}`
+    });
+  }, [plots, plotsData, objectLocation, objectName, extractTimeRangeFromPlotData, addPlot, toast]);
+
   // Initialize with one plot for the initially selected files
   React.useEffect(() => {
     if (!plotsInitialized.current && plots.length === 0 && files.length > 0) {
-      addPlot(fileType, files, getFileName(files));
+      addPlot('device', files, { fileType, customTitle: getFileName(files) });
       plotsInitialized.current = true;
     }
   }, [addPlot, plots.length, fileType, files]);
@@ -178,20 +316,37 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
 
             <div className="flex-1 overflow-y-auto space-y-3">
               {plots.map((plot, index) => (
-                <PinPlotInstance
-                  key={plot.id}
-                  instanceId={plot.id}
-                  initialPlotTitle={plot.fileName}
-                  onRemovePlot={plots.length > 1 ? removePlot : undefined}
-                  fileType={plot.fileType}
-                  files={plot.files}
-                  timeAxisMode={timeAxisMode}
-                  globalTimeRange={timeAxisMode === 'common' ? globalTimeRange : undefined}
-                  globalBrushRange={timeAxisMode === 'common' ? globalBrushRange : undefined}
-                  onDataParsed={handlePlotDataParsed}
-                  onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
-                  isLastPlot={index === plots.length - 1}
-                />
+                plot.type === 'device' ? (
+                  <PinPlotInstance
+                    key={plot.id}
+                    instanceId={plot.id}
+                    initialPlotTitle={plot.fileName!}
+                    onRemovePlot={plots.length > 1 ? removePlot : undefined}
+                    fileType={plot.fileType!}
+                    files={plot.files!}
+                    timeAxisMode={timeAxisMode}
+                    globalTimeRange={timeAxisMode === 'common' ? globalTimeRange : undefined}
+                    globalBrushRange={timeAxisMode === 'common' ? globalBrushRange : undefined}
+                    onDataParsed={handlePlotDataParsed}
+                    onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
+                    isLastPlot={index === plots.length - 1}
+                  />
+                ) : (
+                  <PinMarineMeteoPlot
+                    key={plot.id}
+                    instanceId={plot.id}
+                    location={plot.location!}
+                    locationName={plot.locationName!}
+                    timeRange={plot.timeRange!}
+                    onRemovePlot={plots.length > 1 ? removePlot : undefined}
+                    timeAxisMode={timeAxisMode}
+                    globalTimeRange={timeAxisMode === 'common' ? globalTimeRange : undefined}
+                    globalBrushRange={timeAxisMode === 'common' ? globalBrushRange : undefined}
+                    onDataParsed={handlePlotDataParsed}
+                    onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
+                    isLastPlot={index === plots.length - 1}
+                  />
+                )
               ))}
 
               {/* Add Plot Button - inside scrollable area */}
@@ -201,7 +356,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                   size="sm"
                   onClick={() => {
                     console.log('Add Plot clicked, availableFiles:', availableFiles);
-                    setShowFileSelector(true);
+                    setShowPlotTypeSelector(true);
                   }}
                   className="gap-2"
                 >
@@ -213,6 +368,18 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
           </div>
         )}
       </CardContent>
+
+      {/* Plot Type Selector Modal */}
+      {showPlotTypeSelector && (
+        <PlotTypeSelector
+          onSelectDeviceData={() => {
+            setShowPlotTypeSelector(false);
+            setShowFileSelector(true);
+          }}
+          onSelectMarineMeteo={handleAddMarineMeteoPlot}
+          onCancel={() => setShowPlotTypeSelector(false)}
+        />
+      )}
 
       {/* File Selector Modal */}
       {(() => {
@@ -228,7 +395,10 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
 
                 if (downloadedFile) {
                   // Add plot with downloaded file
-                  addPlot(fileOption.fileType, [downloadedFile], fileOption.fileName);
+                  addPlot('device', [downloadedFile], {
+                    fileType: fileOption.fileType,
+                    customTitle: fileOption.fileName
+                  });
                   setShowFileSelector(false);
                 } else {
                   console.error('Failed to download file:', fileOption.fileName);
@@ -236,12 +406,15 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                 }
               } else {
                 // Files already loaded, add plot directly
-                addPlot(fileOption.fileType, fileOption.files, fileOption.fileName);
+                addPlot('device', fileOption.files, {
+                  fileType: fileOption.fileType,
+                  customTitle: fileOption.fileName
+                });
                 setShowFileSelector(false);
               }
             }}
             onCancel={() => setShowFileSelector(false)}
-            excludeFileNames={plots.map(p => p.fileName)}
+            excludeFileNames={plots.filter(p => p.type === 'device').map(p => p.fileName!)}
           />
         );
       })()}

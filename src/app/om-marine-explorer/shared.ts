@@ -49,15 +49,15 @@ export type CombinedParameterKey =
   | 'ghi';
 
 export const ALL_PARAMETERS: CombinedParameterKey[] = [
+  'waveHeight',           // Top 4 defaults for plot stack
   'windSpeed10m',
   'windDirection10m',
-  'waveHeight',
-  'wavePeriod',
+  'seaLevelHeightMsl',
+  'wavePeriod',           // Rest optional
   'waveDirection',
   'temperature2m',
   'seaSurfaceTemperature',
   'ghi',
-  'seaLevelHeightMsl',
 ];
 
 export interface ParameterConfigItem {
