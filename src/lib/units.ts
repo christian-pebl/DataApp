@@ -123,21 +123,74 @@ export const PARAMETER_TO_UNIT_TYPE: Record<string, UnitType> = {
   // Temperature parameters
   'seaSurfaceTemperature': 'temperature',
   'temperature2m': 'temperature',
-  
+  'Temp': 'temperature', // GP files
+  'Temperature': 'temperature', // GP files (alternative)
+
   // Distance parameters
   'waveHeight': 'distance',
   'seaLevelHeightMsl': 'distance',
-  
+  'Sea Level': 'distance', // Marine/Meteo alternative
+
   // Wind speed
   'windSpeed10m': 'windSpeed',
-  
+  'Wind Speed': 'windSpeed', // Marine/Meteo alternative
+
   // Solar irradiance
   'ghi': 'irradiance',
-  
+  'IR': 'irradiance', // GP files - Infrared/Irradiance
+  'Irradiance': 'irradiance', // GP files (alternative)
+
   // No conversion needed for these:
   // 'waveDirection': direction (degrees)
-  // 'windDirection10m': direction (degrees) 
+  // 'windDirection10m': direction (degrees)
   // 'wavePeriod': time (seconds)
+  // 'Wave Dir': direction (degrees)
+  // 'Wind Dir': direction (degrees)
+};
+
+/**
+ * Parameter display names and units mapping
+ * Maps parameter keys to their display names and unit symbols
+ */
+export const PARAMETER_DISPLAY_INFO: Record<string, { label: string; unit: string }> = {
+  // Marine/Meteo parameters
+  'waveHeight': { label: 'Sig. Wave Height', unit: 'm' },
+  'waveDirection': { label: 'Wave Direction', unit: '° North' },
+  'wavePeriod': { label: 'Wave Period', unit: 'sec' },
+  'seaSurfaceTemperature': { label: 'Sea S. Temp.', unit: '°C' },
+  'seaLevelHeightMsl': { label: 'Tide', unit: 'm' },
+  'temperature2m': { label: 'Air Temp.', unit: '°C' },
+  'windSpeed10m': { label: 'Wind Speed', unit: 'km/h' },
+  'windDirection10m': { label: 'Wind Direction', unit: '° North' },
+  'ghi': { label: 'Solar Irradiance', unit: 'W/m²' },
+
+  // Marine/Meteo alternative names (from PinMarineMeteoPlot)
+  'Wave Height': { label: 'Sig. Wave Height', unit: 'm' },
+  'Wind Speed (10m)': { label: 'Wind Speed', unit: 'km/h' },
+  'Wind Direction (10m)': { label: 'Wind Direction', unit: '° North' },
+  'Sea Level (MSL)': { label: 'Tide', unit: 'm' },
+  'Wave Period': { label: 'Wave Period', unit: 'sec' },
+  'Wave Direction': { label: 'Wave Direction', unit: '° North' },
+  'Air Temperature (2m)': { label: 'Air Temp.', unit: '°C' },
+  'Sea Surface Temp (0m)': { label: 'Sea S. Temp.', unit: '°C' },
+  'Global Horizontal Irradiance (GHI)': { label: 'Solar Irradiance', unit: 'W/m²' },
+
+  // GP file parameters
+  'Temp': { label: 'Temp', unit: '°C' },
+  'Temperature': { label: 'Temperature', unit: '°C' },
+  'IR': { label: 'IR', unit: 'a.u.' },
+  'Vis': { label: 'Vis', unit: 'a.u.' },
+  'Lux': { label: 'Light', unit: 'Lux' },
+  'accel_x': { label: 'accel_x', unit: 'g' },
+  'accel_y': { label: 'accel_y', unit: 'g' },
+  'accel_z': { label: 'accel_z', unit: 'g' },
+  'Mag_x': { label: 'Mag_x', unit: 'a.u.' },
+  'Mag_y': { label: 'Mag_y', unit: 'a.u.' },
+  'H.Angle': { label: 'Direction', unit: '° North' },
+  'VBAT': { label: 'Battery', unit: 'V' },
+
+  // Add common variations - these will be updated if they appear in files
+  // The system will handle unknown parameters by showing them as-is with "Value" unit
 };
 
 /**
@@ -152,4 +205,30 @@ export function parameterNeedsConversion(parameterKey: string): boolean {
  */
 export function getParameterUnitType(parameterKey: string): UnitType | null {
   return PARAMETER_TO_UNIT_TYPE[parameterKey] || null;
+}
+
+/**
+ * Get parameter display label (without unit)
+ */
+export function getParameterLabel(parameterKey: string): string {
+  return PARAMETER_DISPLAY_INFO[parameterKey]?.label || parameterKey;
+}
+
+/**
+ * Get parameter unit symbol
+ */
+export function getParameterUnit(parameterKey: string): string {
+  return PARAMETER_DISPLAY_INFO[parameterKey]?.unit || '';
+}
+
+/**
+ * Get parameter display label with unit in parentheses
+ * Example: "Temp (°C)" or "Wave Height (m)"
+ */
+export function getParameterLabelWithUnit(parameterKey: string): string {
+  const info = PARAMETER_DISPLAY_INFO[parameterKey];
+  if (info && info.unit) {
+    return `${info.label} (${info.unit})`;
+  }
+  return parameterKey; // Fallback to raw parameter name if not in mapping
 }

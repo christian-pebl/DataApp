@@ -1,15 +1,16 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, ReferenceLine } from 'recharts';
 import { format, parseISO, isValid } from 'date-fns';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon } from "lucide-react";
+import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft } from "lucide-react";
 import { cn } from '@/lib/utils';
+import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
 
 interface PinChartDisplayProps {
@@ -94,6 +95,9 @@ export function PinChartDisplay({
 
   // Axis mode state - single or multi axis
   const [axisMode, setAxisMode] = useState<'single' | 'multi'>('single');
+
+  // Parameter panel expansion state
+  const [isParameterPanelExpanded, setIsParameterPanelExpanded] = useState(false);
   
   // Get all parameters (for table view)
   const allParameters = useMemo(() => {
@@ -201,6 +205,31 @@ export function PinChartDisplay({
     return Math.max(Math.abs(yAxisDomain[0]), Math.abs(yAxisDomain[1]));
   }, [yAxisDomain]);
 
+  // Calculate the maximum number of digits in y-axis tick labels (for single axis)
+  const maxTickDigits = useMemo(() => {
+    const maxValue = Math.max(Math.abs(yAxisDomain[0]), Math.abs(yAxisDomain[1]));
+    const formatted = formatYAxisTick(maxValue, dataRange, dataMax);
+    return formatted.length;
+  }, [yAxisDomain, dataRange, dataMax]);
+
+  // Calculate label offset based on tick label width (for single axis)
+  const getLabelOffset = (digitCount: number) => {
+    if (digitCount <= 2) return 15;
+    if (digitCount === 3) return 20;
+    return 25; // 4+ digits
+  };
+
+  // Calculate offset for multi-axis based on parameter domain
+  const getMultiAxisLabelOffset = (domain: [number, number], dataRange: number, dataMax: number) => {
+    const maxValue = Math.max(Math.abs(domain[0]), Math.abs(domain[1]));
+    const formatted = formatYAxisTick(maxValue, dataRange, dataMax);
+    const digitCount = formatted.length;
+
+    if (digitCount <= 2) return 10;
+    if (digitCount === 3) return 13;
+    return 17; // 4+ digits
+  };
+
   // Calculate individual Y-axis domains for each parameter (for multi-axis mode)
   const parameterDomains = useMemo(() => {
     const domains: Record<string, [number, number]> = {};
@@ -255,6 +284,20 @@ export function PinChartDisplay({
         visible: !prev[parameter]?.visible
       }
     }));
+  };
+
+  const showOnlyParameter = (parameter: string) => {
+    setParameterStates(prev => {
+      const newState = { ...prev };
+      // Hide all parameters except the clicked one
+      Object.keys(newState).forEach(key => {
+        newState[key] = {
+          ...newState[key],
+          visible: key === parameter
+        };
+      });
+      return newState;
+    });
   };
 
   const moveParameter = (parameter: string, direction: 'up' | 'down') => {
@@ -386,7 +429,7 @@ export function PinChartDisplay({
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={displayData}
-                margin={{ top: 5, right: 12, left: 5, bottom: 0 }}
+                margin={{ top: 5, right: 12, left: 5, bottom: -5 }}
               >
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
 
@@ -405,12 +448,21 @@ export function PinChartDisplay({
                   domain={yAxisDomain}
                   tickFormatter={(value) => formatYAxisTick(value, dataRange, dataMax)}
                   label={showYAxisLabels ? {
-                    value: 'Value',
+                    value: visibleParameters.length === 1
+                      ? getParameterLabelWithUnit(visibleParameters[0])
+                      : 'Value',
                     angle: -90,
                     position: 'insideLeft',
+                    offset: getLabelOffset(maxTickDigits),
                     style: { textAnchor: 'middle', fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }
                   } : undefined}
                 />
+
+                {/* Frame lines - top and right edges */}
+                <ReferenceLine y={yAxisDomain[1]} stroke="hsl(var(--border))" strokeWidth={1} strokeOpacity={0.3} />
+                {displayData.length > 0 && (
+                  <ReferenceLine x={displayData[displayData.length - 1].time} stroke="hsl(var(--border))" strokeWidth={1} strokeOpacity={0.3} />
+                )}
 
                 <RechartsTooltip
                   contentStyle={{
@@ -466,7 +518,7 @@ export function PinChartDisplay({
                   top: 5,
                   right: Math.ceil(visibleParameters.length / 2) * 35,
                   left: 35,
-                  bottom: 0
+                  bottom: -5
                 }}
               >
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
@@ -497,9 +549,10 @@ export function PinChartDisplay({
                       width={32}
                       tickFormatter={(value) => formatYAxisTick(value, paramRange, paramMax)}
                       label={{
-                        value: parameter,
+                        value: getParameterLabelWithUnit(parameter),
                         angle: -90,
                         position: orientation === 'left' ? 'insideLeft' : 'insideRight',
+                        offset: getMultiAxisLabelOffset(domain, paramRange, paramMax),
                         style: {
                           textAnchor: 'middle',
                           fontSize: '0.55rem',
@@ -511,6 +564,33 @@ export function PinChartDisplay({
                     />
                   );
                 })}
+
+                {/* Frame lines - top edges for each Y-axis */}
+                {visibleParameters.map((parameter) => {
+                  const domain = parameterDomains[parameter] || [0, 100];
+                  const yAxisId = `axis-${parameter}`;
+                  return (
+                    <ReferenceLine
+                      key={`ref-${yAxisId}`}
+                      y={domain[1]}
+                      yAxisId={yAxisId}
+                      stroke="hsl(var(--border))"
+                      strokeWidth={1}
+                      strokeOpacity={0.3}
+                    />
+                  );
+                })}
+
+                {/* Frame lines - right edge (using first axis) */}
+                {displayData.length > 0 && visibleParameters.length > 0 && (
+                  <ReferenceLine
+                    x={displayData[displayData.length - 1].time}
+                    yAxisId={`axis-${visibleParameters[0]}`}
+                    stroke="hsl(var(--border))"
+                    strokeWidth={1}
+                    strokeOpacity={0.3}
+                  />
+                )}
 
                 <RechartsTooltip
                   contentStyle={{
@@ -595,15 +675,32 @@ export function PinChartDisplay({
           </div>
 
           {/* Parameter Controls - On the right side */}
-          <div className="w-40 space-y-2">
-            <p className="text-xs font-medium">
-              Parameters ({visibleParameters.length} visible)
-              {axisMode === 'multi' && visibleParameters.length > 0 && (
-                <span className="text-muted-foreground font-normal ml-1">- Multi-axis</span>
-              )}
-            </p>
+          <div className={cn("space-y-2 transition-all duration-300", isParameterPanelExpanded ? "w-56" : "w-40")}>
+            {/* Header with expand button and label */}
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-4 w-4 hover:bg-accent/50"
+                onClick={() => setIsParameterPanelExpanded(!isParameterPanelExpanded)}
+                title={isParameterPanelExpanded ? "Collapse panel" : "Expand panel"}
+              >
+                {isParameterPanelExpanded ? (
+                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                ) : (
+                  <ChevronLeft className="h-3 w-3 text-muted-foreground" />
+                )}
+              </Button>
 
-            <div className="space-y-1 h-[238px] overflow-y-auto">
+              <p className="text-xs font-medium">
+                Parameters ({visibleParameters.length} visible)
+                {axisMode === 'multi' && visibleParameters.length > 0 && (
+                  <span className="text-muted-foreground font-normal ml-1">- Multi-axis</span>
+                )}
+              </p>
+            </div>
+
+            <div className="space-y-1 h-[210px] overflow-y-auto">
               {numericParameters.map((parameter, index) => {
                 const state = parameterStates[parameter];
                 if (!state) return null;
@@ -638,30 +735,14 @@ export function PinChartDisplay({
                         </span>
                       )}
                       <div
-                        className="w-3 h-3 rounded-full border"
-                        style={{ backgroundColor: `hsl(var(${state.color}))` }}
+                        className="w-3 h-3 rounded-full border cursor-pointer hover:ring-2 hover:ring-offset-1 transition-all"
+                        style={{
+                          backgroundColor: `hsl(var(${state.color}))`,
+                          '--tw-ring-color': `hsl(var(${state.color}))`
+                        } as React.CSSProperties}
+                        onClick={() => showOnlyParameter(parameter)}
+                        title="Show only this parameter"
                       />
-                    </div>
-
-                    <div className="flex items-center">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5"
-                        onClick={() => moveParameter(parameter, 'up')}
-                        disabled={index === 0}
-                      >
-                        <ChevronUp className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5"
-                        onClick={() => moveParameter(parameter, 'down')}
-                        disabled={index === numericParameters.length - 1}
-                      >
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
                     </div>
                   </div>
                 );
