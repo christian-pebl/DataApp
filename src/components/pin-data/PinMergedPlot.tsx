@@ -208,13 +208,6 @@ export function PinMergedPlot({
           let startDate = leftParam.timeRange!.startDate;
           let endDate = leftParam.timeRange!.endDate;
 
-          console.log('🌊 Loading LEFT Marine data:', {
-            displayName: leftParam.parameter,
-            paramKey,
-            location: leftParam.location,
-            timeRange: { startDate, endDate }
-          });
-
           // Fetch marine data
           const result = await fetchCombinedDataAction({
             latitude: leftParam.location!.lat,
@@ -224,21 +217,7 @@ export function PinMergedPlot({
             parameters: [paramKey]
           });
 
-          console.log('🌊 LEFT Marine fetch result:', {
-            success: result.success,
-            dataLength: result.data?.length,
-            error: result.error,
-            firstDataPoint: result.data?.[0]
-          });
-
           if (result.success && result.data) {
-            console.log('🌊 LEFT Marine raw data sample:', {
-              firstPoint: result.data[0],
-              pointKeys: result.data[0] ? Object.keys(result.data[0]) : [],
-              paramKeyWeAreLookingFor: paramKey,
-              valueAtThatKey: result.data[0]?.[paramKey as keyof CombinedDataPoint]
-            });
-
             // Convert to ParsedDataPoint format
             // Store using the DISPLAY NAME as key (so merge can find it)
             const parsed: ParsedDataPoint[] = result.data.map(point => {
@@ -247,14 +226,6 @@ export function PinMergedPlot({
                 time: point.time,
                 [leftParam.parameter]: value  // Use display name as key
               };
-            });
-
-            console.log('🌊 LEFT Marine parsed data:', {
-              parsedLength: parsed.length,
-              firstParsed: parsed[0],
-              displayNameUsedAsKey: leftParam.parameter,
-              firstValue: parsed[0]?.[leftParam.parameter],
-              allKeysInFirstParsed: parsed[0] ? Object.keys(parsed[0]) : []
             });
 
             setLeftData(parsed);
@@ -304,16 +275,8 @@ export function PinMergedPlot({
               startDate = deviceTimeRange.startDate;
               endDate = deviceTimeRange.endDate;
               setTimeRangeAligned(true); // Mark as aligned to prevent re-fetching
-              console.log('🔧 Using LEFT device time range for RIGHT marine:', deviceTimeRange);
             }
           }
-
-          console.log('🌊 Loading RIGHT Marine data:', {
-            displayName: rightParam.parameter,
-            paramKey,
-            location: rightParam.location,
-            timeRange: { startDate, endDate }
-          });
 
           // Fetch marine data
           const result = await fetchCombinedDataAction({
@@ -324,21 +287,7 @@ export function PinMergedPlot({
             parameters: [paramKey]
           });
 
-          console.log('🌊 RIGHT Marine fetch result:', {
-            success: result.success,
-            dataLength: result.data?.length,
-            error: result.error,
-            firstDataPoint: result.data?.[0]
-          });
-
           if (result.success && result.data) {
-            console.log('🌊 RIGHT Marine raw data sample:', {
-              firstPoint: result.data[0],
-              pointKeys: result.data[0] ? Object.keys(result.data[0]) : [],
-              paramKeyWeAreLookingFor: paramKey,
-              valueAtThatKey: result.data[0]?.[paramKey as keyof CombinedDataPoint]
-            });
-
             // Convert to ParsedDataPoint format
             // Store using the DISPLAY NAME as key (so merge can find it)
             const parsed: ParsedDataPoint[] = result.data.map(point => {
@@ -347,14 +296,6 @@ export function PinMergedPlot({
                 time: point.time,
                 [rightParam.parameter]: value  // Use display name as key
               };
-            });
-
-            console.log('🌊 RIGHT Marine parsed data:', {
-              parsedLength: parsed.length,
-              firstParsed: parsed[0],
-              displayNameUsedAsKey: rightParam.parameter,
-              firstValue: parsed[0]?.[rightParam.parameter],
-              allKeysInFirstParsed: parsed[0] ? Object.keys(parsed[0]) : []
             });
 
             setRightData(parsed);
@@ -386,27 +327,7 @@ export function PinMergedPlot({
 
   // Merge data by time (UNION - include all timestamps)
   const mergedData = useMemo(() => {
-    console.log('🔄 Merging data:', {
-      leftDataLength: leftData.length,
-      rightDataLength: rightData.length,
-      leftParam: leftParam.parameter,
-      rightParam: rightParam.parameter,
-      leftSample: leftData[0],
-      rightSample: rightData[0],
-      leftKeys: leftData[0] ? Object.keys(leftData[0]) : [],
-      rightKeys: rightData[0] ? Object.keys(rightData[0]) : [],
-      leftTimeRange: leftData.length > 0 ? {
-        first: leftData[0].time,
-        last: leftData[leftData.length - 1].time
-      } : null,
-      rightTimeRange: rightData.length > 0 ? {
-        first: rightData[0].time,
-        last: rightData[rightData.length - 1].time
-      } : null
-    });
-
     if (leftData.length === 0 && rightData.length === 0) {
-      console.log('⚠️ No data to merge');
       return [];
     }
 
@@ -418,14 +339,6 @@ export function PinMergedPlot({
     const allTimestamps = Array.from(
       new Set([...leftData.map(d => d.time), ...rightData.map(d => d.time)])
     ).sort();
-
-    console.log('🔄 Merge details:', {
-      allTimestampsLength: allTimestamps.length,
-      leftParamKey: leftParam.parameter,
-      rightParamKey: rightParam.parameter,
-      sampleLeftPoint: leftMap.get(allTimestamps[0]),
-      sampleRightPoint: rightMap.get(allTimestamps[0])
-    });
 
     // Merge data at each timestamp
     const merged = allTimestamps.map(time => {
@@ -441,26 +354,15 @@ export function PinMergedPlot({
       return mergedPoint;
     });
 
-    console.log('✅ Merged data:', {
-      mergedLength: merged.length,
-      firstPoint: merged[0],
-      lastPoint: merged[merged.length - 1],
-      midPoint: merged[Math.floor(merged.length / 2)],
-      mergedKeys: merged[0] ? Object.keys(merged[0]) : [],
-      leftParamInFirst: leftParam.parameter in (merged[0] || {}),
-      rightParamInFirst: rightParam.parameter in (merged[0] || {}),
-      leftValueInFirst: merged[0]?.[leftParam.parameter],
-      rightValueInFirst: merged[0]?.[rightParam.parameter],
-      // Show first 5 points to see timestamp alignment
-      first5Points: merged.slice(0, 5).map(p => ({
-        time: p.time,
-        leftValue: p[leftParam.parameter],
-        rightValue: p[rightParam.parameter]
-      }))
-    });
-
     return merged;
   }, [leftData, rightData, leftParam.parameter, rightParam.parameter]);
+
+  // Initialize local brush end index
+  useEffect(() => {
+    if (mergedData.length > 0 && localBrushEnd === undefined) {
+      setLocalBrushEnd(mergedData.length - 1);
+    }
+  }, [mergedData.length, localBrushEnd]);
 
   // Determine active brush indices based on mode
   const activeBrushStart = timeAxisMode === 'common' && globalBrushRange
@@ -469,6 +371,7 @@ export function PinMergedPlot({
   const activeBrushEnd = timeAxisMode === 'common' && globalBrushRange
     ? globalBrushRange.endIndex
     : localBrushEnd;
+
 
   // Apply brush/time filtering
   const displayData = useMemo(() => {
@@ -580,8 +483,10 @@ export function PinMergedPlot({
       <CardContent>
         {/* Main layout: Chart on left, Parameters on right */}
         <div className="flex gap-4">
-          {/* Chart Container */}
-          <div className="flex-1" style={{ height: '250px' }}>
+          {/* Chart and Brush Column */}
+          <div className="flex-1 space-y-3">
+            {/* Chart Container */}
+            <div style={{ height: '250px' }}>
             {leftError || rightError ? (
               <div className="flex flex-col items-center justify-center h-full text-center gap-2">
                 <AlertCircle className="h-8 w-8 text-destructive" />
@@ -699,34 +604,54 @@ export function PinMergedPlot({
                   isAnimationActive={false}
                 />
               )}
-
-              {/* Brush - always show, handle both common and separate modes */}
-              <Brush
-                dataKey="time"
-                height={30}
-                stroke="hsl(var(--primary))"
-                fill="hsl(var(--muted))"
-                tickFormatter={formatDateTick}
-                onChange={(range) => {
-                  if ('startIndex' in range && 'endIndex' in range) {
-                    if (timeAxisMode === 'common' && isLastPlot && onBrushChange) {
-                      // In common mode, update global brush (only if last plot)
-                      onBrushChange({
-                        startIndex: range.startIndex ?? 0,
-                        endIndex: range.endIndex ?? mergedData.length - 1
-                      });
-                    } else {
-                      // In separate mode, update local brush
-                      setLocalBrushStart(range.startIndex ?? 0);
-                      setLocalBrushEnd(range.endIndex ?? mergedData.length - 1);
-                    }
-                  }
-                }}
-                startIndex={activeBrushStart}
-                endIndex={activeBrushEnd}
-              />
             </LineChart>
           </ResponsiveContainer>
+            )}
+            </div>
+
+            {/* Time Range Brush - separate container matching unmerged mode */}
+            {mergedData.length > 10 && (timeAxisMode === 'separate' || isLastPlot) && !isLoading && (
+              <div className="h-10 w-full border rounded-md bg-card p-1">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={mergedData} margin={{ top: 2, right: 15, left: 15, bottom: 0 }}>
+                    <XAxis
+                      dataKey="time"
+                      tickFormatter={formatDateTick}
+                      stroke="hsl(var(--muted-foreground))"
+                      tick={{ fontSize: '0.6rem' }}
+                      height={10}
+                      interval="preserveStartEnd"
+                    />
+                    <Brush
+                      data={mergedData}
+                      dataKey="time"
+                      height={16}
+                      stroke="hsl(var(--primary))"
+                      fill="transparent"
+                      tickFormatter={() => ""}
+                      travellerWidth={10}
+                      startIndex={activeBrushStart}
+                      endIndex={activeBrushEnd}
+                      onChange={(range) => {
+                        if ('startIndex' in range && 'endIndex' in range) {
+                          if (timeAxisMode === 'common' && onBrushChange) {
+                            // In common mode, propagate to parent
+                            onBrushChange({
+                              startIndex: range.startIndex ?? 0,
+                              endIndex: range.endIndex
+                            });
+                          } else {
+                            // In separate mode, update local state
+                            setLocalBrushStart(range.startIndex ?? 0);
+                            setLocalBrushEnd(range.endIndex);
+                          }
+                        }
+                      }}
+                      y={12}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             )}
           </div>
 
