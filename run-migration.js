@@ -17,8 +17,8 @@ const supabase = createClient(supabaseUrl, serviceRoleKey)
 
 async function runMigration() {
   try {
-    console.log('🚀 Running migration: 002_add_visual_properties.sql')
-    const migrationSQL = fs.readFileSync('./supabase/migrations/002_add_visual_properties.sql', 'utf8')
+    console.log('🚀 Running migration: 20251002200801_add_color_size_to_lines.sql')
+    const migrationSQL = fs.readFileSync('./supabase/migrations/20251002200801_add_color_size_to_lines.sql', 'utf8')
 
     console.log('📝 SQL to execute:')
     console.log(migrationSQL)
@@ -43,11 +43,11 @@ async function runMigration() {
     }
 
     console.log('\n✅ Migration completed!')
-    console.log('✅ Columns added: color, size, transparency')
+    console.log('✅ Columns added to lines table: color, size')
   } catch (err) {
     console.error('❌ Error:', err.message)
     console.log('\n📋 If automatic migration failed, run this SQL manually in Supabase Dashboard:')
-    console.log(fs.readFileSync('./supabase/migrations/002_add_visual_properties.sql', 'utf8'))
+    console.log(fs.readFileSync('./supabase/migrations/20251002200801_add_color_size_to_lines.sql', 'utf8'))
     process.exit(1)
   }
 }

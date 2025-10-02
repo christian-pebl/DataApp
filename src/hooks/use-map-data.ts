@@ -264,20 +264,24 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
 
   // Pin operations
   const createPin = useCallback(async (pinData: Omit<Pin, 'id'>) => {
-    const newPin: Pin = {
+    let newPin: Pin = {
       ...pinData,
       id: crypto.randomUUID()
     }
 
-    // Update local state immediately
-    const updatedPins = [...pins, newPin]
-    setPins(updatedPins)
-    saveToLocalStorage('map-drawing-pins', updatedPins)
-
     // Sync to database if online and authenticated
     if (enableSync && isAuthenticated && isOnline) {
       try {
-        await mapDataService.createPin(pinData)
+        const createdPin = await mapDataService.createPin(pinData)
+        console.log('Pin synced successfully, using database ID:', createdPin.id)
+
+        // Use the database-generated pin with its ID
+        newPin = createdPin
+
+        // Update local state with database pin
+        const updatedPins = [...pins, newPin]
+        setPins(updatedPins)
+        saveToLocalStorage('map-drawing-pins', updatedPins)
       } catch (error) {
         console.error('Error syncing pin to database:', {
           error,
@@ -285,12 +289,23 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
           stack: error instanceof Error ? error.stack : undefined,
           pinData
         })
+
+        // Fall back to local-only creation with UUID
+        const updatedPins = [...pins, newPin]
+        setPins(updatedPins)
+        saveToLocalStorage('map-drawing-pins', updatedPins)
+
         toast({
           variant: "destructive",
           title: "Sync Error",
           description: `Pin saved locally but failed to sync to database. ${error instanceof Error ? error.message : 'Unknown error'}`
         })
       }
+    } else {
+      // Offline or not authenticated - use local UUID
+      const updatedPins = [...pins, newPin]
+      setPins(updatedPins)
+      saveToLocalStorage('map-drawing-pins', updatedPins)
     }
 
     return newPin
@@ -368,31 +383,44 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
 
   // Line operations
   const createLine = useCallback(async (lineData: Omit<Line, 'id'>) => {
-    const newLine: Line = {
+    let newLine: Line = {
       ...lineData,
       id: crypto.randomUUID()
     }
 
-    const updatedLines = [...lines, newLine]
-    setLines(updatedLines)
-    saveToLocalStorage('map-drawing-lines', updatedLines)
-
     if (enableSync && isAuthenticated && isOnline) {
       try {
         console.log('Syncing line to database:', lineData)
-        await mapDataService.createLine(lineData)
-        console.log('Line synced successfully')
+        const createdLine = await mapDataService.createLine(lineData)
+        console.log('Line synced successfully, using database ID:', createdLine.id)
+
+        // Use the database-generated line with its ID
+        newLine = createdLine
+
+        const updatedLines = [...lines, newLine]
+        setLines(updatedLines)
+        saveToLocalStorage('map-drawing-lines', updatedLines)
       } catch (error) {
         console.error('Error syncing line to database:', error)
-        // Only show toast if user is actually authenticated 
+        // Fall back to local-only creation with UUID
+        const updatedLines = [...lines, newLine]
+        setLines(updatedLines)
+        saveToLocalStorage('map-drawing-lines', updatedLines)
+
+        // Only show toast if user is actually authenticated
         if (isAuthenticated) {
           toast({
             variant: "destructive",
-            title: "Sync Error",  
+            title: "Sync Error",
             description: "Line saved locally but failed to sync to database."
           })
         }
       }
+    } else {
+      // Offline or not authenticated - use local UUID
+      const updatedLines = [...lines, newLine]
+      setLines(updatedLines)
+      saveToLocalStorage('map-drawing-lines', updatedLines)
     }
 
     return newLine
@@ -440,26 +468,41 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
 
   // Area operations
   const createArea = useCallback(async (areaData: Omit<Area, 'id'>) => {
-    const newArea: Area = {
+    let newArea: Area = {
       ...areaData,
       id: crypto.randomUUID()
     }
 
-    const updatedAreas = [...areas, newArea]
-    setAreas(updatedAreas)
-    saveToLocalStorage('map-drawing-areas', updatedAreas)
-
     if (enableSync && isAuthenticated && isOnline) {
       try {
-        await mapDataService.createArea(areaData)
+        const createdArea = await mapDataService.createArea(areaData)
+        console.log('Area synced successfully, using database ID:', createdArea.id)
+
+        // Use the database-generated area with its ID
+        newArea = createdArea
+
+        const updatedAreas = [...areas, newArea]
+        setAreas(updatedAreas)
+        saveToLocalStorage('map-drawing-areas', updatedAreas)
       } catch (error) {
         console.error('Error syncing area to database:', error)
+
+        // Fall back to local-only creation with UUID
+        const updatedAreas = [...areas, newArea]
+        setAreas(updatedAreas)
+        saveToLocalStorage('map-drawing-areas', updatedAreas)
+
         toast({
           variant: "destructive",
           title: "Sync Error",
           description: "Area saved locally but failed to sync to database."
         })
       }
+    } else {
+      // Offline or not authenticated - use local UUID
+      const updatedAreas = [...areas, newArea]
+      setAreas(updatedAreas)
+      saveToLocalStorage('map-drawing-areas', updatedAreas)
     }
 
     return newArea
