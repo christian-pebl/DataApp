@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { HexColorPicker } from 'react-colorful';
 import { Split, ArrowLeft, ArrowRight, X, Loader2, AlertCircle, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -166,6 +167,9 @@ export function PinMergedPlot({
 
   // Parameter panel expansion state
   const [isParameterPanelExpanded, setIsParameterPanelExpanded] = useState(true);
+
+  // Y-axis mode state
+  const [yAxisMode, setYAxisMode] = useState<'single' | 'multi'>('multi');
 
   // Color states (allow user to change colors)
   const [leftColor, setLeftColor] = useState(leftParam.color);
@@ -421,11 +425,41 @@ export function PinMergedPlot({
     return [min - padding, max + padding];
   }, [displayData, rightParam.parameter]);
 
+  // Calculate combined domain for single y-axis mode
+  const combinedDomain = useMemo((): [number, number] => {
+    if (yAxisMode === 'multi') return [0, 100]; // Not used in multi mode
+
+    // Collect all values from both parameters
+    const allValues: number[] = [];
+
+    displayData.forEach(d => {
+      const leftVal = d[leftParam.parameter];
+      const rightVal = d[rightParam.parameter];
+
+      if (typeof leftVal === 'number' && !isNaN(leftVal)) {
+        allValues.push(leftVal);
+      }
+      if (typeof rightVal === 'number' && !isNaN(rightVal)) {
+        allValues.push(rightVal);
+      }
+    });
+
+    if (allValues.length === 0) return [0, 100];
+
+    const min = Math.min(...allValues);
+    const max = Math.max(...allValues);
+    const padding = (max - min) * 0.1 || 1;
+
+    return [min - padding, max + padding];
+  }, [displayData, leftParam.parameter, rightParam.parameter, yAxisMode]);
+
   // Calculate ranges for Y-axis formatters
   const leftRange = Math.abs(leftDomain[1] - leftDomain[0]);
   const leftMax = Math.max(Math.abs(leftDomain[0]), Math.abs(leftDomain[1]));
   const rightRange = Math.abs(rightDomain[1] - rightDomain[0]);
   const rightMax = Math.max(Math.abs(rightDomain[0]), Math.abs(rightDomain[1]));
+  const combinedRange = Math.abs(combinedDomain[1] - combinedDomain[0]);
+  const combinedMax = Math.max(Math.abs(combinedDomain[0]), Math.abs(combinedDomain[1]));
 
   const isLoading = isLoadingLeft || isLoadingRight;
   const leftColorValue = getColorValue(leftColor);
@@ -509,7 +543,7 @@ export function PinMergedPlot({
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={displayData} margin={{ top: 5, right: 60, left: 20, bottom: 5 }}>
+            <LineChart data={displayData} margin={{ top: 5, right: yAxisMode === 'single' ? 20 : 60, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
 
               {/* X-Axis */}
@@ -521,39 +555,67 @@ export function PinMergedPlot({
                 height={45}
               />
 
-              {/* Left Y-Axis */}
-              <YAxis
-                yAxisId="left"
-                orientation="left"
-                domain={leftDomain}
-                tick={{ fontSize: '0.65rem', fill: leftColorValue }}
-                stroke={leftColorValue}
-                tickFormatter={(value) => formatYAxisTick(value, leftRange, leftMax)}
-                label={{
-                  value: formatParameterWithSource(leftParam.parameter, leftParam.sourceType),
-                  angle: -90,
-                  position: 'insideLeft',
-                  offset: 10,
-                  style: { fill: leftColorValue, fontSize: '0.65rem', fontWeight: 500, textAnchor: 'middle' }
-                }}
-              />
+              {/* Conditional Y-Axis Rendering based on mode */}
+              {yAxisMode === 'single' ? (
+                // SINGLE Y-AXIS MODE: Both parameters share left axis
+                <YAxis
+                  yAxisId="left"
+                  orientation="left"
+                  domain={combinedDomain}
+                  tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }}
+                  stroke="hsl(var(--border))"
+                  tickFormatter={(value) => formatYAxisTick(value, combinedRange, combinedMax)}
+                  label={{
+                    value: formatParameterWithSource(leftParam.parameter, leftParam.sourceType),
+                    angle: -90,
+                    position: 'insideLeft',
+                    offset: 10,
+                    style: {
+                      fill: 'hsl(var(--muted-foreground))',
+                      fontSize: '0.65rem',
+                      fontWeight: 500,
+                      textAnchor: 'middle'
+                    }
+                  }}
+                />
+              ) : (
+                // MULTI Y-AXIS MODE: Separate left and right axes
+                <>
+                  {/* Left Y-Axis */}
+                  <YAxis
+                    yAxisId="left"
+                    orientation="left"
+                    domain={leftDomain}
+                    tick={{ fontSize: '0.65rem', fill: leftColorValue }}
+                    stroke={leftColorValue}
+                    tickFormatter={(value) => formatYAxisTick(value, leftRange, leftMax)}
+                    label={{
+                      value: formatParameterWithSource(leftParam.parameter, leftParam.sourceType),
+                      angle: -90,
+                      position: 'insideLeft',
+                      offset: 10,
+                      style: { fill: leftColorValue, fontSize: '0.65rem', fontWeight: 500, textAnchor: 'middle' }
+                    }}
+                  />
 
-              {/* Right Y-Axis */}
-              <YAxis
-                yAxisId="right"
-                orientation="right"
-                domain={rightDomain}
-                tick={{ fontSize: '0.65rem', fill: rightColorValue }}
-                stroke={rightColorValue}
-                tickFormatter={(value) => formatYAxisTick(value, rightRange, rightMax)}
-                label={{
-                  value: formatParameterWithSource(rightParam.parameter, rightParam.sourceType),
-                  angle: 90,
-                  position: 'insideRight',
-                  offset: 10,
-                  style: { fill: rightColorValue, fontSize: '0.65rem', fontWeight: 500, textAnchor: 'middle' }
-                }}
-              />
+                  {/* Right Y-Axis */}
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    domain={rightDomain}
+                    tick={{ fontSize: '0.65rem', fill: rightColorValue }}
+                    stroke={rightColorValue}
+                    tickFormatter={(value) => formatYAxisTick(value, rightRange, rightMax)}
+                    label={{
+                      value: formatParameterWithSource(rightParam.parameter, rightParam.sourceType),
+                      angle: 90,
+                      position: 'insideRight',
+                      offset: 10,
+                      style: { fill: rightColorValue, fontSize: '0.65rem', fontWeight: 500, textAnchor: 'middle' }
+                    }}
+                  />
+                </>
+              )}
 
               <Tooltip
                 contentStyle={{
@@ -593,7 +655,7 @@ export function PinMergedPlot({
               {/* Right Parameter Line */}
               {rightVisible && (
                 <Line
-                  yAxisId="right"
+                  yAxisId={yAxisMode === 'single' ? 'left' : 'right'}
                   type="monotone"
                   dataKey={rightParam.parameter}
                   stroke={rightColorValue}
@@ -657,6 +719,17 @@ export function PinMergedPlot({
 
           {/* Parameter Panel on the right */}
           <div className={cn("space-y-2 transition-all duration-300", isParameterPanelExpanded ? "w-56" : "w-40")}>
+            {/* Y-Axis Mode Toggle */}
+            <div className="flex items-center justify-center gap-2 pb-2 border-b">
+              <span className="text-xs text-muted-foreground">Single</span>
+              <Switch
+                checked={yAxisMode === 'multi'}
+                onCheckedChange={(checked) => setYAxisMode(checked ? 'multi' : 'single')}
+                className="h-5 w-9"
+              />
+              <span className="text-xs text-muted-foreground">Multi</span>
+            </div>
+
             {/* Header with expand button */}
             <div className="flex items-center gap-1">
               <Button
@@ -675,6 +748,9 @@ export function PinMergedPlot({
 
               <p className="text-xs font-medium">
                 Parameters (2 merged)
+                {yAxisMode === 'single' && (
+                  <span className="text-muted-foreground font-normal ml-1">- Single Axis</span>
+                )}
               </p>
             </div>
 
