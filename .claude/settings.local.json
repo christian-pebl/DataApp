@@ -1,13 +1,20 @@
 {
   "permissions": {
     "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx supabase:*)",
       "Bash(npm run dev:*)",
-      "Bash(npx kill-port:*)",
-      "Bash(timeout:*)",
+      "Bash(cat:*)",
       "Bash(node:*)",
-      "Bash(dir:*)",
-      "Bash(cd:*)",
-      "Bash(git add:*)"
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(curl:*)",
+      "Bash(taskkill:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd dual-axis merged plots with debugging and UX improvements\n\n- Add PinMergedPlot component for merging two parameters on dual axes\n- Improve line selection UX with wider clickable areas (15px) and clickable labels\n- Fix database sync errors with defensive updateArea/updateLine code\n- Add SQL migration scripts for missing visual property columns\n- Enhance color picker with stopPropagation and z-index fixes\n- Add parameter visibility checkboxes in merged plots\n- Improve Y-axis title positioning\n- Update merge logic to allow same parameter from different sources\n- Add extensive console logging for debugging Marine Meteo data display issue\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []

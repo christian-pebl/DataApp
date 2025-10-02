@@ -4,16 +4,29 @@ import React, { useState, useRef, useCallback, useMemo, useEffect } from "react"
 import { Button } from "@/components/ui/button";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { PlusCircle, LayoutGrid, Minus, AlignHorizontalJustifyCenter } from "lucide-react";
+import { PlusCircle, LayoutGrid, Minus, AlignHorizontalJustifyCenter, Merge } from "lucide-react";
 
 import { PinPlotInstance } from "./PinPlotInstance";
 import { PinMarineMeteoPlot } from "./PinMarineMeteoPlot";
+import { PinMergedPlot } from "./PinMergedPlot";
 import { FileSelector } from "./FileSelector";
 import { PlotTypeSelector } from "./PlotTypeSelector";
 import { parseISO, isValid, formatISO } from 'date-fns';
 import { useToast } from "@/hooks/use-toast";
 import type { ParseResult } from "./csvParser";
 import type { CombinedDataPoint } from "@/app/om-marine-explorer/shared";
+
+interface MergedParameterConfig {
+  parameter: string;
+  sourceType: 'GP' | 'FPOD' | 'Subcam' | 'marine';
+  sourceLabel: string;
+  color: string;
+  axis: 'left' | 'right';
+  fileType?: 'GP' | 'FPOD' | 'Subcam';
+  files?: File[];
+  location?: { lat: number; lon: number };
+  timeRange?: { startDate: string; endDate: string };
+}
 
 interface PlotConfig {
   id: string;
@@ -27,6 +40,9 @@ interface PlotConfig {
   location?: { lat: number; lon: number };
   locationName?: string;
   timeRange?: { startDate: string; endDate: string };
+  // For merged plots
+  isMerged?: boolean;
+  mergedParams?: MergedParameterConfig[];
 }
 
 interface PinFile {
@@ -78,6 +94,11 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   const [globalBrushRange, setGlobalBrushRange] = useState<{ startIndex: number; endIndex: number | undefined }>({ startIndex: 0, endIndex: undefined });
   const [plotsData, setPlotsData] = useState<Record<string, ParseResult>>({});
 
+  // Visibility tracking for merge feature
+  const [plotVisibilityState, setPlotVisibilityState] = useState<
+    Record<string, { params: string[], colors: Record<string, string> }>
+  >({});
+
   // Get file display name
   const getFileName = (fileList: File[]) => {
     if (fileList.length === 0) return 'No files';
@@ -104,8 +125,21 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       globalBrushRange.endIndex ?? firstPlotData.data.length - 1
     );
 
-    const startDate = parseISO(firstPlotData.data[startIdx].time);
-    const endDate = parseISO(firstPlotData.data[endIdx].time);
+    // Safety check: ensure indices are within bounds
+    if (startIdx >= firstPlotData.data.length || endIdx >= firstPlotData.data.length) {
+      return { min: null, max: null };
+    }
+
+    const startPoint = firstPlotData.data[startIdx];
+    const endPoint = firstPlotData.data[endIdx];
+
+    // Safety check: ensure data points have time property
+    if (!startPoint?.time || !endPoint?.time) {
+      return { min: null, max: null };
+    }
+
+    const startDate = parseISO(startPoint.time);
+    const endDate = parseISO(endPoint.time);
 
     if (!isValid(startDate) || !isValid(endDate)) {
       return { min: null, max: null };
@@ -212,6 +246,166 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     setPlots((prevPlots) => prevPlots.filter((plot) => plot.id !== idToRemove));
   }, []);
 
+  // Handler for visibility changes from child plots
+  const handleVisibilityChange = useCallback((plotId: string) =>
+    (params: string[], colors: Record<string, string>) => {
+      setPlotVisibilityState(prev => ({
+        ...prev,
+        [plotId]: { params, colors }
+      }));
+    }, []);
+
+  // Check if plots are eligible for merging
+  const canMergePlots = useMemo(() => {
+    if (plots.length < 2) return false;
+    const firstState = plotVisibilityState[plots[0].id];
+    const secondState = plotVisibilityState[plots[1].id];
+
+    // Check if both have exactly 1 visible parameter
+    if (firstState?.params.length !== 1 || secondState?.params.length !== 1) {
+      return false;
+    }
+
+    // Allow merging if:
+    // 1. Parameters are different, OR
+    // 2. Parameters are the same BUT from different data sources (different files/locations)
+    const firstParam = firstState.params[0];
+    const secondParam = secondState.params[0];
+    const firstPlot = plots[0];
+    const secondPlot = plots[1];
+
+    // If parameters are different, allow merge
+    if (firstParam !== secondParam) {
+      return true;
+    }
+
+    // If same parameter, only allow if from different sources
+    // Check if they have different identifiers (fileName, locationName, or id)
+    if (firstPlot.type === 'device' && secondPlot.type === 'device') {
+      return firstPlot.fileName !== secondPlot.fileName;
+    } else if (firstPlot.type === 'marine-meteo' && secondPlot.type === 'marine-meteo') {
+      return firstPlot.locationName !== secondPlot.locationName;
+    } else {
+      // Different types (device vs marine), allow merge
+      return true;
+    }
+  }, [plots, plotVisibilityState]);
+
+  // Handler for merging first 2 plots
+  const handleMergePlots = () => {
+    if (plots.length < 2) return;
+
+    const firstPlot = plots[0];
+    const secondPlot = plots[1];
+
+    const firstState = plotVisibilityState[firstPlot.id];
+    const secondState = plotVisibilityState[secondPlot.id];
+
+    if (!firstState || !secondState || firstState.params.length !== 1 || secondState.params.length !== 1) {
+      return;
+    }
+
+    const param1 = firstState.params[0];
+    const param2 = secondState.params[0];
+
+    // Create merged plot config
+    const mergedPlot: PlotConfig = {
+      id: `merged-${Date.now()}`,
+      title: `Merged: ${param1} + ${param2}`,
+      type: firstPlot.type, // Use first plot's type as placeholder
+      isMerged: true,
+      mergedParams: [
+        {
+          parameter: param1,
+          sourceType: (firstPlot.type === 'marine-meteo' ? 'marine' : firstPlot.fileType) as 'GP' | 'FPOD' | 'Subcam' | 'marine',
+          sourceLabel: (firstPlot.type === 'marine-meteo' ? firstPlot.locationName : firstPlot.fileName) as string,
+          color: firstState.colors[param1],
+          axis: 'left' as const,
+          ...(firstPlot.type === 'device' && {
+            fileType: firstPlot.fileType,
+            files: firstPlot.files
+          }),
+          ...(firstPlot.type === 'marine-meteo' && {
+            location: firstPlot.location,
+            timeRange: firstPlot.timeRange
+          })
+        },
+        {
+          parameter: param2,
+          sourceType: (secondPlot.type === 'marine-meteo' ? 'marine' : secondPlot.fileType) as 'GP' | 'FPOD' | 'Subcam' | 'marine',
+          sourceLabel: (secondPlot.type === 'marine-meteo' ? secondPlot.locationName : secondPlot.fileName) as string,
+          color: secondState.colors[param2],
+          axis: 'right' as const,
+          ...(secondPlot.type === 'device' && {
+            fileType: secondPlot.fileType,
+            files: secondPlot.files
+          }),
+          ...(secondPlot.type === 'marine-meteo' && {
+            location: secondPlot.location,
+            timeRange: secondPlot.timeRange
+          })
+        }
+      ]
+    };
+
+    // Replace first 2 plots with merged plot
+    setPlots([mergedPlot, ...plots.slice(2)]);
+
+    // Force common mode for merged plots
+    setTimeAxisMode('common');
+  };
+
+  // Handler for unmerging plots
+  const handleUnmergePlot = (mergedPlotId: string) => {
+    const mergedPlot = plots.find(p => p.id === mergedPlotId);
+    if (!mergedPlot?.isMerged || !mergedPlot.mergedParams || mergedPlot.mergedParams.length !== 2) {
+      return;
+    }
+
+    const [leftConfig, rightConfig] = mergedPlot.mergedParams;
+
+    // Recreate original plot 1
+    const plot1: PlotConfig = {
+      id: `unmerged-1-${Date.now()}`,
+      title: leftConfig.parameter,
+      type: leftConfig.sourceType === 'marine' ? 'marine-meteo' : 'device',
+      ...(leftConfig.sourceType === 'marine' ? {
+        location: leftConfig.location,
+        locationName: leftConfig.sourceLabel,
+        timeRange: leftConfig.timeRange
+      } : {
+        fileType: leftConfig.fileType,
+        files: leftConfig.files,
+        fileName: leftConfig.sourceLabel
+      })
+    };
+
+    // Recreate original plot 2
+    const plot2: PlotConfig = {
+      id: `unmerged-2-${Date.now()}`,
+      title: rightConfig.parameter,
+      type: rightConfig.sourceType === 'marine' ? 'marine-meteo' : 'device',
+      ...(rightConfig.sourceType === 'marine' ? {
+        location: rightConfig.location,
+        locationName: rightConfig.sourceLabel,
+        timeRange: rightConfig.timeRange
+      } : {
+        fileType: rightConfig.fileType,
+        files: rightConfig.files,
+        fileName: rightConfig.sourceLabel
+      })
+    };
+
+    // Replace merged plot with originals
+    const mergedIndex = plots.findIndex(p => p.id === mergedPlotId);
+    setPlots([
+      ...plots.slice(0, mergedIndex),
+      plot1,
+      plot2,
+      ...plots.slice(mergedIndex + 1)
+    ]);
+  };
+
   // Handler for adding marine/meteo plot
   const handleAddMarineMeteoPlot = useCallback(() => {
     // Check prerequisites
@@ -297,9 +491,9 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             {/* Time Axis Mode Toggle - Sticky at top */}
             {plots.length > 1 && (
               <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b pb-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Time Axis Mode:</span>
+                <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">Time Axis Mode:</span>
                     <Minus className="h-4 w-4 text-muted-foreground" />
                     <span className="text-xs text-muted-foreground">Separate</span>
                     <Switch
@@ -310,28 +504,67 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                     <span className="text-xs text-muted-foreground">Common</span>
                     <AlignHorizontalJustifyCenter className="h-4 w-4 text-muted-foreground" />
                   </div>
+
+                  {/* Merge Plots Button */}
+                  {canMergePlots && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleMergePlots}
+                      className="shrink-0"
+                    >
+                      <Merge className="h-4 w-4 mr-2" />
+                      Merge First 2 Plots
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
 
             <div className="flex-1 overflow-y-auto space-y-3">
-              {plots.map((plot, index) => (
-                plot.type === 'device' ? (
-                  <PinPlotInstance
-                    key={plot.id}
-                    instanceId={plot.id}
-                    initialPlotTitle={plot.fileName!}
-                    onRemovePlot={plots.length > 1 ? removePlot : undefined}
-                    fileType={plot.fileType!}
-                    files={plot.files!}
-                    timeAxisMode={timeAxisMode}
-                    globalTimeRange={timeAxisMode === 'common' ? globalTimeRange : undefined}
-                    globalBrushRange={timeAxisMode === 'common' ? globalBrushRange : undefined}
-                    onDataParsed={handlePlotDataParsed}
-                    onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
-                    isLastPlot={index === plots.length - 1}
-                  />
-                ) : (
+              {plots.map((plot, index) => {
+                // Render merged plot
+                if (plot.isMerged && plot.mergedParams && plot.mergedParams.length === 2) {
+                  return (
+                    <PinMergedPlot
+                      key={plot.id}
+                      instanceId={plot.id}
+                      leftParam={plot.mergedParams[0]}
+                      rightParam={plot.mergedParams[1]}
+                      timeAxisMode={timeAxisMode}
+                      globalTimeRange={timeAxisMode === 'common' ? globalTimeRange : undefined}
+                      globalBrushRange={timeAxisMode === 'common' ? globalBrushRange : undefined}
+                      onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
+                      isLastPlot={index === plots.length - 1}
+                      onRemovePlot={plots.length > 1 ? removePlot : undefined}
+                      onUnmerge={handleUnmergePlot}
+                    />
+                  );
+                }
+
+                // Render device plot
+                if (plot.type === 'device') {
+                  return (
+                    <PinPlotInstance
+                      key={plot.id}
+                      instanceId={plot.id}
+                      initialPlotTitle={plot.fileName!}
+                      onRemovePlot={plots.length > 1 ? removePlot : undefined}
+                      fileType={plot.fileType!}
+                      files={plot.files!}
+                      timeAxisMode={timeAxisMode}
+                      globalTimeRange={timeAxisMode === 'common' ? globalTimeRange : undefined}
+                      globalBrushRange={timeAxisMode === 'common' ? globalBrushRange : undefined}
+                      onDataParsed={handlePlotDataParsed}
+                      onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
+                      isLastPlot={index === plots.length - 1}
+                      onVisibilityChange={handleVisibilityChange(plot.id)}
+                    />
+                  );
+                }
+
+                // Render marine/meteo plot
+                return (
                   <PinMarineMeteoPlot
                     key={plot.id}
                     instanceId={plot.id}
@@ -345,9 +578,10 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                     onDataParsed={handlePlotDataParsed}
                     onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
                     isLastPlot={index === plots.length - 1}
+                    onVisibilityChange={handleVisibilityChange(plot.id)}
                   />
-                )
-              ))}
+                );
+              })}
 
               {/* Add Plot Button - inside scrollable area */}
               <div className="flex justify-center py-3">

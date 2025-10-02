@@ -23,6 +23,8 @@ interface PinMarineMeteoPlotProps {
   onDataParsed?: (plotId: string, data: CombinedDataPoint[]) => void;
   onBrushChange?: (brushData: { startIndex?: number; endIndex?: number }) => void;
   isLastPlot?: boolean;
+  // Visibility tracking for merge feature
+  onVisibilityChange?: (visibleParams: string[], paramColors: Record<string, string>) => void;
 }
 
 export function PinMarineMeteoPlot({
@@ -36,7 +38,8 @@ export function PinMarineMeteoPlot({
   globalBrushRange,
   onDataParsed,
   onBrushChange,
-  isLastPlot
+  isLastPlot,
+  onVisibilityChange
 }: PinMarineMeteoPlotProps) {
   const { toast } = useToast();
 
@@ -197,6 +200,7 @@ export function PinMarineMeteoPlot({
               globalBrushRange={globalBrushRange}
               onBrushChange={onBrushChange}
               isLastPlot={isLastPlot}
+              onVisibilityChange={onVisibilityChange}
             />
           </div>
         ) : (

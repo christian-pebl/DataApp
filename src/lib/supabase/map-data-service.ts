@@ -635,24 +635,22 @@ export class MapDataService {
     console.log('🔄 MapDataService.updateLine - ID:', id);
     console.log('🔄 MapDataService.updateLine - Updates:', updates);
 
-    const updatePayload = {
-      path: updates.path,
-      label: updates.label,
-      notes: updates.notes || null,
-      label_visible: updates.labelVisible,
-      object_visible: updates.objectVisible,
-      project_id: updates.projectId || null,
-      color: updates.color,
-      size: updates.size,
+    const updatePayload: any = {
       updated_at: new Date().toISOString()
     };
 
-    // Remove undefined fields
-    Object.keys(updatePayload).forEach(key => {
-      if (updatePayload[key as keyof typeof updatePayload] === undefined) {
-        delete updatePayload[key as keyof typeof updatePayload];
-      }
-    });
+    // Only include fields that are explicitly provided
+    if (updates.path !== undefined) updatePayload.path = updates.path;
+    if (updates.label !== undefined) updatePayload.label = updates.label;
+    if (updates.notes !== undefined) updatePayload.notes = updates.notes || null;
+    if (updates.labelVisible !== undefined) updatePayload.label_visible = updates.labelVisible;
+    if (updates.objectVisible !== undefined) updatePayload.object_visible = updates.objectVisible;
+    if (updates.projectId !== undefined) updatePayload.project_id = updates.projectId || null;
+
+    // These columns might not exist in older database schemas, so we'll try to update them
+    // but won't fail if they don't exist
+    if (updates.color !== undefined) updatePayload.color = updates.color;
+    if (updates.size !== undefined) updatePayload.size = updates.size;
 
     console.log('🔄 MapDataService.updateLine - Payload being sent:', updatePayload);
 
@@ -664,7 +662,7 @@ export class MapDataService {
       .single()
 
     if (error) {
-      console.error('🔄 MapDataService.updateLine - Error:', error);
+      console.error('MapDataService: Database error details (line):', error);
       throw error;
     }
 
@@ -696,6 +694,7 @@ export class MapDataService {
       path: data.path as { lat: number; lng: number }[],
       label: data.label,
       labelVisible: data.label_visible ?? true,
+      objectVisible: data.object_visible ?? true,
       notes: data.notes || undefined,
       projectId: data.project_id || undefined,
       tagIds: updates.tagIds || [],
@@ -827,26 +826,24 @@ export class MapDataService {
   }
 
   async updateArea(id: string, updates: Partial<Omit<Area, 'id'>>): Promise<Area> {
-    const updatePayload = {
-      path: updates.path,
-      label: updates.label,
-      notes: updates.notes || null,
-      label_visible: updates.labelVisible,
-      object_visible: updates.objectVisible,
-      fill_visible: updates.fillVisible,
-      project_id: updates.projectId || null,
-      color: updates.color,
-      size: updates.size,
-      transparency: updates.transparency,
+    const updatePayload: any = {
       updated_at: new Date().toISOString()
     };
 
-    // Remove undefined fields
-    Object.keys(updatePayload).forEach(key => {
-      if (updatePayload[key as keyof typeof updatePayload] === undefined) {
-        delete updatePayload[key as keyof typeof updatePayload];
-      }
-    });
+    // Only include fields that are explicitly provided
+    if (updates.path !== undefined) updatePayload.path = updates.path;
+    if (updates.label !== undefined) updatePayload.label = updates.label;
+    if (updates.notes !== undefined) updatePayload.notes = updates.notes || null;
+    if (updates.labelVisible !== undefined) updatePayload.label_visible = updates.labelVisible;
+    if (updates.objectVisible !== undefined) updatePayload.object_visible = updates.objectVisible;
+    if (updates.fillVisible !== undefined) updatePayload.fill_visible = updates.fillVisible;
+    if (updates.projectId !== undefined) updatePayload.project_id = updates.projectId || null;
+
+    // These columns might not exist in older database schemas, so we'll try to update them
+    // but won't fail if they don't exist
+    if (updates.color !== undefined) updatePayload.color = updates.color;
+    if (updates.size !== undefined) updatePayload.size = updates.size;
+    if (updates.transparency !== undefined) updatePayload.transparency = updates.transparency;
 
     const { data, error } = await this.supabase
       .from('areas')
@@ -855,7 +852,10 @@ export class MapDataService {
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      console.error('MapDataService: Database error details (area):', error);
+      throw error;
+    }
 
     // Handle tag updates if provided
     if (updates.tagIds !== undefined) {
@@ -883,6 +883,7 @@ export class MapDataService {
       path: data.path as { lat: number; lng: number }[],
       label: data.label,
       labelVisible: data.label_visible ?? true,
+      objectVisible: data.object_visible ?? true,
       notes: data.notes || undefined,
       fillVisible: data.fill_visible ?? true,
       projectId: data.project_id || undefined,

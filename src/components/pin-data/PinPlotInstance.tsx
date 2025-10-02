@@ -22,6 +22,8 @@ interface PinPlotInstanceProps {
   onDataParsed?: (plotId: string, parseResult: ParseResult) => void;
   onBrushChange?: (brushData: { startIndex?: number; endIndex?: number }) => void;
   isLastPlot?: boolean;
+  // Visibility tracking for merge feature
+  onVisibilityChange?: (visibleParams: string[], paramColors: Record<string, string>) => void;
 }
 
 
@@ -36,7 +38,8 @@ export function PinPlotInstance({
   globalBrushRange,
   onDataParsed,
   onBrushChange,
-  isLastPlot
+  isLastPlot,
+  onVisibilityChange
 }: PinPlotInstanceProps) {
   const { toast } = useToast();
   const componentId = useId();
@@ -135,6 +138,7 @@ export function PinPlotInstance({
               globalBrushRange={globalBrushRange}
               onBrushChange={onBrushChange}
               isLastPlot={isLastPlot}
+              onVisibilityChange={onVisibilityChange}
             />
           </div>
         ) : (

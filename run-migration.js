@@ -17,8 +17,8 @@ const supabase = createClient(supabaseUrl, serviceRoleKey)
 
 async function runMigration() {
   try {
-    console.log('🚀 Running migration: 003_add_object_visible.sql')
-    const migrationSQL = fs.readFileSync('./supabase/migrations/003_add_object_visible.sql', 'utf8')
+    console.log('🚀 Running migration: 002_add_visual_properties.sql')
+    const migrationSQL = fs.readFileSync('./supabase/migrations/002_add_visual_properties.sql', 'utf8')
 
     console.log('📝 SQL to execute:')
     console.log(migrationSQL)
@@ -31,7 +31,7 @@ async function runMigration() {
       .filter(s => s.length > 0 && !s.startsWith('--'))
 
     for (const statement of statements) {
-      console.log(`\n  Executing: ${statement.substring(0, 50)}...`)
+      console.log(`\n  Executing: ${statement.substring(0, 80)}...`)
       const { error } = await supabase.rpc('exec', { sql: statement })
 
       if (error) {
@@ -43,12 +43,11 @@ async function runMigration() {
     }
 
     console.log('\n✅ Migration completed!')
-    console.log('✅ Columns added: object_visible (default: true)')
-    console.log('✅ Indexes created for better performance')
+    console.log('✅ Columns added: color, size, transparency')
   } catch (err) {
     console.error('❌ Error:', err.message)
     console.log('\n📋 If automatic migration failed, run this SQL manually in Supabase Dashboard:')
-    console.log(fs.readFileSync('./supabase/migrations/003_add_object_visible.sql', 'utf8'))
+    console.log(fs.readFileSync('./supabase/migrations/002_add_visual_properties.sql', 'utf8'))
     process.exit(1)
   }
 }

@@ -393,14 +393,24 @@ const LeafletMap = ({
                                 isFinite(p.lat) && isFinite(p.lng))
                     .map(p => [p.lat, p.lng] as [number, number]);
                 if (lineCoords.length >= 2) {
+                    // Create an invisible wider line underneath for easier clicking
+                    const clickableLine = L.polyline(lineCoords, {
+                        color: 'transparent',
+                        weight: 15, // Wide invisible line for easier clicking
+                        opacity: 0,
+                        interactive: true
+                    }).addTo(layer);
+
+                    // Create the visible line
                     const polyline = L.polyline(lineCoords, {
                         color: line.color || '#10b981',
                         weight: line.size || 3,
-                        opacity: 0.8
+                        opacity: 0.8,
+                        interactive: false // Visual line is not interactive
                     }).addTo(layer);
-                    
-                    // Add click handler for line
-                    polyline.on('click', (e) => {
+
+                    // Add click handler for the invisible wider line
+                    clickableLine.on('click', (e) => {
                         e.originalEvent.stopPropagation(); // Prevent map click
                         
                         // Use edit panel if configured, otherwise show popup
@@ -513,7 +523,7 @@ const LeafletMap = ({
                             // Make tooltip clickable for selection
                             tooltip.on('click', (e) => {
                                 e.originalEvent.stopPropagation();
-                                polyline.fire('click', e); // Trigger the same selection logic as the polyline
+                                clickableLine.fire('click', e); // Trigger the same selection logic as the clickable line
                             });
                         }
                     }

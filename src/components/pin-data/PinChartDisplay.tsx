@@ -3,12 +3,14 @@
 import React, { useState, useMemo } from "react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, ReferenceLine } from 'recharts';
 import { format, parseISO, isValid } from 'date-fns';
+import { HexColorPicker } from 'react-colorful';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
@@ -26,6 +28,8 @@ interface PinChartDisplayProps {
   globalBrushRange?: { startIndex: number; endIndex: number | undefined };
   onBrushChange?: (brushData: { startIndex?: number; endIndex?: number }) => void;
   isLastPlot?: boolean;
+  // Visibility tracking for merge feature
+  onVisibilityChange?: (visibleParams: string[], paramColors: Record<string, string>) => void;
 }
 
 // Color palette matching the marine data theme
@@ -77,6 +81,71 @@ const formatYAxisTick = (value: number, dataRange: number, dataMax: number): str
   return value.toFixed(decimals);
 };
 
+// Convert HSL CSS variable to hex color
+const cssVarToHex = (cssVar: string): string => {
+  if (cssVar.startsWith('#')) return cssVar; // Already hex
+
+  const hslValue = getComputedStyle(document.documentElement)
+    .getPropertyValue(cssVar.replace('--', ''))
+    .trim();
+
+  if (!hslValue) return '#3b82f6'; // fallback blue
+
+  // Parse HSL string like "220 100% 50%"
+  const matches = hslValue.match(/(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)%\s+(\d+(?:\.\d+)?)%/);
+  if (!matches) return '#3b82f6';
+
+  const h = parseFloat(matches[1]) / 360;
+  const s = parseFloat(matches[2]) / 100;
+  const l = parseFloat(matches[3]) / 100;
+
+  // HSL to RGB conversion
+  const hue2rgb = (p: number, q: number, t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1/6) return p + (q - p) * 6 * t;
+    if (t < 1/2) return q;
+    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+    return p;
+  };
+
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const r = Math.round(hue2rgb(p, q, h + 1/3) * 255);
+  const g = Math.round(hue2rgb(p, q, h) * 255);
+  const b = Math.round(hue2rgb(p, q, h - 1/3) * 255);
+
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+};
+
+// Convert hex to HSL CSS variable format
+const hexToHslVar = (hex: string): string => {
+  // Remove # if present
+  hex = hex.replace('#', '');
+
+  // Convert to RGB
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0, s = 0, l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+      case g: h = ((b - r) / d + 2) / 6; break;
+      case b: h = ((r - g) / d + 4) / 6; break;
+    }
+  }
+
+  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
+};
+
 export function PinChartDisplay({
   data,
   fileType,
@@ -88,7 +157,8 @@ export function PinChartDisplay({
   globalTimeRange,
   globalBrushRange,
   onBrushChange,
-  isLastPlot = true
+  isLastPlot = true,
+  onVisibilityChange
 }: PinChartDisplayProps) {
   // Toggle state for switching between chart and table view
   const [showTable, setShowTable] = useState(false);
@@ -143,6 +213,29 @@ export function PinChartDisplay({
   const visibleParameters = useMemo(() => {
     return numericParameters.filter(param => parameterStates[param]?.visible);
   }, [numericParameters, parameterStates]);
+
+  // Track previous visibility state to avoid infinite loops
+  const prevVisibilityRef = React.useRef<string>('');
+
+  // Notify parent when visibility changes (for merge feature)
+  React.useEffect(() => {
+    if (!onVisibilityChange) return;
+
+    // Extract colors for visible parameters
+    const colors = visibleParameters.reduce((acc, param) => {
+      acc[param] = parameterStates[param]?.color || '--chart-1';
+      return acc;
+    }, {} as Record<string, string>);
+
+    // Create a stable key for comparison
+    const currentKey = JSON.stringify({ params: visibleParameters, colors });
+
+    // Only call callback if values actually changed
+    if (currentKey !== prevVisibilityRef.current) {
+      prevVisibilityRef.current = currentKey;
+      onVisibilityChange(visibleParameters, colors);
+    }
+  }, [visibleParameters, parameterStates, onVisibilityChange]);
 
   // Determine which brush indices to use based on mode
   const activeBrushStart = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.startIndex : brushStartIndex;
@@ -300,6 +393,37 @@ export function PinChartDisplay({
     });
   };
 
+  const updateParameterColor = (parameter: string, hexColor: string) => {
+    setParameterStates(prev => ({
+      ...prev,
+      [parameter]: {
+        ...prev[parameter],
+        color: hexColor // Store hex directly instead of CSS var
+      }
+    }));
+  };
+
+  // Helper to get color value for rendering (supports both CSS vars and hex)
+  const getColorValue = (colorString: string): string => {
+    if (colorString.startsWith('#')) {
+      return colorString; // Already hex
+    }
+    return `hsl(var(${colorString}))`; // CSS variable
+  };
+
+  // Get source label abbreviation
+  const getSourceLabel = (): string => {
+    if (dataSource === 'marine') return 'MMD';
+    return fileType; // Returns 'GP', 'FPOD', or 'Subcam'
+  };
+
+  // Format parameter label with source
+  const formatParameterWithSource = (parameter: string): string => {
+    const baseLabel = getParameterLabelWithUnit(parameter);
+    const sourceLabel = getSourceLabel();
+    return `${baseLabel} (${sourceLabel})`;
+  };
+
   const moveParameter = (parameter: string, direction: 'up' | 'down') => {
     // This would implement parameter reordering - simplified for now
     console.log(`Move ${parameter} ${direction}`);
@@ -449,7 +573,7 @@ export function PinChartDisplay({
                   tickFormatter={(value) => formatYAxisTick(value, dataRange, dataMax)}
                   label={showYAxisLabels ? {
                     value: visibleParameters.length === 1
-                      ? getParameterLabelWithUnit(visibleParameters[0])
+                      ? formatParameterWithSource(visibleParameters[0])
                       : 'Value',
                     angle: -90,
                     position: 'insideLeft',
@@ -496,7 +620,7 @@ export function PinChartDisplay({
                       key={parameter}
                       type="monotone"
                       dataKey={parameter}
-                      stroke={`hsl(var(${state.color}))`}
+                      stroke={getColorValue(state.color)}
                       strokeWidth={1.5}
                       dot={false}
                       connectNulls={false}
@@ -538,25 +662,26 @@ export function PinChartDisplay({
                   const domain = parameterDomains[parameter] || [0, 100];
                   const paramRange = Math.abs(domain[1] - domain[0]);
                   const paramMax = Math.max(Math.abs(domain[0]), Math.abs(domain[1]));
+                  const paramColor = getColorValue(parameterStates[parameter].color);
 
                   return (
                     <YAxis
                       key={yAxisId}
                       yAxisId={yAxisId}
                       orientation={orientation}
-                      tick={{ fontSize: '0.55rem', fill: `hsl(var(${parameterStates[parameter].color}))` }}
-                      stroke={`hsl(var(${parameterStates[parameter].color}))`}
+                      tick={{ fontSize: '0.55rem', fill: paramColor }}
+                      stroke={paramColor}
                       width={32}
                       tickFormatter={(value) => formatYAxisTick(value, paramRange, paramMax)}
                       label={{
-                        value: getParameterLabelWithUnit(parameter),
+                        value: formatParameterWithSource(parameter),
                         angle: -90,
                         position: orientation === 'left' ? 'insideLeft' : 'insideRight',
                         offset: getMultiAxisLabelOffset(domain, paramRange, paramMax),
                         style: {
                           textAnchor: 'middle',
                           fontSize: '0.55rem',
-                          fill: `hsl(var(${parameterStates[parameter].color}))`,
+                          fill: paramColor,
                           fontWeight: 500
                         }
                       }}
@@ -627,7 +752,7 @@ export function PinChartDisplay({
                       type="monotone"
                       dataKey={parameter}
                       yAxisId={yAxisId}
-                      stroke={`hsl(var(${state.color}))`}
+                      stroke={getColorValue(state.color)}
                       strokeWidth={1.5}
                       dot={false}
                       connectNulls={false}
@@ -709,6 +834,8 @@ export function PinChartDisplay({
                 const visibleIndex = visibleParameters.indexOf(parameter);
                 const axisPosition = visibleIndex >= 0 ? (visibleIndex % 2 === 0 ? 'L' : 'R') : null;
 
+                const colorValue = getColorValue(state.color);
+
                 return (
                   <div key={parameter} className="flex items-center justify-between p-1.5 rounded border bg-card/50">
                     <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -721,15 +848,15 @@ export function PinChartDisplay({
                       <Label
                         htmlFor={`param-${parameter}`}
                         className="text-xs cursor-pointer truncate flex-1"
-                        title={parameter}
+                        title={formatParameterWithSource(parameter)}
                       >
-                        {parameter}
+                        {formatParameterWithSource(parameter)}
                       </Label>
                       {/* Show axis indicator in multi-axis mode */}
                       {axisMode === 'multi' && state.visible && axisPosition && (
                         <span
                           className="text-[0.6rem] font-semibold px-1 rounded"
-                          style={{ color: `hsl(var(${state.color}))`, backgroundColor: `hsl(var(${state.color}) / 0.1)` }}
+                          style={{ color: colorValue, backgroundColor: `${colorValue}1a` }}
                         >
                           {axisPosition}
                         </span>
@@ -737,12 +864,37 @@ export function PinChartDisplay({
                       <div
                         className="w-3 h-3 rounded-full border cursor-pointer hover:ring-2 hover:ring-offset-1 transition-all"
                         style={{
-                          backgroundColor: `hsl(var(${state.color}))`,
-                          '--tw-ring-color': `hsl(var(${state.color}))`
+                          backgroundColor: colorValue,
+                          '--tw-ring-color': colorValue
                         } as React.CSSProperties}
                         onClick={() => showOnlyParameter(parameter)}
                         title="Show only this parameter"
                       />
+                      {/* Color picker gear icon */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 w-5 p-0 hover:bg-accent"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Settings className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-3" align="end" onClick={(e) => e.stopPropagation()}>
+                          <div className="space-y-2">
+                            <p className="text-xs font-medium">Pick Color</p>
+                            <div className="relative">
+                              <HexColorPicker
+                                color={state.color.startsWith('#') ? state.color : cssVarToHex(state.color)}
+                                onChange={(hex) => updateParameterColor(parameter, hex)}
+                                style={{ width: '200px', height: '150px' }}
+                              />
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                   </div>
                 );
