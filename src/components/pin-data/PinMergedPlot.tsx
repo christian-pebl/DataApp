@@ -28,6 +28,24 @@ import { fetchCombinedDataAction } from '@/app/om-marine-explorer/actions';
 import type { CombinedDataPoint } from '@/app/om-marine-explorer/shared';
 import { getParameterLabelWithUnit } from '@/lib/units';
 
+// Mapping from display names to camelCase parameter keys (for marine data)
+const DISPLAY_NAME_TO_KEY: Record<string, string> = {
+  'Wave Height': 'waveHeight',
+  'Wind Speed (10m)': 'windSpeed10m',
+  'Wind Direction (10m)': 'windDirection10m',
+  'Sea Level (MSL)': 'seaLevelHeightMsl',
+  'Wave Period': 'wavePeriod',
+  'Wave Direction': 'waveDirection',
+  'Air Temperature (2m)': 'temperature2m',
+  'Sea Surface Temp (0m)': 'seaSurfaceTemperature',
+  'Global Horizontal Irradiance (GHI)': 'ghi',
+};
+
+// Reverse mapping: camelCase to display name (for chart rendering)
+const KEY_TO_DISPLAY_NAME: Record<string, string> = Object.fromEntries(
+  Object.entries(DISPLAY_NAME_TO_KEY).map(([display, key]) => [key, display])
+);
+
 interface MergedParameterConfig {
   parameter: string;
   sourceType: 'GP' | 'FPOD' | 'Subcam' | 'marine';
@@ -114,6 +132,22 @@ const cssVarToHex = (cssVar: string): string => {
   return colorMap[cssVar] || '#3b82f6';
 };
 
+// Helper to extract time range from parsed data
+const getTimeRangeFromData = (data: ParsedDataPoint[]): { startDate: string; endDate: string } | null => {
+  if (data.length === 0) return null;
+
+  const times = data.map(d => new Date(d.time)).filter(d => !isNaN(d.getTime()));
+  if (times.length === 0) return null;
+
+  const minTime = new Date(Math.min(...times.map(t => t.getTime())));
+  const maxTime = new Date(Math.max(...times.map(t => t.getTime())));
+
+  return {
+    startDate: format(minTime, 'yyyy-MM-dd'),
+    endDate: format(maxTime, 'yyyy-MM-dd')
+  };
+};
+
 export function PinMergedPlot({
   instanceId,
   leftParam,
@@ -141,6 +175,13 @@ export function PinMergedPlot({
   const [leftVisible, setLeftVisible] = useState(true);
   const [rightVisible, setRightVisible] = useState(true);
 
+  // Local brush state (for separate mode)
+  const [localBrushStart, setLocalBrushStart] = useState(0);
+  const [localBrushEnd, setLocalBrushEnd] = useState<number | undefined>(undefined);
+
+  // Track if we've already aligned time ranges (to prevent infinite loops)
+  const [timeRangeAligned, setTimeRangeAligned] = useState(false);
+
   // Data loading states
   const [leftData, setLeftData] = useState<ParsedDataPoint[]>([]);
   const [rightData, setRightData] = useState<ParsedDataPoint[]>([]);
@@ -149,6 +190,10 @@ export function PinMergedPlot({
   const [leftError, setLeftError] = useState<string | null>(null);
   const [rightError, setRightError] = useState<string | null>(null);
 
+  // Determine loading order: load device data first, then marine data
+  const loadDeviceFirst = leftParam.sourceType !== 'marine' && rightParam.sourceType === 'marine';
+  const loadMarineFirst = leftParam.sourceType === 'marine' && rightParam.sourceType !== 'marine';
+
   // Load left parameter data
   useEffect(() => {
     const loadLeftData = async () => {
@@ -156,24 +201,62 @@ export function PinMergedPlot({
       setLeftError(null);
       try {
         if (leftParam.sourceType === 'marine') {
+          // Convert display name to camelCase key if needed
+          const paramKey = DISPLAY_NAME_TO_KEY[leftParam.parameter] || leftParam.parameter;
+
+          // Use original time range (should already match device data)
+          let startDate = leftParam.timeRange!.startDate;
+          let endDate = leftParam.timeRange!.endDate;
+
+          console.log('🌊 Loading LEFT Marine data:', {
+            displayName: leftParam.parameter,
+            paramKey,
+            location: leftParam.location,
+            timeRange: { startDate, endDate }
+          });
+
           // Fetch marine data
           const result = await fetchCombinedDataAction({
             latitude: leftParam.location!.lat,
             longitude: leftParam.location!.lon,
-            startDate: leftParam.timeRange!.startDate,
-            endDate: leftParam.timeRange!.endDate,
-            parameters: [leftParam.parameter]
+            startDate,
+            endDate,
+            parameters: [paramKey]
+          });
+
+          console.log('🌊 LEFT Marine fetch result:', {
+            success: result.success,
+            dataLength: result.data?.length,
+            error: result.error,
+            firstDataPoint: result.data?.[0]
           });
 
           if (result.success && result.data) {
+            console.log('🌊 LEFT Marine raw data sample:', {
+              firstPoint: result.data[0],
+              pointKeys: result.data[0] ? Object.keys(result.data[0]) : [],
+              paramKeyWeAreLookingFor: paramKey,
+              valueAtThatKey: result.data[0]?.[paramKey as keyof CombinedDataPoint]
+            });
+
             // Convert to ParsedDataPoint format
+            // Store using the DISPLAY NAME as key (so merge can find it)
             const parsed: ParsedDataPoint[] = result.data.map(point => {
-              const value = point[leftParam.parameter as keyof CombinedDataPoint];
+              const value = point[paramKey as keyof CombinedDataPoint];
               return {
                 time: point.time,
-                [leftParam.parameter]: value
+                [leftParam.parameter]: value  // Use display name as key
               };
             });
+
+            console.log('🌊 LEFT Marine parsed data:', {
+              parsedLength: parsed.length,
+              firstParsed: parsed[0],
+              displayNameUsedAsKey: leftParam.parameter,
+              firstValue: parsed[0]?.[leftParam.parameter],
+              allKeysInFirstParsed: parsed[0] ? Object.keys(parsed[0]) : []
+            });
+
             setLeftData(parsed);
           } else {
             setLeftError(result.error || 'Failed to fetch marine data');
@@ -199,7 +282,7 @@ export function PinMergedPlot({
     };
 
     loadLeftData();
-  }, [leftParam]);
+  }, [leftParam]); // Only depend on leftParam
 
   // Load right parameter data
   useEffect(() => {
@@ -208,19 +291,37 @@ export function PinMergedPlot({
       setRightError(null);
       try {
         if (rightParam.sourceType === 'marine') {
+          // Convert display name to camelCase key if needed
+          const paramKey = DISPLAY_NAME_TO_KEY[rightParam.parameter] || rightParam.parameter;
+
+          // If left is device data and loaded, use its exact time range (only once)
+          let startDate = rightParam.timeRange!.startDate;
+          let endDate = rightParam.timeRange!.endDate;
+
+          if (leftParam.sourceType !== 'marine' && leftData.length > 0 && !timeRangeAligned) {
+            const deviceTimeRange = getTimeRangeFromData(leftData);
+            if (deviceTimeRange) {
+              startDate = deviceTimeRange.startDate;
+              endDate = deviceTimeRange.endDate;
+              setTimeRangeAligned(true); // Mark as aligned to prevent re-fetching
+              console.log('🔧 Using LEFT device time range for RIGHT marine:', deviceTimeRange);
+            }
+          }
+
           console.log('🌊 Loading RIGHT Marine data:', {
-            parameter: rightParam.parameter,
+            displayName: rightParam.parameter,
+            paramKey,
             location: rightParam.location,
-            timeRange: rightParam.timeRange
+            timeRange: { startDate, endDate }
           });
 
           // Fetch marine data
           const result = await fetchCombinedDataAction({
             latitude: rightParam.location!.lat,
             longitude: rightParam.location!.lon,
-            startDate: rightParam.timeRange!.startDate,
-            endDate: rightParam.timeRange!.endDate,
-            parameters: [rightParam.parameter]
+            startDate,
+            endDate,
+            parameters: [paramKey]
           });
 
           console.log('🌊 RIGHT Marine fetch result:', {
@@ -231,20 +332,29 @@ export function PinMergedPlot({
           });
 
           if (result.success && result.data) {
+            console.log('🌊 RIGHT Marine raw data sample:', {
+              firstPoint: result.data[0],
+              pointKeys: result.data[0] ? Object.keys(result.data[0]) : [],
+              paramKeyWeAreLookingFor: paramKey,
+              valueAtThatKey: result.data[0]?.[paramKey as keyof CombinedDataPoint]
+            });
+
             // Convert to ParsedDataPoint format
+            // Store using the DISPLAY NAME as key (so merge can find it)
             const parsed: ParsedDataPoint[] = result.data.map(point => {
-              const value = point[rightParam.parameter as keyof CombinedDataPoint];
+              const value = point[paramKey as keyof CombinedDataPoint];
               return {
                 time: point.time,
-                [rightParam.parameter]: value
+                [rightParam.parameter]: value  // Use display name as key
               };
             });
 
             console.log('🌊 RIGHT Marine parsed data:', {
               parsedLength: parsed.length,
               firstParsed: parsed[0],
-              parameterName: rightParam.parameter,
-              firstValue: parsed[0]?.[rightParam.parameter]
+              displayNameUsedAsKey: rightParam.parameter,
+              firstValue: parsed[0]?.[rightParam.parameter],
+              allKeysInFirstParsed: parsed[0] ? Object.keys(parsed[0]) : []
             });
 
             setRightData(parsed);
@@ -272,7 +382,7 @@ export function PinMergedPlot({
     };
 
     loadRightData();
-  }, [rightParam]);
+  }, [rightParam, leftData, leftParam.sourceType]); // Reload when leftData changes (if merging with device data)
 
   // Merge data by time (UNION - include all timestamps)
   const mergedData = useMemo(() => {
@@ -284,7 +394,15 @@ export function PinMergedPlot({
       leftSample: leftData[0],
       rightSample: rightData[0],
       leftKeys: leftData[0] ? Object.keys(leftData[0]) : [],
-      rightKeys: rightData[0] ? Object.keys(rightData[0]) : []
+      rightKeys: rightData[0] ? Object.keys(rightData[0]) : [],
+      leftTimeRange: leftData.length > 0 ? {
+        first: leftData[0].time,
+        last: leftData[leftData.length - 1].time
+      } : null,
+      rightTimeRange: rightData.length > 0 ? {
+        first: rightData[0].time,
+        last: rightData[rightData.length - 1].time
+      } : null
     });
 
     if (leftData.length === 0 && rightData.length === 0) {
@@ -332,11 +450,25 @@ export function PinMergedPlot({
       leftParamInFirst: leftParam.parameter in (merged[0] || {}),
       rightParamInFirst: rightParam.parameter in (merged[0] || {}),
       leftValueInFirst: merged[0]?.[leftParam.parameter],
-      rightValueInFirst: merged[0]?.[rightParam.parameter]
+      rightValueInFirst: merged[0]?.[rightParam.parameter],
+      // Show first 5 points to see timestamp alignment
+      first5Points: merged.slice(0, 5).map(p => ({
+        time: p.time,
+        leftValue: p[leftParam.parameter],
+        rightValue: p[rightParam.parameter]
+      }))
     });
 
     return merged;
   }, [leftData, rightData, leftParam.parameter, rightParam.parameter]);
+
+  // Determine active brush indices based on mode
+  const activeBrushStart = timeAxisMode === 'common' && globalBrushRange
+    ? globalBrushRange.startIndex
+    : localBrushStart;
+  const activeBrushEnd = timeAxisMode === 'common' && globalBrushRange
+    ? globalBrushRange.endIndex
+    : localBrushEnd;
 
   // Apply brush/time filtering
   const displayData = useMemo(() => {
@@ -350,15 +482,11 @@ export function PinMergedPlot({
       });
     }
 
-    // In separate mode or no global range, use brush indices
-    if (globalBrushRange) {
-      const start = globalBrushRange.startIndex || 0;
-      const end = globalBrushRange.endIndex ?? mergedData.length - 1;
-      return mergedData.slice(start, end + 1);
-    }
-
-    return mergedData;
-  }, [mergedData, timeAxisMode, globalTimeRange, globalBrushRange]);
+    // Use brush indices (works for both common and separate modes)
+    const start = Math.max(0, activeBrushStart);
+    const end = Math.min(mergedData.length - 1, activeBrushEnd ?? mergedData.length - 1);
+    return mergedData.slice(start, end + 1);
+  }, [mergedData, timeAxisMode, globalTimeRange, activeBrushStart, activeBrushEnd]);
 
   // Calculate domain for left parameter
   const leftDomain = useMemo((): [number, number] => {
@@ -551,7 +679,7 @@ export function PinMergedPlot({
                   stroke={leftColorValue}
                   strokeWidth={1.5}
                   dot={false}
-                  connectNulls={false}
+                  connectNulls={true}
                   name={leftParam.parameter}
                   isAnimationActive={false}
                 />
@@ -566,32 +694,37 @@ export function PinMergedPlot({
                   stroke={rightColorValue}
                   strokeWidth={1.5}
                   dot={false}
-                  connectNulls={false}
+                  connectNulls={true}
                   name={rightParam.parameter}
                   isAnimationActive={false}
                 />
               )}
 
-              {/* Brush - only on last plot in common mode */}
-              {isLastPlot && timeAxisMode === 'common' && (
-                <Brush
-                  dataKey="time"
-                  height={30}
-                  stroke="hsl(var(--primary))"
-                  fill="hsl(var(--muted))"
-                  tickFormatter={formatDateTick}
-                  onChange={(range) => {
-                    if (onBrushChange && 'startIndex' in range && 'endIndex' in range) {
+              {/* Brush - always show, handle both common and separate modes */}
+              <Brush
+                dataKey="time"
+                height={30}
+                stroke="hsl(var(--primary))"
+                fill="hsl(var(--muted))"
+                tickFormatter={formatDateTick}
+                onChange={(range) => {
+                  if ('startIndex' in range && 'endIndex' in range) {
+                    if (timeAxisMode === 'common' && isLastPlot && onBrushChange) {
+                      // In common mode, update global brush (only if last plot)
                       onBrushChange({
                         startIndex: range.startIndex ?? 0,
                         endIndex: range.endIndex ?? mergedData.length - 1
                       });
+                    } else {
+                      // In separate mode, update local brush
+                      setLocalBrushStart(range.startIndex ?? 0);
+                      setLocalBrushEnd(range.endIndex ?? mergedData.length - 1);
                     }
-                  }}
-                  startIndex={globalBrushRange?.startIndex}
-                  endIndex={globalBrushRange?.endIndex}
-                />
-              )}
+                  }
+                }}
+                startIndex={activeBrushStart}
+                endIndex={activeBrushEnd}
+              />
             </LineChart>
           </ResponsiveContainer>
             )}
