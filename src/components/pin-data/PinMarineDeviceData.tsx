@@ -557,6 +557,28 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       }
     };
 
+    // Get source labels for each parameter
+    const getSourceLabel = (plot: PlotConfig): string => {
+      if (plot.type === 'marine-meteo') return 'OM';
+      return plot.fileType || 'GP';
+    };
+
+    const source1Label = getSourceLabel(firstPlot);
+    const source2Label = getSourceLabel(secondPlot);
+
+    // Create parameter names with source labels
+    const param1WithSource = `${param1} [${source1Label}]`;
+    const param2WithSource = `${param2} [${source2Label}]`;
+
+    console.log('🏷️ Parameter labels with source:', {
+      param1,
+      param1WithSource,
+      source1Label,
+      param2,
+      param2WithSource,
+      source2Label
+    });
+
     // SIMPLE APPROACH: Just concatenate the actual data points (no nulls, no gaps)
     // Take all points from first plot with param1, and all points from second plot with param2
     const mergedData: any[] = [];
@@ -567,8 +589,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       if (value !== null && value !== undefined && !isNaN(Number(value))) {
         mergedData.push({
           time: normalizeTimeToISO(point.time), // Normalize to ISO
-          [param1]: value,
-          [param2]: null // Other parameter is null for these rows
+          [param1WithSource]: value,
+          [param2WithSource]: null // Other parameter is null for these rows
         });
       }
     });
@@ -579,8 +601,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       if (value !== null && value !== undefined && !isNaN(Number(value))) {
         mergedData.push({
           time: normalizeTimeToISO(point.time), // Normalize to ISO
-          [param1]: null, // Other parameter is null for these rows
-          [param2]: value
+          [param1WithSource]: null, // Other parameter is null for these rows
+          [param2WithSource]: value
         });
       }
     });
@@ -597,8 +619,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     });
 
     console.log('🔄 MERGE DEBUG:', {
-      param1,
-      param2,
+      param1WithSource,
+      param2WithSource,
       firstPlotDataLength: firstPlotData.data.length,
       secondPlotDataLength: secondPlotData.data.length,
       mergedDataLength: mergedData.length,
@@ -611,15 +633,15 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       secondDataKeys: Object.keys(secondPlotData.data[0] || {}),
       mergedDataKeys: Object.keys(mergedData[0] || {}),
       // Check how many points have both parameters
-      pointsWithBothParams: mergedData.filter(d => d[param1] !== null && d[param2] !== null).length,
-      pointsWithOnlyParam1: mergedData.filter(d => d[param1] !== null && d[param2] === null).length,
-      pointsWithOnlyParam2: mergedData.filter(d => d[param1] === null && d[param2] !== null).length
+      pointsWithBothParams: mergedData.filter(d => d[param1WithSource] !== null && d[param2WithSource] !== null).length,
+      pointsWithOnlyParam1: mergedData.filter(d => d[param1WithSource] !== null && d[param2WithSource] === null).length,
+      pointsWithOnlyParam2: mergedData.filter(d => d[param1WithSource] === null && d[param2WithSource] !== null).length
     });
 
     // Create ParseResult structure for the RAW merged data (before rounding)
     const rawMergedData: ParseResult = {
       data: mergedData as any,
-      headers: ['time', param1, param2],
+      headers: ['time', param1WithSource, param2WithSource],
       errors: [],
       summary: {
         totalRows: mergedData.length,

@@ -18,6 +18,11 @@ export interface ParseResult {
     columns: number;
     timeColumn: string | null;
   };
+  // Optional metadata for parameters (used in merged plots to track source)
+  parameterMetadata?: Record<string, {
+    source: 'GP' | 'FPOD' | 'Subcam' | 'marine';
+    sourceLabel?: string; // e.g., "OM", "GP", "FPOD"
+  }>;
 }
 
 export type FileType = 'GP' | 'FPOD' | 'Subcam';

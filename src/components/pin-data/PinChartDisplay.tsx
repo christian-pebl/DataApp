@@ -622,6 +622,14 @@ export function PinChartDisplay({
   // Format parameter label with source
   const formatParameterWithSource = (parameter: string): string => {
     const baseLabel = getParameterLabelWithUnit(parameter);
+
+    // Check if parameter already has a source label (e.g., "IR [GP]")
+    if (/\[(?:GP|FPOD|Subcam|OM)\]$/.test(baseLabel)) {
+      // Already has source label, return as-is
+      return baseLabel;
+    }
+
+    // Add source label
     const sourceLabel = getSourceLabel();
     return `${baseLabel} [${sourceLabel}]`;
   };
