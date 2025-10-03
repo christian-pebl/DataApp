@@ -283,9 +283,12 @@ export function PinChartDisplay({
   const displayData = useMemo(() => {
     if (data.length === 0) return [];
 
+    // Step 1: Get base data based on brush/time range
+    let baseData: ParsedDataPoint[];
+
     // In common mode with global time range, filter by actual time values for marine data
     if (timeAxisMode === 'common' && globalTimeRange && globalTimeRange.min && globalTimeRange.max && dataSource === 'marine') {
-      return data.filter(point => {
+      baseData = data.filter(point => {
         try {
           const pointDate = parseISO(point.time);
           if (!isValid(pointDate)) return false;
@@ -294,13 +297,83 @@ export function PinChartDisplay({
           return false;
         }
       });
+    } else {
+      // For CSV data or separate mode, use brush indices
+      const start = Math.max(0, activeBrushStart);
+      const end = Math.min(data.length - 1, activeBrushEnd ?? data.length - 1);
+      baseData = data.slice(start, end + 1);
     }
 
-    // For CSV data or separate mode, use brush indices
-    const start = Math.max(0, activeBrushStart);
-    const end = Math.min(data.length - 1, activeBrushEnd ?? data.length - 1);
-    return data.slice(start, end + 1);
-  }, [data, activeBrushStart, activeBrushEnd, timeAxisMode, globalTimeRange, dataSource]);
+    // Step 2: Apply time-of-day filters (if any parameter has them enabled)
+    const hasTimeFilters = Object.values(parameterStates).some(state => state?.timeFilter?.enabled);
+
+    if (!hasTimeFilters) {
+      return baseData; // No filters, return as-is
+    }
+
+    // Apply time filters
+    const filteredData = baseData.map(point => {
+      const newPoint = { ...point };
+
+      // For each parameter with time filter enabled
+      Object.keys(parameterStates).forEach(param => {
+        const state = parameterStates[param];
+        if (state?.timeFilter?.enabled && state.timeFilter.excludeStart && state.timeFilter.excludeEnd) {
+          // Check if this time should be excluded
+          if (isTimeExcluded(point.time, state.timeFilter.excludeStart, state.timeFilter.excludeEnd)) {
+            // Set to null to create gap in line
+            newPoint[param] = null;
+          }
+        }
+      });
+
+      return newPoint;
+    });
+
+    // Step 3: Calculate moving averages (if any parameter has them enabled)
+    const hasMovingAverages = Object.values(parameterStates).some(state => state?.movingAverage?.enabled);
+
+    if (!hasMovingAverages) {
+      return filteredData; // No MA, return filtered data
+    }
+
+    // Calculate moving averages and add MA data keys
+    return filteredData.map((point, index) => {
+      const newPoint = { ...point };
+
+      // For each parameter with MA enabled
+      Object.keys(parameterStates).forEach(param => {
+        const state = parameterStates[param];
+        if (state?.movingAverage?.enabled) {
+          const windowDays = state.movingAverage.windowDays || 7;
+
+          // Calculate window size (assume hourly data: 24 points/day)
+          const windowSize = windowDays * 24;
+
+          // Collect values in window (looking backward from current index)
+          const windowStart = Math.max(0, index - windowSize + 1);
+          const windowValues: number[] = [];
+
+          for (let i = windowStart; i <= index; i++) {
+            const value = filteredData[i][param];
+            if (typeof value === 'number' && !isNaN(value) && value !== null) {
+              windowValues.push(value);
+            }
+          }
+
+          // Calculate average
+          if (windowValues.length > 0) {
+            const sum = windowValues.reduce((a, b) => a + b, 0);
+            newPoint[`${param}_ma`] = sum / windowValues.length;
+          } else {
+            newPoint[`${param}_ma`] = null;
+          }
+        }
+      });
+
+      return newPoint;
+    });
+  }, [data, activeBrushStart, activeBrushEnd, timeAxisMode, globalTimeRange, dataSource, parameterStates]);
 
   // Calculate Y-axis domain based on visible parameters in displayData (for single axis mode)
   const yAxisDomain = useMemo(() => {
