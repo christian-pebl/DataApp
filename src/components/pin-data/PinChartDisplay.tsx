@@ -208,9 +208,11 @@ export function PinChartDisplay({
   // Initialize parameter visibility state
   const [parameterStates, setParameterStates] = useState<Record<string, ParameterState>>(() => {
     const initialState: Record<string, ParameterState> = {};
+    // For GP and marine files, show first 4 parameters; for others show first 5
+    const defaultVisibleCount = (fileType === 'GP' || dataSource === 'marine') ? 4 : 5;
     numericParameters.forEach((param, index) => {
       initialState[param] = {
-        visible: index < 5, // Show first 5 parameters by default
+        visible: index < defaultVisibleCount,
         color: CHART_COLORS[index % CHART_COLORS.length]
       };
     });
@@ -429,9 +431,9 @@ export function PinChartDisplay({
     const formatted = formatYAxisTick(maxValue, dataRange, dataMax);
     const digitCount = formatted.length;
 
-    if (digitCount <= 2) return 10;
-    if (digitCount === 3) return 13;
-    return 17; // 4+ digits
+    if (digitCount <= 2) return -10;
+    if (digitCount === 3) return -7;
+    return -3; // 4+ digits
   };
 
   // Calculate individual Y-axis domains for each parameter (for multi-axis mode)
@@ -705,14 +707,6 @@ export function PinChartDisplay({
           <div className="flex-1 space-y-3">
       {visibleParameters.length > 0 && (
         <div className="h-52 w-full border rounded-md bg-card p-2">
-          {/* Warning for too many parameters in multi-axis mode */}
-          {axisMode === 'multi' && visibleParameters.length > 4 && (
-            <div className="mb-2 p-2 text-xs bg-yellow-500/10 border border-yellow-500/20 rounded flex items-center gap-2">
-              <Info className="h-3 w-3 text-yellow-600" />
-              <span className="text-yellow-700">Multi-axis works best with 4 or fewer parameters. Consider deselecting some for better visibility.</span>
-            </div>
-          )}
-
           {/* Single Axis Mode */}
           {axisMode === 'single' && (
             <ResponsiveContainer width="100%" height="100%">
@@ -807,8 +801,8 @@ export function PinChartDisplay({
                 data={displayData}
                 margin={{
                   top: 5,
-                  right: Math.ceil(visibleParameters.length / 2) * 35,
-                  left: 35,
+                  right: Math.ceil(visibleParameters.length / 2) * 50,
+                  left: 50,
                   bottom: -5
                 }}
               >
@@ -830,6 +824,8 @@ export function PinChartDisplay({
                   const paramRange = Math.abs(domain[1] - domain[0]);
                   const paramMax = Math.max(Math.abs(domain[0]), Math.abs(domain[1]));
                   const paramColor = getColorValue(parameterStates[parameter].color);
+                  // Add gap between left axes: 3rd axis (index 2) gets +10px width
+                  const axisWidth = (index === 2) ? 42 : 32;
 
                   return (
                     <YAxis
@@ -838,7 +834,7 @@ export function PinChartDisplay({
                       orientation={orientation}
                       tick={{ fontSize: '0.55rem', fill: paramColor }}
                       stroke={paramColor}
-                      width={32}
+                      width={axisWidth}
                       tickFormatter={(value) => formatYAxisTick(value, paramRange, paramMax)}
                       label={{
                         value: formatParameterWithSource(parameter),
