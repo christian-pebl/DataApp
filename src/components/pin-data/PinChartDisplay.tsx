@@ -192,9 +192,9 @@ export function PinChartDisplay({
   // Get all numeric parameters (excluding time)
   const numericParameters = useMemo(() => {
     if (data.length === 0) return [];
-    
+
     const firstRow = data[0];
-    return Object.keys(firstRow)
+    const params = Object.keys(firstRow)
       .filter(key => key !== 'time' && key !== timeColumn)
       .filter(key => {
         // Check if parameter has numeric values
@@ -203,7 +203,17 @@ export function PinChartDisplay({
           return typeof value === 'number' && !isNaN(value);
         });
       });
-  }, [data, timeColumn]);
+
+    console.log('📊 PinChartDisplay received data:', {
+      dataLength: data.length,
+      numericParameters: params,
+      firstDataPoint: data[0],
+      lastDataPoint: data[data.length - 1],
+      fileName
+    });
+
+    return params;
+  }, [data, timeColumn, fileName]);
 
   // Initialize parameter visibility state
   const [parameterStates, setParameterStates] = useState<Record<string, ParameterState>>(() => {
@@ -218,6 +228,31 @@ export function PinChartDisplay({
     });
     return initialState;
   });
+
+  // Update parameter states when numericParameters changes (e.g., new data loaded)
+  React.useEffect(() => {
+    setParameterStates(prev => {
+      const newState: Record<string, ParameterState> = {};
+      // For merged plots (small number of params), show all by default
+      const defaultVisibleCount = numericParameters.length <= 3 ? numericParameters.length :
+                                   ((fileType === 'GP' || dataSource === 'marine') ? 4 : 5);
+
+      numericParameters.forEach((param, index) => {
+        // Preserve existing state if parameter already exists
+        if (prev[param]) {
+          newState[param] = prev[param];
+        } else {
+          // Initialize new parameter
+          newState[param] = {
+            visible: index < defaultVisibleCount,
+            color: CHART_COLORS[index % CHART_COLORS.length]
+          };
+        }
+      });
+
+      return newState;
+    });
+  }, [numericParameters.join(','), fileType, dataSource]); // Use join to avoid array reference changes
 
   // Brush state for time range selection (local state for separate mode)
   const [brushStartIndex, setBrushStartIndex] = useState<number>(0);

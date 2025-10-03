@@ -4,11 +4,12 @@ import React, { useState, useRef, useCallback, useMemo, useEffect } from "react"
 import { Button } from "@/components/ui/button";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { PlusCircle, LayoutGrid, Minus, AlignHorizontalJustifyCenter, Merge } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PlusCircle, LayoutGrid, Minus, AlignHorizontalJustifyCenter } from "lucide-react";
 
 import { PinPlotInstance } from "./PinPlotInstance";
 import { PinMarineMeteoPlot } from "./PinMarineMeteoPlot";
-import { PinMergedPlot } from "./PinMergedPlot";
 import { FileSelector } from "./FileSelector";
 import { PlotTypeSelector } from "./PlotTypeSelector";
 import { parseISO, isValid, formatISO } from 'date-fns';
@@ -42,6 +43,7 @@ interface PlotConfig {
   timeRange?: { startDate: string; endDate: string };
   // For merged plots
   isMerged?: boolean;
+  mergedData?: ParseResult; // Pre-parsed merged data
   mergedParams?: MergedParameterConfig[];
 }
 
@@ -99,12 +101,165 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     Record<string, { params: string[], colors: Record<string, string> }>
   >({});
 
+  // CSV preview for merge
+  const [showMergePreview, setShowMergePreview] = useState(false);
+  const [mergePreviewData, setMergePreviewData] = useState<ParseResult | null>(null);
+  const [mergeRawData, setMergeRawData] = useState<ParseResult | null>(null); // Unrounded data
+  const [timeRoundingInterval, setTimeRoundingInterval] = useState<string>('1hr'); // Default 1 hour
+
   // Get file display name
   const getFileName = (fileList: File[]) => {
     if (fileList.length === 0) return 'No files';
     if (fileList.length === 1) return fileList[0].name;
     return `${fileList.length} files`;
   };
+
+  // Time rounding function
+  const roundTimeToInterval = useCallback((isoTimeStr: string, interval: string): string => {
+    const date = parseISO(isoTimeStr);
+    if (!isValid(date)) return isoTimeStr;
+
+    const minutes = date.getMinutes();
+    const hours = date.getHours();
+    const days = date.getDate();
+
+    let roundedDate = new Date(date);
+
+    switch (interval) {
+      case '1min':
+        // Round to nearest minute (already at minute precision)
+        roundedDate.setSeconds(0, 0);
+        break;
+      case '10min':
+        // Round to nearest 10 minutes
+        roundedDate.setMinutes(Math.round(minutes / 10) * 10, 0, 0);
+        break;
+      case '30min':
+        // Round to nearest 30 minutes
+        roundedDate.setMinutes(Math.round(minutes / 30) * 30, 0, 0);
+        break;
+      case '1hr':
+        // Round to nearest hour
+        roundedDate.setMinutes(Math.round(minutes / 60) * 60, 0, 0);
+        break;
+      case '6hr':
+        // Round to nearest 6 hours
+        const totalHours = hours + (minutes / 60);
+        const rounded6hr = Math.round(totalHours / 6) * 6;
+        roundedDate.setHours(rounded6hr, 0, 0, 0);
+        break;
+      case '1day':
+        // Round to nearest day (midnight)
+        roundedDate.setHours(hours >= 12 ? 24 : 0, 0, 0, 0);
+        break;
+      default:
+        roundedDate.setSeconds(0, 0);
+    }
+
+    return roundedDate.toISOString();
+  }, []);
+
+  // Apply time rounding to merged data
+  const applyTimeRounding = useCallback((data: ParseResult, interval: string): ParseResult => {
+    console.log('🔄 applyTimeRounding called with interval:', interval);
+
+    // Group by rounded time and aggregate values
+    const roundedGroups = new Map<string, any[]>();
+
+    data.data.forEach(row => {
+      const roundedTime = roundTimeToInterval(row.time, interval);
+      if (!roundedGroups.has(roundedTime)) {
+        roundedGroups.set(roundedTime, []);
+      }
+      roundedGroups.get(roundedTime)!.push(row);
+    });
+
+    // For each rounded time, aggregate the values (take first non-null for each parameter)
+    const aggregatedData = Array.from(roundedGroups.entries()).map(([time, rows]) => {
+      const aggregated: any = { time };
+
+      // Get all parameter names (excluding time)
+      const params = data.headers.filter(h => h !== 'time');
+
+      params.forEach(param => {
+        // Find first non-null value for this parameter
+        const nonNullRow = rows.find(r => r[param] !== null && r[param] !== undefined);
+        aggregated[param] = nonNullRow?.[param] ?? null;
+      });
+
+      return aggregated;
+    });
+
+    // Sort by time
+    aggregatedData.sort((a, b) => a.time.localeCompare(b.time));
+
+    // Get parameter names (excluding time)
+    const params = data.headers.filter(h => h !== 'time');
+
+    // Find the time range where BOTH parameters have non-zero/non-null values
+    let startIdx = -1;
+    let endIdx = -1;
+
+    // Find first row where both parameters have values
+    for (let i = 0; i < aggregatedData.length; i++) {
+      const row = aggregatedData[i];
+      const hasAllParams = params.every(param => {
+        const val = row[param];
+        return val !== null && val !== undefined && val !== 0 && !isNaN(Number(val));
+      });
+      if (hasAllParams) {
+        startIdx = i;
+        break;
+      }
+    }
+
+    // Find last row where both parameters have values
+    for (let i = aggregatedData.length - 1; i >= 0; i--) {
+      const row = aggregatedData[i];
+      const hasAllParams = params.every(param => {
+        const val = row[param];
+        return val !== null && val !== undefined && val !== 0 && !isNaN(Number(val));
+      });
+      if (hasAllParams) {
+        endIdx = i;
+        break;
+      }
+    }
+
+    // Trim the data to only include the range where both parameters exist
+    const trimmedData = (startIdx >= 0 && endIdx >= startIdx)
+      ? aggregatedData.slice(startIdx, endIdx + 1)
+      : aggregatedData; // Keep all data if we couldn't find overlap
+
+    console.log('⏱️ Time rounding applied:', {
+      interval,
+      originalRows: data.data.length,
+      roundedRows: aggregatedData.length,
+      trimmedRows: trimmedData.length,
+      trimRange: { startIdx, endIdx },
+      sampleBeforeTrim: aggregatedData.slice(0, 3),
+      sampleAfterTrim: trimmedData.slice(0, 3),
+      parametersInHeaders: data.headers,
+      nonNullCountsBeforeTrim: params.map(param => ({
+        param,
+        nonNullCount: aggregatedData.filter(row => row[param] !== null && row[param] !== undefined && row[param] !== 0).length
+      })),
+      nonNullCountsAfterTrim: params.map(param => ({
+        param,
+        nonNullCount: trimmedData.filter(row => row[param] !== null && row[param] !== undefined && row[param] !== 0).length
+      }))
+    });
+
+    return {
+      ...data,
+      data: trimmedData,
+      summary: {
+        ...data.summary,
+        totalRows: trimmedData.length,
+        validRows: trimmedData.length
+      }
+    };
+  }, [roundTimeToInterval]);
 
   // Calculate global time range from brush-selected range of first plot
   const calculateGlobalTimeRange = useCallback(() => {
@@ -308,12 +463,207 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     const param1 = firstState.params[0];
     const param2 = secondState.params[0];
 
-    // Create merged plot config
+    console.log('🔍 Parameter names from visibility state:', {
+      param1,
+      param1Type: typeof param1,
+      param2,
+      param2Type: typeof param2,
+      firstStateParams: firstState.params,
+      secondStateParams: secondState.params
+    });
+
+    // Get the actual data from both plots
+    const firstPlotData = plotsData[firstPlot.id];
+    const secondPlotData = plotsData[secondPlot.id];
+
+    if (!firstPlotData || !secondPlotData) {
+      console.error('Cannot merge: plot data not loaded');
+      return;
+    }
+
+    // Helper function to find the actual data key for a parameter (handles display names vs data keys)
+    const findDataKey = (dataPoint: any, paramName: string): string | null => {
+      // Try direct match first
+      if (paramName in dataPoint) return paramName;
+
+      // Try case-insensitive match with spaces removed (e.g., "Wave Height" -> "waveHeight")
+      const normalizedParam = paramName.replace(/\s+/g, '').toLowerCase();
+      for (const key of Object.keys(dataPoint)) {
+        if (key.toLowerCase() === normalizedParam) {
+          return key;
+        }
+      }
+
+      // Try removing special characters and parentheses (e.g., "Sea Level (MSL)" -> "sealevel")
+      const cleanedParam = paramName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      for (const key of Object.keys(dataPoint)) {
+        const cleanedKey = key.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        if (cleanedKey.includes(cleanedParam) || cleanedParam.includes(cleanedKey)) {
+          console.log('🔍 Found fuzzy match:', { paramName, cleanedParam, key, cleanedKey });
+          return key;
+        }
+      }
+
+      // Special mappings for known display names
+      const specialMappings: Record<string, string[]> = {
+        'seaLevelHeightMsl': ['Sea Level (MSL)', 'Sea Level', 'sea level'],
+        'waveHeight': ['Wave Height', 'Significant Wave Height'],
+        'wavePeriod': ['Wave Period'],
+        'waveDirection': ['Wave Direction'],
+        'seaSurfaceTemperature': ['Sea Surface Temp (0m)', 'Sea Surface Temperature'],
+        'windSpeed10m': ['Wind Speed (10m)', 'Wind Speed'],
+        'windDirection10m': ['Wind Direction (10m)', 'Wind Direction'],
+        'temperature2m': ['Air Temperature (2m)', 'Air Temperature'],
+        'ghi': ['Global Horizontal Irradiance (GHI)', 'GHI']
+      };
+
+      for (const [dataKey, displayNames] of Object.entries(specialMappings)) {
+        if (displayNames.some(name => name.toLowerCase() === paramName.toLowerCase())) {
+          if (dataKey in dataPoint) {
+            console.log('🔍 Found via special mapping:', { paramName, dataKey });
+            return dataKey;
+          }
+        }
+      }
+
+      console.warn('⚠️ Could not find data key for parameter:', paramName, 'Available keys:', Object.keys(dataPoint));
+      return null;
+    };
+
+    // Find actual data keys for both parameters
+    const firstSamplePoint = firstPlotData.data[0];
+    const secondSamplePoint = secondPlotData.data[0];
+    const actualParam1Key = findDataKey(firstSamplePoint, param1) || param1;
+    const actualParam2Key = findDataKey(secondSamplePoint, param2) || param2;
+
+    console.log('🔑 Data key mapping:', {
+      requestedParam1: param1,
+      actualParam1Key,
+      requestedParam2: param2,
+      actualParam2Key
+    });
+
+    // Helper function to normalize time to ISO format
+    const normalizeTimeToISO = (timeStr: string): string => {
+      try {
+        const date = parseISO(timeStr);
+        if (isValid(date)) {
+          // Return full ISO format with milliseconds: 2024-10-03T06:05:50.000Z
+          return date.toISOString();
+        }
+        return timeStr; // Return original if can't parse
+      } catch (e) {
+        return timeStr;
+      }
+    };
+
+    // SIMPLE APPROACH: Just concatenate the actual data points (no nulls, no gaps)
+    // Take all points from first plot with param1, and all points from second plot with param2
+    const mergedData: any[] = [];
+
+    // Add all data points from first plot (with param1 only)
+    firstPlotData.data.forEach(point => {
+      const value = point[actualParam1Key];
+      if (value !== null && value !== undefined && !isNaN(Number(value))) {
+        mergedData.push({
+          time: normalizeTimeToISO(point.time), // Normalize to ISO
+          [param1]: value,
+          [param2]: null // Other parameter is null for these rows
+        });
+      }
+    });
+
+    // Add all data points from second plot (with param2 only)
+    secondPlotData.data.forEach(point => {
+      const value = point[actualParam2Key];
+      if (value !== null && value !== undefined && !isNaN(Number(value))) {
+        mergedData.push({
+          time: normalizeTimeToISO(point.time), // Normalize to ISO
+          [param1]: null, // Other parameter is null for these rows
+          [param2]: value
+        });
+      }
+    });
+
+    // Sort by time (ISO format sorts correctly alphabetically)
+    mergedData.sort((a, b) => a.time.localeCompare(b.time));
+
+    console.log('⏰ Time format samples:', {
+      firstPlotSampleTime: firstPlotData.data[0]?.time,
+      secondPlotSampleTime: secondPlotData.data[0]?.time,
+      mergedFirstTime: mergedData[0]?.time,
+      mergedLastTime: mergedData[mergedData.length - 1]?.time,
+      mergedMiddleTime: mergedData[Math.floor(mergedData.length / 2)]?.time
+    });
+
+    console.log('🔄 MERGE DEBUG:', {
+      param1,
+      param2,
+      firstPlotDataLength: firstPlotData.data.length,
+      secondPlotDataLength: secondPlotData.data.length,
+      mergedDataLength: mergedData.length,
+      sampleFirstPoint: firstPlotData.data[0],
+      sampleSecondPoint: secondPlotData.data[0],
+      sampleMergedPoint: mergedData[0],
+      sampleMergedPointMiddle: mergedData[Math.floor(mergedData.length / 2)],
+      sampleMergedPointEnd: mergedData[mergedData.length - 1],
+      firstDataKeys: Object.keys(firstPlotData.data[0] || {}),
+      secondDataKeys: Object.keys(secondPlotData.data[0] || {}),
+      mergedDataKeys: Object.keys(mergedData[0] || {}),
+      // Check how many points have both parameters
+      pointsWithBothParams: mergedData.filter(d => d[param1] !== null && d[param2] !== null).length,
+      pointsWithOnlyParam1: mergedData.filter(d => d[param1] !== null && d[param2] === null).length,
+      pointsWithOnlyParam2: mergedData.filter(d => d[param1] === null && d[param2] !== null).length
+    });
+
+    // Create ParseResult structure for the RAW merged data (before rounding)
+    const rawMergedData: ParseResult = {
+      data: mergedData as any,
+      headers: ['time', param1, param2],
+      errors: [],
+      summary: {
+        totalRows: mergedData.length,
+        validRows: mergedData.length,
+        columns: 3,
+        timeColumn: 'time'
+      }
+    };
+
+    // Save raw data
+    setMergeRawData(rawMergedData);
+
+    // Apply default time rounding (30 min)
+    const roundedData = applyTimeRounding(rawMergedData, timeRoundingInterval);
+
+    // Show preview dialog with rounded data
+    setMergePreviewData(roundedData);
+    setShowMergePreview(true);
+  };
+
+  // Handler to confirm merge after preview
+  const confirmMerge = () => {
+    if (!mergePreviewData || plots.length < 2) return;
+
+    const firstPlot = plots[0];
+    const secondPlot = plots[1];
+    const firstState = plotVisibilityState[firstPlot.id];
+    const secondState = plotVisibilityState[secondPlot.id];
+
+    if (!firstState || !secondState) return;
+
+    const param1 = firstState.params[0];
+    const param2 = secondState.params[0];
+
+    // Create a virtual device plot with merged data
     const mergedPlot: PlotConfig = {
       id: `merged-${Date.now()}`,
-      title: `Merged: ${param1} + ${param2}`,
-      type: firstPlot.type, // Use first plot's type as placeholder
+      title: `${param1} + ${param2}`,
+      type: 'device',
+      fileType: firstPlot.fileType || 'GP',
+      files: [],
+      fileName: `Merged: ${param1} + ${param2}`,
       isMerged: true,
+      mergedData: mergePreviewData,
       mergedParams: [
         {
           parameter: param1,
@@ -321,14 +671,6 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
           sourceLabel: (firstPlot.type === 'marine-meteo' ? firstPlot.locationName : firstPlot.fileName) as string,
           color: firstState.colors[param1],
           axis: 'left' as const,
-          ...(firstPlot.type === 'device' && {
-            fileType: firstPlot.fileType,
-            files: firstPlot.files
-          }),
-          ...(firstPlot.type === 'marine-meteo' && {
-            location: firstPlot.location,
-            timeRange: firstPlot.timeRange
-          })
         },
         {
           parameter: param2,
@@ -336,23 +678,19 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
           sourceLabel: (secondPlot.type === 'marine-meteo' ? secondPlot.locationName : secondPlot.fileName) as string,
           color: secondState.colors[param2],
           axis: 'right' as const,
-          ...(secondPlot.type === 'device' && {
-            fileType: secondPlot.fileType,
-            files: secondPlot.files
-          }),
-          ...(secondPlot.type === 'marine-meteo' && {
-            location: secondPlot.location,
-            timeRange: secondPlot.timeRange
-          })
         }
       ]
     };
 
-    // Replace first 2 plots with merged plot
-    setPlots([mergedPlot, ...plots.slice(2)]);
+    // Keep first 2 plots and add merged plot below them
+    setPlots([plots[0], plots[1], mergedPlot, ...plots.slice(2)]);
 
     // Force common mode for merged plots
     setTimeAxisMode('common');
+
+    // Close preview
+    setShowMergePreview(false);
+    setMergePreviewData(null);
   };
 
   // Handler for unmerging plots
@@ -491,58 +829,24 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             {/* Time Axis Mode Toggle - Sticky at top */}
             {plots.length > 1 && (
               <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b pb-2">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">Time Axis Mode:</span>
-                    <Minus className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">Separate</span>
-                    <Switch
-                      checked={timeAxisMode === 'common'}
-                      onCheckedChange={(checked) => setTimeAxisMode(checked ? 'common' : 'separate')}
-                      className="h-5 w-9"
-                    />
-                    <span className="text-xs text-muted-foreground">Common</span>
-                    <AlignHorizontalJustifyCenter className="h-4 w-4 text-muted-foreground" />
-                  </div>
-
-                  {/* Merge Plots Button */}
-                  {canMergePlots && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={handleMergePlots}
-                      className="shrink-0"
-                    >
-                      <Merge className="h-4 w-4 mr-2" />
-                      Merge First 2 Plots
-                    </Button>
-                  )}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Time Axis Mode:</span>
+                  <Minus className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Separate</span>
+                  <Switch
+                    checked={timeAxisMode === 'common'}
+                    onCheckedChange={(checked) => setTimeAxisMode(checked ? 'common' : 'separate')}
+                    className="h-5 w-9"
+                  />
+                  <span className="text-xs text-muted-foreground">Common</span>
+                  <AlignHorizontalJustifyCenter className="h-4 w-4 text-muted-foreground" />
                 </div>
               </div>
             )}
 
             <div className="flex-1 overflow-y-auto space-y-3">
               {plots.map((plot, index) => {
-                // Render merged plot
-                if (plot.isMerged && plot.mergedParams && plot.mergedParams.length === 2) {
-                  return (
-                    <PinMergedPlot
-                      key={plot.id}
-                      instanceId={plot.id}
-                      leftParam={plot.mergedParams[0]}
-                      rightParam={plot.mergedParams[1]}
-                      timeAxisMode={timeAxisMode}
-                      globalTimeRange={timeAxisMode === 'common' ? globalTimeRange : undefined}
-                      globalBrushRange={timeAxisMode === 'common' ? globalBrushRange : undefined}
-                      onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
-                      isLastPlot={index === plots.length - 1}
-                      onRemovePlot={plots.length > 1 ? removePlot : undefined}
-                      onUnmerge={handleUnmergePlot}
-                    />
-                  );
-                }
-
-                // Render device plot
+                // Render device plot (including merged plots which are now device plots with pre-parsed data)
                 if (plot.type === 'device') {
                   return (
                     <PinPlotInstance
@@ -552,6 +856,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                       onRemovePlot={plots.length > 1 ? removePlot : undefined}
                       fileType={plot.fileType!}
                       files={plot.files!}
+                      preParsedData={plot.mergedData} // Pass merged data for merged plots
                       timeAxisMode={timeAxisMode}
                       globalTimeRange={timeAxisMode === 'common' ? globalTimeRange : undefined}
                       globalBrushRange={timeAxisMode === 'common' ? globalBrushRange : undefined}
@@ -611,6 +916,11 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             setShowFileSelector(true);
           }}
           onSelectMarineMeteo={handleAddMarineMeteoPlot}
+          onSelectMerge={() => {
+            handleMergePlots();
+            setShowPlotTypeSelector(false);
+          }}
+          canMergePlots={canMergePlots}
           onCancel={() => setShowPlotTypeSelector(false)}
         />
       )}
@@ -652,6 +962,133 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
           />
         );
       })()}
+
+      {/* Merge CSV Preview Dialog */}
+      {showMergePreview && mergePreviewData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]" onClick={() => {
+          setShowMergePreview(false);
+          setMergePreviewData(null);
+        }}>
+          <div className="bg-background p-6 rounded-lg shadow-lg max-w-4xl w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold mb-1">Preview Merged CSV Data</h3>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {mergePreviewData.summary.totalRows} rows × {mergePreviewData.headers.length} columns
+                </p>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="time-rounding" className="text-sm">Time Rounding:</Label>
+                  <Select
+                    value={timeRoundingInterval}
+                    onValueChange={(value) => {
+                      console.log('📊 Dropdown changed to:', value);
+                      setTimeRoundingInterval(value);
+                      if (mergeRawData) {
+                        console.log('📊 Applying time rounding with new interval...');
+                        const rounded = applyTimeRounding(mergeRawData, value);
+                        setMergePreviewData(rounded);
+                      } else {
+                        console.warn('📊 mergeRawData is null, cannot apply rounding');
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="time-rounding" className="w-32 h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1min">1 Minute</SelectItem>
+                      <SelectItem value="10min">10 Minutes</SelectItem>
+                      <SelectItem value="30min">30 Minutes</SelectItem>
+                      <SelectItem value="1hr">1 Hour</SelectItem>
+                      <SelectItem value="6hr">6 Hours</SelectItem>
+                      <SelectItem value="1day">1 Day</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            {/* Table Preview */}
+            <div className="flex-1 overflow-auto border rounded-md mb-4">
+              <table className="w-full text-sm">
+                <thead className="bg-muted sticky top-0">
+                  <tr>
+                    {mergePreviewData.headers.map(header => (
+                      <th key={header} className="p-2 text-left border-b font-semibold">
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {mergePreviewData.data.slice(0, 100).map((row, idx) => (
+                    <tr key={idx} className="border-b hover:bg-muted/50">
+                      {mergePreviewData.headers.map(header => (
+                        <td key={header} className="p-2">
+                          {row[header] !== null && row[header] !== undefined
+                            ? String(row[header])
+                            : '-'}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {mergePreviewData.data.length > 100 && (
+                <div className="p-2 text-center text-xs text-muted-foreground bg-muted/50">
+                  Showing first 100 of {mergePreviewData.data.length} rows
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowMergePreview(false);
+                  setMergePreviewData(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Download CSV
+                  const csvContent = [
+                    mergePreviewData.headers.join(','),
+                    ...mergePreviewData.data.map(row =>
+                      mergePreviewData.headers.map(header => {
+                        const value = row[header];
+                        return value !== null && value !== undefined ? value : '';
+                      }).join(',')
+                    )
+                  ].join('\n');
+
+                  const blob = new Blob([csvContent], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `merged-${mergePreviewData.headers[1]}-${mergePreviewData.headers[2]}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+
+                  toast({
+                    title: "CSV Downloaded",
+                    description: "Merged CSV file has been saved"
+                  });
+                }}
+              >
+                Save as CSV
+              </Button>
+              <Button onClick={confirmMerge}>
+                Create Merged Plot
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -15,6 +15,8 @@ interface PinPlotInstanceProps {
   onRemovePlot?: (id: string) => void; // Optional - undefined means can't remove
   fileType: 'GP' | 'FPOD' | 'Subcam';
   files: File[];
+  // Pre-parsed data for merged plots (bypasses CSV parsing)
+  preParsedData?: ParseResult;
   // Time synchronization props
   timeAxisMode?: 'separate' | 'common';
   globalTimeRange?: { min: Date | null; max: Date | null };
@@ -33,6 +35,7 @@ export function PinPlotInstance({
   onRemovePlot,
   fileType,
   files,
+  preParsedData,
   timeAxisMode,
   globalTimeRange,
   globalBrushRange,
@@ -51,12 +54,20 @@ export function PinPlotInstance({
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
 
-  // Process CSV files on mount and when files change
+  // Handle pre-parsed data (for merged plots) or process CSV files
   useEffect(() => {
-    if (files.length > 0) {
+    if (preParsedData) {
+      // Use pre-parsed data directly (merged plot scenario)
+      setParseResult(preParsedData);
+      if (onDataParsed) {
+        onDataParsed(instanceId, preParsedData);
+      }
+      setIsProcessingFiles(false);
+    } else if (files.length > 0) {
+      // Normal flow: process CSV files
       processCSVFiles(files);
     }
-  }, [files]);
+  }, [files, preParsedData, instanceId, onDataParsed]);
 
   const processCSVFiles = async (csvFiles: File[]) => {
     setIsProcessingFiles(true);
