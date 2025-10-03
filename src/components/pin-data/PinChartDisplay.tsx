@@ -547,8 +547,8 @@ export function PinChartDisplay({
         ...prev[parameter],
         timeFilter: {
           enabled,
-          excludeStart: excludeStart || '08:00',
-          excludeEnd: excludeEnd || '18:00'
+          excludeStart: excludeStart || '05:00',
+          excludeEnd: excludeEnd || '20:00'
         }
       }
     }));
@@ -578,7 +578,7 @@ export function PinChartDisplay({
 
   // Get source label abbreviation
   const getSourceLabel = (): string => {
-    if (dataSource === 'marine') return 'MMD';
+    if (dataSource === 'marine') return 'OM';
     return fileType; // Returns 'GP', 'FPOD', or 'Subcam'
   };
 
@@ -586,7 +586,7 @@ export function PinChartDisplay({
   const formatParameterWithSource = (parameter: string): string => {
     const baseLabel = getParameterLabelWithUnit(parameter);
     const sourceLabel = getSourceLabel();
-    return `${baseLabel} (${sourceLabel})`;
+    return `${baseLabel} [${sourceLabel}]`;
   };
 
   const moveParameter = (parameter: string, direction: 'up' | 'down') => {

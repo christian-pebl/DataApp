@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { HexColorPicker } from 'react-colorful';
-import { Split, ArrowLeft, ArrowRight, X, Loader2, AlertCircle, Settings, ChevronLeft, ChevronRight, Circle } from 'lucide-react';
+import { Split, ArrowLeft, ArrowRight, X, Loader2, AlertCircle, Settings, ChevronLeft, ChevronRight, Circle, Filter, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   LineChart,
@@ -149,6 +149,32 @@ const getTimeRangeFromData = (data: ParsedDataPoint[]): { startDate: string; end
   };
 };
 
+// Helper to check if a time falls within an exclusion range
+const isTimeExcluded = (timeStr: string, excludeStart: string, excludeEnd: string): boolean => {
+  try {
+    const date = parseISO(timeStr);
+    if (!isValid(date)) return false;
+
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const timeInMinutes = hours * 60 + minutes;
+
+    const [startH, startM] = excludeStart.split(':').map(Number);
+    const [endH, endM] = excludeEnd.split(':').map(Number);
+    const startInMinutes = startH * 60 + startM;
+    const endInMinutes = endH * 60 + endM;
+
+    // Handle ranges that cross midnight
+    if (startInMinutes <= endInMinutes) {
+      return timeInMinutes >= startInMinutes && timeInMinutes <= endInMinutes;
+    } else {
+      return timeInMinutes >= startInMinutes || timeInMinutes <= endInMinutes;
+    }
+  } catch {
+    return false;
+  }
+};
+
 export function PinMergedPlot({
   instanceId,
   leftParam,
@@ -178,6 +204,23 @@ export function PinMergedPlot({
   // Visibility states (allow user to show/hide parameters)
   const [leftVisible, setLeftVisible] = useState(true);
   const [rightVisible, setRightVisible] = useState(true);
+
+  // Parameter settings states (time filter and MA)
+  interface ParameterSettings {
+    timeFilter?: {
+      enabled: boolean;
+      excludeStart: string;
+      excludeEnd: string;
+    };
+    movingAverage?: {
+      enabled: boolean;
+      windowDays: number;
+      showLine: boolean;
+    };
+  }
+
+  const [leftSettings, setLeftSettings] = useState<ParameterSettings>({});
+  const [rightSettings, setRightSettings] = useState<ParameterSettings>({});
 
   // Local brush state (for separate mode)
   const [localBrushStart, setLocalBrushStart] = useState(0);
@@ -377,23 +420,109 @@ export function PinMergedPlot({
     : localBrushEnd;
 
 
-  // Apply brush/time filtering
+  // Apply brush/time filtering, time-of-day filters, and MA calculation
   const displayData = useMemo(() => {
     if (mergedData.length === 0) return [];
 
+    // Step 1: Get base data based on brush/time range
+    let baseData: typeof mergedData;
+
     // In common mode with global time range, filter by time
     if (timeAxisMode === 'common' && globalTimeRange?.min && globalTimeRange?.max) {
-      return mergedData.filter(d => {
+      baseData = mergedData.filter(d => {
         const pointTime = new Date(d.time);
         return pointTime >= globalTimeRange.min! && pointTime <= globalTimeRange.max!;
       });
+    } else {
+      // Use brush indices (works for both common and separate modes)
+      const start = Math.max(0, activeBrushStart);
+      const end = Math.min(mergedData.length - 1, activeBrushEnd ?? mergedData.length - 1);
+      baseData = mergedData.slice(start, end + 1);
     }
 
-    // Use brush indices (works for both common and separate modes)
-    const start = Math.max(0, activeBrushStart);
-    const end = Math.min(mergedData.length - 1, activeBrushEnd ?? mergedData.length - 1);
-    return mergedData.slice(start, end + 1);
-  }, [mergedData, timeAxisMode, globalTimeRange, activeBrushStart, activeBrushEnd]);
+    // Step 2: Apply time-of-day filters
+    const hasTimeFilters = leftSettings.timeFilter?.enabled || rightSettings.timeFilter?.enabled;
+
+    let filteredData = baseData;
+    if (hasTimeFilters) {
+      filteredData = baseData.map(point => {
+        const newPoint = { ...point };
+
+        // Apply left parameter filter
+        if (leftSettings.timeFilter?.enabled && leftSettings.timeFilter.excludeStart && leftSettings.timeFilter.excludeEnd) {
+          if (isTimeExcluded(point.time, leftSettings.timeFilter.excludeStart, leftSettings.timeFilter.excludeEnd)) {
+            newPoint[leftParam.parameter] = null;
+          }
+        }
+
+        // Apply right parameter filter
+        if (rightSettings.timeFilter?.enabled && rightSettings.timeFilter.excludeStart && rightSettings.timeFilter.excludeEnd) {
+          if (isTimeExcluded(point.time, rightSettings.timeFilter.excludeStart, rightSettings.timeFilter.excludeEnd)) {
+            newPoint[rightParam.parameter] = null;
+          }
+        }
+
+        return newPoint;
+      });
+    }
+
+    // Step 3: Calculate moving averages
+    const hasMovingAverages = leftSettings.movingAverage?.enabled || rightSettings.movingAverage?.enabled;
+
+    if (!hasMovingAverages) {
+      return filteredData;
+    }
+
+    return filteredData.map((point, index) => {
+      const newPoint = { ...point };
+
+      // Calculate MA for left parameter
+      if (leftSettings.movingAverage?.enabled) {
+        const windowDays = leftSettings.movingAverage.windowDays || 7;
+        const windowSize = windowDays * 24;
+        const windowStart = Math.max(0, index - windowSize + 1);
+        const windowValues: number[] = [];
+
+        for (let i = windowStart; i <= index; i++) {
+          const value = filteredData[i][leftParam.parameter];
+          if (typeof value === 'number' && !isNaN(value) && value !== null) {
+            windowValues.push(value);
+          }
+        }
+
+        if (windowValues.length > 0) {
+          const sum = windowValues.reduce((a, b) => a + b, 0);
+          newPoint[`${leftParam.parameter}_ma`] = sum / windowValues.length;
+        } else {
+          newPoint[`${leftParam.parameter}_ma`] = null;
+        }
+      }
+
+      // Calculate MA for right parameter
+      if (rightSettings.movingAverage?.enabled) {
+        const windowDays = rightSettings.movingAverage.windowDays || 7;
+        const windowSize = windowDays * 24;
+        const windowStart = Math.max(0, index - windowSize + 1);
+        const windowValues: number[] = [];
+
+        for (let i = windowStart; i <= index; i++) {
+          const value = filteredData[i][rightParam.parameter];
+          if (typeof value === 'number' && !isNaN(value) && value !== null) {
+            windowValues.push(value);
+          }
+        }
+
+        if (windowValues.length > 0) {
+          const sum = windowValues.reduce((a, b) => a + b, 0);
+          newPoint[`${rightParam.parameter}_ma`] = sum / windowValues.length;
+        } else {
+          newPoint[`${rightParam.parameter}_ma`] = null;
+        }
+      }
+
+      return newPoint;
+    });
+  }, [mergedData, timeAxisMode, globalTimeRange, activeBrushStart, activeBrushEnd, leftSettings, rightSettings, leftParam.parameter, rightParam.parameter]);
 
   // Calculate domain for left parameter
   const leftDomain = useMemo((): [number, number] => {
@@ -467,14 +596,14 @@ export function PinMergedPlot({
 
   // Get source abbreviation
   const getSourceAbbr = (sourceType: string) => {
-    return sourceType === 'marine' ? 'MMD' : sourceType;
+    return sourceType === 'marine' ? 'OM' : sourceType;
   };
 
   // Format parameter with source label
   const formatParameterWithSource = (parameter: string, sourceType: string): string => {
     const baseLabel = getParameterLabelWithUnit(parameter);
     const sourceLabel = getSourceAbbr(sourceType);
-    return `${baseLabel} (${sourceLabel})`;
+    return `${baseLabel} [${sourceLabel}]`;
   };
 
   return (
@@ -842,15 +971,165 @@ export function PinMergedPlot({
                     </PopoverContent>
                   </Popover>
 
-                  {/* Settings icon - placeholder for future features */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 w-5 p-0 hover:bg-accent"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Settings className="h-3 w-3" />
-                  </Button>
+                  {/* Settings popover for time filter and MA */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          "h-5 w-5 p-0 hover:bg-accent",
+                          (leftSettings.timeFilter?.enabled || leftSettings.movingAverage?.enabled) && "text-primary"
+                        )}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Settings className="h-3 w-3" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-72 p-3" align="end" onClick={(e) => e.stopPropagation()}>
+                      <div className="space-y-4">
+                        <p className="text-xs font-semibold border-b pb-2">Settings - {leftParam.parameter}</p>
+
+                        {/* Time Filter Section */}
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-xs font-medium">Data Filter</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id="left-filter"
+                              checked={leftSettings.timeFilter?.enabled || false}
+                              onCheckedChange={(checked) =>
+                                setLeftSettings({
+                                  ...leftSettings,
+                                  timeFilter: {
+                                    enabled: checked as boolean,
+                                    excludeStart: leftSettings.timeFilter?.excludeStart || '05:00',
+                                    excludeEnd: leftSettings.timeFilter?.excludeEnd || '20:00'
+                                  }
+                                })
+                              }
+                              className="h-3 w-3"
+                            />
+                            <Label htmlFor="left-filter" className="text-xs cursor-pointer">
+                              Enable time filter
+                            </Label>
+                          </div>
+                          {leftSettings.timeFilter?.enabled && (
+                            <div className="pl-5 space-y-2">
+                              <p className="text-xs text-muted-foreground">Hide data between:</p>
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs w-12">From:</Label>
+                                <Input
+                                  type="time"
+                                  value={leftSettings.timeFilter?.excludeStart || '05:00'}
+                                  onChange={(e) =>
+                                    setLeftSettings({
+                                      ...leftSettings,
+                                      timeFilter: {
+                                        ...leftSettings.timeFilter!,
+                                        excludeStart: e.target.value
+                                      }
+                                    })
+                                  }
+                                  className="h-7 text-xs"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs w-12">To:</Label>
+                                <Input
+                                  type="time"
+                                  value={leftSettings.timeFilter?.excludeEnd || '20:00'}
+                                  onChange={(e) =>
+                                    setLeftSettings({
+                                      ...leftSettings,
+                                      timeFilter: {
+                                        ...leftSettings.timeFilter!,
+                                        excludeEnd: e.target.value
+                                      }
+                                    })
+                                  }
+                                  className="h-7 text-xs"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Moving Average Section */}
+                        <div className="space-y-2 border-t pt-3">
+                          <div className="flex items-center gap-2">
+                            <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-xs font-medium">Moving Average</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id="left-ma"
+                              checked={leftSettings.movingAverage?.enabled || false}
+                              onCheckedChange={(checked) =>
+                                setLeftSettings({
+                                  ...leftSettings,
+                                  movingAverage: {
+                                    enabled: checked as boolean,
+                                    windowDays: leftSettings.movingAverage?.windowDays || 7,
+                                    showLine: leftSettings.movingAverage?.showLine !== false
+                                  }
+                                })
+                              }
+                              className="h-3 w-3"
+                            />
+                            <Label htmlFor="left-ma" className="text-xs cursor-pointer">
+                              Enable moving average
+                            </Label>
+                          </div>
+                          {leftSettings.movingAverage?.enabled && (
+                            <div className="pl-5 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs w-16">Window:</Label>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  max="365"
+                                  value={leftSettings.movingAverage?.windowDays || 7}
+                                  onChange={(e) =>
+                                    setLeftSettings({
+                                      ...leftSettings,
+                                      movingAverage: {
+                                        ...leftSettings.movingAverage!,
+                                        windowDays: parseInt(e.target.value) || 7
+                                      }
+                                    })
+                                  }
+                                  className="h-7 text-xs w-20"
+                                />
+                                <span className="text-xs text-muted-foreground">days</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  id="left-ma-show"
+                                  checked={leftSettings.movingAverage?.showLine !== false}
+                                  onCheckedChange={(checked) =>
+                                    setLeftSettings({
+                                      ...leftSettings,
+                                      movingAverage: {
+                                        ...leftSettings.movingAverage!,
+                                        showLine: checked as boolean
+                                      }
+                                    })
+                                  }
+                                  className="h-3 w-3"
+                                />
+                                <Label htmlFor="left-ma-show" className="text-xs cursor-pointer">
+                                  Show MA line on chart
+                                </Label>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
 
@@ -930,15 +1209,165 @@ export function PinMergedPlot({
                     </PopoverContent>
                   </Popover>
 
-                  {/* Settings icon - placeholder for future features */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 w-5 p-0 hover:bg-accent"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Settings className="h-3 w-3" />
-                  </Button>
+                  {/* Settings popover for time filter and MA */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          "h-5 w-5 p-0 hover:bg-accent",
+                          (rightSettings.timeFilter?.enabled || rightSettings.movingAverage?.enabled) && "text-primary"
+                        )}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Settings className="h-3 w-3" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-72 p-3" align="end" onClick={(e) => e.stopPropagation()}>
+                      <div className="space-y-4">
+                        <p className="text-xs font-semibold border-b pb-2">Settings - {rightParam.parameter}</p>
+
+                        {/* Time Filter Section */}
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-xs font-medium">Data Filter</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id="right-filter"
+                              checked={rightSettings.timeFilter?.enabled || false}
+                              onCheckedChange={(checked) =>
+                                setRightSettings({
+                                  ...rightSettings,
+                                  timeFilter: {
+                                    enabled: checked as boolean,
+                                    excludeStart: rightSettings.timeFilter?.excludeStart || '05:00',
+                                    excludeEnd: rightSettings.timeFilter?.excludeEnd || '20:00'
+                                  }
+                                })
+                              }
+                              className="h-3 w-3"
+                            />
+                            <Label htmlFor="right-filter" className="text-xs cursor-pointer">
+                              Enable time filter
+                            </Label>
+                          </div>
+                          {rightSettings.timeFilter?.enabled && (
+                            <div className="pl-5 space-y-2">
+                              <p className="text-xs text-muted-foreground">Hide data between:</p>
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs w-12">From:</Label>
+                                <Input
+                                  type="time"
+                                  value={rightSettings.timeFilter?.excludeStart || '05:00'}
+                                  onChange={(e) =>
+                                    setRightSettings({
+                                      ...rightSettings,
+                                      timeFilter: {
+                                        ...rightSettings.timeFilter!,
+                                        excludeStart: e.target.value
+                                      }
+                                    })
+                                  }
+                                  className="h-7 text-xs"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs w-12">To:</Label>
+                                <Input
+                                  type="time"
+                                  value={rightSettings.timeFilter?.excludeEnd || '20:00'}
+                                  onChange={(e) =>
+                                    setRightSettings({
+                                      ...rightSettings,
+                                      timeFilter: {
+                                        ...rightSettings.timeFilter!,
+                                        excludeEnd: e.target.value
+                                      }
+                                    })
+                                  }
+                                  className="h-7 text-xs"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Moving Average Section */}
+                        <div className="space-y-2 border-t pt-3">
+                          <div className="flex items-center gap-2">
+                            <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-xs font-medium">Moving Average</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id="right-ma"
+                              checked={rightSettings.movingAverage?.enabled || false}
+                              onCheckedChange={(checked) =>
+                                setRightSettings({
+                                  ...rightSettings,
+                                  movingAverage: {
+                                    enabled: checked as boolean,
+                                    windowDays: rightSettings.movingAverage?.windowDays || 7,
+                                    showLine: rightSettings.movingAverage?.showLine !== false
+                                  }
+                                })
+                              }
+                              className="h-3 w-3"
+                            />
+                            <Label htmlFor="right-ma" className="text-xs cursor-pointer">
+                              Enable moving average
+                            </Label>
+                          </div>
+                          {rightSettings.movingAverage?.enabled && (
+                            <div className="pl-5 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs w-16">Window:</Label>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  max="365"
+                                  value={rightSettings.movingAverage?.windowDays || 7}
+                                  onChange={(e) =>
+                                    setRightSettings({
+                                      ...rightSettings,
+                                      movingAverage: {
+                                        ...rightSettings.movingAverage!,
+                                        windowDays: parseInt(e.target.value) || 7
+                                      }
+                                    })
+                                  }
+                                  className="h-7 text-xs w-20"
+                                />
+                                <span className="text-xs text-muted-foreground">days</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  id="right-ma-show"
+                                  checked={rightSettings.movingAverage?.showLine !== false}
+                                  onCheckedChange={(checked) =>
+                                    setRightSettings({
+                                      ...rightSettings,
+                                      movingAverage: {
+                                        ...rightSettings.movingAverage!,
+                                        showLine: checked as boolean
+                                      }
+                                    })
+                                  }
+                                  className="h-3 w-3"
+                                />
+                                <Label htmlFor="right-ma-show" className="text-xs cursor-pointer">
+                                  Show MA line on chart
+                                </Label>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
             </div>
