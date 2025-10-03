@@ -8,9 +8,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings } from "lucide-react";
+import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
@@ -41,6 +42,17 @@ const CHART_COLORS = [
 interface ParameterState {
   visible: boolean;
   color: string;
+  isSolo?: boolean;
+  timeFilter?: {
+    enabled: boolean;
+    excludeStart: string; // "HH:mm" format
+    excludeEnd: string;
+  };
+  movingAverage?: {
+    enabled: boolean;
+    windowDays: number;
+    showLine: boolean;
+  };
 }
 
 const formatDateTick = (timeValue: string | number, dataSource?: 'csv' | 'marine'): string => {
@@ -237,6 +249,32 @@ export function PinChartDisplay({
     }
   }, [visibleParameters, parameterStates, onVisibilityChange]);
 
+  // Helper function to check if a time falls within an exclusion range
+  const isTimeExcluded = (timeStr: string, excludeStart: string, excludeEnd: string): boolean => {
+    try {
+      const date = parseISO(timeStr);
+      if (!isValid(date)) return false;
+
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      const timeInMinutes = hours * 60 + minutes;
+
+      const [startH, startM] = excludeStart.split(':').map(Number);
+      const [endH, endM] = excludeEnd.split(':').map(Number);
+      const startInMinutes = startH * 60 + startM;
+      const endInMinutes = endH * 60 + endM;
+
+      // Handle ranges that cross midnight
+      if (startInMinutes <= endInMinutes) {
+        return timeInMinutes >= startInMinutes && timeInMinutes <= endInMinutes;
+      } else {
+        return timeInMinutes >= startInMinutes || timeInMinutes <= endInMinutes;
+      }
+    } catch {
+      return false;
+    }
+  };
+
   // Determine which brush indices to use based on mode
   const activeBrushStart = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.startIndex : brushStartIndex;
   const activeBrushEnd = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.endIndex : brushEndIndex;
@@ -379,6 +417,32 @@ export function PinChartDisplay({
     }));
   };
 
+  const toggleSolo = (parameter: string) => {
+    setParameterStates(prev => {
+      const newState = { ...prev };
+      const currentlySolo = newState[parameter]?.isSolo || false;
+
+      // If this parameter is currently solo, turn off solo and show all
+      // If not solo, make this one solo and hide others
+      Object.keys(newState).forEach(key => {
+        if (key === parameter) {
+          newState[key] = {
+            ...newState[key],
+            visible: true,
+            isSolo: !currentlySolo
+          };
+        } else {
+          newState[key] = {
+            ...newState[key],
+            visible: currentlySolo ? true : false, // If turning off solo, show others; if turning on, hide them
+            isSolo: false
+          };
+        }
+      });
+      return newState;
+    });
+  };
+
   const showOnlyParameter = (parameter: string) => {
     setParameterStates(prev => {
       const newState = { ...prev };
@@ -399,6 +463,34 @@ export function PinChartDisplay({
       [parameter]: {
         ...prev[parameter],
         color: hexColor // Store hex directly instead of CSS var
+      }
+    }));
+  };
+
+  const updateTimeFilter = (parameter: string, enabled: boolean, excludeStart?: string, excludeEnd?: string) => {
+    setParameterStates(prev => ({
+      ...prev,
+      [parameter]: {
+        ...prev[parameter],
+        timeFilter: {
+          enabled,
+          excludeStart: excludeStart || '08:00',
+          excludeEnd: excludeEnd || '18:00'
+        }
+      }
+    }));
+  };
+
+  const updateMovingAverage = (parameter: string, enabled: boolean, windowDays?: number, showLine?: boolean) => {
+    setParameterStates(prev => ({
+      ...prev,
+      [parameter]: {
+        ...prev[parameter],
+        movingAverage: {
+          enabled,
+          windowDays: windowDays || 7,
+          showLine: showLine !== undefined ? showLine : true
+        }
       }
     }));
   };
@@ -615,12 +707,14 @@ export function PinChartDisplay({
 
                 {visibleParameters.map((parameter) => {
                   const state = parameterStates[parameter];
+                  const colorValue = getColorValue(state.color);
+
                   return (
                     <Line
                       key={parameter}
                       type="monotone"
                       dataKey={parameter}
-                      stroke={getColorValue(state.color)}
+                      stroke={colorValue}
                       strokeWidth={1.5}
                       dot={false}
                       connectNulls={false}
@@ -745,6 +839,7 @@ export function PinChartDisplay({
                 {visibleParameters.map((parameter) => {
                   const state = parameterStates[parameter];
                   const yAxisId = `axis-${parameter}`;
+                  const colorValue = getColorValue(state.color);
 
                   return (
                     <Line
@@ -752,7 +847,7 @@ export function PinChartDisplay({
                       type="monotone"
                       dataKey={parameter}
                       yAxisId={yAxisId}
-                      stroke={getColorValue(state.color)}
+                      stroke={colorValue}
                       strokeWidth={1.5}
                       dot={false}
                       connectNulls={false}
@@ -845,13 +940,47 @@ export function PinChartDisplay({
                         onCheckedChange={() => toggleParameterVisibility(parameter)}
                         className="h-3 w-3"
                       />
-                      <Label
-                        htmlFor={`param-${parameter}`}
-                        className="text-xs cursor-pointer truncate flex-1"
-                        title={formatParameterWithSource(parameter)}
+
+                      {/* Solo button - small circular button */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          "h-4 w-4 p-0 rounded-full hover:bg-accent",
+                          state.isSolo && "bg-primary/20 hover:bg-primary/30"
+                        )}
+                        onClick={() => toggleSolo(parameter)}
+                        title={state.isSolo ? "Exit solo mode" : "Show only this parameter"}
                       >
-                        {formatParameterWithSource(parameter)}
-                      </Label>
+                        <Circle className={cn(
+                          "h-2.5 w-2.5",
+                          state.isSolo ? "fill-primary text-primary" : "text-muted-foreground"
+                        )} />
+                      </Button>
+
+                      <div className="flex items-center gap-1 flex-1 min-w-0">
+                        <Label
+                          htmlFor={`param-${parameter}`}
+                          className="text-xs cursor-pointer truncate"
+                          title={formatParameterWithSource(parameter)}
+                        >
+                          {formatParameterWithSource(parameter)}
+                        </Label>
+                        {/* Filter indicator */}
+                        {state.timeFilter?.enabled && (
+                          <Filter
+                            className="h-2.5 w-2.5 text-primary opacity-70"
+                            title={`Time filter: ${state.timeFilter.excludeStart}-${state.timeFilter.excludeEnd}`}
+                          />
+                        )}
+                        {/* MA indicator */}
+                        {state.movingAverage?.enabled && (
+                          <BarChart3
+                            className="h-2.5 w-2.5 text-primary opacity-70"
+                            title={`${state.movingAverage.windowDays}d MA ${state.movingAverage.showLine ? '(visible)' : '(hidden)'}`}
+                          />
+                        )}
+                      </div>
                       {/* Show axis indicator in multi-axis mode */}
                       {axisMode === 'multi' && state.visible && axisPosition && (
                         <span
@@ -861,26 +990,18 @@ export function PinChartDisplay({
                           {axisPosition}
                         </span>
                       )}
-                      <div
-                        className="w-3 h-3 rounded-full border cursor-pointer hover:ring-2 hover:ring-offset-1 transition-all"
-                        style={{
-                          backgroundColor: colorValue,
-                          '--tw-ring-color': colorValue
-                        } as React.CSSProperties}
-                        onClick={() => showOnlyParameter(parameter)}
-                        title="Show only this parameter"
-                      />
-                      {/* Color picker gear icon */}
+
+                      {/* Colored circle with color picker */}
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-5 w-5 p-0 hover:bg-accent"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Settings className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                          </Button>
+                          <div
+                            className="w-3 h-3 rounded-full border cursor-pointer hover:ring-2 hover:ring-offset-1 transition-all"
+                            style={{
+                              backgroundColor: colorValue,
+                              '--tw-ring-color': colorValue
+                            } as React.CSSProperties}
+                            title="Change color"
+                          />
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-3" align="end" onClick={(e) => e.stopPropagation()}>
                           <div className="space-y-2">
@@ -891,6 +1012,161 @@ export function PinChartDisplay({
                                 onChange={(hex) => updateParameterColor(parameter, hex)}
                                 style={{ width: '200px', height: '150px' }}
                               />
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+
+                      {/* Settings icon - contains filters and MA */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={cn(
+                              "h-5 w-5 p-0 hover:bg-accent",
+                              (state.timeFilter?.enabled || state.movingAverage?.enabled) && "text-primary"
+                            )}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Settings className="h-3 w-3" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-72 p-3" align="end" onClick={(e) => e.stopPropagation()}>
+                          <div className="space-y-4">
+                            <p className="text-xs font-semibold border-b pb-2">Settings - {parameter}</p>
+
+                            {/* Time Filter Section */}
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                                <span className="text-xs font-medium">Data Filter</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  id={`filter-${parameter}`}
+                                  checked={state.timeFilter?.enabled || false}
+                                  onCheckedChange={(checked) =>
+                                    updateTimeFilter(
+                                      parameter,
+                                      checked as boolean,
+                                      state.timeFilter?.excludeStart,
+                                      state.timeFilter?.excludeEnd
+                                    )
+                                  }
+                                  className="h-3 w-3"
+                                />
+                                <Label htmlFor={`filter-${parameter}`} className="text-xs cursor-pointer">
+                                  Enable time filter
+                                </Label>
+                              </div>
+                              {state.timeFilter?.enabled && (
+                                <div className="pl-5 space-y-2">
+                                  <p className="text-xs text-muted-foreground">Hide data between:</p>
+                                  <div className="flex items-center gap-2">
+                                    <Label className="text-xs w-12">From:</Label>
+                                    <Input
+                                      type="time"
+                                      value={state.timeFilter?.excludeStart || '08:00'}
+                                      onChange={(e) =>
+                                        updateTimeFilter(
+                                          parameter,
+                                          true,
+                                          e.target.value,
+                                          state.timeFilter?.excludeEnd
+                                        )
+                                      }
+                                      className="h-7 text-xs"
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Label className="text-xs w-12">To:</Label>
+                                    <Input
+                                      type="time"
+                                      value={state.timeFilter?.excludeEnd || '18:00'}
+                                      onChange={(e) =>
+                                        updateTimeFilter(
+                                          parameter,
+                                          true,
+                                          state.timeFilter?.excludeStart,
+                                          e.target.value
+                                        )
+                                      }
+                                      className="h-7 text-xs"
+                                    />
+                                  </div>
+                                  <p className="text-[0.65rem] text-muted-foreground italic">
+                                    Filters applied to each day in the time series
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Moving Average Section */}
+                            <div className="space-y-2 border-t pt-3">
+                              <div className="flex items-center gap-2">
+                                <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
+                                <span className="text-xs font-medium">Moving Average</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  id={`ma-${parameter}`}
+                                  checked={state.movingAverage?.enabled || false}
+                                  onCheckedChange={(checked) =>
+                                    updateMovingAverage(
+                                      parameter,
+                                      checked as boolean,
+                                      state.movingAverage?.windowDays,
+                                      state.movingAverage?.showLine
+                                    )
+                                  }
+                                  className="h-3 w-3"
+                                />
+                                <Label htmlFor={`ma-${parameter}`} className="text-xs cursor-pointer">
+                                  Enable moving average
+                                </Label>
+                              </div>
+                              {state.movingAverage?.enabled && (
+                                <div className="pl-5 space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <Label className="text-xs w-16">Window:</Label>
+                                    <Input
+                                      type="number"
+                                      min="1"
+                                      max="365"
+                                      value={state.movingAverage?.windowDays || 7}
+                                      onChange={(e) =>
+                                        updateMovingAverage(
+                                          parameter,
+                                          true,
+                                          parseInt(e.target.value) || 7,
+                                          state.movingAverage?.showLine
+                                        )
+                                      }
+                                      className="h-7 text-xs w-20"
+                                    />
+                                    <span className="text-xs text-muted-foreground">days</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`ma-show-${parameter}`}
+                                      checked={state.movingAverage?.showLine !== false}
+                                      onCheckedChange={(checked) =>
+                                        updateMovingAverage(
+                                          parameter,
+                                          true,
+                                          state.movingAverage?.windowDays,
+                                          checked as boolean
+                                        )
+                                      }
+                                      className="h-3 w-3"
+                                    />
+                                    <Label htmlFor={`ma-show-${parameter}`} className="text-xs cursor-pointer">
+                                      Show MA line on chart
+                                    </Label>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </PopoverContent>

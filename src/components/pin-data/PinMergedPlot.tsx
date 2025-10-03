@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { HexColorPicker } from 'react-colorful';
-import { Split, ArrowLeft, ArrowRight, X, Loader2, AlertCircle, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Split, ArrowLeft, ArrowRight, X, Loader2, AlertCircle, Settings, ChevronLeft, ChevronRight, Circle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   LineChart,
@@ -543,7 +543,7 @@ export function PinMergedPlot({
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={displayData} margin={{ top: 5, right: yAxisMode === 'single' ? 20 : 60, left: 20, bottom: 5 }}>
+            <LineChart data={displayData} margin={{ top: 5, right: yAxisMode === 'single' ? 20 : 60, left: 60, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
 
               {/* X-Axis */}
@@ -579,9 +579,9 @@ export function PinMergedPlot({
                   }}
                 />
               ) : (
-                // MULTI Y-AXIS MODE: Separate left and right axes
+                // MULTI Y-AXIS MODE: Separate left and right axes - built from single mode structure
                 <>
-                  {/* Left Y-Axis */}
+                  {/* Left Y-Axis - duplicate of single mode with left parameter color */}
                   <YAxis
                     yAxisId="left"
                     orientation="left"
@@ -594,11 +594,16 @@ export function PinMergedPlot({
                       angle: -90,
                       position: 'insideLeft',
                       offset: 10,
-                      style: { fill: leftColorValue, fontSize: '0.65rem', fontWeight: 500, textAnchor: 'middle' }
+                      style: {
+                        fill: leftColorValue,
+                        fontSize: '0.65rem',
+                        fontWeight: 500,
+                        textAnchor: 'middle'
+                      }
                     }}
                   />
 
-                  {/* Right Y-Axis */}
+                  {/* Right Y-Axis - duplicate of single mode with right parameter color */}
                   <YAxis
                     yAxisId="right"
                     orientation="right"
@@ -611,7 +616,12 @@ export function PinMergedPlot({
                       angle: 90,
                       position: 'insideRight',
                       offset: 10,
-                      style: { fill: rightColorValue, fontSize: '0.65rem', fontWeight: 500, textAnchor: 'middle' }
+                      style: {
+                        fill: rightColorValue,
+                        fontSize: '0.65rem',
+                        fontWeight: 500,
+                        textAnchor: 'middle'
+                      }
                     }}
                   />
                 </>
@@ -765,6 +775,33 @@ export function PinMergedPlot({
                     onCheckedChange={(checked) => setLeftVisible(checked as boolean)}
                     className="h-3 w-3"
                   />
+
+                  {/* Solo button - shows only this parameter */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      "h-4 w-4 p-0 rounded-full hover:bg-accent",
+                      !rightVisible && leftVisible && "bg-primary/20 hover:bg-primary/30"
+                    )}
+                    onClick={() => {
+                      if (!rightVisible && leftVisible) {
+                        // Currently solo, show both
+                        setRightVisible(true);
+                      } else {
+                        // Make this one solo
+                        setLeftVisible(true);
+                        setRightVisible(false);
+                      }
+                    }}
+                    title={(!rightVisible && leftVisible) ? "Exit solo mode" : "Show only this parameter"}
+                  >
+                    <Circle className={cn(
+                      "h-2.5 w-2.5",
+                      !rightVisible && leftVisible ? "fill-primary text-primary" : "text-muted-foreground"
+                    )} />
+                  </Button>
+
                   <Label
                     htmlFor="left-param"
                     className="text-xs cursor-pointer truncate flex-1"
@@ -778,21 +815,18 @@ export function PinMergedPlot({
                   >
                     L
                   </span>
-                  <div
-                    className="w-3 h-3 rounded-full border"
-                    style={{ backgroundColor: leftColorValue }}
-                  />
-                  {/* Color picker gear icon */}
+
+                  {/* Colored circle with color picker */}
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-5 w-5 p-0 hover:bg-accent"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Settings className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                      </Button>
+                      <div
+                        className="w-3 h-3 rounded-full border cursor-pointer hover:ring-2 hover:ring-offset-1 transition-all"
+                        style={{
+                          backgroundColor: leftColorValue,
+                          '--tw-ring-color': leftColorValue
+                        } as React.CSSProperties}
+                        title="Change color"
+                      />
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-3" align="end" onClick={(e) => e.stopPropagation()}>
                       <div className="space-y-2">
@@ -807,6 +841,16 @@ export function PinMergedPlot({
                       </div>
                     </PopoverContent>
                   </Popover>
+
+                  {/* Settings icon - placeholder for future features */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0 hover:bg-accent"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Settings className="h-3 w-3" />
+                  </Button>
                 </div>
               </div>
 
@@ -819,6 +863,33 @@ export function PinMergedPlot({
                     onCheckedChange={(checked) => setRightVisible(checked as boolean)}
                     className="h-3 w-3"
                   />
+
+                  {/* Solo button - shows only this parameter */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      "h-4 w-4 p-0 rounded-full hover:bg-accent",
+                      !leftVisible && rightVisible && "bg-primary/20 hover:bg-primary/30"
+                    )}
+                    onClick={() => {
+                      if (!leftVisible && rightVisible) {
+                        // Currently solo, show both
+                        setLeftVisible(true);
+                      } else {
+                        // Make this one solo
+                        setLeftVisible(false);
+                        setRightVisible(true);
+                      }
+                    }}
+                    title={(!leftVisible && rightVisible) ? "Exit solo mode" : "Show only this parameter"}
+                  >
+                    <Circle className={cn(
+                      "h-2.5 w-2.5",
+                      !leftVisible && rightVisible ? "fill-primary text-primary" : "text-muted-foreground"
+                    )} />
+                  </Button>
+
                   <Label
                     htmlFor="right-param"
                     className="text-xs cursor-pointer truncate flex-1"
@@ -832,21 +903,18 @@ export function PinMergedPlot({
                   >
                     R
                   </span>
-                  <div
-                    className="w-3 h-3 rounded-full border"
-                    style={{ backgroundColor: rightColorValue }}
-                  />
-                  {/* Color picker gear icon */}
+
+                  {/* Colored circle with color picker */}
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-5 w-5 p-0 hover:bg-accent"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Settings className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                      </Button>
+                      <div
+                        className="w-3 h-3 rounded-full border cursor-pointer hover:ring-2 hover:ring-offset-1 transition-all"
+                        style={{
+                          backgroundColor: rightColorValue,
+                          '--tw-ring-color': rightColorValue
+                        } as React.CSSProperties}
+                        title="Change color"
+                      />
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-3" align="end" onClick={(e) => e.stopPropagation()}>
                       <div className="space-y-2">
@@ -861,6 +929,16 @@ export function PinMergedPlot({
                       </div>
                     </PopoverContent>
                   </Popover>
+
+                  {/* Settings icon - placeholder for future features */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0 hover:bg-accent"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Settings className="h-3 w-3" />
+                  </Button>
                 </div>
               </div>
             </div>

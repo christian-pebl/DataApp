@@ -200,40 +200,77 @@ function parseCSVLine(line: string): string[] {
 
 /**
  * Process time values with format detection and conversion
+ * Handles various formats and ensures ISO 8601 output
  */
 function processTimeValue(value: string, fileType: FileType): string {
   if (!value || value === '') return '';
-  
-  // Common time format patterns
-  const timeFormats = [
-    // ISO formats
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
-    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/,
-    // Date only
-    /^\d{4}-\d{2}-\d{2}$/,
-    // Other common formats
-    /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}/,
-    /^\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}/,
-  ];
 
-  // Try to parse as-is first
-  const directDate = new Date(value);
-  if (!isNaN(directDate.getTime())) {
-    return directDate.toISOString();
+  // Clean up the value
+  const cleanValue = value.trim();
+
+  // Handle case where time might have only HH:MM format (missing date)
+  // This would be invalid - skip these rows
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanValue)) {
+    return ''; // Time-only format without date is invalid
   }
 
-  // Try different format interpretations
-  for (const format of timeFormats) {
-    if (format.test(value)) {
-      const parsed = new Date(value);
-      if (!isNaN(parsed.getTime())) {
-        return parsed.toISOString();
+  // Check for common date-time formats
+  const formats = [
+    // ISO 8601 formats (already standard)
+    { regex: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$/, handler: (v: string) => v.endsWith('Z') ? v : v + 'Z' },
+    { regex: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{3})?$/, handler: (v: string) => v.replace(' ', 'T') + 'Z' },
+
+    // Date with slash separators: DD/MM/YYYY HH:MM:SS or MM/DD/YYYY HH:MM:SS
+    { regex: /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/, handler: (v: string) => {
+      const [, d1, d2, year, hour, min, sec] = v.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/)!;
+      // Assume DD/MM/YYYY for European format (common in GP data)
+      return `${year}-${d2}-${d1}T${hour}:${min}:${sec}Z`;
+    }},
+
+    // Date only formats - add midnight time
+    { regex: /^(\d{4})-(\d{2})-(\d{2})$/, handler: (v: string) => v + 'T00:00:00Z' },
+    { regex: /^(\d{2}\/\d{2}\/\d{4})$/, handler: (v: string) => {
+      const [, d1, d2, year] = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)!;
+      return `${year}-${d2}-${d1}T00:00:00Z`;
+    }},
+
+    // Excel serial date number (days since 1900-01-01)
+    { regex: /^\d{5,6}(\.\d+)?$/, handler: (v: string) => {
+      const serial = parseFloat(v);
+      // Excel epoch: 1900-01-01 (but Excel incorrectly treats 1900 as leap year)
+      const epoch = new Date(1899, 11, 30); // 30 Dec 1899
+      const date = new Date(epoch.getTime() + serial * 86400000);
+      return date.toISOString();
+    }},
+  ];
+
+  // Try each format handler
+  for (const format of formats) {
+    if (format.regex.test(cleanValue)) {
+      try {
+        const converted = format.handler(cleanValue);
+        const testDate = new Date(converted);
+        if (!isNaN(testDate.getTime()) && testDate.getFullYear() >= 1970 && testDate.getFullYear() <= 2100) {
+          return converted;
+        }
+      } catch (e) {
+        continue;
       }
     }
   }
 
-  // If all else fails, return the original value and let the chart handle it
-  return value;
+  // Try native Date parsing as last resort
+  try {
+    const directDate = new Date(cleanValue);
+    if (!isNaN(directDate.getTime()) && directDate.getFullYear() >= 1970 && directDate.getFullYear() <= 2100) {
+      return directDate.toISOString();
+    }
+  } catch (e) {
+    // Parsing failed
+  }
+
+  // If all parsing fails, return empty string to filter out this row
+  return '';
 }
 
 /**
@@ -308,4 +345,47 @@ export async function parseMultipleCSVFiles(files: File[], fileType: FileType): 
   }
 
   return mergedResult;
+}
+
+/**
+ * Extract time range from parsed data for Open Meteo API requests
+ * Returns { start, end } in ISO format, or null if no valid times found
+ */
+export function extractTimeRange(data: ParsedDataPoint[]): { start: string; end: string } | null {
+  if (data.length === 0) return null;
+
+  const validTimes = data
+    .map(point => {
+      try {
+        const date = new Date(point.time);
+        return !isNaN(date.getTime()) ? date : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter((d): d is Date => d !== null);
+
+  if (validTimes.length === 0) return null;
+
+  const sortedTimes = validTimes.sort((a, b) => a.getTime() - b.getTime());
+  const start = sortedTimes[0];
+  const end = sortedTimes[sortedTimes.length - 1];
+
+  return {
+    start: start.toISOString().split('T')[0], // YYYY-MM-DD format for Open Meteo
+    end: end.toISOString().split('T')[0]
+  };
+}
+
+/**
+ * Validate if a time string is in proper ISO 8601 format
+ */
+export function isValidTimeFormat(timeStr: string): boolean {
+  if (!timeStr) return false;
+  try {
+    const date = new Date(timeStr);
+    return !isNaN(date.getTime()) && date.getFullYear() >= 1970 && date.getFullYear() <= 2100;
+  } catch {
+    return false;
+  }
 }
