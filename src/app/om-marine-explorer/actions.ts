@@ -218,8 +218,53 @@ export async function fetchCombinedDataAction(
   }
   log.push({ message: `Date range validated: ${startDate} to ${endDate}.`, status: 'success' });
 
-  const formattedStartDate = format(parsedStartDate, 'yyyy-MM-dd');
-  const formattedEndDate = format(parsedEndDate, 'yyyy-MM-dd');
+  // Intelligent date adjustment for far-future or problematic dates
+  const now = new Date();
+  const daysSinceStart = Math.floor((now.getTime() - parsedStartDate.getTime()) / (1000 * 60 * 60 * 24));
+  const durationDays = Math.floor((parsedEndDate.getTime() - parsedStartDate.getTime()) / (1000 * 60 * 60 * 24));
+
+  let adjustedStartDate = parsedStartDate;
+  let adjustedEndDate = parsedEndDate;
+  let dateAdjustmentNote = '';
+
+  // Case 1: Dates are far in the future (>16 days), use recent past data instead
+  if (daysSinceStart < -16) {
+    const daysAgo = Math.min(90, Math.max(7, durationDays + 1)); // Use recent data, max 90 days ago
+    adjustedEndDate = new Date(now);
+    adjustedEndDate.setDate(adjustedEndDate.getDate() - 1); // Yesterday
+    adjustedStartDate = new Date(adjustedEndDate);
+    adjustedStartDate.setDate(adjustedStartDate.getDate() - durationDays);
+
+    dateAdjustmentNote = `Dates were in far future (${startDate} to ${endDate}). Adjusted to recent past (${format(adjustedStartDate, 'yyyy-MM-dd')} to ${format(adjustedEndDate, 'yyyy-MM-dd')}) with same ${durationDays}-day duration.`;
+    log.push({ message: dateAdjustmentNote, status: 'warning' });
+  }
+  // Case 2: End date is slightly in the future (1-16 days), cap at today
+  else if (daysSinceStart < 0) {
+    adjustedEndDate = new Date(now);
+    adjustedEndDate.setHours(0, 0, 0, 0); // Today at midnight
+
+    // If start date is also in future, move it back proportionally
+    if (parsedStartDate > now) {
+      adjustedStartDate = new Date(adjustedEndDate);
+      adjustedStartDate.setDate(adjustedStartDate.getDate() - durationDays);
+    }
+
+    dateAdjustmentNote = `End date was in future. Adjusted to today (${format(adjustedEndDate, 'yyyy-MM-dd')}).`;
+    log.push({ message: dateAdjustmentNote, status: 'warning' });
+  }
+  // Case 3: Dates are very old (>5 years), might be malformed - use recent past
+  else if (daysSinceStart > 1825) { // More than 5 years ago
+    adjustedEndDate = new Date(now);
+    adjustedEndDate.setDate(adjustedEndDate.getDate() - 1);
+    adjustedStartDate = new Date(adjustedEndDate);
+    adjustedStartDate.setDate(adjustedStartDate.getDate() - Math.min(durationDays, 90));
+
+    dateAdjustmentNote = `Dates were very old (>${Math.floor(daysSinceStart/365)} years ago). Adjusted to recent past for better data availability.`;
+    log.push({ message: dateAdjustmentNote, status: 'warning' });
+  }
+
+  const formattedStartDate = format(adjustedStartDate, 'yyyy-MM-dd');
+  const formattedEndDate = format(adjustedEndDate, 'yyyy-MM-dd');
   log.push({ message: `Dates formatted for API: Start: ${formattedStartDate}, End: ${formattedEndDate}`, status: 'info' });
 
   const paramsBySource: { marine: string[], weather: string[] } = { marine: [], weather: [] };
@@ -262,7 +307,7 @@ export async function fetchCombinedDataAction(
   }
 
   let weatherApiBaseUrl = 'https://api.open-meteo.com/v1/forecast';
-  if (isPast(parsedEndDate)) { 
+  if (isPast(adjustedEndDate)) {
     weatherApiBaseUrl = 'https://archive-api.open-meteo.com/v1/archive';
     log.push({ message: `Using Weather Archive API (${weatherApiBaseUrl}) as end date (${formattedEndDate}) is in the past.`, status: 'info' });
   } else {
