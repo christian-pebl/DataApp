@@ -31,6 +31,9 @@ interface PinChartDisplayProps {
   isLastPlot?: boolean;
   // Visibility tracking for merge feature
   onVisibilityChange?: (visibleParams: string[], paramColors: Record<string, string>) => void;
+  // Default settings (for merged plots)
+  defaultAxisMode?: 'single' | 'multi';
+  defaultParametersExpanded?: boolean;
 }
 
 // Color palette matching the marine data theme
@@ -170,16 +173,18 @@ export function PinChartDisplay({
   globalBrushRange,
   onBrushChange,
   isLastPlot = true,
-  onVisibilityChange
+  onVisibilityChange,
+  defaultAxisMode = 'single',
+  defaultParametersExpanded = false
 }: PinChartDisplayProps) {
   // Toggle state for switching between chart and table view
   const [showTable, setShowTable] = useState(false);
 
   // Axis mode state - single or multi axis
-  const [axisMode, setAxisMode] = useState<'single' | 'multi'>('single');
+  const [axisMode, setAxisMode] = useState<'single' | 'multi'>(defaultAxisMode);
 
   // Parameter panel expansion state
-  const [isParameterPanelExpanded, setIsParameterPanelExpanded] = useState(false);
+  const [isParameterPanelExpanded, setIsParameterPanelExpanded] = useState(defaultParametersExpanded);
   
   // Get all parameters (for table view)
   const allParameters = useMemo(() => {

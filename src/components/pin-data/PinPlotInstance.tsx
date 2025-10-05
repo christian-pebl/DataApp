@@ -150,6 +150,9 @@ export function PinPlotInstance({
               onBrushChange={onBrushChange}
               isLastPlot={isLastPlot}
               onVisibilityChange={onVisibilityChange}
+              // Set defaults for merged plots (detected by preParsedData)
+              defaultAxisMode={preParsedData ? 'multi' : 'single'}
+              defaultParametersExpanded={preParsedData ? true : false}
             />
           </div>
         ) : (
