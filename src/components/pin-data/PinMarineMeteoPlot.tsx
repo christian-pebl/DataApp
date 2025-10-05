@@ -71,6 +71,11 @@ export function PinMarineMeteoPlot({
             onDataParsed(instanceId, result.data);
           }
 
+          // Check if there was a date adjustment warning in the logs
+          const dateAdjustmentWarning = result.log?.find(
+            log => log.status === 'warning' && log.message.includes('Adjusted to')
+          );
+
           if (result.data.length === 0) {
             toast({
               variant: "default",
@@ -81,16 +86,26 @@ export function PinMarineMeteoPlot({
           } else {
             toast({
               title: "Marine/Meteo Data Loaded",
-              description: `Loaded ${result.data.length} data points for ${locationName}.`
+              description: dateAdjustmentWarning
+                ? `${dateAdjustmentWarning.message} Loaded ${result.data.length} data points.`
+                : `Loaded ${result.data.length} data points for ${locationName}.`,
+              variant: dateAdjustmentWarning ? "default" : "default",
+              duration: dateAdjustmentWarning ? 8000 : 3000
             });
           }
         } else {
           const errorMsg = result.error || "Failed to load marine/meteo data.";
           setError(errorMsg);
+
+          // Include helpful log information in error
+          const relevantLogs = result.log?.filter(
+            log => log.status === 'error' || log.status === 'warning'
+          ).map(log => log.message).join('; ') || '';
+
           toast({
             variant: "destructive",
             title: "Error Loading Marine/Meteo Data",
-            description: errorMsg
+            description: relevantLogs || errorMsg
           });
         }
       } catch (e) {
