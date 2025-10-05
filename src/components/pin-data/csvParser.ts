@@ -35,6 +35,10 @@ function detectDateFormat(lines: string[], timeColumnIndex: number): 'DD/MM/YYYY
   const sampleSize = Math.min(20, lines.length - 1); // Check up to 20 data rows
   const dateValues: string[] = [];
 
+  console.log('[DATE DETECTION] Starting date format detection...');
+  console.log('[DATE DETECTION] Time column index:', timeColumnIndex);
+  console.log('[DATE DETECTION] Sample size:', sampleSize);
+
   // Extract date values from sample rows
   for (let i = 1; i <= sampleSize && i < lines.length; i++) {
     const values = parseCSVLine(lines[i]);
@@ -48,7 +52,10 @@ function detectDateFormat(lines: string[], timeColumnIndex: number): 'DD/MM/YYYY
     }
   }
 
+  console.log('[DATE DETECTION] Sample dates extracted:', dateValues.slice(0, 5));
+
   if (dateValues.length === 0) {
+    console.log('[DATE DETECTION] No date values found, defaulting to DD/MM/YYYY');
     return 'DD/MM/YYYY'; // Default to European format
   }
 
@@ -74,13 +81,20 @@ function detectDateFormat(lines: string[], timeColumnIndex: number): 'DD/MM/YYYY
     }
   }
 
+  console.log('[DATE DETECTION] First components:', firstComponents);
+  console.log('[DATE DETECTION] Second components:', secondComponents);
+  console.log('[DATE DETECTION] Has first > 12:', hasFirstComponentOver12);
+  console.log('[DATE DETECTION] Has second > 12:', hasSecondComponentOver12);
+
   // Rule 1: If first component > 12, must be DD/MM/YYYY
   if (hasFirstComponentOver12 && !hasSecondComponentOver12) {
+    console.log('[DATE DETECTION] ✓ Detected format: DD/MM/YYYY (Rule 1: first > 12)');
     return 'DD/MM/YYYY';
   }
 
   // Rule 2: If second component > 12, must be MM/DD/YYYY
   if (hasSecondComponentOver12 && !hasFirstComponentOver12) {
+    console.log('[DATE DETECTION] ✓ Detected format: MM/DD/YYYY (Rule 2: second > 12)');
     return 'MM/DD/YYYY';
   }
 
@@ -94,25 +108,35 @@ function detectDateFormat(lines: string[], timeColumnIndex: number): 'DD/MM/YYYY
     const secondRange = Math.max(...secondComponents) - Math.min(...secondComponents);
     const secondUnique = new Set(secondComponents).size;
 
+    console.log('[DATE DETECTION] Pattern analysis - First range:', firstRange, 'unique:', firstUnique);
+    console.log('[DATE DETECTION] Pattern analysis - Second range:', secondRange, 'unique:', secondUnique);
+
     // If first component has wider range and more variety, likely to be days
     if (firstRange > secondRange && firstUnique > secondUnique) {
+      console.log('[DATE DETECTION] ✓ Detected format: DD/MM/YYYY (Rule 3: first has more variety)');
       return 'DD/MM/YYYY';
     }
 
     // If second component has wider range and more variety, likely to be days
     if (secondRange > firstRange && secondUnique > firstUnique) {
+      console.log('[DATE DETECTION] ✓ Detected format: MM/DD/YYYY (Rule 3: second has more variety)');
       return 'MM/DD/YYYY';
     }
   }
 
   // Default to European format (DD/MM/YYYY) if still ambiguous
+  console.log('[DATE DETECTION] ✓ Using default format: DD/MM/YYYY (ambiguous case)');
   return 'DD/MM/YYYY';
 }
 
 /**
  * Enhanced CSV parsing with robust error handling
  */
-export async function parseCSVFile(file: File, fileType: FileType): Promise<ParseResult> {
+export async function parseCSVFile(
+  file: File,
+  fileType: FileType,
+  dateFormatOverride?: 'DD/MM/YYYY' | 'MM/DD/YYYY'
+): Promise<ParseResult> {
   const result: ParseResult = {
     data: [],
     headers: [],
@@ -128,7 +152,7 @@ export async function parseCSVFile(file: File, fileType: FileType): Promise<Pars
   try {
     const text = await file.text();
     const lines = text.trim().split('\n').filter(line => line.trim() !== '');
-    
+
     if (lines.length === 0) {
       result.errors.push('File is empty');
       return result;
@@ -148,8 +172,9 @@ export async function parseCSVFile(file: File, fileType: FileType): Promise<Pars
       result.errors.push(`No time column detected for ${fileType} data`);
     }
 
-    // Detect date format by analyzing sample data
-    const dateFormat = detectDateFormat(lines, timeColumnIndex);
+    // Use override if provided, otherwise detect date format by analyzing sample data
+    const dateFormat = dateFormatOverride || detectDateFormat(lines, timeColumnIndex);
+    console.log('[CSV PARSER] Using date format:', dateFormat, dateFormatOverride ? '(override)' : '(detected)');
 
     // Parse data rows
     for (let i = 1; i < lines.length; i++) {
@@ -314,26 +339,40 @@ function processTimeValue(value: string, fileType: FileType, dateFormat: 'DD/MM/
     // Date with slash separators: DD/MM/YYYY HH:MM:SS or MM/DD/YYYY HH:MM:SS
     { regex: /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/, handler: (v: string) => {
       const [, d1, d2, year, hour, min, sec] = v.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/)!;
+      let result: string;
+      let day: string, month: string;
+
       // Use detected date format
       if (dateFormat === 'DD/MM/YYYY') {
-        return `${year}-${d2}-${d1}T${hour}:${min}:${sec}Z`;
+        // Format is DD/MM/YYYY: d1 = day, d2 = month
+        day = d1;
+        month = d2;
+        result = `${year}-${month}-${day}T${hour}:${min}:${sec}Z`;
       } else {
-        // MM/DD/YYYY format
-        return `${year}-${d1}-${d2}T${hour}:${min}:${sec}Z`;
+        // Format is MM/DD/YYYY: d1 = month, d2 = day
+        month = d1;
+        day = d2;
+        result = `${year}-${month}-${day}T${hour}:${min}:${sec}Z`;
       }
+      console.log(`[TIME CONVERSION] Input: "${v}" | Format: ${dateFormat} | d1=${d1}, d2=${d2} | Interpreted as: day=${day}, month=${month} | Output: ${result}`);
+      return result;
     }},
 
     // Date only formats - add midnight time
     { regex: /^(\d{4})-(\d{2})-(\d{2})$/, handler: (v: string) => v + 'T00:00:00Z' },
     { regex: /^(\d{2}\/\d{2}\/\d{4})$/, handler: (v: string) => {
       const [, d1, d2, year] = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)!;
+      let result: string;
       // Use detected date format
       if (dateFormat === 'DD/MM/YYYY') {
-        return `${year}-${d2}-${d1}T00:00:00Z`;
+        // d1 = day, d2 = month -> ISO format YYYY-MM-DD
+        result = `${year}-${d2}-${d1}T00:00:00Z`;
       } else {
-        // MM/DD/YYYY format
-        return `${year}-${d1}-${d2}T00:00:00Z`;
+        // MM/DD/YYYY format: d1 = month, d2 = day -> ISO format YYYY-MM-DD
+        result = `${year}-${d1}-${d2}T00:00:00Z`;
       }
+      console.log(`[TIME CONVERSION] Input: "${v}" | Format: ${dateFormat} | d1=${d1}, d2=${d2} | Output: ${result}`);
+      return result;
     }},
 
     // Excel serial date number (days since 1900-01-01)
@@ -396,7 +435,11 @@ function processDataValue(value: string, header: string, fileType: FileType): st
 /**
  * Merge multiple CSV files of the same type
  */
-export async function parseMultipleCSVFiles(files: File[], fileType: FileType): Promise<ParseResult> {
+export async function parseMultipleCSVFiles(
+  files: File[],
+  fileType: FileType,
+  dateFormatOverride?: 'DD/MM/YYYY' | 'MM/DD/YYYY'
+): Promise<ParseResult> {
   if (files.length === 0) {
     return {
       data: [],
@@ -407,11 +450,11 @@ export async function parseMultipleCSVFiles(files: File[], fileType: FileType): 
   }
 
   if (files.length === 1) {
-    return parseCSVFile(files[0], fileType);
+    return parseCSVFile(files[0], fileType, dateFormatOverride);
   }
 
   // Parse all files
-  const results = await Promise.all(files.map(file => parseCSVFile(file, fileType)));
+  const results = await Promise.all(files.map(file => parseCSVFile(file, fileType, dateFormatOverride)));
   
   // Merge results
   const mergedResult: ParseResult = {

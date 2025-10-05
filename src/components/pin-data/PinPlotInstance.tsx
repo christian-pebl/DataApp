@@ -26,6 +26,8 @@ interface PinPlotInstanceProps {
   isLastPlot?: boolean;
   // Visibility tracking for merge feature
   onVisibilityChange?: (visibleParams: string[], paramColors: Record<string, string>) => void;
+  // Pin ID for saving corrected files to database
+  pinId?: string;
 }
 
 
@@ -42,7 +44,8 @@ export function PinPlotInstance({
   onDataParsed,
   onBrushChange,
   isLastPlot,
-  onVisibilityChange
+  onVisibilityChange,
+  pinId
 }: PinPlotInstanceProps) {
   const { toast } = useToast();
   const componentId = useId();
@@ -53,9 +56,12 @@ export function PinPlotInstance({
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [dateFormat, setDateFormat] = useState<'DD/MM/YYYY' | 'MM/DD/YYYY' | undefined>(undefined);
 
   // Handle pre-parsed data (for merged plots) or process CSV files
   useEffect(() => {
+    console.log('[PLOT INSTANCE] useEffect triggered. dateFormat:', dateFormat, 'files:', files.length, 'preParsedData:', !!preParsedData);
+
     if (preParsedData) {
       // Use pre-parsed data directly (merged plot scenario)
       setParseResult(preParsedData);
@@ -65,16 +71,19 @@ export function PinPlotInstance({
       setIsProcessingFiles(false);
     } else if (files.length > 0) {
       // Normal flow: process CSV files
-      processCSVFiles(files);
+      console.log('[PLOT INSTANCE] Calling processCSVFiles with format override:', dateFormat);
+      processCSVFiles(files, dateFormat);
     }
-  }, [files, preParsedData, instanceId, onDataParsed]);
+  }, [files, preParsedData, instanceId, onDataParsed, dateFormat]);
 
-  const processCSVFiles = async (csvFiles: File[]) => {
+  const processCSVFiles = async (csvFiles: File[], formatOverride?: 'DD/MM/YYYY' | 'MM/DD/YYYY') => {
+    console.log('[PLOT INSTANCE] processCSVFiles called with formatOverride:', formatOverride);
     setIsProcessingFiles(true);
     setParseResult(null);
 
     try {
-      const result = await parseMultipleCSVFiles(csvFiles, fileType);
+      const result = await parseMultipleCSVFiles(csvFiles, fileType, formatOverride);
+      console.log('[PLOT INSTANCE] CSV parsed. First 3 timestamps:', result.data.slice(0, 3).map(d => d.time));
       setParseResult(result);
 
       // Notify parent of parsed data for synchronization
@@ -153,6 +162,13 @@ export function PinPlotInstance({
               // Set defaults for merged plots (detected by preParsedData)
               defaultAxisMode={preParsedData ? 'multi' : 'single'}
               defaultParametersExpanded={preParsedData ? true : false}
+              // Date format toggle (only for non-merged plots)
+              currentDateFormat={dateFormat}
+              onDateFormatChange={!preParsedData ? setDateFormat : undefined}
+              // Raw files for viewing original CSV
+              rawFiles={files.length > 0 ? files : undefined}
+              // Pin ID for saving corrected files to database
+              pinId={pinId}
             />
           </div>
         ) : (

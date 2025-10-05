@@ -37,6 +37,7 @@ interface PlotConfig {
   fileType?: 'GP' | 'FPOD' | 'Subcam';
   files?: File[];
   fileName?: string; // Display name of the file(s)
+  pinId?: string; // Pin ID for saving corrected files to database
   // For marine/meteo plots
   location?: { lat: number; lon: number };
   locationName?: string;
@@ -355,6 +356,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   // Helper to extract time range from first plot
   const extractTimeRangeFromPlotData = useCallback((parseResult: ParseResult): { startDate: string; endDate: string } | null => {
     try {
+      console.log('[EXTRACT TIME RANGE] First 5 time values from parseResult:', parseResult.data.slice(0, 5).map(d => d.time));
+
       const dates = parseResult.data
         .map(d => parseISO(d.time))
         .filter(isValid);
@@ -364,10 +367,17 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
       const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
 
-      return {
+      console.log('[EXTRACT TIME RANGE] Min date:', minDate.toISOString());
+      console.log('[EXTRACT TIME RANGE] Max date:', maxDate.toISOString());
+
+      const result = {
         startDate: formatISO(minDate, { representation: 'date' }),
         endDate: formatISO(maxDate, { representation: 'date' })
       };
+
+      console.log('[EXTRACT TIME RANGE] Extracted range:', result);
+
+      return result;
     } catch (e) {
       console.error('Error extracting time range:', e);
       return null;
@@ -384,6 +394,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       location?: { lat: number; lon: number };
       locationName?: string;
       timeRange?: { startDate: string; endDate: string };
+      pinId?: string;
     }
   ) => {
     setPlots((prevPlots) => [
@@ -396,6 +407,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         fileType: options?.fileType,
         files: type === 'device' ? files : undefined,
         fileName: type === 'device' ? getFileName(files) : undefined,
+        pinId: options?.pinId,
         // Marine/meteo plot properties
         location: options?.location,
         locationName: options?.locationName,
@@ -893,6 +905,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                       onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
                       isLastPlot={index === plots.length - 1}
                       onVisibilityChange={handleVisibilityChange(plot.id)}
+                      pinId={plot.pinId}
                     />
                   );
                 }
@@ -970,7 +983,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                   // Add plot with downloaded file
                   addPlot('device', [downloadedFile], {
                     fileType: fileOption.fileType,
-                    customTitle: fileOption.fileName
+                    customTitle: fileOption.fileName,
+                    pinId: fileOption.pinId
                   });
                   setShowFileSelector(false);
                 } else {
@@ -981,7 +995,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                 // Files already loaded, add plot directly
                 addPlot('device', fileOption.files, {
                   fileType: fileOption.fileType,
-                  customTitle: fileOption.fileName
+                  customTitle: fileOption.fileName,
+                  pinId: fileOption.pinId
                 });
                 setShowFileSelector(false);
               }

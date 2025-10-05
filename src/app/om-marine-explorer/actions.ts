@@ -208,8 +208,14 @@ export async function fetchCombinedDataAction(
     return { success: true, data: [], log, dataLocationContext: "No parameters selected" };
   }
 
+  console.log('[API DATE] Received startDate:', startDate);
+  console.log('[API DATE] Received endDate:', endDate);
+
   const parsedStartDate = parseISO(startDate);
   const parsedEndDate = parseISO(endDate);
+
+  console.log('[API DATE] Parsed startDate:', parsedStartDate.toISOString());
+  console.log('[API DATE] Parsed endDate:', parsedEndDate.toISOString());
 
   if (!isValid(parsedStartDate) || !isValid(parsedEndDate) || parsedStartDate > parsedEndDate) {
     const dateError = "Invalid date range. Start date must be before or same as end date, and dates must be valid.";
@@ -222,6 +228,10 @@ export async function fetchCombinedDataAction(
   const now = new Date();
   const daysSinceStart = Math.floor((now.getTime() - parsedStartDate.getTime()) / (1000 * 60 * 60 * 24));
   const durationDays = Math.floor((parsedEndDate.getTime() - parsedStartDate.getTime()) / (1000 * 60 * 60 * 24));
+
+  console.log('[API DATE] Current date (now):', now.toISOString());
+  console.log('[API DATE] Days since start:', daysSinceStart);
+  console.log('[API DATE] Duration days:', durationDays);
 
   let adjustedStartDate = parsedStartDate;
   let adjustedEndDate = parsedEndDate;
