@@ -310,7 +310,14 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   useEffect(() => {
     if (timeAxisMode === 'common') {
       const range = calculateGlobalTimeRange();
-      setGlobalTimeRange(range);
+      // Only update if the range has actually changed
+      setGlobalTimeRange(prev => {
+        if (prev.min?.getTime() === range.min?.getTime() &&
+            prev.max?.getTime() === range.max?.getTime()) {
+          return prev; // Don't trigger re-render if values are the same
+        }
+        return range;
+      });
     }
   }, [timeAxisMode, plotsData, globalBrushRange, calculateGlobalTimeRange]);
 
