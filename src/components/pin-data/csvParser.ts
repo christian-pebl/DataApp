@@ -28,6 +28,88 @@ export interface ParseResult {
 export type FileType = 'GP' | 'FPOD' | 'Subcam';
 
 /**
+ * Detect date format (DD/MM/YYYY vs MM/DD/YYYY) by analyzing date values
+ * Examines first several rows to determine which format is being used
+ */
+function detectDateFormat(lines: string[], timeColumnIndex: number): 'DD/MM/YYYY' | 'MM/DD/YYYY' {
+  const sampleSize = Math.min(20, lines.length - 1); // Check up to 20 data rows
+  const dateValues: string[] = [];
+
+  // Extract date values from sample rows
+  for (let i = 1; i <= sampleSize && i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    if (values[timeColumnIndex]) {
+      const timeValue = values[timeColumnIndex].trim();
+      // Extract just the date part if it has time component
+      const datePart = timeValue.split(' ')[0];
+      if (datePart.includes('/')) {
+        dateValues.push(datePart);
+      }
+    }
+  }
+
+  if (dateValues.length === 0) {
+    return 'DD/MM/YYYY'; // Default to European format
+  }
+
+  let hasFirstComponentOver12 = false;
+  let hasSecondComponentOver12 = false;
+  const firstComponents: number[] = [];
+  const secondComponents: number[] = [];
+
+  // Analyze each date value
+  for (const dateStr of dateValues) {
+    const parts = dateStr.split('/');
+    if (parts.length >= 3) {
+      const first = parseInt(parts[0], 10);
+      const second = parseInt(parts[1], 10);
+
+      if (!isNaN(first) && !isNaN(second)) {
+        firstComponents.push(first);
+        secondComponents.push(second);
+
+        if (first > 12) hasFirstComponentOver12 = true;
+        if (second > 12) hasSecondComponentOver12 = true;
+      }
+    }
+  }
+
+  // Rule 1: If first component > 12, must be DD/MM/YYYY
+  if (hasFirstComponentOver12 && !hasSecondComponentOver12) {
+    return 'DD/MM/YYYY';
+  }
+
+  // Rule 2: If second component > 12, must be MM/DD/YYYY
+  if (hasSecondComponentOver12 && !hasFirstComponentOver12) {
+    return 'MM/DD/YYYY';
+  }
+
+  // Rule 3: Both ambiguous (all values ≤12), look for sequential patterns
+  if (!hasFirstComponentOver12 && !hasSecondComponentOver12 && firstComponents.length > 3) {
+    // Check if first components show day-like progression (1-30 range with variety)
+    const firstRange = Math.max(...firstComponents) - Math.min(...firstComponents);
+    const firstUnique = new Set(firstComponents).size;
+
+    // Check if second components show day-like progression
+    const secondRange = Math.max(...secondComponents) - Math.min(...secondComponents);
+    const secondUnique = new Set(secondComponents).size;
+
+    // If first component has wider range and more variety, likely to be days
+    if (firstRange > secondRange && firstUnique > secondUnique) {
+      return 'DD/MM/YYYY';
+    }
+
+    // If second component has wider range and more variety, likely to be days
+    if (secondRange > firstRange && secondUnique > firstUnique) {
+      return 'MM/DD/YYYY';
+    }
+  }
+
+  // Default to European format (DD/MM/YYYY) if still ambiguous
+  return 'DD/MM/YYYY';
+}
+
+/**
  * Enhanced CSV parsing with robust error handling
  */
 export async function parseCSVFile(file: File, fileType: FileType): Promise<ParseResult> {
@@ -66,10 +148,13 @@ export async function parseCSVFile(file: File, fileType: FileType): Promise<Pars
       result.errors.push(`No time column detected for ${fileType} data`);
     }
 
+    // Detect date format by analyzing sample data
+    const dateFormat = detectDateFormat(lines, timeColumnIndex);
+
     // Parse data rows
     for (let i = 1; i < lines.length; i++) {
       try {
-        const rowData = parseDataRow(lines[i], rawHeaders, timeColumnIndex, fileType);
+        const rowData = parseDataRow(lines[i], rawHeaders, timeColumnIndex, fileType, dateFormat);
         if (rowData) {
           result.data.push(rowData);
           result.summary.validRows++;
@@ -135,10 +220,11 @@ function detectTimeColumn(headers: string[], fileType: FileType): number {
  * Parse individual data row with type conversion and validation
  */
 function parseDataRow(
-  line: string, 
-  headers: string[], 
-  timeColumnIndex: number, 
-  fileType: FileType
+  line: string,
+  headers: string[],
+  timeColumnIndex: number,
+  fileType: FileType,
+  dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY'
 ): ParsedDataPoint | null {
   // Handle CSV with potential quoted values and commas within quotes
   const values = parseCSVLine(line);
@@ -161,10 +247,10 @@ function parseDataRow(
 
   headers.forEach((header, index) => {
     const rawValue = values[index]?.trim() || '';
-    
+
     if (index === timeColumnIndex) {
       // Handle time column
-      const processedTime = processTimeValue(rawValue, fileType);
+      const processedTime = processTimeValue(rawValue, fileType, dateFormat);
       dataPoint.time = processedTime;
       hasValidTime = processedTime !== '';
     } else {
@@ -207,7 +293,7 @@ function parseCSVLine(line: string): string[] {
  * Process time values with format detection and conversion
  * Handles various formats and ensures ISO 8601 output
  */
-function processTimeValue(value: string, fileType: FileType): string {
+function processTimeValue(value: string, fileType: FileType, dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY'): string {
   if (!value || value === '') return '';
 
   // Clean up the value
@@ -228,15 +314,26 @@ function processTimeValue(value: string, fileType: FileType): string {
     // Date with slash separators: DD/MM/YYYY HH:MM:SS or MM/DD/YYYY HH:MM:SS
     { regex: /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/, handler: (v: string) => {
       const [, d1, d2, year, hour, min, sec] = v.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/)!;
-      // Assume DD/MM/YYYY for European format (common in GP data)
-      return `${year}-${d2}-${d1}T${hour}:${min}:${sec}Z`;
+      // Use detected date format
+      if (dateFormat === 'DD/MM/YYYY') {
+        return `${year}-${d2}-${d1}T${hour}:${min}:${sec}Z`;
+      } else {
+        // MM/DD/YYYY format
+        return `${year}-${d1}-${d2}T${hour}:${min}:${sec}Z`;
+      }
     }},
 
     // Date only formats - add midnight time
     { regex: /^(\d{4})-(\d{2})-(\d{2})$/, handler: (v: string) => v + 'T00:00:00Z' },
     { regex: /^(\d{2}\/\d{2}\/\d{4})$/, handler: (v: string) => {
       const [, d1, d2, year] = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)!;
-      return `${year}-${d2}-${d1}T00:00:00Z`;
+      // Use detected date format
+      if (dateFormat === 'DD/MM/YYYY') {
+        return `${year}-${d2}-${d1}T00:00:00Z`;
+      } else {
+        // MM/DD/YYYY format
+        return `${year}-${d1}-${d2}T00:00:00Z`;
+      }
     }},
 
     // Excel serial date number (days since 1900-01-01)

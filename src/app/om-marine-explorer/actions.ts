@@ -227,39 +227,42 @@ export async function fetchCombinedDataAction(
   let adjustedEndDate = parsedEndDate;
   let dateAdjustmentNote = '';
 
-  // Case 1: Dates are far in the future (>16 days), use recent past data instead
-  if (daysSinceStart < -16) {
-    const daysAgo = Math.min(90, Math.max(7, durationDays + 1)); // Use recent data, max 90 days ago
+  // Case 1: Dates are far in the future (>5 days), use 7 days ago to avoid API range errors
+  if (daysSinceStart < -5) {
     adjustedEndDate = new Date(now);
-    adjustedEndDate.setDate(adjustedEndDate.getDate() - 1); // Yesterday
+    adjustedEndDate.setDate(adjustedEndDate.getDate() - 7); // 7 days ago (safely in the past)
     adjustedStartDate = new Date(adjustedEndDate);
-    adjustedStartDate.setDate(adjustedStartDate.getDate() - durationDays);
+    const cappedDuration = Math.min(durationDays, 90); // Cap duration at 90 days
+    adjustedStartDate.setDate(adjustedStartDate.getDate() - cappedDuration);
 
-    dateAdjustmentNote = `Dates were in far future (${startDate} to ${endDate}). Adjusted to recent past (${format(adjustedStartDate, 'yyyy-MM-dd')} to ${format(adjustedEndDate, 'yyyy-MM-dd')}) with same ${durationDays}-day duration.`;
+    dateAdjustmentNote = `Dates were in far future (${startDate} to ${endDate}). Adjusted to recent past (${format(adjustedStartDate, 'yyyy-MM-dd')} to ${format(adjustedEndDate, 'yyyy-MM-dd')}) with ${cappedDuration}-day duration (capped at 90 days).`;
     log.push({ message: dateAdjustmentNote, status: 'warning' });
   }
-  // Case 2: End date is slightly in the future (1-16 days), cap at today
+  // Case 2: End date is slightly in future (1-5 days), use 3 days ago to avoid API range errors
   else if (daysSinceStart < 0) {
     adjustedEndDate = new Date(now);
-    adjustedEndDate.setHours(0, 0, 0, 0); // Today at midnight
+    adjustedEndDate.setDate(adjustedEndDate.getDate() - 3); // 3 days ago (safely in the past)
 
     // If start date is also in future, move it back proportionally
     if (parsedStartDate > now) {
+      const cappedDuration = Math.min(durationDays, 90); // Cap duration at 90 days
       adjustedStartDate = new Date(adjustedEndDate);
-      adjustedStartDate.setDate(adjustedStartDate.getDate() - durationDays);
+      adjustedStartDate.setDate(adjustedStartDate.getDate() - cappedDuration);
+      dateAdjustmentNote = `Both dates were in future. Adjusted to recent past ending 3 days ago (${format(adjustedStartDate, 'yyyy-MM-dd')} to ${format(adjustedEndDate, 'yyyy-MM-dd')}) with ${cappedDuration}-day duration (capped at 90 days).`;
+    } else {
+      dateAdjustmentNote = `End date was in future. Adjusted to 3 days ago (${format(adjustedEndDate, 'yyyy-MM-dd')}).`;
     }
-
-    dateAdjustmentNote = `End date was in future. Adjusted to today (${format(adjustedEndDate, 'yyyy-MM-dd')}).`;
     log.push({ message: dateAdjustmentNote, status: 'warning' });
   }
-  // Case 3: Dates are very old (>5 years), might be malformed - use recent past
+  // Case 3: Dates are very old (>5 years), might be malformed - use 7 days ago for reliability
   else if (daysSinceStart > 1825) { // More than 5 years ago
     adjustedEndDate = new Date(now);
-    adjustedEndDate.setDate(adjustedEndDate.getDate() - 1);
+    adjustedEndDate.setDate(adjustedEndDate.getDate() - 7); // 7 days ago (safely in the past)
     adjustedStartDate = new Date(adjustedEndDate);
-    adjustedStartDate.setDate(adjustedStartDate.getDate() - Math.min(durationDays, 90));
+    const cappedDuration = Math.min(durationDays, 90); // Cap duration at 90 days
+    adjustedStartDate.setDate(adjustedStartDate.getDate() - cappedDuration);
 
-    dateAdjustmentNote = `Dates were very old (>${Math.floor(daysSinceStart/365)} years ago). Adjusted to recent past for better data availability.`;
+    dateAdjustmentNote = `Dates were very old (>${Math.floor(daysSinceStart/365)} years ago). Adjusted to recent past (${format(adjustedStartDate, 'yyyy-MM-dd')} to ${format(adjustedEndDate, 'yyyy-MM-dd')}) with ${cappedDuration}-day duration (capped at 90 days) for better data availability.`;
     log.push({ message: dateAdjustmentNote, status: 'warning' });
   }
 
