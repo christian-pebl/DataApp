@@ -2572,9 +2572,13 @@ export default function MapDrawingPage() {
   const handleSaveAreaCornerEdit = async () => {
     if (tempAreaPath && itemToEdit && 'path' in itemToEdit) {
       try {
+        // Only send the properties that updateAreaData expects
         await updateAreaData(itemToEdit.id, {
-          ...itemToEdit,
-          path: tempAreaPath
+          path: tempAreaPath,
+          label: itemToEdit.label,
+          notes: itemToEdit.notes,
+          projectId: itemToEdit.projectId,
+          tagIds: itemToEdit.tagIds
         });
 
         setIsAreaCornerDragging(false);
