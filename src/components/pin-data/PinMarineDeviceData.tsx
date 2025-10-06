@@ -598,36 +598,40 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       source2Label
     });
 
-    // SIMPLE APPROACH: Just concatenate the actual data points (no nulls, no gaps)
-    // Take all points from first plot with param1, and all points from second plot with param2
-    const mergedData: any[] = [];
+    // UNION APPROACH: Merge datasets preserving original timestamps from both
+    // This allows plotting parameters with different time intervals on the same chart
 
-    // Add all data points from first plot (with param1 only)
+    // Build maps: time -> value for each parameter
+    const leftMap = new Map<string, any>();
     firstPlotData.data.forEach(point => {
       const value = point[actualParam1Key];
       if (value !== null && value !== undefined && !isNaN(Number(value))) {
-        mergedData.push({
-          time: normalizeTimeToISO(point.time), // Normalize to ISO
-          [param1WithSource]: value,
-          [param2WithSource]: null // Other parameter is null for these rows
-        });
+        leftMap.set(normalizeTimeToISO(point.time), value);
       }
     });
 
-    // Add all data points from second plot (with param2 only)
+    const rightMap = new Map<string, any>();
     secondPlotData.data.forEach(point => {
       const value = point[actualParam2Key];
       if (value !== null && value !== undefined && !isNaN(Number(value))) {
-        mergedData.push({
-          time: normalizeTimeToISO(point.time), // Normalize to ISO
-          [param1WithSource]: null, // Other parameter is null for these rows
-          [param2WithSource]: value
-        });
+        rightMap.set(normalizeTimeToISO(point.time), value);
       }
     });
 
-    // Sort by time (ISO format sorts correctly alphabetically)
-    mergedData.sort((a, b) => a.time.localeCompare(b.time));
+    // Get UNION of all timestamps (sorted)
+    const allTimestamps = Array.from(
+      new Set([
+        ...Array.from(leftMap.keys()),
+        ...Array.from(rightMap.keys())
+      ])
+    ).sort();
+
+    // Create merged data with each timestamp having values from both maps (or null)
+    const mergedData = allTimestamps.map(time => ({
+      time,
+      [param1WithSource]: leftMap.get(time) ?? null,
+      [param2WithSource]: rightMap.get(time) ?? null
+    }));
 
     console.log('⏰ Time format samples:', {
       firstPlotSampleTime: firstPlotData.data[0]?.time,
@@ -637,12 +641,13 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       mergedMiddleTime: mergedData[Math.floor(mergedData.length / 2)]?.time
     });
 
-    console.log('🔄 MERGE DEBUG:', {
+    console.log('🔄 UNION MERGE DEBUG:', {
       param1WithSource,
       param2WithSource,
       firstPlotDataLength: firstPlotData.data.length,
       secondPlotDataLength: secondPlotData.data.length,
       mergedDataLength: mergedData.length,
+      uniqueTimestamps: allTimestamps.length,
       sampleFirstPoint: firstPlotData.data[0],
       sampleSecondPoint: secondPlotData.data[0],
       sampleMergedPoint: mergedData[0],
@@ -651,10 +656,12 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       firstDataKeys: Object.keys(firstPlotData.data[0] || {}),
       secondDataKeys: Object.keys(secondPlotData.data[0] || {}),
       mergedDataKeys: Object.keys(mergedData[0] || {}),
-      // Check how many points have both parameters
+      // Check distribution of data points
       pointsWithBothParams: mergedData.filter(d => d[param1WithSource] !== null && d[param2WithSource] !== null).length,
       pointsWithOnlyParam1: mergedData.filter(d => d[param1WithSource] !== null && d[param2WithSource] === null).length,
-      pointsWithOnlyParam2: mergedData.filter(d => d[param1WithSource] === null && d[param2WithSource] !== null).length
+      pointsWithOnlyParam2: mergedData.filter(d => d[param1WithSource] === null && d[param2WithSource] !== null).length,
+      leftMapSize: leftMap.size,
+      rightMapSize: rightMap.size
     });
 
     // Create ParseResult structure for the RAW merged data (before rounding)

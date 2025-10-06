@@ -348,6 +348,14 @@ function processTimeValue(value: string, fileType: FileType, dateFormat: 'DD/MM/
     { regex: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$/, handler: (v: string) => v.endsWith('Z') ? v : v + 'Z' },
     { regex: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{3})?$/, handler: (v: string) => v.replace(' ', 'T') + 'Z' },
 
+    // YYYY/MM/DD format with time (year-first with slashes) - handle before DD/MM/YYYY
+    { regex: /^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})$/, handler: (v: string) => {
+      const match = v.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})$/);
+      if (!match) return '';
+      const [, year, month, day, hour, min, sec] = match;
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min}:${sec}Z`;
+    }},
+
     // Date with slash separators: DD/MM/YYYY HH:MM (no seconds) - MUST come before HH:MM:SS
     { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/, handler: (v: string) => {
       const match = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/);

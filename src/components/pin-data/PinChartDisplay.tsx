@@ -106,6 +106,19 @@ const formatYAxisTick = (value: number, dataRange: number, dataMax: number): str
   return value.toFixed(decimals);
 };
 
+// Fallback color palette when CSS variables aren't loaded
+const FALLBACK_COLORS: Record<string, string> = {
+  '--chart-1': '#3b82f6', // blue
+  '--chart-2': '#10b981', // green
+  '--chart-3': '#f59e0b', // amber
+  '--chart-4': '#ef4444', // red
+  '--chart-5': '#8b5cf6', // purple
+  '--chart-6': '#06b6d4', // cyan
+  '--chart-7': '#ec4899', // pink
+  '--chart-8': '#f97316', // orange
+  '--chart-9': '#14b8a6', // teal
+};
+
 // Convert HSL CSS variable to hex color
 const cssVarToHex = (cssVar: string): string => {
   if (cssVar.startsWith('#')) return cssVar; // Already hex
@@ -114,11 +127,11 @@ const cssVarToHex = (cssVar: string): string => {
     .getPropertyValue(cssVar.replace('--', ''))
     .trim();
 
-  if (!hslValue) return '#3b82f6'; // fallback blue
+  if (!hslValue) return FALLBACK_COLORS[cssVar] || '#3b82f6'; // Use fallback palette
 
   // Parse HSL string like "220 100% 50%"
   const matches = hslValue.match(/(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)%\s+(\d+(?:\.\d+)?)%/);
-  if (!matches) return '#3b82f6';
+  if (!matches) return FALLBACK_COLORS[cssVar] || '#3b82f6';
 
   const h = parseFloat(matches[1]) / 360;
   const s = parseFloat(matches[2]) / 100;
@@ -194,8 +207,8 @@ export function PinChartDisplay({
   // Toggle state for switching between chart and table view
   const [showTable, setShowTable] = useState(false);
 
-  // Axis mode state - single or multi axis
-  const [axisMode, setAxisMode] = useState<'single' | 'multi'>(defaultAxisMode);
+  // Axis mode state - default to multi axis
+  const [axisMode, setAxisMode] = useState<'single' | 'multi'>('multi');
 
   // Parameter panel expansion state
   const [isParameterPanelExpanded, setIsParameterPanelExpanded] = useState(defaultParametersExpanded);
@@ -253,12 +266,15 @@ export function PinChartDisplay({
   // Initialize parameter visibility state
   const [parameterStates, setParameterStates] = useState<Record<string, ParameterState>>(() => {
     const initialState: Record<string, ParameterState> = {};
-    // For GP and marine files, show first 4 parameters; for others show first 5
-    const defaultVisibleCount = (fileType === 'GP' || dataSource === 'marine') ? 4 : 5;
+    // Show only first 4 parameters by default
+    const defaultVisibleCount = 4;
     numericParameters.forEach((param, index) => {
+      // Convert CSS variable to hex immediately to ensure unique colors
+      const cssVar = CHART_COLORS[index % CHART_COLORS.length];
+      const hexColor = cssVarToHex(cssVar);
       initialState[param] = {
         visible: index < defaultVisibleCount,
-        color: CHART_COLORS[index % CHART_COLORS.length],
+        color: hexColor, // Store as hex, not CSS variable
         opacity: 1.0 // Default to fully opaque
       };
     });
@@ -278,10 +294,12 @@ export function PinChartDisplay({
         if (prev[param]) {
           newState[param] = prev[param];
         } else {
-          // Initialize new parameter
+          // Initialize new parameter with hex color
+          const cssVar = CHART_COLORS[index % CHART_COLORS.length];
+          const hexColor = cssVarToHex(cssVar);
           newState[param] = {
             visible: index < defaultVisibleCount,
-            color: CHART_COLORS[index % CHART_COLORS.length],
+            color: hexColor, // Store as hex, not CSS variable
             opacity: 1.0 // Default to fully opaque
           };
         }
@@ -1025,7 +1043,8 @@ export function PinChartDisplay({
   // Get source label abbreviation
   const getSourceLabel = (): string => {
     if (dataSource === 'marine') return 'OM';
-    return fileType; // Returns 'GP', 'FPOD', or 'Subcam'
+    if (fileType === 'Subcam') return 'SC';
+    return fileType; // Returns 'GP' or 'FPOD'
   };
 
   // Format parameter label with source
@@ -1033,7 +1052,7 @@ export function PinChartDisplay({
     const baseLabel = getParameterLabelWithUnit(parameter);
 
     // Check if parameter already has a source label (e.g., "IR [GP]")
-    if (/\[(?:GP|FPOD|Subcam|OM)\]$/.test(baseLabel)) {
+    if (/\[(?:GP|FPOD|SC|Subcam|OM)\]$/.test(baseLabel)) {
       // Already has source label, return as-is
       return baseLabel;
     }
