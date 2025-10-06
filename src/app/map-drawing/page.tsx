@@ -2570,6 +2570,7 @@ export default function MapDrawingPage() {
 
   // Save area corner edits
   const handleSaveAreaCornerEdit = async () => {
+    console.log('🔥🔥🔥 AREA CORNER SAVE - NEW CODE LOADED 🔥🔥🔥');
     if (tempAreaPath && itemToEdit && 'path' in itemToEdit) {
       try {
         console.log('[SAVE AREA CORNERS] Saving with data:', {
