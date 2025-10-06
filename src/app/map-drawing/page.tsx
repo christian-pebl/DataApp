@@ -634,7 +634,11 @@ export default function MapDrawingPage() {
   // New state for enhanced features
   const [editingAreaCoords, setEditingAreaCoords] = useState<string[][]>([]);
   const [editingTransparency, setEditingTransparency] = useState(20);
-  
+
+  // Area corner dragging mode
+  const [isAreaCornerDragging, setIsAreaCornerDragging] = useState(false);
+  const [tempAreaPath, setTempAreaPath] = useState<{ lat: number; lng: number }[] | null>(null);
+
   // Refs to prevent duplicate operations
   const lineConfirmInProgressRef = useRef<boolean>(false);
   const labelInputRef = useRef<HTMLInputElement>(null);
@@ -2438,6 +2442,9 @@ export default function MapDrawingPage() {
     setEditingAreaCoords([]); // Clear area coordinates
     setEditingTransparency(20); // Reset transparency
     setEditingProjectId(null); // Reset project assignment
+    // Reset area corner dragging state
+    setIsAreaCornerDragging(false);
+    setTempAreaPath(null);
   };
 
   // Line Edit Mode Handlers
@@ -2542,10 +2549,72 @@ export default function MapDrawingPage() {
     }
   };
 
+  // Handle area corner drag
+  const handleAreaCornerDrag = (cornerIndex: number, newPosition: LatLng) => {
+    if (tempAreaPath && itemToEdit && 'path' in itemToEdit) {
+      const newPath = [...tempAreaPath];
+      newPath[cornerIndex] = { lat: newPosition.lat, lng: newPosition.lng };
+      setTempAreaPath(newPath);
+
+      // Update coordinate inputs in real-time
+      const newCoords = [...editingAreaCoords];
+      const latFormats = getCoordinateFormats(newPosition.lat);
+      const lngFormats = getCoordinateFormats(newPosition.lng);
+      newCoords[cornerIndex] = [
+        latFormats[coordinateFormat],
+        lngFormats[coordinateFormat]
+      ];
+      setEditingAreaCoords(newCoords);
+    }
+  };
+
+  // Save area corner edits
+  const handleSaveAreaCornerEdit = async () => {
+    if (tempAreaPath && itemToEdit && 'path' in itemToEdit) {
+      try {
+        await updateAreaData(itemToEdit.id, {
+          ...itemToEdit,
+          path: tempAreaPath
+        });
+
+        setIsAreaCornerDragging(false);
+        setTempAreaPath(null);
+
+        toast({
+          title: "Area Updated",
+          description: `Area corners updated successfully`
+        });
+      } catch (error) {
+        console.error('Error updating area:', error);
+        toast({
+          variant: "destructive",
+          title: "Error Updating Area",
+          description: "Failed to update area corners"
+        });
+      }
+    }
+  };
+
+  // Cancel area corner edits
+  const handleCancelAreaCornerEdit = () => {
+    if (itemToEdit && 'path' in itemToEdit) {
+      setTempAreaPath(null);
+      setIsAreaCornerDragging(false);
+
+      // Revert editingAreaCoords to original
+      const originalCoords = itemToEdit.path.map(point => {
+        const latFormats = getCoordinateFormats(point.lat);
+        const lngFormats = getCoordinateFormats(point.lng);
+        return [latFormats[coordinateFormat], lngFormats[coordinateFormat]];
+      });
+      setEditingAreaCoords(originalCoords);
+    }
+  };
+
   // Handle sharing pin privacy settings
   const handleUpdatePrivacy = async () => {
     if (!itemToEdit || !('lat' in itemToEdit)) return;
-    
+
     setIsUpdatingPrivacy(true);
     try {
       const sharedEmails = sharePrivacyLevel === 'specific' && shareEmails 
@@ -3150,6 +3219,10 @@ export default function MapDrawingPage() {
             onLinePointDrag={handleLinePointDrag}
             onLineEditComplete={handleLineEditComplete}
             onLineEditCancel={handleLineEditCancel}
+            areaEditMode={isAreaCornerDragging ? 'corners' : 'none'}
+            editingAreaId={isAreaCornerDragging && itemToEdit && 'path' in itemToEdit ? itemToEdit.id : null}
+            tempAreaPath={tempAreaPath}
+            onAreaCornerDrag={handleAreaCornerDrag}
           />
 
           {/* Center Crosshairs */}
@@ -4130,6 +4203,50 @@ export default function MapDrawingPage() {
                             <div className="flex items-center justify-between mb-2">
                               <label className="text-xs text-muted-foreground">Area Coordinates:</label>
                               <div className="flex items-center gap-1">
+                                {!isAreaCornerDragging ? (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-6 px-2 text-xs"
+                                          onClick={() => {
+                                            setIsAreaCornerDragging(true);
+                                            setTempAreaPath([...itemToEdit.path]);
+                                          }}
+                                        >
+                                          <Move3D className="h-3 w-3 mr-1" />
+                                          Drag
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">
+                                        <p className="text-xs">Click to drag corners on map</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                ) : (
+                                  <div className="flex items-center gap-1">
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      className="h-6 px-2 text-xs"
+                                      onClick={handleSaveAreaCornerEdit}
+                                    >
+                                      <Check className="h-3 w-3 mr-1" />
+                                      Save
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-6 px-2 text-xs"
+                                      onClick={handleCancelAreaCornerEdit}
+                                    >
+                                      <X className="h-3 w-3 mr-1" />
+                                      Cancel
+                                    </Button>
+                                  </div>
+                                )}
                                 <Popover open={showCoordinateFormatPopover} onOpenChange={setShowCoordinateFormatPopover}>
                                   <PopoverTrigger asChild>
                                     <Button

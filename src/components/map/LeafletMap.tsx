@@ -78,6 +78,11 @@ interface LeafletMapProps {
     onLinePointDrag?: (pointIndex: number, newPosition: LatLng) => void;
     onLineEditComplete?: () => void;
     onLineEditCancel?: () => void;
+    // Area Corner Dragging props
+    areaEditMode?: 'none' | 'corners';
+    editingAreaId?: string | null;
+    tempAreaPath?: { lat: number; lng: number }[] | null;
+    onAreaCornerDrag?: (cornerIndex: number, newPosition: LatLng) => void;
 }
 
 // Coordinate and distance conversion helpers
@@ -118,6 +123,37 @@ const createDraggableVertexIcon = () => {
         className: 'bg-transparent border-0',
         iconSize: [16, 16],
         iconAnchor: [8, 8]
+    });
+};
+
+const createDraggableCornerIcon = (cornerNumber: number, color: string = '#3b82f6') => {
+    const iconHtml = `
+        <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <!-- Outer circle with shadow -->
+            <circle cx="12" cy="12" r="11" fill="${color}" opacity="0.9" stroke="white" stroke-width="2" filter="url(#shadow${cornerNumber})"/>
+            <!-- Corner number -->
+            <text x="12" y="16" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="white" text-anchor="middle">${cornerNumber}</text>
+            <!-- Shadow filter -->
+            <defs>
+                <filter id="shadow${cornerNumber}" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+                    <feOffset dx="0" dy="2" result="offsetblur"/>
+                    <feComponentTransfer>
+                        <feFuncA type="linear" slope="0.5"/>
+                    </feComponentTransfer>
+                    <feMerge>
+                        <feMergeNode/>
+                        <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                </filter>
+            </defs>
+        </svg>
+    `;
+    return L.divIcon({
+        html: iconHtml,
+        className: 'bg-transparent border-0 cursor-move',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
     });
 };
 
@@ -740,6 +776,58 @@ const LeafletMap = ({
             });
         }
     }, [areas, onEditItem, useEditPanel, disableDefaultPopups, forceUseEditCallback, popupMode]);
+
+    // Handle area corner dragging mode
+    useEffect(() => {
+        if (!mapRef.current || areaEditMode !== 'corners' || !editingAreaId || !tempAreaPath) return;
+
+        const cornersLayerGroup = L.layerGroup().addTo(mapRef.current);
+
+        // Find the area being edited to get its color
+        const editingArea = areas.find(a => a.id === editingAreaId);
+        const areaColor = editingArea?.color || '#3b82f6';
+
+        // Render temp area polygon with dashed style
+        const areaCoords = tempAreaPath.map(p => [p.lat, p.lng] as [number, number]);
+        const tempPolygon = L.polygon(areaCoords, {
+            color: areaColor,
+            weight: 2,
+            fillColor: areaColor,
+            fillOpacity: 0.15,
+            dashArray: '10, 10'
+        }).addTo(cornersLayerGroup);
+
+        // Render draggable corner markers
+        tempAreaPath.forEach((corner, index) => {
+            const marker = L.marker([corner.lat, corner.lng], {
+                icon: createDraggableCornerIcon(index + 1, areaColor),
+                draggable: true,
+                zIndexOffset: 1000
+            }).addTo(cornersLayerGroup);
+
+            // Handle drag event
+            marker.on('drag', (e) => {
+                const newPosition = e.target.getLatLng();
+
+                // Update temp polygon in real-time
+                const newPath = [...tempAreaPath];
+                newPath[index] = { lat: newPosition.lat, lng: newPosition.lng };
+                const newCoords = newPath.map(p => [p.lat, p.lng] as [number, number]);
+                tempPolygon.setLatLngs(newCoords);
+            });
+
+            // Handle dragend event
+            marker.on('dragend', (e) => {
+                const newPosition = e.target.getLatLng();
+                onAreaCornerDrag?.(index, newPosition);
+            });
+        });
+
+        // Cleanup
+        return () => {
+            cornersLayerGroup.remove();
+        };
+    }, [areaEditMode, editingAreaId, tempAreaPath, areas, onAreaCornerDrag]);
 
     // Handle pending pin popup
     useEffect(() => {
