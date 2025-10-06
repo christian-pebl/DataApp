@@ -250,25 +250,8 @@ export function PinChartDisplay({
     return params;
   }, [data, timeColumn, fileName]);
 
-  // Initialize parameter visibility state
-  const [parameterStates, setParameterStates] = useState<Record<string, ParameterState>>(() => {
-    const initialState: Record<string, ParameterState> = {};
-    // Show first 4 parameters by default for all data sources
-    const defaultVisibleCount = 4;
-
-    if (numericParameters && Array.isArray(numericParameters)) {
-      numericParameters.forEach((param, index) => {
-        const assignedColor = CHART_COLORS[index % CHART_COLORS.length];
-        console.log(`[PARAM COLOR INIT] ${param} (index ${index}) → color: ${assignedColor}`);
-        initialState[param] = {
-          visible: index < defaultVisibleCount,
-          color: assignedColor,
-          opacity: 1.0 // Default to fully opaque
-        };
-      });
-    }
-    return initialState;
-  });
+  // Initialize parameter visibility state (empty initially, populated by useEffect below)
+  const [parameterStates, setParameterStates] = useState<Record<string, ParameterState>>({});
 
   // Update parameter states when numericParameters changes (e.g., new data loaded)
   React.useEffect(() => {
@@ -284,9 +267,11 @@ export function PinChartDisplay({
           newState[param] = prev[param];
         } else {
           // Initialize new parameter
+          const assignedColor = CHART_COLORS[index % CHART_COLORS.length];
+          console.log(`[PARAM COLOR INIT] ${param} (index ${index}) → color: ${assignedColor}`);
           newState[param] = {
             visible: index < defaultVisibleCount,
-            color: CHART_COLORS[index % CHART_COLORS.length],
+            color: assignedColor,
             opacity: 1.0 // Default to fully opaque
           };
         }
