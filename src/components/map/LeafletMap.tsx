@@ -211,7 +211,8 @@ const LeafletMap = ({
     itemToEdit, onEditItem, activeProjectId, projectVisibility,
     editingGeometry, onEditGeometry, onUpdateGeometry,
     showPopups = true, useEditPanel = false, disableDefaultPopups = false, forceUseEditCallback = false, popupMode = 'default',
-    lineEditMode = 'none', editingLineId = null, tempLinePath = null, onLinePointDrag, onLineEditComplete, onLineEditCancel
+    lineEditMode = 'none', editingLineId = null, tempLinePath = null, onLinePointDrag, onLineEditComplete, onLineEditCancel,
+    areaEditMode = 'none', editingAreaId = null, tempAreaPath = null, onAreaCornerDrag
 }: LeafletMapProps) => {
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const pinLayerRef = useRef<LayerGroup | null>(null);
