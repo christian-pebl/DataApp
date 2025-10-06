@@ -54,6 +54,7 @@ const CHART_COLORS = [
 interface ParameterState {
   visible: boolean;
   color: string;
+  opacity?: number; // 0-1 range, defaults to 1 (fully opaque)
   isSolo?: boolean;
   timeFilter?: {
     enabled: boolean;
@@ -257,7 +258,8 @@ export function PinChartDisplay({
     numericParameters.forEach((param, index) => {
       initialState[param] = {
         visible: index < defaultVisibleCount,
-        color: CHART_COLORS[index % CHART_COLORS.length]
+        color: CHART_COLORS[index % CHART_COLORS.length],
+        opacity: 1.0 // Default to fully opaque
       };
     });
     return initialState;
@@ -279,7 +281,8 @@ export function PinChartDisplay({
           // Initialize new parameter
           newState[param] = {
             visible: index < defaultVisibleCount,
-            color: CHART_COLORS[index % CHART_COLORS.length]
+            color: CHART_COLORS[index % CHART_COLORS.length],
+            opacity: 1.0 // Default to fully opaque
           };
         }
       });
@@ -611,6 +614,16 @@ export function PinChartDisplay({
     }));
   };
 
+  const updateParameterOpacity = (parameter: string, opacity: number) => {
+    setParameterStates(prev => ({
+      ...prev,
+      [parameter]: {
+        ...prev[parameter],
+        opacity: Math.max(0, Math.min(1, opacity)) // Clamp between 0 and 1
+      }
+    }));
+  };
+
   const updateTimeFilter = (parameter: string, enabled: boolean, excludeStart?: string, excludeEnd?: string) => {
     setParameterStates(prev => ({
       ...prev,
@@ -639,12 +652,49 @@ export function PinChartDisplay({
     }));
   };
 
-  // Helper to get color value for rendering (supports both CSS vars and hex)
-  const getColorValue = (colorString: string): string => {
+  // Helper to get color value for rendering (supports both CSS vars and hex, with opacity)
+  const getColorValue = (colorString: string, opacity: number = 1.0): string => {
+    // Convert hex to rgba with opacity
     if (colorString.startsWith('#')) {
-      return colorString; // Already hex
+      const hex = colorString.replace('#', '');
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      return `rgba(${r}, ${g}, ${b}, ${opacity})`;
     }
-    return `hsl(var(${colorString}))`; // CSS variable
+
+    // For CSS variables, we need to convert HSL to rgba
+    const hslValue = getComputedStyle(document.documentElement)
+      .getPropertyValue(colorString.replace('--', ''))
+      .trim();
+
+    if (!hslValue) return `rgba(59, 130, 246, ${opacity})`; // fallback blue with opacity
+
+    // Parse HSL string like "220 100% 50%" and convert to RGB
+    const matches = hslValue.match(/(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)%\s+(\d+(?:\.\d+)?)%/);
+    if (!matches) return `rgba(59, 130, 246, ${opacity})`;
+
+    const h = parseFloat(matches[1]) / 360;
+    const s = parseFloat(matches[2]) / 100;
+    const l = parseFloat(matches[3]) / 100;
+
+    // HSL to RGB conversion
+    const hue2rgb = (p: number, q: number, t: number) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const r = Math.round(hue2rgb(p, q, h + 1/3) * 255);
+    const g = Math.round(hue2rgb(p, q, h) * 255);
+    const b = Math.round(hue2rgb(p, q, h - 1/3) * 255);
+
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
   };
 
   // Generate preview timestamps showing what they'll look like with swapped format
@@ -1261,7 +1311,7 @@ export function PinChartDisplay({
 
                 {visibleParameters.map((parameter) => {
                   const state = parameterStates[parameter];
-                  const colorValue = getColorValue(state.color);
+                  const colorValue = getColorValue(state.color, state.opacity ?? 1.0);
 
                   return (
                     <Line
@@ -1395,7 +1445,7 @@ export function PinChartDisplay({
                 {visibleParameters.map((parameter) => {
                   const state = parameterStates[parameter];
                   const yAxisId = `axis-${parameter}`;
-                  const colorValue = getColorValue(state.color);
+                  const colorValue = getColorValue(state.color, state.opacity ?? 1.0);
 
                   return (
                     <Line
@@ -1553,21 +1603,72 @@ export function PinChartDisplay({
                           <div
                             className="w-3 h-3 rounded-full border cursor-pointer hover:ring-2 hover:ring-offset-1 transition-all"
                             style={{
-                              backgroundColor: colorValue,
+                              backgroundColor: getColorValue(state.color, state.opacity ?? 1.0),
                               '--tw-ring-color': colorValue
                             } as React.CSSProperties}
-                            title="Change color"
+                            title="Change color and transparency"
                           />
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-3" align="end" onClick={(e) => e.stopPropagation()}>
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium">Pick Color</p>
+                          <div className="space-y-3">
+                            <p className="text-xs font-medium">Color & Transparency</p>
                             <div className="relative">
                               <HexColorPicker
                                 color={state.color.startsWith('#') ? state.color : cssVarToHex(state.color)}
                                 onChange={(hex) => updateParameterColor(parameter, hex)}
                                 style={{ width: '200px', height: '150px' }}
                               />
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-xs">Opacity</Label>
+                                <span className="text-xs text-muted-foreground">
+                                  {Math.round((state.opacity ?? 1.0) * 100)}%
+                                </span>
+                              </div>
+                              <Input
+                                type="range"
+                                min="0"
+                                max="100"
+                                step="5"
+                                value={Math.round((state.opacity ?? 1.0) * 100)}
+                                onChange={(e) => updateParameterOpacity(parameter, parseInt(e.target.value) / 100)}
+                                className="h-2 cursor-pointer"
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-xs flex-1"
+                                  onClick={() => updateParameterOpacity(parameter, 0.25)}
+                                >
+                                  25%
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-xs flex-1"
+                                  onClick={() => updateParameterOpacity(parameter, 0.5)}
+                                >
+                                  50%
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-xs flex-1"
+                                  onClick={() => updateParameterOpacity(parameter, 0.75)}
+                                >
+                                  75%
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-xs flex-1"
+                                  onClick={() => updateParameterOpacity(parameter, 1.0)}
+                                >
+                                  100%
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         </PopoverContent>
