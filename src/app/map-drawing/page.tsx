@@ -2572,13 +2572,15 @@ export default function MapDrawingPage() {
   const handleSaveAreaCornerEdit = async () => {
     if (tempAreaPath && itemToEdit && 'path' in itemToEdit) {
       try {
-        // Only send the properties that updateAreaData expects
-        await updateAreaData(itemToEdit.id, {
+        console.log('[SAVE AREA CORNERS] Saving with data:', {
+          id: itemToEdit.id,
           path: tempAreaPath,
-          label: itemToEdit.label,
-          notes: itemToEdit.notes,
-          projectId: itemToEdit.projectId,
-          tagIds: itemToEdit.tagIds
+          pathLength: tempAreaPath.length
+        });
+
+        // Only update the path - don't send other fields that might cause issues
+        await updateAreaData(itemToEdit.id, {
+          path: tempAreaPath
         });
 
         setIsAreaCornerDragging(false);
@@ -2589,11 +2591,12 @@ export default function MapDrawingPage() {
           description: `Area corners updated successfully`
         });
       } catch (error) {
-        console.error('Error updating area:', error);
+        console.error('[SAVE AREA CORNERS] Error updating area:', error);
+        console.error('[SAVE AREA CORNERS] Error details:', JSON.stringify(error, null, 2));
         toast({
           variant: "destructive",
           title: "Error Updating Area",
-          description: "Failed to update area corners"
+          description: error instanceof Error ? error.message : "Failed to update area corners"
         });
       }
     }

@@ -925,6 +925,8 @@ export class MapDataService {
     if (updates.size !== undefined) updatePayload.size = updates.size;
     if (updates.transparency !== undefined) updatePayload.transparency = updates.transparency;
 
+    console.log('[MapDataService] Updating area with payload:', updatePayload);
+
     const { data, error } = await this.supabase
       .from('areas')
       .update(updatePayload)
@@ -933,8 +935,18 @@ export class MapDataService {
       .single()
 
     if (error) {
-      console.error('MapDataService: Database error details (area):', error);
-      throw error;
+      console.error('MapDataService: Database error details (area):', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        fullError: error
+      });
+      throw new Error(`Failed to update area: ${error.message || 'Unknown error'}`);
+    }
+
+    if (!data) {
+      throw new Error('No data returned from update operation');
     }
 
     // Handle tag updates if provided
