@@ -184,7 +184,7 @@ export function PinChartDisplay({
   onBrushChange,
   isLastPlot = true,
   onVisibilityChange,
-  defaultAxisMode = 'multi',
+  defaultAxisMode = 'single',
   defaultParametersExpanded = false,
   currentDateFormat,
   onDateFormatChange,
@@ -250,16 +250,28 @@ export function PinChartDisplay({
     return params;
   }, [data, timeColumn, fileName]);
 
-  // Initialize parameter visibility state (empty initially, populated by useEffect below)
-  const [parameterStates, setParameterStates] = useState<Record<string, ParameterState>>({});
+  // Initialize parameter visibility state
+  const [parameterStates, setParameterStates] = useState<Record<string, ParameterState>>(() => {
+    const initialState: Record<string, ParameterState> = {};
+    // For GP and marine files, show first 4 parameters; for others show first 5
+    const defaultVisibleCount = (fileType === 'GP' || dataSource === 'marine') ? 4 : 5;
+    numericParameters.forEach((param, index) => {
+      initialState[param] = {
+        visible: index < defaultVisibleCount,
+        color: CHART_COLORS[index % CHART_COLORS.length],
+        opacity: 1.0 // Default to fully opaque
+      };
+    });
+    return initialState;
+  });
 
   // Update parameter states when numericParameters changes (e.g., new data loaded)
   React.useEffect(() => {
     setParameterStates(prev => {
       const newState: Record<string, ParameterState> = {};
       // For merged plots (small number of params), show all by default
-      // Otherwise show first 4 parameters
-      const defaultVisibleCount = numericParameters.length <= 3 ? numericParameters.length : 4;
+      const defaultVisibleCount = numericParameters.length <= 3 ? numericParameters.length :
+                                   ((fileType === 'GP' || dataSource === 'marine') ? 4 : 5);
 
       numericParameters.forEach((param, index) => {
         // Preserve existing state if parameter already exists
@@ -267,11 +279,9 @@ export function PinChartDisplay({
           newState[param] = prev[param];
         } else {
           // Initialize new parameter
-          const assignedColor = CHART_COLORS[index % CHART_COLORS.length];
-          console.log(`[PARAM COLOR INIT] ${param} (index ${index}) → color: ${assignedColor}`);
           newState[param] = {
             visible: index < defaultVisibleCount,
-            color: assignedColor,
+            color: CHART_COLORS[index % CHART_COLORS.length],
             opacity: 1.0 // Default to fully opaque
           };
         }
