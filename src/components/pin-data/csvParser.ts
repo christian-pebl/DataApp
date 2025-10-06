@@ -35,9 +35,11 @@ function detectDateFormat(lines: string[], timeColumnIndex: number): 'DD/MM/YYYY
   const sampleSize = Math.min(20, lines.length - 1); // Check up to 20 data rows
   const dateValues: string[] = [];
 
+  console.log('═══════════════════════════════════════════════════════');
   console.log('[DATE DETECTION] Starting date format detection...');
   console.log('[DATE DETECTION] Time column index:', timeColumnIndex);
   console.log('[DATE DETECTION] Sample size:', sampleSize);
+  console.log('═══════════════════════════════════════════════════════');
 
   // Extract date values from sample rows
   for (let i = 1; i <= sampleSize && i < lines.length; i++) {
@@ -88,13 +90,17 @@ function detectDateFormat(lines: string[], timeColumnIndex: number): 'DD/MM/YYYY
 
   // Rule 1: If first component > 12, must be DD/MM/YYYY
   if (hasFirstComponentOver12 && !hasSecondComponentOver12) {
+    console.log('═══════════════════════════════════════════════════════');
     console.log('[DATE DETECTION] ✓ Detected format: DD/MM/YYYY (Rule 1: first > 12)');
+    console.log('═══════════════════════════════════════════════════════');
     return 'DD/MM/YYYY';
   }
 
   // Rule 2: If second component > 12, must be MM/DD/YYYY
   if (hasSecondComponentOver12 && !hasFirstComponentOver12) {
+    console.log('═══════════════════════════════════════════════════════');
     console.log('[DATE DETECTION] ✓ Detected format: MM/DD/YYYY (Rule 2: second > 12)');
+    console.log('═══════════════════════════════════════════════════════');
     return 'MM/DD/YYYY';
   }
 
@@ -113,19 +119,25 @@ function detectDateFormat(lines: string[], timeColumnIndex: number): 'DD/MM/YYYY
 
     // If first component has wider range and more variety, likely to be days
     if (firstRange > secondRange && firstUnique > secondUnique) {
+      console.log('═══════════════════════════════════════════════════════');
       console.log('[DATE DETECTION] ✓ Detected format: DD/MM/YYYY (Rule 3: first has more variety)');
+      console.log('═══════════════════════════════════════════════════════');
       return 'DD/MM/YYYY';
     }
 
     // If second component has wider range and more variety, likely to be days
     if (secondRange > firstRange && secondUnique > firstUnique) {
+      console.log('═══════════════════════════════════════════════════════');
       console.log('[DATE DETECTION] ✓ Detected format: MM/DD/YYYY (Rule 3: second has more variety)');
+      console.log('═══════════════════════════════════════════════════════');
       return 'MM/DD/YYYY';
     }
   }
 
   // Default to European format (DD/MM/YYYY) if still ambiguous
+  console.log('═══════════════════════════════════════════════════════');
   console.log('[DATE DETECTION] ✓ Using default format: DD/MM/YYYY (ambiguous case)');
+  console.log('═══════════════════════════════════════════════════════');
   return 'DD/MM/YYYY';
 }
 
@@ -336,42 +348,77 @@ function processTimeValue(value: string, fileType: FileType, dateFormat: 'DD/MM/
     { regex: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$/, handler: (v: string) => v.endsWith('Z') ? v : v + 'Z' },
     { regex: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{3})?$/, handler: (v: string) => v.replace(' ', 'T') + 'Z' },
 
-    // Date with slash separators: DD/MM/YYYY HH:MM:SS or MM/DD/YYYY HH:MM:SS
-    { regex: /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/, handler: (v: string) => {
-      const [, d1, d2, year, hour, min, sec] = v.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/)!;
+    // Date with slash separators: DD/MM/YYYY HH:MM (no seconds) - MUST come before HH:MM:SS
+    { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/, handler: (v: string) => {
+      const match = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/);
+      if (!match) return '';
+      const [, d1, d2, year, hour, min] = match;
+      const sec = '00'; // Default seconds to 00
       let result: string;
       let day: string, month: string;
 
       // Use detected date format
       if (dateFormat === 'DD/MM/YYYY') {
         // Format is DD/MM/YYYY: d1 = day, d2 = month
-        day = d1;
-        month = d2;
-        result = `${year}-${month}-${day}T${hour}:${min}:${sec}Z`;
+        day = d1.padStart(2, '0');
+        month = d2.padStart(2, '0');
+        result = `${year}-${month}-${day}T${hour.padStart(2, '0')}:${min}:${sec}Z`;
       } else {
         // Format is MM/DD/YYYY: d1 = month, d2 = day
-        month = d1;
-        day = d2;
-        result = `${year}-${month}-${day}T${hour}:${min}:${sec}Z`;
+        month = d1.padStart(2, '0');
+        day = d2.padStart(2, '0');
+        result = `${year}-${month}-${day}T${hour.padStart(2, '0')}:${min}:${sec}Z`;
       }
-      console.log(`[TIME CONVERSION] Input: "${v}" | Format: ${dateFormat} | d1=${d1}, d2=${d2} | Interpreted as: day=${day}, month=${month} | Output: ${result}`);
+      console.log(`[TIME CONVERSION HH:MM] Input: "${v}" | Format: ${dateFormat} | d1=${d1}, d2=${d2} | Interpreted as: day=${day}, month=${month} | Output: ${result}`);
+      return result;
+    }},
+
+    // Date with slash separators: DD/MM/YYYY HH:MM:SS or MM/DD/YYYY HH:MM:SS
+    { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})$/, handler: (v: string) => {
+      const match = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})$/);
+      if (!match) return '';
+      const [, d1, d2, year, hour, min, sec] = match;
+      let result: string;
+      let day: string, month: string;
+
+      // Use detected date format
+      if (dateFormat === 'DD/MM/YYYY') {
+        // Format is DD/MM/YYYY: d1 = day, d2 = month
+        day = d1.padStart(2, '0');
+        month = d2.padStart(2, '0');
+        result = `${year}-${month}-${day}T${hour.padStart(2, '0')}:${min}:${sec}Z`;
+      } else {
+        // Format is MM/DD/YYYY: d1 = month, d2 = day
+        month = d1.padStart(2, '0');
+        day = d2.padStart(2, '0');
+        result = `${year}-${month}-${day}T${hour.padStart(2, '0')}:${min}:${sec}Z`;
+      }
+      console.log(`[TIME CONVERSION HH:MM:SS] Input: "${v}" | Format: ${dateFormat} | d1=${d1}, d2=${d2} | Interpreted as: day=${day}, month=${month} | Output: ${result}`);
       return result;
     }},
 
     // Date only formats - add midnight time
     { regex: /^(\d{4})-(\d{2})-(\d{2})$/, handler: (v: string) => v + 'T00:00:00Z' },
-    { regex: /^(\d{2}\/\d{2}\/\d{4})$/, handler: (v: string) => {
-      const [, d1, d2, year] = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)!;
+    { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, handler: (v: string) => {
+      const match = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (!match) return '';
+      const [, d1, d2, year] = match;
       let result: string;
+      let day: string, month: string;
+
       // Use detected date format
       if (dateFormat === 'DD/MM/YYYY') {
         // d1 = day, d2 = month -> ISO format YYYY-MM-DD
-        result = `${year}-${d2}-${d1}T00:00:00Z`;
+        day = d1.padStart(2, '0');
+        month = d2.padStart(2, '0');
+        result = `${year}-${month}-${day}T00:00:00Z`;
       } else {
         // MM/DD/YYYY format: d1 = month, d2 = day -> ISO format YYYY-MM-DD
-        result = `${year}-${d1}-${d2}T00:00:00Z`;
+        month = d1.padStart(2, '0');
+        day = d2.padStart(2, '0');
+        result = `${year}-${month}-${day}T00:00:00Z`;
       }
-      console.log(`[TIME CONVERSION] Input: "${v}" | Format: ${dateFormat} | d1=${d1}, d2=${d2} | Output: ${result}`);
+      console.log(`[TIME CONVERSION DATE-ONLY] Input: "${v}" | Format: ${dateFormat} | d1=${d1}, d2=${d2} | Interpreted as: day=${day}, month=${month} | Output: ${result}`);
       return result;
     }},
 
@@ -391,7 +438,34 @@ function processTimeValue(value: string, fileType: FileType, dateFormat: 'DD/MM/
       try {
         const converted = format.handler(cleanValue);
         const testDate = new Date(converted);
+
+        // Validate date is valid and reasonable
         if (!isNaN(testDate.getTime()) && testDate.getFullYear() >= 1970 && testDate.getFullYear() <= 2100) {
+          // Additional validation: check that the ISO string matches expected pattern
+          // This catches cases like "2025-15-04" which get auto-corrected by Date
+          const isoMatch = converted.match(/^(\d{4})-(\d{2})-(\d{2})T/);
+          if (isoMatch) {
+            const [, isoYear, isoMonth, isoDay] = isoMatch;
+            const monthNum = parseInt(isoMonth, 10);
+            const dayNum = parseInt(isoDay, 10);
+
+            // Month must be 1-12, day must be 1-31
+            if (monthNum < 1 || monthNum > 12) {
+              console.warn(`[TIME VALIDATION] Invalid month detected: ${monthNum} in "${converted}" from "${cleanValue}"`);
+              continue;
+            }
+            if (dayNum < 1 || dayNum > 31) {
+              console.warn(`[TIME VALIDATION] Invalid day detected: ${dayNum} in "${converted}" from "${cleanValue}"`);
+              continue;
+            }
+
+            // Verify that parsing back gives us the same month/day (catches auto-correction)
+            if (testDate.getUTCMonth() + 1 !== monthNum || testDate.getUTCDate() !== dayNum) {
+              console.warn(`[TIME VALIDATION] Date auto-corrected by JS Date: "${converted}" -> Month ${testDate.getUTCMonth()+1}, Day ${testDate.getUTCDate()}`);
+              continue;
+            }
+          }
+
           return converted;
         }
       } catch (e) {
@@ -400,17 +474,12 @@ function processTimeValue(value: string, fileType: FileType, dateFormat: 'DD/MM/
     }
   }
 
-  // Try native Date parsing as last resort
-  try {
-    const directDate = new Date(cleanValue);
-    if (!isNaN(directDate.getTime()) && directDate.getFullYear() >= 1970 && directDate.getFullYear() <= 2100) {
-      return directDate.toISOString();
-    }
-  } catch (e) {
-    // Parsing failed
-  }
+  // DON'T use native Date parsing - it assumes MM/DD/YYYY for ambiguous formats
+  // This was causing DD/MM/YYYY dates to be parsed incorrectly
+  // Instead, we explicitly require matching one of our known formats above
 
-  // If all parsing fails, return empty string to filter out this row
+  // If all parsing fails, log and return empty string to filter out this row
+  console.warn(`[TIME PARSING FAILED] Could not parse time value: "${cleanValue}" with format ${dateFormat}`);
   return '';
 }
 
