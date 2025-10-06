@@ -253,8 +253,8 @@ export function PinChartDisplay({
   // Initialize parameter visibility state
   const [parameterStates, setParameterStates] = useState<Record<string, ParameterState>>(() => {
     const initialState: Record<string, ParameterState> = {};
-    // For GP and marine files, show first 4 parameters; for others show first 5
-    const defaultVisibleCount = (fileType === 'GP' || dataSource === 'marine') ? 4 : 5;
+    // Show first 4 parameters by default for all data sources
+    const defaultVisibleCount = 4;
     numericParameters.forEach((param, index) => {
       initialState[param] = {
         visible: index < defaultVisibleCount,
@@ -270,8 +270,8 @@ export function PinChartDisplay({
     setParameterStates(prev => {
       const newState: Record<string, ParameterState> = {};
       // For merged plots (small number of params), show all by default
-      const defaultVisibleCount = numericParameters.length <= 3 ? numericParameters.length :
-                                   ((fileType === 'GP' || dataSource === 'marine') ? 4 : 5);
+      // Otherwise show first 4 parameters
+      const defaultVisibleCount = numericParameters.length <= 3 ? numericParameters.length : 4;
 
       numericParameters.forEach((param, index) => {
         // Preserve existing state if parameter already exists
