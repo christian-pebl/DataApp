@@ -184,7 +184,7 @@ export function PinChartDisplay({
   onBrushChange,
   isLastPlot = true,
   onVisibilityChange,
-  defaultAxisMode = 'single',
+  defaultAxisMode = 'multi',
   defaultParametersExpanded = false,
   currentDateFormat,
   onDateFormatChange,
@@ -256,9 +256,11 @@ export function PinChartDisplay({
     // Show first 4 parameters by default for all data sources
     const defaultVisibleCount = 4;
     numericParameters.forEach((param, index) => {
+      const assignedColor = CHART_COLORS[index % CHART_COLORS.length];
+      console.log(`[PARAM COLOR INIT] ${param} (index ${index}) → color: ${assignedColor}`);
       initialState[param] = {
         visible: index < defaultVisibleCount,
-        color: CHART_COLORS[index % CHART_COLORS.length],
+        color: assignedColor,
         opacity: 1.0 // Default to fully opaque
       };
     });
