@@ -27,6 +27,10 @@ interface MergedParameterConfig {
   files?: File[];
   location?: { lat: number; lon: number };
   timeRange?: { startDate: string; endDate: string };
+  // Smoothing metadata
+  isSmoothed?: boolean;
+  originalObsCount?: number;
+  smoothedObsCount?: number;
 }
 
 interface PlotConfig {
@@ -107,6 +111,12 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   const [mergePreviewData, setMergePreviewData] = useState<ParseResult | null>(null);
   const [mergeRawData, setMergeRawData] = useState<ParseResult | null>(null); // Unrounded data
   const [timeRoundingInterval, setTimeRoundingInterval] = useState<string>('1hr'); // Default 1 hour
+
+  // Sparse data smoothing state
+  const [smoothingApplied, setSmoothingApplied] = useState(false);
+  const [smoothedParameterName, setSmoothedParameterName] = useState<string | null>(null);
+  const [originalObsCount, setOriginalObsCount] = useState<number>(0);
+  const [smoothedObsCount, setSmoothedObsCount] = useState<number>(0)
 
   // Get file display name
   const getFileName = (fileList: File[]) => {
@@ -261,6 +271,141 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       }
     };
   }, [roundTimeToInterval]);
+
+  // Detect sparse/dense scenario in merged data
+  const detectSparseDenseScenario = useCallback((data: ParseResult): {
+    isSparse: boolean;
+    sparseParam: string | null;
+    denseParam: string | null;
+    ratio: number;
+    sparseCount: number;
+    denseCount: number;
+  } | null => {
+    if (!data || data.headers.length !== 3) return null; // Should have time + 2 parameters
+
+    const param1 = data.headers[1];
+    const param2 = data.headers[2];
+
+    // Count non-null observations for each parameter
+    const param1Count = data.data.filter(row =>
+      row[param1] !== null && row[param1] !== undefined && !isNaN(Number(row[param1]))
+    ).length;
+
+    const param2Count = data.data.filter(row =>
+      row[param2] !== null && row[param2] !== undefined && !isNaN(Number(row[param2]))
+    ).length;
+
+    // Determine which is sparse and which is dense
+    const ratio = Math.max(param1Count, param2Count) / Math.min(param1Count, param2Count);
+
+    // Sparse/dense if ratio exceeds 2:1
+    if (ratio >= 2) {
+      const sparseParam = param1Count < param2Count ? param1 : param2;
+      const denseParam = param1Count < param2Count ? param2 : param1;
+      const sparseCount = Math.min(param1Count, param2Count);
+      const denseCount = Math.max(param1Count, param2Count);
+
+      return {
+        isSparse: true,
+        sparseParam,
+        denseParam,
+        ratio,
+        sparseCount,
+        denseCount
+      };
+    }
+
+    return null;
+  }, []);
+
+  // Apply cubic spline smoothing to sparse data
+  const applySmoothingToData = useCallback(async (data: ParseResult): Promise<ParseResult> => {
+    const scenario = detectSparseDenseScenario(data);
+    if (!scenario || !scenario.isSparse || !scenario.sparseParam || !scenario.denseParam) {
+      console.log('No sparse/dense scenario detected, returning original data');
+      return data;
+    }
+
+    // Import interpolation function
+    const { smoothSparseData } = await import('@/utils/interpolation');
+
+    const sparseParam = scenario.sparseParam;
+    const denseParam = scenario.denseParam;
+
+    console.log('🔄 Applying smoothing:', {
+      sparseParam,
+      denseParam,
+      sparseCount: scenario.sparseCount,
+      denseCount: scenario.denseCount,
+      ratio: scenario.ratio
+    });
+
+    // Extract sparse data points
+    const sparsePoints = data.data
+      .map(row => ({
+        time: row.time,
+        value: row[sparseParam] as number | null
+      }))
+      .filter(p => p.value !== null && !isNaN(p.value));
+
+    // Get time range for sparse data
+    const sparseTimes = sparsePoints.map(p => new Date(p.time).getTime());
+    const sparseTimeRange = {
+      min: new Date(Math.min(...sparseTimes)).toISOString(),
+      max: new Date(Math.max(...sparseTimes)).toISOString()
+    };
+
+    // Get all timestamps from dense parameter
+    const denseTimestamps = data.data
+      .filter(row => row[denseParam] !== null && row[denseParam] !== undefined)
+      .map(row => row.time);
+
+    // Perform smoothing
+    const smoothedData = smoothSparseData(
+      sparsePoints.map(p => ({ time: p.time, value: p.value as number })),
+      denseTimestamps,
+      sparseTimeRange
+    );
+
+    console.log('✅ Smoothing complete:', {
+      originalSparsePoints: sparsePoints.length,
+      smoothedPoints: smoothedData.length
+    });
+
+    // Create new dataset with smoothed values
+    // Build a map of smoothed values by time
+    const smoothedMap = new Map(
+      smoothedData.map(d => [d.time, d.value])
+    );
+
+    // Merge smoothed data back into the dataset
+    const newData = data.data.map(row => {
+      const smoothedValue = smoothedMap.get(row.time);
+      if (smoothedValue !== undefined && smoothedValue !== null) {
+        return {
+          ...row,
+          [sparseParam]: smoothedValue
+        };
+      }
+      return row;
+    });
+
+    // Store smoothing metadata
+    setSmoothedParameterName(sparseParam);
+    setOriginalObsCount(scenario.sparseCount);
+    setSmoothedObsCount(smoothedData.filter(d => d.value !== null).length);
+    setSmoothingApplied(true);
+
+    return {
+      ...data,
+      data: newData,
+      summary: {
+        ...data.summary,
+        totalRows: newData.length,
+        validRows: newData.length
+      }
+    };
+  }, [detectSparseDenseScenario]);
 
   // Calculate global time range from brush-selected range of first plot
   const calculateGlobalTimeRange = useCallback(() => {
@@ -702,6 +847,12 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     const param1 = firstState.params[0];
     const param2 = secondState.params[0];
 
+    // Determine which parameter was smoothed (if any)
+    const param1WithSource = mergePreviewData.headers[1];
+    const param2WithSource = mergePreviewData.headers[2];
+    const param1WasSmoothed = smoothingApplied && smoothedParameterName === param1WithSource;
+    const param2WasSmoothed = smoothingApplied && smoothedParameterName === param2WithSource;
+
     // Create a virtual device plot with merged data
     const mergedPlot: PlotConfig = {
       id: `merged-${Date.now()}`,
@@ -719,6 +870,9 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
           sourceLabel: (firstPlot.type === 'marine-meteo' ? firstPlot.locationName : firstPlot.fileName) as string,
           color: firstState.colors[param1],
           axis: 'left' as const,
+          isSmoothed: param1WasSmoothed,
+          originalObsCount: param1WasSmoothed ? originalObsCount : undefined,
+          smoothedObsCount: param1WasSmoothed ? smoothedObsCount : undefined,
         },
         {
           parameter: param2,
@@ -726,6 +880,9 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
           sourceLabel: (secondPlot.type === 'marine-meteo' ? secondPlot.locationName : secondPlot.fileName) as string,
           color: secondState.colors[param2],
           axis: 'right' as const,
+          isSmoothed: param2WasSmoothed,
+          originalObsCount: param2WasSmoothed ? originalObsCount : undefined,
+          smoothedObsCount: param2WasSmoothed ? smoothedObsCount : undefined,
         }
       ]
     };
@@ -1021,7 +1178,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
           setMergePreviewData(null);
         }}>
           <div className="bg-background p-6 rounded-lg shadow-lg max-w-4xl w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-4">
+            <div className="mb-4 space-y-3">
               <h3 className="text-lg font-semibold mb-1">Preview Merged CSV Data</h3>
               <div className="flex items-center justify-between">
                 <p className="text-sm text-muted-foreground">
@@ -1038,6 +1195,9 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                         console.log('📊 Applying time rounding with new interval...');
                         const rounded = applyTimeRounding(mergeRawData, value);
                         setMergePreviewData(rounded);
+                        // Reset smoothing when time rounding changes
+                        setSmoothingApplied(false);
+                        setSmoothedParameterName(null);
                       } else {
                         console.warn('📊 mergeRawData is null, cannot apply rounding');
                       }
@@ -1057,6 +1217,78 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                   </Select>
                 </div>
               </div>
+
+              {/* Sparse/Dense Detection Banner */}
+              {(() => {
+                const scenario = detectSparseDenseScenario(mergePreviewData);
+                if (scenario && scenario.isSparse) {
+                  return (
+                    <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-amber-900 dark:text-amber-100 mb-1">
+                            Sparse Data Detected
+                          </p>
+                          <p className="text-xs text-amber-700 dark:text-amber-300">
+                            <strong>{scenario.sparseParam}</strong>: {scenario.sparseCount} observations<br />
+                            <strong>{scenario.denseParam}</strong>: {scenario.denseCount} observations<br />
+                            {!smoothingApplied && (
+                              <span className="text-amber-600 dark:text-amber-400">
+                                Smoothing will generate ~{scenario.denseCount - scenario.sparseCount} additional points for the sparse parameter
+                              </span>
+                            )}
+                            {smoothingApplied && smoothedParameterName && (
+                              <span className="text-green-600 dark:text-green-400 font-medium">
+                                ✓ Smoothed {smoothedParameterName} from {originalObsCount} to {smoothedObsCount} observations
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        {!smoothingApplied ? (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            className="bg-amber-600 hover:bg-amber-700 text-white"
+                            onClick={async () => {
+                              if (mergePreviewData) {
+                                const smoothed = await applySmoothingToData(mergePreviewData);
+                                setMergePreviewData(smoothed);
+                                toast({
+                                  title: "Smoothing Applied",
+                                  description: `Generated ${smoothedObsCount - originalObsCount} new data points`
+                                });
+                              }
+                            }}
+                          >
+                            Smooth Sparse Data
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              // Reset to time-rounded data without smoothing
+                              if (mergeRawData) {
+                                const rounded = applyTimeRounding(mergeRawData, timeRoundingInterval);
+                                setMergePreviewData(rounded);
+                                setSmoothingApplied(false);
+                                setSmoothedParameterName(null);
+                                toast({
+                                  title: "Smoothing Removed",
+                                  description: "Restored original data"
+                                });
+                              }
+                            }}
+                          >
+                            Remove Smoothing
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
 
             {/* Table Preview */}

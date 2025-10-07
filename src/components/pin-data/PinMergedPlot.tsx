@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { HexColorPicker } from 'react-colorful';
-import { Split, ArrowLeft, ArrowRight, X, Loader2, AlertCircle, Settings, ChevronLeft, ChevronRight, Circle, Filter, BarChart3 } from 'lucide-react';
+import { Split, ArrowLeft, ArrowRight, X, Loader2, AlertCircle, Settings, ChevronLeft, ChevronRight, Circle, Filter, BarChart3, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   LineChart,
@@ -61,6 +61,11 @@ interface MergedParameterConfig {
   // Marine data context
   location?: { lat: number; lon: number };
   timeRange?: { startDate: string; endDate: string };
+
+  // Smoothing metadata
+  isSmoothed?: boolean;
+  originalObsCount?: number;
+  smoothedObsCount?: number;
 }
 
 interface PinMergedPlotProps {
@@ -600,10 +605,11 @@ export function PinMergedPlot({
   };
 
   // Format parameter with source label
-  const formatParameterWithSource = (parameter: string, sourceType: string): string => {
+  const formatParameterWithSource = (parameter: string, sourceType: string, isSmoothed?: boolean): string => {
     const baseLabel = getParameterLabelWithUnit(parameter);
     const sourceLabel = getSourceAbbr(sourceType);
-    return `${baseLabel} [${sourceLabel}]`;
+    const smoothedIndicator = isSmoothed ? ' ~' : '';
+    return `${baseLabel} [${sourceLabel}]${smoothedIndicator}`;
   };
 
   return (
@@ -695,7 +701,7 @@ export function PinMergedPlot({
                   stroke="hsl(var(--border))"
                   tickFormatter={(value) => formatYAxisTick(value, combinedRange, combinedMax)}
                   label={{
-                    value: formatParameterWithSource(leftParam.parameter, leftParam.sourceType),
+                    value: formatParameterWithSource(leftParam.parameter, leftParam.sourceType, leftParam.isSmoothed),
                     angle: -90,
                     position: 'insideLeft',
                     offset: 10,
@@ -719,7 +725,7 @@ export function PinMergedPlot({
                     stroke={leftColorValue}
                     tickFormatter={(value) => formatYAxisTick(value, leftRange, leftMax)}
                     label={{
-                      value: formatParameterWithSource(leftParam.parameter, leftParam.sourceType),
+                      value: formatParameterWithSource(leftParam.parameter, leftParam.sourceType, leftParam.isSmoothed),
                       angle: -90,
                       position: 'insideLeft',
                       offset: 10,
@@ -741,7 +747,7 @@ export function PinMergedPlot({
                     stroke={rightColorValue}
                     tickFormatter={(value) => formatYAxisTick(value, rightRange, rightMax)}
                     label={{
-                      value: formatParameterWithSource(rightParam.parameter, rightParam.sourceType),
+                      value: formatParameterWithSource(rightParam.parameter, rightParam.sourceType, rightParam.isSmoothed),
                       angle: 90,
                       position: 'insideRight',
                       offset: 10,
@@ -934,9 +940,12 @@ export function PinMergedPlot({
                   <Label
                     htmlFor="left-param"
                     className="text-xs cursor-pointer truncate flex-1"
-                    title={formatParameterWithSource(leftParam.parameter, leftParam.sourceType)}
+                    title={formatParameterWithSource(leftParam.parameter, leftParam.sourceType, leftParam.isSmoothed)}
                   >
-                    {formatParameterWithSource(leftParam.parameter, leftParam.sourceType)}
+                    {formatParameterWithSource(leftParam.parameter, leftParam.sourceType, leftParam.isSmoothed)}
+                    {leftParam.isSmoothed && (
+                      <Sparkles className="h-2.5 w-2.5 text-primary inline ml-1" title={`Smoothed from ${leftParam.originalObsCount} to ${leftParam.smoothedObsCount} observations`} />
+                    )}
                   </Label>
                   <span
                     className="text-[0.6rem] font-semibold px-1 rounded"
@@ -1172,9 +1181,12 @@ export function PinMergedPlot({
                   <Label
                     htmlFor="right-param"
                     className="text-xs cursor-pointer truncate flex-1"
-                    title={formatParameterWithSource(rightParam.parameter, rightParam.sourceType)}
+                    title={formatParameterWithSource(rightParam.parameter, rightParam.sourceType, rightParam.isSmoothed)}
                   >
-                    {formatParameterWithSource(rightParam.parameter, rightParam.sourceType)}
+                    {formatParameterWithSource(rightParam.parameter, rightParam.sourceType, rightParam.isSmoothed)}
+                    {rightParam.isSmoothed && (
+                      <Sparkles className="h-2.5 w-2.5 text-primary inline ml-1" title={`Smoothed from ${rightParam.originalObsCount} to ${rightParam.smoothedObsCount} observations`} />
+                    )}
                   </Label>
                   <span
                     className="text-[0.6rem] font-semibold px-1 rounded"
