@@ -1984,30 +1984,29 @@ export default function MapDrawingPage() {
       
       // Common date formats with manual parsing
       () => {
-        // DD/MM/YYYY or MM/DD/YYYY or DD-MM-YYYY or MM-DD-YYYY
-        const datePatterns = [
-          /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/,
-          /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/,
-        ];
-        
-        for (const pattern of datePatterns) {
-          const match = cleanValue.match(pattern);
-          if (match) {
-            const [, part1, part2, part3] = match;
-            // Try different interpretations
-            const attempts = [
-              new Date(parseInt(part3), parseInt(part2) - 1, parseInt(part1)), // DD/MM/YYYY
-              new Date(parseInt(part3), parseInt(part1) - 1, parseInt(part2)), // MM/DD/YYYY
-              new Date(parseInt(part1), parseInt(part2) - 1, parseInt(part3)), // YYYY/MM/DD
-            ];
-            
-            for (const attempt of attempts) {
-              if (!isNaN(attempt.getTime()) && attempt.getFullYear() > 1990 && attempt.getFullYear() < 2100) {
-                return attempt;
-              }
-            }
+        // Pattern 1: DD/MM/YYYY or DD-MM-YYYY (day/month/year)
+        const ddmmyyyyPattern = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/;
+        const ddmmMatch = cleanValue.match(ddmmyyyyPattern);
+        if (ddmmMatch) {
+          const [, day, month, year] = ddmmMatch;
+          // ALWAYS interpret as DD/MM/YYYY (European format)
+          const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+          if (!isNaN(date.getTime()) && date.getFullYear() > 1990 && date.getFullYear() < 2100) {
+            return date;
           }
         }
+
+        // Pattern 2: YYYY/MM/DD or YYYY-MM-DD (ISO-like format)
+        const yyyymmddPattern = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/;
+        const yyyyMatch = cleanValue.match(yyyymmddPattern);
+        if (yyyyMatch) {
+          const [, year, month, day] = yyyyMatch;
+          const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+          if (!isNaN(date.getTime()) && date.getFullYear() > 1990 && date.getFullYear() < 2100) {
+            return date;
+          }
+        }
+
         return null;
       }
     ];

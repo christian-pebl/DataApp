@@ -68,12 +68,12 @@ interface ParameterState {
   };
 }
 
-const formatDateTick = (timeValue: string | number, dataSource?: 'csv' | 'marine'): string => {
+const formatDateTick = (timeValue: string | number, dataSource?: 'csv' | 'marine', showYear?: boolean): string => {
   try {
     const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
     if (!isValid(dateObj)) return String(timeValue);
-    // Use dd/MM format for both CSV and marine data
-    return format(dateObj, 'dd/MM');
+    // Use dd/MM or dd/MM/yy format based on showYear parameter
+    return format(dateObj, showYear ? 'dd/MM/yy' : 'dd/MM');
   } catch (e) {
     return String(timeValue);
   }
@@ -212,6 +212,9 @@ export function PinChartDisplay({
 
   // Parameter panel expansion state
   const [isParameterPanelExpanded, setIsParameterPanelExpanded] = useState(defaultParametersExpanded);
+
+  // X-axis year display toggle
+  const [showYearInXAxis, setShowYearInXAxis] = useState(false);
 
   // Date format preview dialog state
   const [showDateFormatDialog, setShowDateFormatDialog] = useState(false);
@@ -1118,15 +1121,50 @@ export function PinChartDisplay({
 
           {/* Single/Multi Axis Toggle - only show in chart mode */}
           {!showTable && (
-            <div className="flex items-center gap-2 pl-4 border-l">
-              <span className="text-xs text-muted-foreground">Single</span>
-              <Switch
-                checked={axisMode === 'multi'}
-                onCheckedChange={(checked) => setAxisMode(checked ? 'multi' : 'single')}
-                className="h-5 w-9"
-              />
-              <span className="text-xs text-muted-foreground">Multi</span>
-            </div>
+            <>
+              <div className="flex items-center gap-2 pl-4 border-l">
+                <span className="text-xs text-muted-foreground">Single</span>
+                <Switch
+                  checked={axisMode === 'multi'}
+                  onCheckedChange={(checked) => setAxisMode(checked ? 'multi' : 'single')}
+                  className="h-5 w-9"
+                />
+                <span className="text-xs text-muted-foreground">Multi</span>
+              </div>
+
+              {/* X-Axis Settings - cog button with popover */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 ml-2"
+                    title="X-axis settings"
+                  >
+                    <Settings className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-3" align="end">
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold border-b pb-2">X-Axis Settings</p>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="show-year" className="text-xs cursor-pointer">
+                        Show year (/YY)
+                      </Label>
+                      <Switch
+                        id="show-year"
+                        checked={showYearInXAxis}
+                        onCheckedChange={setShowYearInXAxis}
+                        className="h-4 w-7"
+                      />
+                    </div>
+                    <p className="text-[0.65rem] text-muted-foreground">
+                      {showYearInXAxis ? 'Format: DD/MM/YY' : 'Format: DD/MM'}
+                    </p>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </>
           )}
         </div>
       </div>
@@ -1276,7 +1314,7 @@ export function PinChartDisplay({
                   dataKey="time"
                   tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 8 }}
                   stroke="hsl(var(--border))"
-                  tickFormatter={(value) => formatDateTick(value, dataSource)}
+                  tickFormatter={(value) => formatDateTick(value, dataSource, showYearInXAxis)}
                   height={45}
                 />
 
@@ -1368,7 +1406,7 @@ export function PinChartDisplay({
                   dataKey="time"
                   tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 8 }}
                   stroke="hsl(var(--border))"
-                  tickFormatter={(value) => formatDateTick(value, dataSource)}
+                  tickFormatter={(value) => formatDateTick(value, dataSource, showYearInXAxis)}
                   height={45}
                 />
 
@@ -1494,7 +1532,7 @@ export function PinChartDisplay({
             <LineChart data={data} margin={{ top: 2, right: 15, left: 15, bottom: 0 }}>
               <XAxis
                 dataKey="time"
-                tickFormatter={(value) => formatDateTick(value, dataSource)}
+                tickFormatter={(value) => formatDateTick(value, dataSource, showYearInXAxis)}
                 stroke="hsl(var(--muted-foreground))"
                 tick={{ fontSize: '0.6rem' }}
                 height={10}
