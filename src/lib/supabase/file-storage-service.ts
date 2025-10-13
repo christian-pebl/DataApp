@@ -347,6 +347,75 @@ class FileStorageService {
   }
 
   /**
+   * Rename a file - updates only the file_name in database
+   */
+  async renameFile(fileId: string, newFileName: string): Promise<boolean> {
+    try {
+      console.log('🔄 Starting file rename:', { fileId, newFileName });
+
+      // Get current user to ensure they have access
+      const { data: { user }, error: authError } = await this.supabase.auth.getUser();
+
+      if (authError || !user) {
+        console.error('❌ Authentication required to rename files:', authError);
+        return false;
+      }
+
+      console.log(`✅ Authenticated as user: ${user.id}`);
+
+      // Get file metadata to verify ownership
+      const { data: fileData, error: getError } = await this.supabase
+        .from('pin_files')
+        .select('pin_id, file_name')
+        .eq('id', fileId)
+        .single();
+
+      if (getError || !fileData) {
+        console.error('❌ Get file data error:', getError);
+        return false;
+      }
+
+      console.log('📄 Current file name:', fileData.file_name);
+
+      // Verify user owns the pin
+      const { data: pinData, error: pinError } = await this.supabase
+        .from('pins')
+        .select('user_id')
+        .eq('id', fileData.pin_id)
+        .single();
+
+      if (pinError || !pinData) {
+        console.error('❌ Get pin data error:', pinError);
+        return false;
+      }
+
+      // Check if user owns the pin associated with this file
+      if (pinData.user_id !== user.id) {
+        console.error('🚫 User does not have permission to rename this file');
+        return false;
+      }
+
+      // Update the file name in the database
+      console.log('💾 Updating file name in database...');
+      const { error: updateError } = await this.supabase
+        .from('pin_files')
+        .update({ file_name: newFileName })
+        .eq('id', fileId);
+
+      if (updateError) {
+        console.error('❌ Database update error:', updateError);
+        return false;
+      }
+
+      console.log('✅ File renamed successfully:', newFileName);
+      return true;
+    } catch (error) {
+      console.error('❌ Rename file error:', error);
+      return false;
+    }
+  }
+
+  /**
    * Alternative delete method - more direct approach
    */
   async deleteFileSimple(fileId: string): Promise<boolean> {

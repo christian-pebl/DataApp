@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { format, startOfMonth, endOfMonth, eachMonthOfInterval, differenceInDays, parseISO, isValid, getYear } from 'date-fns';
-import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText } from 'lucide-react';
+import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Input } from '@/components/ui/input';
 import { type PinFile } from '@/lib/supabase/file-storage-service';
 
 interface DataTimelineProps {
@@ -17,6 +18,7 @@ interface DataTimelineProps {
   }>;
   onFileClick: (file: PinFile & { pinLabel: string }) => void;
   onDeleteFile?: (file: PinFile & { pinLabel: string }) => void;
+  onRenameFile?: (file: PinFile & { pinLabel: string }, newName: string) => Promise<boolean>;
 }
 
 interface FileWithDateRange {
@@ -87,26 +89,25 @@ const SkeletonTableRow = ({ index }: { index: number }) => (
 // Helper function to parse various date formats to proper Date
 const parseCustomDate = (dateString: string): Date | null => {
   if (!dateString) return null;
-  
+
   // Handle DD/MM/YYYY format (from CSV files)
   const slashParts = dateString.split('/');
   if (slashParts.length === 3) {
     const [day, month, year] = slashParts;
-    // Now using full 4-digit year format (DD/MM/YYYY)
     const standardFormat = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     const parsed = parseISO(standardFormat);
     return isValid(parsed) ? parsed : null;
   }
-  
-  // Handle yyyy-dd-mm format by converting to yyyy-mm-dd
+
+  // Handle ISO format yyyy-mm-dd (standard ISO date format)
   const dashParts = dateString.split('-');
   if (dashParts.length === 3) {
-    const [year, day, month] = dashParts;
+    const [year, month, day] = dashParts;
     const standardFormat = `${year}-${month}-${day}`;
     const parsed = parseISO(standardFormat);
     return isValid(parsed) ? parsed : null;
   }
-  
+
   // Try standard parsing as fallback
   const standardParsed = parseISO(dateString);
   return isValid(standardParsed) ? standardParsed : null;
@@ -124,7 +125,7 @@ const getCorrectDuration = (startDateString: string | null, endDateString: strin
   return differenceInDays(endDate, startDate) + 1;
 };
 
-export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFile }: DataTimelineProps) {
+export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFile, onRenameFile }: DataTimelineProps) {
   const [filesWithDates, setFilesWithDates] = useState<FileWithDateRange[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'timeline'>('table');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -133,12 +134,42 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
   const [analysisLog, setAnalysisLog] = useState<string[]>([]);
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<{ id: string; name: string } | null>(null);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>('asc'); // Start with alphabetical (asc)
+  const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState<string>('');
 
   // Delete file handler - just call parent's onDeleteFile
   const handleDeleteFile = async (file: PinFile & { pinLabel: string }) => {
     if (onDeleteFile) {
       onDeleteFile(file);
     }
+  };
+
+  // Rename file handler
+  const handleRenameFile = async (file: PinFile & { pinLabel: string }) => {
+    if (!onRenameFile || !renameValue.trim()) {
+      setRenamingFileId(null);
+      return;
+    }
+
+    const success = await onRenameFile(file, renameValue.trim());
+    if (success) {
+      // Update local state to reflect the name change
+      setFilesWithDates(prev =>
+        prev.map(f =>
+          f.file.id === file.id
+            ? { ...f, file: { ...f.file, fileName: renameValue.trim() } }
+            : f
+        )
+      );
+    }
+    setRenamingFileId(null);
+    setRenameValue('');
+  };
+
+  // Start renaming a file
+  const startRename = (file: PinFile & { pinLabel: string }) => {
+    setRenamingFileId(file.id);
+    setRenameValue(file.fileName);
   };
 
   // Toggle sort order handler
@@ -499,7 +530,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                         <PopoverContent className="w-72">
                           <div className="space-y-3">
                             <div className="flex items-center gap-2">
-                              <div 
+                              <div
                                 className="w-3 h-3 rounded-sm"
                                 style={{ backgroundColor: color }}
                               />
@@ -522,7 +553,64 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                           </div>
                         </PopoverContent>
                       </Popover>
-                      
+
+                      {/* Rename button or rename input */}
+                      {onRenameFile && renamingFileId === file.id ? (
+                        <div className="flex items-center gap-1">
+                          <Input
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleRenameFile(fileWithDate.file);
+                              } else if (e.key === 'Escape') {
+                                setRenamingFileId(null);
+                              }
+                            }}
+                            className="h-5 text-xs w-64"
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-5 w-5 p-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRenameFile(fileWithDate.file);
+                            }}
+                          >
+                            <Check className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-5 w-5 p-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRenamingFileId(null);
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        onRenameFile && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-4 w-4 p-0 hover:bg-muted transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startRename(fileWithDate.file);
+                            }}
+                            title="Rename file"
+                          >
+                            <Pencil className="h-3 w-3 text-muted-foreground" />
+                          </Button>
+                        )
+                      )}
+
                       {/* Delete confirmation or delete button */}
                       {onDeleteFile && deleteConfirmFile?.id === file.id ? (
                         <div className="flex items-center gap-1 text-xs">
@@ -553,14 +641,15 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                         </div>
                       ) : (
                         onDeleteFile && (
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="h-4 w-4 p-0 hover:bg-muted transition-colors text-destructive hover:text-destructive" 
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-4 w-4 p-0 hover:bg-muted transition-colors text-destructive hover:text-destructive"
                             onClick={(e) => {
                               e.stopPropagation();
                               setDeleteConfirmFile({ id: file.id, name: file.fileName });
                             }}
+                            title="Delete file"
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -747,6 +836,63 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                             </PopoverContent>
                           </Popover>
                           
+                          {/* Rename button or rename input */}
+                          {onRenameFile && renamingFileId === file.id ? (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleRenameFile(fileWithDate.file);
+                                  } else if (e.key === 'Escape') {
+                                    setRenamingFileId(null);
+                                  }
+                                }}
+                                className="h-5 text-xs w-64"
+                                autoFocus
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRenameFile(fileWithDate.file);
+                                }}
+                              >
+                                <Check className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setRenamingFileId(null);
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ) : (
+                            onRenameFile && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-4 w-4 p-0 hover:bg-muted transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startRename(fileWithDate.file);
+                                }}
+                                title="Rename file"
+                              >
+                                <Pencil className="h-3 w-3 text-muted-foreground" />
+                              </Button>
+                            )
+                          )}
+
                           {/* Delete confirmation or delete button */}
                           {onDeleteFile && deleteConfirmFile?.id === file.id ? (
                             // Show inline confirmation - positioned to the left
@@ -779,14 +925,15 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                           ) : (
                             // Show normal buttons when not confirming
                             onDeleteFile && (
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-4 w-4 p-0 hover:bg-muted transition-colors text-destructive hover:text-destructive" 
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-4 w-4 p-0 hover:bg-muted transition-colors text-destructive hover:text-destructive"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setDeleteConfirmFile({ id: file.id, name: file.fileName });
                                 }}
+                                title="Delete file"
                               >
                                 <Trash2 className="h-3 w-3" />
                               </Button>
@@ -942,6 +1089,61 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                 <FileText className="h-4 w-4" />
                                 <span>Open</span>
                               </button>
+
+                              {/* Rename option */}
+                              {onRenameFile && (
+                                renamingFileId === file.id ? (
+                                  <div className="flex items-center gap-1 px-3 py-2 border-b">
+                                    <Input
+                                      value={renameValue}
+                                      onChange={(e) => setRenameValue(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          handleRenameFile(fileWithDate.file);
+                                        } else if (e.key === 'Escape') {
+                                          setRenamingFileId(null);
+                                        }
+                                      }}
+                                      className="h-6 text-xs w-64"
+                                      autoFocus
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-6 w-6 p-0"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRenameFile(fileWithDate.file);
+                                      }}
+                                    >
+                                      <Check className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-6 w-6 p-0"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setRenamingFileId(null);
+                                      }}
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      startRename(fileWithDate.file);
+                                    }}
+                                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                    <span>Rename</span>
+                                  </button>
+                                )
+                              )}
 
                               {/* Info option */}
                               <Popover>

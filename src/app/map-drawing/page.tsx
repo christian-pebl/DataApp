@@ -1829,18 +1829,39 @@ export default function MapDrawingPage() {
         };
       }
 
-      // Parse date values from all data rows
+      // STEP 1: Collect sample date values for format detection
+      const sampleSize = Math.min(20, lines.length - 1);
+      const sampleDateValues: string[] = [];
+
+      for (let i = 1; i <= sampleSize && i < lines.length; i++) {
+        const row = lines[i].split(',');
+        for (const { index } of dateTimeColumns) {
+          if (index < row.length) {
+            const value = row[index].trim();
+            if (value) {
+              sampleDateValues.push(value);
+              break; // Got a value for this row, move to next row
+            }
+          }
+        }
+      }
+
+      // STEP 2: Detect date format from sample values
+      const detectedFormat = detectDateFormat(sampleDateValues);
+      console.log(`[TIMELINE ANALYSIS] File: ${file.fileName} | Detected format: ${detectedFormat}`);
+
+      // STEP 3: Parse date values from all data rows using detected format
       const dates: Date[] = [];
-      
+
       for (let i = 1; i < lines.length; i++) {
         const row = lines[i].split(',');
-        
+
         // Try each date column to find valid dates
         for (const { index } of dateTimeColumns) {
           if (index < row.length) {
             const value = row[index].trim();
             if (value) {
-              const parsedDate = parseCSVDate(value);
+              const parsedDate = parseCSVDate(value, detectedFormat);
               if (parsedDate && !isNaN(parsedDate.getTime())) {
                 dates.push(parsedDate);
                 break; // Found a valid date for this row, move to next row
@@ -1877,7 +1898,19 @@ export default function MapDrawingPage() {
 
       const formattedStartDate = formatDateForCSV(startDate);
       const formattedEndDate = formatDateForCSV(endDate);
-      
+
+      // Debug logging for ALGA file
+      if (file.fileName.includes('ALGA')) {
+        console.log('📊 CSV Date Analysis for ALGA:', {
+          fileName: file.fileName,
+          rawStart: startDate.toISOString(),
+          rawEnd: endDate.toISOString(),
+          formattedStart: formattedStartDate,
+          formattedEnd: formattedEndDate,
+          totalDays
+        });
+      }
+
       // Minimal debugging - only log if there seems to be an issue
       if (totalDays > 365 || totalDays < 1) {
         console.warn('⚠️ Unusual duration detected:', {
@@ -1930,11 +1963,102 @@ export default function MapDrawingPage() {
   }, []);
 
   // Parse various date formats commonly found in CSV files
-  const parseCSVDate = (value: string): Date | null => {
+  /**
+   * Detect date format (DD/MM/YYYY vs MM/DD/YYYY) by analyzing date values
+   * Matches the logic from csvParser.ts for consistency
+   */
+  const detectDateFormat = (dateValues: string[]): 'DD/MM/YYYY' | 'MM/DD/YYYY' => {
+    console.log('[TIMELINE DATE DETECTION] Starting date format detection...');
+    console.log('[TIMELINE DATE DETECTION] Sample dates:', dateValues.slice(0, 5));
+
+    if (dateValues.length === 0) {
+      console.log('[TIMELINE DATE DETECTION] No date values found, defaulting to DD/MM/YYYY');
+      return 'DD/MM/YYYY'; // Default to European format
+    }
+
+    let hasFirstComponentOver12 = false;
+    let hasSecondComponentOver12 = false;
+    const firstComponents: number[] = [];
+    const secondComponents: number[] = [];
+
+    // Analyze each date value
+    for (const dateStr of dateValues) {
+      // Extract just the date part if it has time component
+      const datePart = dateStr.split(' ')[0];
+      if (!datePart.includes('/')) continue;
+
+      const parts = datePart.split('/');
+      if (parts.length >= 3) {
+        const first = parseInt(parts[0], 10);
+        const second = parseInt(parts[1], 10);
+
+        if (!isNaN(first) && !isNaN(second)) {
+          firstComponents.push(first);
+          secondComponents.push(second);
+
+          if (first > 12) hasFirstComponentOver12 = true;
+          if (second > 12) hasSecondComponentOver12 = true;
+        }
+      }
+    }
+
+    console.log('[TIMELINE DATE DETECTION] First components:', firstComponents.slice(0, 10));
+    console.log('[TIMELINE DATE DETECTION] Second components:', secondComponents.slice(0, 10));
+    console.log('[TIMELINE DATE DETECTION] Has first > 12:', hasFirstComponentOver12);
+    console.log('[TIMELINE DATE DETECTION] Has second > 12:', hasSecondComponentOver12);
+
+    // Rule 1: If first component > 12, must be DD/MM/YYYY
+    if (hasFirstComponentOver12 && !hasSecondComponentOver12) {
+      console.log('[TIMELINE DATE DETECTION] ✓ Detected format: DD/MM/YYYY (Rule 1: first > 12)');
+      return 'DD/MM/YYYY';
+    }
+
+    // Rule 2: If second component > 12, must be MM/DD/YYYY
+    if (hasSecondComponentOver12 && !hasFirstComponentOver12) {
+      console.log('[TIMELINE DATE DETECTION] ✓ Detected format: MM/DD/YYYY (Rule 2: second > 12)');
+      return 'MM/DD/YYYY';
+    }
+
+    // Rule 3: Both ambiguous (all values ≤12), look for sequential patterns
+    if (!hasFirstComponentOver12 && !hasSecondComponentOver12 && firstComponents.length > 3) {
+      // Check if first components show day-like progression (1-30 range with variety)
+      const firstRange = Math.max(...firstComponents) - Math.min(...firstComponents);
+      const firstUnique = new Set(firstComponents).size;
+
+      // Check if second components show day-like progression
+      const secondRange = Math.max(...secondComponents) - Math.min(...secondComponents);
+      const secondUnique = new Set(secondComponents).size;
+
+      console.log('[TIMELINE DATE DETECTION] Pattern analysis - First range:', firstRange, 'unique:', firstUnique);
+      console.log('[TIMELINE DATE DETECTION] Pattern analysis - Second range:', secondRange, 'unique:', secondUnique);
+
+      // If first component has wider range and more variety, likely to be days
+      if (firstRange > secondRange && firstUnique > secondUnique) {
+        console.log('[TIMELINE DATE DETECTION] ✓ Detected format: DD/MM/YYYY (Rule 3: first has more variety)');
+        return 'DD/MM/YYYY';
+      }
+
+      // If second component has wider range and more variety, likely to be days
+      if (secondRange > firstRange && secondUnique > firstUnique) {
+        console.log('[TIMELINE DATE DETECTION] ✓ Detected format: MM/DD/YYYY (Rule 3: second has more variety)');
+        return 'MM/DD/YYYY';
+      }
+    }
+
+    // Default to European format (DD/MM/YYYY) if still ambiguous
+    console.log('[TIMELINE DATE DETECTION] ✓ Using default format: DD/MM/YYYY (ambiguous case)');
+    return 'DD/MM/YYYY';
+  };
+
+  /**
+   * Parse CSV date with adaptive format detection
+   * Now matches the logic from csvParser.ts processTimeValue
+   */
+  const parseCSVDate = (value: string, dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY'): Date | null => {
     if (!value || value.trim() === '') return null;
-    
+
     const cleanValue = value.trim();
-    
+
     // Try different date parsing strategies
     const parsers = [
       // ISO format with Z suffix (2024-06-08T12:00:00.000Z)
@@ -1943,7 +2067,7 @@ export default function MapDrawingPage() {
         const date = new Date(cleanValue);
         return isNaN(date.getTime()) ? null : date;
       },
-      
+
       // ISO format without Z (2023-06-15T10:30:00, 2023-06-15)
       () => {
         if (cleanValue.includes('T') && !cleanValue.includes('Z')) {
@@ -1952,7 +2076,7 @@ export default function MapDrawingPage() {
         }
         return null;
       },
-      
+
       // Unix timestamp (seconds)
       () => {
         const num = parseFloat(cleanValue);
@@ -1961,7 +2085,7 @@ export default function MapDrawingPage() {
         }
         return null;
       },
-      
+
       // Unix timestamp (milliseconds)
       () => {
         const num = parseFloat(cleanValue);
@@ -1970,7 +2094,7 @@ export default function MapDrawingPage() {
         }
         return null;
       },
-      
+
       // Excel date format (days since 1900-01-01)
       () => {
         const num = parseFloat(cleanValue);
@@ -1981,22 +2105,49 @@ export default function MapDrawingPage() {
         }
         return null;
       },
-      
-      // Common date formats with manual parsing
+
+      // Common date formats with ADAPTIVE parsing based on detected format
       () => {
-        // Pattern 1: DD/MM/YYYY or DD-MM-YYYY (day/month/year)
-        const ddmmyyyyPattern = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/;
-        const ddmmMatch = cleanValue.match(ddmmyyyyPattern);
-        if (ddmmMatch) {
-          const [, day, month, year] = ddmmMatch;
-          // ALWAYS interpret as DD/MM/YYYY (European format)
+        // Pattern 1: DD/MM/YYYY or MM/DD/YYYY (with slashes or dashes)
+        const datePattern = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/;
+        const dateMatch = cleanValue.match(datePattern);
+        if (dateMatch) {
+          const [, d1, d2, year] = dateMatch;
+          let day: string, month: string;
+
+          // Use detected date format to interpret d1 and d2
+          if (dateFormat === 'DD/MM/YYYY') {
+            // Format is DD/MM/YYYY: d1 = day, d2 = month
+            day = d1;
+            month = d2;
+          } else {
+            // Format is MM/DD/YYYY: d1 = month, d2 = day
+            month = d1;
+            day = d2;
+          }
+
           const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+
+          // Validate date
           if (!isNaN(date.getTime()) && date.getFullYear() > 1990 && date.getFullYear() < 2100) {
+            // Additional validation: ensure month and day are valid
+            const monthNum = parseInt(month);
+            const dayNum = parseInt(day);
+
+            if (monthNum < 1 || monthNum > 12) return null;
+            if (dayNum < 1 || dayNum > 31) return null;
+
+            // Verify that parsing didn't auto-correct the date
+            if (date.getFullYear() !== parseInt(year)) return null;
+            if (date.getMonth() + 1 !== monthNum) return null;
+            if (date.getDate() !== dayNum) return null;
+
+            console.log(`[TIMELINE DATE PARSE] "${cleanValue}" → Format: ${dateFormat} → day=${day}, month=${month} → ${date.toISOString()}`);
             return date;
           }
         }
 
-        // Pattern 2: YYYY/MM/DD or YYYY-MM-DD (ISO-like format)
+        // Pattern 2: YYYY/MM/DD or YYYY-MM-DD (ISO-like format) - year first is unambiguous
         const yyyymmddPattern = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/;
         const yyyyMatch = cleanValue.match(yyyymmddPattern);
         if (yyyyMatch) {
@@ -2022,17 +2173,24 @@ export default function MapDrawingPage() {
         // Continue to next parser
       }
     }
-    
+
     return null;
   };
 
   // Cache for file date analysis to avoid re-analyzing the same files
+  // Clear cache on mount to ensure fresh analysis after date parsing fixes
   const [fileDateCache, setFileDateCache] = useState<Record<string, {
     totalDays: number | null;
     startDate: string | null;
     endDate: string | null;
     error?: string;
   }>>({});
+
+  // Clear the file date cache on component mount (run once)
+  useEffect(() => {
+    setFileDateCache({});
+    console.log('🔄 Cleared file date cache on mount');
+  }, []);
 
   // Function to get or analyze file date range
   const getFileDateRange = useCallback(async (file: PinFile) => {
@@ -5926,25 +6084,73 @@ export default function MapDrawingPage() {
                     )}
                   </div>
                   
-                  <DataTimeline 
+                  <DataTimeline
                     files={allFiles}
                     getFileDateRange={getFileDateRange}
                     onFileClick={handleTimelineFileClick}
+                    onRenameFile={async (file, newName) => {
+                      console.log('Timeline rename request for file:', file.id, 'New name:', newName);
+
+                      try {
+                        const success = await fileStorageService.renameFile(file.id, newName);
+                        console.log('Rename result from service:', success);
+
+                        if (success) {
+                          console.log('Rename successful, updating UI...');
+                          // Find which pin this file belongs to and update that pin's metadata
+                          const pinId = Object.keys(pinFileMetadata).find(pinId =>
+                            pinFileMetadata[pinId]?.some(f => f.id === file.id)
+                          );
+
+                          if (pinId) {
+                            // Update the state immediately to reflect the new name
+                            setPinFileMetadata(prev => ({
+                              ...prev,
+                              [pinId]: prev[pinId]?.map(f =>
+                                f.id === file.id ? { ...f, fileName: newName } : f
+                              ) || []
+                            }));
+                          }
+
+                          toast({
+                            title: "File Renamed",
+                            description: `File renamed to ${newName}`
+                          });
+
+                          return true;
+                        } else {
+                          toast({
+                            variant: "destructive",
+                            title: "Rename Failed",
+                            description: "Failed to rename the file. Please try again."
+                          });
+                          return false;
+                        }
+                      } catch (error) {
+                        console.error('Rename file error:', error);
+                        toast({
+                          variant: "destructive",
+                          title: "Error",
+                          description: "An error occurred while renaming the file."
+                        });
+                        return false;
+                      }
+                    }}
                     onDeleteFile={async (file) => {
                       console.log('Timeline delete request for file:', file.id, file.fileName);
-                      
+
                       try {
                         console.log('Calling deleteFileSimple with ID:', file.id);
                         const success = await fileStorageService.deleteFileSimple(file.id);
                         console.log('Delete result from service:', success);
-                        
+
                         if (success) {
                           console.log('Delete successful, updating UI...');
                           // Find which pin this file belongs to and update that pin's metadata
-                          const pinId = Object.keys(pinFileMetadata).find(pinId => 
+                          const pinId = Object.keys(pinFileMetadata).find(pinId =>
                             pinFileMetadata[pinId]?.some(f => f.id === file.id)
                           );
-                          
+
                           if (pinId) {
                             // Update the state immediately to remove the file from UI
                             setPinFileMetadata(prev => ({
@@ -5952,7 +6158,7 @@ export default function MapDrawingPage() {
                               [pinId]: prev[pinId]?.filter(f => f.id !== file.id) || []
                             }));
                           }
-                          
+
                           toast({
                             title: "File Deleted",
                             description: `${file.fileName} has been deleted.`
