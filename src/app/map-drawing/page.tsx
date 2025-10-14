@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X, Search, CheckCircle2, XCircle, ChevronUp, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle, Move3D } from 'lucide-react';
+import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X, Search, CheckCircle2, XCircle, ChevronUp, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle, Move3D, Copy } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line as RechartsLine, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, Brush, LabelList, ReferenceLine } from 'recharts';
 import type { LucideIcon } from "lucide-react";
 import { Checkbox } from '@/components/ui/checkbox';
@@ -456,14 +456,26 @@ export default function MapDrawingPage() {
 
       for (const fileMeta of metadata) {
         // Determine file type from filename
+        // New format: PROJECTNAME_DATATYPE_STATION_DIRECTION_[PELAGIC]_YYMM-YYMM
+        // Example: ALGA_GP_F_L_PELAGIC_2504-2506_LOG_AVG.csv
+        // Old format: DATATYPE_ProjectName_Station_YYMM-YYMM
+        // Example: GP-Pel_Alga-Control-S_2410-2411_LOG_AVG.CSV
         let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
-        if (fileMeta.fileName.toLowerCase().includes('fpod')) {
+
+        const parts = fileMeta.fileName.split('_');
+        const position0 = parts[0]?.toLowerCase() || '';
+        const position1 = parts[1]?.toLowerCase() || '';
+
+        // Check first two positions for data type (case-insensitive)
+        if (position0.includes('fpod') || position1.includes('fpod')) {
           fileType = 'FPOD';
-        } else if (fileMeta.fileName.toLowerCase().includes('subcam')) {
+        } else if (position0.includes('subcam') || position1.includes('subcam')) {
           fileType = 'Subcam';
-        } else if (fileMeta.fileName.toLowerCase().startsWith('gp')) {
+        } else if (position0.includes('gp') || position1.includes('gp')) {
           fileType = 'GP';
         }
+
+        console.log(`[FILE TYPE DETECTION] ${fileMeta.fileName} → ${fileType} (pos0: ${position0}, pos1: ${position1})`);
 
         // Check if we have the actual File object
         const actualFiles = pinFiles[pinId] || [];
@@ -498,6 +510,9 @@ export default function MapDrawingPage() {
   const [showAddProjectDialog, setShowAddProjectDialog] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDescription, setNewProjectDescription] = useState('');
+  const [showUploadPinSelector, setShowUploadPinSelector] = useState(false);
+  const [selectedUploadPinId, setSelectedUploadPinId] = useState<string>('');
+  const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isUpdatingProject, setIsUpdatingProject] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
@@ -2706,6 +2721,115 @@ export default function MapDrawingPage() {
     }
   };
 
+  // Duplicate object at crosshair position
+  const handleDuplicateObject = async () => {
+    if (!itemToEdit || !mapRef.current) return;
+
+    const mapCenter = mapRef.current.getCenter();
+
+    try {
+      // Handle Pin duplication
+      if ('lat' in itemToEdit && 'lng' in itemToEdit) {
+        const newPin = {
+          lat: mapCenter.lat,
+          lng: mapCenter.lng,
+          label: itemToEdit.label ? `${itemToEdit.label} (Copy)` : undefined,
+          notes: itemToEdit.notes,
+          color: itemToEdit.color,
+          size: itemToEdit.size,
+          projectId: itemToEdit.projectId,
+          labelVisible: itemToEdit.labelVisible
+        };
+
+        await createPinData(newPin);
+
+        toast({
+          title: "Pin Duplicated",
+          description: `Pin duplicated at crosshairs: ${mapCenter.lat.toFixed(6)}, ${mapCenter.lng.toFixed(6)}`
+        });
+      }
+      // Handle Line duplication
+      else if ('path' in itemToEdit && Array.isArray(itemToEdit.path) && !('fillVisible' in itemToEdit)) {
+        // Calculate offset to place the duplicate at the crosshairs
+        const originalCenter = {
+          lat: itemToEdit.path.reduce((sum, p) => sum + p.lat, 0) / itemToEdit.path.length,
+          lng: itemToEdit.path.reduce((sum, p) => sum + p.lng, 0) / itemToEdit.path.length
+        };
+
+        const offset = {
+          lat: mapCenter.lat - originalCenter.lat,
+          lng: mapCenter.lng - originalCenter.lng
+        };
+
+        const newPath = itemToEdit.path.map(point => ({
+          lat: point.lat + offset.lat,
+          lng: point.lng + offset.lng
+        }));
+
+        const newLine = {
+          path: newPath,
+          label: itemToEdit.label ? `${itemToEdit.label} (Copy)` : undefined,
+          notes: itemToEdit.notes,
+          color: itemToEdit.color,
+          size: itemToEdit.size,
+          projectId: itemToEdit.projectId,
+          labelVisible: itemToEdit.labelVisible
+        };
+
+        await createLineData(newLine);
+
+        toast({
+          title: "Line Duplicated",
+          description: `Line duplicated at crosshairs`
+        });
+      }
+      // Handle Area duplication
+      else if ('path' in itemToEdit && Array.isArray(itemToEdit.path) && 'fillVisible' in itemToEdit) {
+        // Calculate offset to place the duplicate at the crosshairs
+        const originalCenter = {
+          lat: itemToEdit.path.reduce((sum, p) => sum + p.lat, 0) / itemToEdit.path.length,
+          lng: itemToEdit.path.reduce((sum, p) => sum + p.lng, 0) / itemToEdit.path.length
+        };
+
+        const offset = {
+          lat: mapCenter.lat - originalCenter.lat,
+          lng: mapCenter.lng - originalCenter.lng
+        };
+
+        const newPath = itemToEdit.path.map(point => ({
+          lat: point.lat + offset.lat,
+          lng: point.lng + offset.lng
+        }));
+
+        const newArea = {
+          path: newPath,
+          label: itemToEdit.label ? `${itemToEdit.label} (Copy)` : undefined,
+          notes: itemToEdit.notes,
+          color: itemToEdit.color,
+          size: itemToEdit.size,
+          transparency: itemToEdit.transparency,
+          fillVisible: itemToEdit.fillVisible,
+          projectId: itemToEdit.projectId,
+          labelVisible: itemToEdit.labelVisible
+        };
+
+        await createAreaData(newArea);
+
+        toast({
+          title: "Area Duplicated",
+          description: `Area duplicated at crosshairs`
+        });
+      }
+    } catch (error) {
+      console.error('Error duplicating object:', error);
+      toast({
+        variant: "destructive",
+        title: "Error Duplicating",
+        description: "Failed to duplicate object. Check console for details."
+      });
+    }
+  };
+
   // Handle area corner drag
   const handleAreaCornerDrag = (cornerIndex: number, newPosition: LatLng) => {
     if (tempAreaPath && itemToEdit && 'path' in itemToEdit) {
@@ -2971,27 +3095,68 @@ export default function MapDrawingPage() {
       FPOD: [] as File[],
       Subcam: [] as File[]
     };
-    
+
     files.forEach(file => {
       const fileName = file.name.toLowerCase();
-      if (fileName.startsWith('gp')) {
+      const parts = fileName.split('_');
+      const position0 = parts[0]?.toLowerCase() || '';
+      const position1 = parts[1]?.toLowerCase() || '';
+
+      console.log(`[CATEGORIZE FILES] ${file.name} → detected in positions (pos0: ${position0}, pos1: ${position1})`);
+
+      if (position0.includes('gp') || position1.includes('gp')) {
         categories.GP.push(file);
-      } else if (fileName.startsWith('fpod')) {
+      } else if (position0.includes('fpod') || position1.includes('fpod')) {
         categories.FPOD.push(file);
-      } else if (fileName.startsWith('subcam')) {
+      } else if (position0.includes('subcam') || position1.includes('subcam')) {
         categories.Subcam.push(file);
       }
     });
-    
+
     return categories;
   };
 
-  // Handle file upload for pins
-  const handleFileUpload = async (pinId: string) => {
+  // Initiate file upload - select files first, then show pin selector
+  const handleInitiateFileUpload = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.multiple = true;
+
+    input.onchange = async (e) => {
+      const files = Array.from((e.target as HTMLInputElement).files || []);
+      const csvFiles = files.filter(file => file.name.toLowerCase().endsWith('.csv'));
+
+      if (csvFiles.length !== files.length) {
+        toast({
+          variant: "destructive",
+          title: "Invalid File Type",
+          description: "Please select only CSV files."
+        });
+        return;
+      }
+
+      if (csvFiles.length > 0) {
+        setPendingUploadFiles(csvFiles);
+        setShowUploadPinSelector(true);
+      }
+    };
+
+    input.click();
+  };
+
+  // Handle file upload for pins - now receives files and pinId
+  const handleFileUpload = async (pinId: string, filesToUpload?: File[]) => {
+    const csvFiles = filesToUpload || pendingUploadFiles;
+
+    if (csvFiles.length === 0) {
+      return;
+    }
+
     // First check if user is authenticated
     const supabase = createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       console.error('Authentication check failed:', authError);
       toast({
@@ -3001,71 +3166,52 @@ export default function MapDrawingPage() {
       });
       return;
     }
-    
+
     console.log('User authenticated for upload:', user.id);
-    
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.csv';
-    input.multiple = true;
-    
-    input.onchange = async (e) => {
-      const files = Array.from((e.target as HTMLInputElement).files || []);
-      const csvFiles = files.filter(file => file.name.toLowerCase().endsWith('.csv'));
-      
-      if (csvFiles.length !== files.length) {
-        toast({
-          variant: "destructive",
-          title: "Invalid File Type",
-          description: "Please select only CSV files."
-        });
-        return;
-      }
-      
-      if (csvFiles.length > 0) {
-        setIsUploadingFiles(true);
-        
+
+    setIsUploadingFiles(true);
+
+    try {
+      const uploadResults: PinFile[] = [];
+      const failedUploads: string[] = [];
+
+      // Upload each file to Supabase
+      console.log(`📤 Starting upload of ${csvFiles.length} file(s) to pin ${pinId}`);
+      console.log('Active project ID:', activeProjectId);
+
+      for (const file of csvFiles) {
+        console.log(`  📎 Uploading: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`);
+
         try {
-          const uploadResults: PinFile[] = [];
-          const failedUploads: string[] = [];
-          
-          // Upload each file to Supabase
-          console.log(`📤 Starting upload of ${csvFiles.length} file(s) to pin ${pinId}`);
-          console.log('Active project ID:', activeProjectId);
-          
-          for (const file of csvFiles) {
-            console.log(`  📎 Uploading: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`);
-            
-            try {
-              const result = await fileStorageService.uploadPinFile(pinId, file, activeProjectId);
-              
-              if (result) {
-                console.log(`    ✅ Successfully uploaded: ${file.name}`);
-                console.log(`    📍 File path: ${result.filePath}`);
-                uploadResults.push(result);
-              } else {
-                console.error(`    ❌ Failed to upload: ${file.name} - check console for details`);
-                failedUploads.push(file.name);
-              }
-            } catch (uploadError) {
-              console.error(`    ❌ Exception during upload of ${file.name}:`, uploadError);
-              failedUploads.push(file.name);
-            }
+          const result = await fileStorageService.uploadPinFile(pinId, file, activeProjectId);
+
+          if (result) {
+            console.log(`    ✅ Successfully uploaded: ${file.name}`);
+            console.log(`    📍 File path: ${result.filePath}`);
+            uploadResults.push(result);
+          } else {
+            console.error(`    ❌ Failed to upload: ${file.name} - check console for details`);
+            failedUploads.push(file.name);
           }
-          
-          if (uploadResults.length > 0) {
-            // Update local file metadata state
-            setPinFileMetadata(prev => ({
-              ...prev,
-              [pinId]: [...(prev[pinId] || []), ...uploadResults]
-            }));
-          }
-          
-          // Show success/failure toast
-          if (failedUploads.length === 0) {
-            toast({
-              title: "Files Uploaded Successfully",
-              description: `${uploadResults.length} CSV file${uploadResults.length > 1 ? 's' : ''} uploaded to Supabase.`
+        } catch (uploadError) {
+          console.error(`    ❌ Exception during upload of ${file.name}:`, uploadError);
+          failedUploads.push(file.name);
+        }
+      }
+
+      if (uploadResults.length > 0) {
+        // Update local file metadata state
+        setPinFileMetadata(prev => ({
+          ...prev,
+          [pinId]: [...(prev[pinId] || []), ...uploadResults]
+        }));
+      }
+
+      // Show success/failure toast
+      if (failedUploads.length === 0) {
+        toast({
+          title: "Files Uploaded Successfully",
+          description: `${uploadResults.length} CSV file${uploadResults.length > 1 ? 's' : ''} uploaded to Supabase.`
             });
             
             // Keep the explore dropdown open to show the newly uploaded files
@@ -3085,22 +3231,20 @@ export default function MapDrawingPage() {
               setShowExploreDropdown(true);
               setSelectedPinForExplore(pinId);
             }
-          }
-          
-        } catch (error) {
-          console.error('File upload error:', error);
-          toast({
-            variant: "destructive",
-            title: "Upload Error",
-            description: "An error occurred while uploading files. Please try again."
-          });
-        } finally {
-          setIsUploadingFiles(false);
-        }
       }
-    };
-    
-    input.click();
+
+    } catch (error) {
+      console.error('File upload error:', error);
+      toast({
+        variant: "destructive",
+        title: "Upload Error",
+        description: "An error occurred while uploading files. Please try again."
+      });
+    } finally {
+      setIsUploadingFiles(false);
+      setPendingUploadFiles([]);
+      setSelectedUploadPinId('');
+    }
   };
 
   // Handle explore data with file type selection
@@ -3563,6 +3707,24 @@ export default function MapDrawingPage() {
                             </Tooltip>
                           </TooltipProvider>
                         )}
+                        {/* Duplicate button */}
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleDuplicateObject}
+                                className="h-8 px-2"
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Duplicate at Crosshairs</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                         {/* Delete button with confirmation */}
                         <Popover 
                           open={deleteConfirmItem?.id === itemToEdit.id}
@@ -5940,11 +6102,16 @@ export default function MapDrawingPage() {
 
       {/* Project Data Dialog */}
       <Dialog open={showProjectDataDialog} onOpenChange={(open) => {
-        if (!open) setCurrentProjectContext('');
+        if (!open) {
+          setCurrentProjectContext('');
+          setShowUploadPinSelector(false);
+          setSelectedUploadPinId('');
+          setPendingUploadFiles([]);
+        }
         setShowProjectDataDialog(open);
       }}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden z-[9999]">
-          <DialogHeader>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden z-[9999] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Database className="h-5 w-5" />
               Project Data Files
@@ -5953,6 +6120,29 @@ export default function MapDrawingPage() {
               All data files grouped by type for {dynamicProjects[currentProjectContext || activeProjectId]?.name}
             </DialogDescription>
           </DialogHeader>
+
+          {/* Upload Button */}
+          <div className="flex justify-end mb-4 flex-shrink-0">
+            <Button
+              variant="default"
+              size="sm"
+              className="flex items-center gap-2"
+              disabled={isUploadingFiles}
+              onClick={handleInitiateFileUpload}
+            >
+              {isUploadingFiles ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" />
+                  Upload Files
+                </>
+              )}
+            </Button>
+          </div>
           
           <div className="flex-1 overflow-y-auto">
             {(() => {
@@ -5976,11 +6166,20 @@ export default function MapDrawingPage() {
               const handleTimelineFileClick = async (file: PinFile & { pinLabel: string }) => {
                 try {
                   // Determine file type from filename
-                  let fileType: 'GP' | 'FPOD' | 'Subcam' = 'FPOD';
-                  if (file.fileName.includes('GP')) {
-                    fileType = 'GP';
-                  } else if (file.fileName.includes('Subcam')) {
+                  // New format: PROJECTNAME_DATATYPE_STATION_DIRECTION_[PELAGIC]_YYMM-YYMM
+                  // Old format: DATATYPE_ProjectName_Station_YYMM-YYMM
+                  let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+
+                  const parts = file.fileName.split('_');
+                  const position0 = parts[0]?.toLowerCase() || '';
+                  const position1 = parts[1]?.toLowerCase() || '';
+
+                  if (position0.includes('fpod') || position1.includes('fpod')) {
+                    fileType = 'FPOD';
+                  } else if (position0.includes('subcam') || position1.includes('subcam')) {
                     fileType = 'Subcam';
+                  } else if (position0.includes('gp') || position1.includes('gp')) {
+                    fileType = 'GP';
                   }
                   
                   // Download file content
@@ -6183,6 +6382,116 @@ export default function MapDrawingPage() {
                 </div>
               );
             })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pin Selector Dialog - Appears after files are selected */}
+      <Dialog open={showUploadPinSelector} onOpenChange={(open) => {
+        if (!open) {
+          setShowUploadPinSelector(false);
+          setPendingUploadFiles([]);
+          setSelectedUploadPinId('');
+        }
+      }}>
+        <DialogContent className="sm:max-w-md z-[9999]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="h-5 w-5" />
+              Assign Files to Pin
+            </DialogTitle>
+            <DialogDescription>
+              {pendingUploadFiles.length} file{pendingUploadFiles.length > 1 ? 's' : ''} selected. Choose which pin to assign them to.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Show selected files */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Selected Files:</label>
+              <div className="bg-muted/30 rounded-md p-3 max-h-32 overflow-y-auto">
+                {pendingUploadFiles.map((file, index) => (
+                  <div key={index} className="text-xs font-mono text-muted-foreground py-0.5">
+                    {file.name}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Pin selector */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Assign to Pin:</label>
+              <Select value={selectedUploadPinId} onValueChange={setSelectedUploadPinId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a pin..." />
+                </SelectTrigger>
+                <SelectContent className="z-[99999]">
+                  {(() => {
+                    const projectPins = pins.filter(pin => pin.projectId === (currentProjectContext || activeProjectId));
+
+                    if (projectPins.length === 0) {
+                      return (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          No pins found in this project. Create a pin first.
+                        </div>
+                      );
+                    }
+
+                    return projectPins.map(pin => (
+                      <SelectItem key={pin.id} value={pin.id}>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: pin.color }}
+                          />
+                          <span>{pin.label || 'Unnamed Pin'}</span>
+                        </div>
+                      </SelectItem>
+                    ));
+                  })()}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowUploadPinSelector(false);
+                  setPendingUploadFiles([]);
+                  setSelectedUploadPinId('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (selectedUploadPinId) {
+                    setShowUploadPinSelector(false);
+                    handleFileUpload(selectedUploadPinId);
+                  } else {
+                    toast({
+                      variant: "destructive",
+                      title: "No Pin Selected",
+                      description: "Please select a pin to upload files to."
+                    });
+                  }
+                }}
+                disabled={!selectedUploadPinId || isUploadingFiles}
+              >
+                {isUploadingFiles ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Uploading...
+                  </>
+                ) : (
+                  'Upload Files'
+                )}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
