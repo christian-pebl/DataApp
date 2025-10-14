@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
@@ -223,6 +224,15 @@ export function PinChartDisplay({
   // Raw CSV viewing state
   const [showRawCSV, setShowRawCSV] = useState(false);
   const [rawCSVContent, setRawCSVContent] = useState<string>('');
+
+  // Time format detection state
+  const [showFormatDetection, setShowFormatDetection] = useState(false);
+  const [detectedFormat, setDetectedFormat] = useState<string>('');
+  const [selectedFormat, setSelectedFormat] = useState<string>('');
+
+  // Modified CSV state
+  const [showModifiedCSV, setShowModifiedCSV] = useState(false);
+  const [modifiedCSVContent, setModifiedCSVContent] = useState<string>('');
 
   // Log when data changes
   React.useEffect(() => {
@@ -1043,6 +1053,266 @@ export function PinChartDisplay({
     }
   };
 
+  const detectTimeFormat = (csvContent: string): string => {
+    try {
+      const lines = csvContent.split('\n').filter(line => line.trim().length > 0);
+      if (lines.length < 2) return 'Unknown';
+
+      // Get header and first data row
+      const header = lines[0].toLowerCase();
+      const firstDataRow = lines[1];
+
+      // Find time column index
+      const headers = header.split(',');
+      const timeIndex = headers.findIndex(h => h.trim() === 'time');
+
+      if (timeIndex === -1) return 'No Time column found';
+
+      // Get first time value
+      const values = firstDataRow.split(',');
+      if (timeIndex >= values.length) return 'Unknown';
+
+      const timeValue = values[timeIndex].trim();
+      console.log('[FORMAT DETECT] Time value:', timeValue);
+
+      // Detect format patterns
+      // Pattern: DD/MM/YYYY HH:mm
+      if (/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}/.test(timeValue)) {
+        return 'DD/MM/YYYY HH:mm';
+      }
+
+      // Pattern: MM/DD/YYYY HH:mm
+      if (/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}/.test(timeValue)) {
+        return 'MM/DD/YYYY HH:mm';
+      }
+
+      // Pattern: YYYY-MM-DD HH:mm
+      if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(timeValue)) {
+        return 'YYYY-MM-DD HH:mm';
+      }
+
+      // Pattern: YYYY/MM/DD HH:mm
+      if (/^\d{4}\/\d{2}\/\d{2}\s+\d{2}:\d{2}/.test(timeValue)) {
+        return 'YYYY/MM/DD HH:mm';
+      }
+
+      // Pattern: ISO 8601 (YYYY-MM-DDTHH:mm:ss)
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(timeValue)) {
+        return 'ISO 8601 (YYYY-MM-DDTHH:mm:ss)';
+      }
+
+      return `Unknown format (sample: ${timeValue})`;
+    } catch (error) {
+      console.error('[FORMAT DETECT] Error:', error);
+      return 'Error detecting format';
+    }
+  };
+
+  const handleDetectFormat = () => {
+    if (!rawCSVContent) {
+      console.log('[FORMAT DETECT] No CSV content available');
+      return;
+    }
+
+    const format = detectTimeFormat(rawCSVContent);
+    setDetectedFormat(format);
+    setSelectedFormat(format);
+    setShowFormatDetection(true);
+    console.log('[FORMAT DETECT] Detected format:', format);
+  };
+
+  const convertTimeFormat = (timeValue: string, fromFormat: string, toFormat: string): string => {
+    try {
+      // Parse based on source format
+      let date: Date | null = null;
+
+      if (fromFormat.startsWith('DD/MM/YYYY')) {
+        // DD/MM/YYYY HH:mm
+        const match = timeValue.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/);
+        if (match) {
+          const [, day, month, year, hour, minute] = match;
+          date = new Date(`${year}-${month}-${day}T${hour}:${minute}:00`);
+        }
+      } else if (fromFormat.startsWith('MM/DD/YYYY')) {
+        // MM/DD/YYYY HH:mm
+        const match = timeValue.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/);
+        if (match) {
+          const [, month, day, year, hour, minute] = match;
+          date = new Date(`${year}-${month}-${day}T${hour}:${minute}:00`);
+        }
+      } else if (fromFormat.startsWith('YYYY-MM-DD')) {
+        // YYYY-MM-DD HH:mm
+        const match = timeValue.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+        if (match) {
+          const [, year, month, day, hour, minute] = match;
+          date = new Date(`${year}-${month}-${day}T${hour}:${minute}:00`);
+        }
+      } else if (fromFormat.startsWith('YYYY/MM/DD')) {
+        // YYYY/MM/DD HH:mm
+        const match = timeValue.match(/^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})/);
+        if (match) {
+          const [, year, month, day, hour, minute] = match;
+          date = new Date(`${year}-${month}-${day}T${hour}:${minute}:00`);
+        }
+      }
+
+      if (!date || isNaN(date.getTime())) {
+        return timeValue; // Return original if parsing failed
+      }
+
+      // Format to target format
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hour = String(date.getHours()).padStart(2, '0');
+      const minute = String(date.getMinutes()).padStart(2, '0');
+
+      if (toFormat.startsWith('DD/MM/YYYY')) {
+        return `${day}/${month}/${year} ${hour}:${minute}`;
+      } else if (toFormat.startsWith('MM/DD/YYYY')) {
+        return `${month}/${day}/${year} ${hour}:${minute}`;
+      } else if (toFormat.startsWith('YYYY-MM-DD')) {
+        return `${year}-${month}-${day} ${hour}:${minute}`;
+      } else if (toFormat.startsWith('YYYY/MM/DD')) {
+        return `${year}/${month}/${day} ${hour}:${minute}`;
+      }
+
+      return timeValue; // Fallback
+    } catch (error) {
+      console.error('[FORMAT CONVERT] Error:', error);
+      return timeValue;
+    }
+  };
+
+  const modifyCSVTimeFormat = (csvContent: string, fromFormat: string, toFormat: string): string => {
+    try {
+      const lines = csvContent.split('\n');
+      if (lines.length < 2) return csvContent;
+
+      // Get header
+      const header = lines[0];
+      const headers = header.split(',');
+      const timeIndex = headers.findIndex(h => h.trim().toLowerCase() === 'time');
+
+      if (timeIndex === -1) {
+        console.error('[CSV MODIFY] No Time column found');
+        return csvContent;
+      }
+
+      // Process data rows
+      const modifiedLines = [header]; // Keep header unchanged
+
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) {
+          modifiedLines.push(line);
+          continue;
+        }
+
+        const values = line.split(',');
+        if (timeIndex < values.length) {
+          const oldTime = values[timeIndex].trim();
+          const newTime = convertTimeFormat(oldTime, fromFormat, toFormat);
+          values[timeIndex] = newTime;
+        }
+
+        modifiedLines.push(values.join(','));
+      }
+
+      return modifiedLines.join('\n');
+    } catch (error) {
+      console.error('[CSV MODIFY] Error:', error);
+      return csvContent;
+    }
+  };
+
+  const handleConfirmFormatChange = () => {
+    if (!rawCSVContent || !selectedFormat || selectedFormat === detectedFormat) {
+      console.log('[FORMAT CHANGE] No change needed');
+      setShowFormatDetection(false);
+      return;
+    }
+
+    console.log('[FORMAT CHANGE] Converting from', detectedFormat, 'to', selectedFormat);
+    const modified = modifyCSVTimeFormat(rawCSVContent, detectedFormat, selectedFormat);
+    setModifiedCSVContent(modified);
+    setShowFormatDetection(false);
+    setShowModifiedCSV(true);
+  };
+
+  const handleDownloadModifiedCSV = () => {
+    if (!modifiedCSVContent) {
+      alert('No modified content to download');
+      return;
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const fileName = `MOD_converted_${timestamp}.csv`;
+
+    const blob = new Blob([modifiedCSVContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+
+    link.setAttribute('href', url);
+    link.setAttribute('download', fileName);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    console.log('[DOWNLOAD MODIFIED] Downloaded:', fileName);
+  };
+
+  const handleSaveModifiedCSV = async () => {
+    console.log('[SAVE MODIFIED] Starting save...', {
+      hasModifiedContent: !!modifiedCSVContent,
+      hasPinId: !!pinId,
+      hasRawFiles: !!rawFiles,
+      rawFilesLength: rawFiles?.length,
+      pinId
+    });
+
+    if (!modifiedCSVContent) {
+      alert('Cannot save: No modified content available');
+      return;
+    }
+
+    if (!pinId) {
+      alert('Cannot save: No pin ID available. Please save from the pin file view.');
+      return;
+    }
+
+    if (!rawFiles || rawFiles.length === 0) {
+      alert('Cannot save: Original file information not available');
+      return;
+    }
+
+    try {
+      const originalFileName = rawFiles[0].name;
+      const baseName = originalFileName.replace(/\.csv$/i, '');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const newFileName = `MOD_${baseName}_${timestamp}.csv`;
+
+      const blob = new Blob([modifiedCSVContent], { type: 'text/csv;charset=utf-8;' });
+      const file = new File([blob], newFileName, { type: 'text/csv' });
+
+      console.log('[SAVE MODIFIED] Uploading file:', newFileName);
+
+      const result = await fileStorageService.uploadPinFile(pinId, file);
+
+      if (result) {
+        alert(`Modified CSV saved successfully!\n\nFile: ${newFileName}`);
+        setShowModifiedCSV(false);
+        setShowRawCSV(false);
+      } else {
+        alert('Failed to save modified CSV');
+      }
+    } catch (error) {
+      console.error('[SAVE MODIFIED] Error:', error);
+      alert('Error saving modified CSV');
+    }
+  };
+
   // Get source label abbreviation
   const getSourceLabel = (): string => {
     if (dataSource === 'marine') return 'OM';
@@ -1366,6 +1636,12 @@ export function PinChartDisplay({
                   isAnimationActive={false}
                 />
 
+                {/*
+                  Z-INDEX ORDERING: In Recharts, components render in JSX order.
+                  - Render Area components FIRST (they will be in the background)
+                  - Render Line components AFTER areas (they will be on top and clickable)
+                  - Lines have increased strokeWidth (2px) and activeDot for better clickability
+                */}
                 {visibleParameters.map((parameter) => {
                   const state = parameterStates[parameter];
                   const colorValue = getColorValue(state.color, state.opacity ?? 1.0);
@@ -1376,11 +1652,14 @@ export function PinChartDisplay({
                       type="monotone"
                       dataKey={parameter}
                       stroke={colorValue}
-                      strokeWidth={1.5}
+                      strokeWidth={2}
                       dot={false}
                       connectNulls={false}
                       name={parameter}
                       isAnimationActive={false}
+                      activeDot={{ r: 6, strokeWidth: 2 }}
+                      onClick={() => toggleParameterVisibility(parameter)}
+                      style={{ cursor: 'pointer' }}
                     />
                   );
                 })}
@@ -1499,6 +1778,12 @@ export function PinChartDisplay({
                   isAnimationActive={false}
                 />
 
+                {/*
+                  Z-INDEX ORDERING: In Recharts, components render in JSX order.
+                  - Render Area components FIRST (they will be in the background)
+                  - Render Line components AFTER areas (they will be on top and clickable)
+                  - Lines have increased strokeWidth (2px) and activeDot for better clickability
+                */}
                 {visibleParameters.map((parameter) => {
                   const state = parameterStates[parameter];
                   const yAxisId = `axis-${parameter}`;
@@ -1511,11 +1796,14 @@ export function PinChartDisplay({
                       dataKey={parameter}
                       yAxisId={yAxisId}
                       stroke={colorValue}
-                      strokeWidth={1.5}
+                      strokeWidth={2}
                       dot={false}
                       connectNulls={false}
                       name={parameter}
                       isAnimationActive={false}
+                      activeDot={{ r: 6, strokeWidth: 2 }}
+                      onClick={() => toggleParameterVisibility(parameter)}
+                      style={{ cursor: 'pointer' }}
                     />
                   );
                 })}
@@ -1621,7 +1909,11 @@ export function PinChartDisplay({
                         )} />
                       </Button>
 
-                      <div className="flex items-center gap-1 flex-1 min-w-0">
+                      <div
+                        className="flex items-center gap-1 flex-1 min-w-0 cursor-pointer"
+                        onClick={() => toggleParameterVisibility(parameter)}
+                        title="Click to toggle visibility"
+                      >
                         <Label
                           htmlFor={`param-${parameter}`}
                           className="text-xs cursor-pointer truncate"
@@ -1989,10 +2281,112 @@ export function PinChartDisplay({
             </pre>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex gap-2">
+            <Button variant="secondary" onClick={handleDetectFormat}>
+              Detect Time Format
+            </Button>
             <Button onClick={() => setShowRawCSV(false)}>
               Close
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Time Format Detection Dialog */}
+      <Dialog open={showFormatDetection} onOpenChange={setShowFormatDetection}>
+        <DialogContent className="max-w-md z-[10000]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-primary" />
+              Time Format Detection
+            </DialogTitle>
+            <DialogDescription>
+              The time format has been detected. You can change it to a different format if needed.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Detected Format:</Label>
+              <div className="p-3 bg-primary/10 border border-primary/20 rounded-md">
+                <p className="text-sm font-semibold text-primary">{detectedFormat}</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="format-select" className="text-sm font-medium">
+                Change To:
+              </Label>
+              <Select value={selectedFormat} onValueChange={setSelectedFormat}>
+                <SelectTrigger id="format-select" className="w-full">
+                  <SelectValue placeholder="Select format" />
+                </SelectTrigger>
+                <SelectContent className="z-[10001]" position="popper" sideOffset={4}>
+                  <SelectItem value="DD/MM/YYYY HH:mm">DD/MM/YYYY HH:mm</SelectItem>
+                  <SelectItem value="MM/DD/YYYY HH:mm">MM/DD/YYYY HH:mm</SelectItem>
+                  <SelectItem value="YYYY-MM-DD HH:mm">YYYY-MM-DD HH:mm</SelectItem>
+                  <SelectItem value="YYYY/MM/DD HH:mm">YYYY/MM/DD HH:mm</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedFormat !== detectedFormat && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
+                <p className="text-xs text-amber-800 dark:text-amber-200">
+                  <strong>Note:</strong> This will convert all time values in the CSV from <strong>{detectedFormat}</strong> to <strong>{selectedFormat}</strong>.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowFormatDetection(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmFormatChange}
+              disabled={selectedFormat === detectedFormat}
+            >
+              {selectedFormat === detectedFormat ? 'No Change' : 'Confirm & Preview'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modified CSV Preview Dialog */}
+      <Dialog open={showModifiedCSV} onOpenChange={setShowModifiedCSV}>
+        <DialogContent className="max-w-4xl max-h-[80vh] z-[10000]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              Modified CSV File
+              <span className="text-xs font-normal px-2 py-1 bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-100 rounded">
+                MODIFIED
+              </span>
+            </DialogTitle>
+            <DialogDescription>
+              Preview of the modified CSV with converted time format. Review the changes before saving.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="h-[60vh] overflow-auto border rounded-md bg-amber-50/30 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 p-3">
+            <pre className="text-xs font-mono whitespace-pre">
+              {modifiedCSVContent}
+            </pre>
+          </div>
+
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowModifiedCSV(false)}>
+              Cancel
+            </Button>
+            <Button variant="secondary" onClick={handleDownloadModifiedCSV}>
+              Download CSV
+            </Button>
+            {pinId && (
+              <Button onClick={handleSaveModifiedCSV} className="bg-primary">
+                <Database className="h-4 w-4 mr-2" />
+                Save to Database (MOD_)
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
