@@ -2,11 +2,13 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { format, startOfMonth, endOfMonth, eachMonthOfInterval, differenceInDays, parseISO, isValid, getYear } from 'date-fns';
-import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText, Pencil } from 'lucide-react';
+import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText, Pencil, Clock, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 import { type PinFile } from '@/lib/supabase/file-storage-service';
+import { useToast } from '@/hooks/use-toast';
 
 interface DataTimelineProps {
   files: (PinFile & { pinLabel: string })[];
@@ -126,16 +128,16 @@ const getCorrectDuration = (startDateString: string | null, endDateString: strin
 };
 
 export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFile, onRenameFile }: DataTimelineProps) {
+  const { toast } = useToast();
   const [filesWithDates, setFilesWithDates] = useState<FileWithDateRange[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'timeline'>('table');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [hasAnalyzed, setHasAnalyzed] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState(0);
-  const [analysisLog, setAnalysisLog] = useState<string[]>([]);
+  const [hasAnalyzed, setHasAnalyzed] = useState(true); // Always true since dates are from database
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<{ id: string; name: string } | null>(null);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>('asc'); // Start with alphabetical (asc)
   const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState<string>('');
+  const [fetchingTimesFor, setFetchingTimesFor] = useState<string | null>(null);
+  const [openMenuFileId, setOpenMenuFileId] = useState<string | null>(null);
 
   // Delete file handler - just call parent's onDeleteFile
   const handleDeleteFile = async (file: PinFile & { pinLabel: string }) => {
@@ -170,6 +172,91 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
   const startRename = (file: PinFile & { pinLabel: string }) => {
     setRenamingFileId(file.id);
     setRenameValue(file.fileName);
+  };
+
+  // Fetch times for a file
+  const handleFetchTimes = async (file: PinFile & { pinLabel: string }) => {
+    setFetchingTimesFor(file.id);
+    setOpenMenuFileId(null); // Close menu
+
+    try {
+      toast({ title: "Fetching dates...", description: `Analyzing ${file.fileName}` });
+
+      // Get date range from CSV
+      const result = await getFileDateRange(file);
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      if (!result.startDate || !result.endDate) {
+        throw new Error('No dates found in file');
+      }
+
+      // Convert dates from DD/MM/YYYY to YYYY-MM-DD format for database
+      const convertToDbFormat = (dateStr: string): string => {
+        // Handle DD/MM/YYYY format
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          const [day, month, year] = parts;
+          return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        }
+        // If already in YYYY-MM-DD format, return as is
+        return dateStr;
+      };
+
+      const startDateDb = convertToDbFormat(result.startDate);
+      const endDateDb = convertToDbFormat(result.endDate);
+
+      // Update database with dates
+      const { updateFileDatesAction } = await import('@/app/data-explorer/actions');
+      const updateResult = await updateFileDatesAction(file.id, startDateDb, endDateDb);
+
+      if (!updateResult.success) {
+        throw new Error(updateResult.error || 'Failed to update dates');
+      }
+
+      // Update local state
+      setFilesWithDates(prev =>
+        prev.map(f =>
+          f.file.id === file.id
+            ? {
+                ...f,
+                file: {
+                  ...f.file,
+                  startDate: new Date(startDateDb),
+                  endDate: new Date(endDateDb)
+                },
+                dateRange: {
+                  startDate: startDateDb,  // Use YYYY-MM-DD format for display
+                  endDate: endDateDb,      // Use YYYY-MM-DD format for display
+                  totalDays: result.totalDays,
+                  loading: false
+                }
+              }
+            : f
+        )
+      );
+
+      toast({
+        title: "Dates Updated",
+        description: `${file.fileName}: ${result.startDate} to ${result.endDate}`
+      });
+
+      // Reload the page to fetch updated data from database
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    } catch (error) {
+      console.error('Error fetching times:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to fetch dates'
+      });
+    } finally {
+      setFetchingTimesFor(null);
+    }
   };
 
   // Toggle sort order handler
@@ -234,7 +321,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
     return colorMap;
   }, [files]);
 
-  // Initialize files without date analysis
+  // Initialize files with dates from database
   useEffect(() => {
     if (files.length === 0) {
       setFilesWithDates([]);
@@ -246,77 +333,39 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
       a.fileName.localeCompare(b.fileName)
     );
 
-    // Initialize all files without date range data
-    const initialFiles = sortedFiles.map(file => ({
-      file,
-      dateRange: {
-        totalDays: null,
-        startDate: null,
-        endDate: null,
-        loading: false
+    // Initialize files with date range data from database
+    const initialFiles = sortedFiles.map(file => {
+      let startDate: string | null = null;
+      let endDate: string | null = null;
+      let totalDays: number | null = null;
+
+      // Get dates from file if available (from database)
+      if (file.startDate && file.endDate) {
+        const start = new Date(file.startDate);
+        const end = new Date(file.endDate);
+
+        // Format dates as YYYY-MM-DD
+        startDate = format(start, 'yyyy-MM-dd');
+        endDate = format(end, 'yyyy-MM-dd');
+
+        // Calculate duration
+        totalDays = differenceInDays(end, start) + 1;
       }
-    }));
+
+      return {
+        file,
+        dateRange: {
+          totalDays,
+          startDate,
+          endDate,
+          loading: false
+        }
+      };
+    });
+
     setFilesWithDates(initialFiles);
-    setHasAnalyzed(false);
-    setAnalysisLog([]);
+    setHasAnalyzed(true); // Mark as analyzed since dates are from database
   }, [files]);
-
-  // Function to start date analysis
-  const startDateAnalysis = async () => {
-    setIsAnalyzing(true);
-    setAnalysisProgress(0);
-    setAnalysisLog([]);
-
-    const results: FileWithDateRange[] = [];
-    let completedCount = 0;
-
-    // Process files sequentially for smooth progress updates
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      
-      // Add log entry for current file
-      setAnalysisLog(prev => [...prev, `${completedCount + 1}/${files.length} files read`]);
-      
-      try {
-        const result = await getFileDateRange(file);
-        results.push({
-          file,
-          dateRange: { ...result, loading: false }
-        });
-      } catch (error) {
-        results.push({
-          file,
-          dateRange: {
-            totalDays: null,
-            startDate: null,
-            endDate: null,
-            error: error instanceof Error ? error.message : 'Analysis failed',
-            loading: false
-          }
-        });
-      }
-      
-      completedCount++;
-      const progress = (completedCount / files.length) * 100;
-      setAnalysisProgress(progress);
-      
-      // Update files with current progress
-      setFilesWithDates(prevFiles => {
-        const updated = [...prevFiles];
-        updated[i] = results[i];
-        return updated;
-      });
-      
-      // Small delay to make progress visible
-      if (completedCount < files.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
-    
-    setIsAnalyzing(false);
-    setHasAnalyzed(true);
-    setAnalysisLog(prev => [...prev, `Analysis complete - ${completedCount}/${files.length} files processed`]);
-  };
 
   // Calculate timeline bounds and headers
   const timelineData = useMemo(() => {
@@ -430,272 +479,32 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">Project Data Files</h3>
-        
-        {/* Fetch Button - Top Right */}
-        {!hasAnalyzed && !isAnalyzing && (
-          <Button 
-            onClick={startDateAnalysis}
-            className="gap-2"
+
+        {/* View Mode Toggle - Always visible */}
+        <div className="flex items-center gap-1 bg-muted/50 rounded p-1">
+          <Button
+            variant={viewMode === 'table' ? 'default' : 'ghost'}
             size="sm"
+            className="h-6 px-2"
+            onClick={() => setViewMode('table')}
           >
-            <PlayCircle className="h-3 w-3" />
-            Fetch Start and End Dates
+            <Calendar className="h-3 w-3 mr-1" />
+            <span className="text-xs">Table</span>
           </Button>
-        )}
-        
-        {/* View Mode Toggle - Only show when analysis is complete */}
-        {hasAnalyzed && (
-          <div className="flex items-center gap-1 bg-muted/50 rounded p-1">
-            <Button
-              variant={viewMode === 'table' ? 'default' : 'ghost'}
-              size="sm"
-              className="h-6 px-2"
-              onClick={() => setViewMode('table')}
-            >
-              <Calendar className="h-3 w-3 mr-1" />
-              <span className="text-xs">Table</span>
-            </Button>
-            <Button
-              variant={viewMode === 'timeline' ? 'default' : 'ghost'}
-              size="sm"
-              className="h-6 px-2"
-              onClick={() => setViewMode('timeline')}
-            >
-              <BarChart3 className="h-3 w-3 mr-1" />
-              <span className="text-xs">Timeline</span>
-            </Button>
-          </div>
-        )}
+          <Button
+            variant={viewMode === 'timeline' ? 'default' : 'ghost'}
+            size="sm"
+            className="h-6 px-2"
+            onClick={() => setViewMode('timeline')}
+          >
+            <BarChart3 className="h-3 w-3 mr-1" />
+            <span className="text-xs">Timeline</span>
+          </Button>
+        </div>
       </div>
 
-      {/* File List Section - Only visible before analysis */}
-      {!hasAnalyzed && (
-        <div className="space-y-1">
-          {sortedFilesWithDates.length > 0 && (
-          <div className="bg-muted/20 rounded p-3">
-            {/* Table Header */}
-            <div className="grid grid-cols-12 gap-2 pb-2 mb-2 border-b border-border/30 text-xs font-medium text-muted-foreground">
-              <div className="col-span-1">Pin</div>
-              <div className="col-span-6">File Name</div>
-              <div className="col-span-2">Size</div>
-              <div className="col-span-3">Actions</div>
-            </div>
-            
-            {/* File List */}
-            <div className="space-y-0.5">
-              {sortedFilesWithDates.map((fileWithDate, index) => {
-                const { file } = fileWithDate;
-                const color = pinColorMap.get(file.pinLabel) || COLORS[0];
-                
-                return (
-                  <div 
-                    key={`file-${file.id}-${index}`} 
-                    className="grid grid-cols-12 gap-2 py-1.5 text-xs hover:bg-muted/30 rounded transition-colors"
-                  >
-                    {/* Pin indicator */}
-                    <div className="col-span-1 flex items-center">
-                      <div 
-                        className="w-3 h-3 rounded-sm transition-transform hover:scale-110"
-                        style={{ backgroundColor: color }}
-                        title={file.pinLabel}
-                      />
-                    </div>
-                    
-                    {/* File name - Clickable */}
-                    <div className="col-span-6 flex items-center">
-                      <button 
-                        className="font-mono truncate text-left hover:text-primary hover:underline transition-colors cursor-pointer"
-                        title={`Click to open ${file.fileName}`}
-                        onClick={() => onFileClick(fileWithDate.file)}
-                      >
-                        {file.fileName.replace(/^FPOD_/, '')}
-                      </button>
-                    </div>
-                    
-                    {/* File size */}
-                    <div className="col-span-2 flex items-center">
-                      <span className="text-muted-foreground">
-                        {file.fileSize ? `${(file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}
-                      </span>
-                    </div>
-                    
-                    {/* Actions */}
-                    <div className="col-span-3 flex items-center gap-2">
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-muted transition-colors">
-                            <Info className="h-3 w-3 text-muted-foreground" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-72">
-                          <div className="space-y-3">
-                            <div className="flex items-center gap-2">
-                              <div
-                                className="w-3 h-3 rounded-sm"
-                                style={{ backgroundColor: color }}
-                              />
-                              <span className="text-sm font-medium">{file.pinLabel}</span>
-                            </div>
-                            <div className="space-y-2 text-xs">
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">File:</span>
-                                <span className="font-mono">{file.fileName}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Size:</span>
-                                <span>{file.fileSize ? `${(file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Uploaded:</span>
-                                <span>{format(new Date(file.uploadedAt), 'MMM d, yyyy')}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-
-                      {/* Rename button or rename input */}
-                      {onRenameFile && renamingFileId === file.id ? (
-                        <div className="flex items-center gap-1">
-                          <Input
-                            value={renameValue}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                handleRenameFile(fileWithDate.file);
-                              } else if (e.key === 'Escape') {
-                                setRenamingFileId(null);
-                              }
-                            }}
-                            className="h-5 text-xs w-64"
-                            autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-5 w-5 p-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRenameFile(fileWithDate.file);
-                            }}
-                          >
-                            <Check className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-5 w-5 p-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setRenamingFileId(null);
-                            }}
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      ) : (
-                        onRenameFile && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-4 w-4 p-0 hover:bg-muted transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startRename(fileWithDate.file);
-                            }}
-                            title="Rename file"
-                          >
-                            <Pencil className="h-3 w-3 text-muted-foreground" />
-                          </Button>
-                        )
-                      )}
-
-                      {/* Delete confirmation or delete button */}
-                      {onDeleteFile && deleteConfirmFile?.id === file.id ? (
-                        <div className="flex items-center gap-1 text-xs">
-                          <span className="whitespace-nowrap">Delete?</span>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            className="h-5 w-5 p-0"
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              setDeleteConfirmFile(null);
-                              await handleDeleteFile(fileWithDate.file);
-                            }}
-                          >
-                            <Check className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-5 w-5 p-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteConfirmFile(null);
-                            }}
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      ) : (
-                        onDeleteFile && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-4 w-4 p-0 hover:bg-muted transition-colors text-destructive hover:text-destructive"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteConfirmFile({ id: file.id, name: file.fileName });
-                            }}
-                            title="Delete file"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        )
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        </div>
-      )}
-
-      {/* Analysis Progress - Show when analyzing */}
-      {isAnalyzing && (
-        <div className="space-y-3">
-          <div className="bg-muted/20 rounded p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium">Analyzing CSV files...</span>
-              <span className="text-sm text-muted-foreground">{Math.round(analysisProgress)}%</span>
-            </div>
-            <div className="w-full bg-muted/30 rounded-full h-2 overflow-hidden mb-3">
-              <div 
-                className="h-full bg-gradient-to-r from-primary/60 to-primary transition-all duration-300 ease-out"
-                style={{ width: `${analysisProgress}%` }}
-              />
-            </div>
-            
-            {/* Analysis Log */}
-            <div className="bg-background/50 rounded p-2 max-h-24 overflow-y-auto">
-              <div className="space-y-1">
-                {analysisLog.map((log, index) => (
-                  <div key={index} className="text-xs font-mono text-muted-foreground">
-                    {log}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-        {/* TABLE VIEW: Detailed Start/End Dates - Default after analysis */}
-        {hasAnalyzed && viewMode === 'table' && (
+        {/* TABLE VIEW: Detailed Start/End Dates */}
+        {viewMode === 'table' && (
         <div className="space-y-1">
           {sortedFilesWithDates.length > 0 && (
             <div className="bg-muted/20 rounded p-3 transition-all duration-300">
@@ -707,7 +516,6 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                     <th className="text-center pb-2 px-2 bg-muted/10 rounded-tl-sm">Start Date</th>
                     <th className="text-center pb-2 px-2 bg-muted/10">End Date</th>
                     <th className="text-center pb-2 px-2 bg-muted/10 rounded-tr-sm">Duration</th>
-                    <th className="text-right pb-2 pl-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -730,15 +538,214 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                           />
                         </td>
 
-                        {/* File name - Clickable */}
+                        {/* File name - Clickable with menu */}
                         <td className="pr-2 align-middle">
-                          <button
-                            className="font-mono truncate text-left hover:text-primary hover:underline transition-colors cursor-pointer w-full text-left"
-                            title={`Click to open ${file.fileName}`}
-                            onClick={() => onFileClick(fileWithDate.file)}
-                          >
-                            {file.fileName.replace(/^FPOD_/, '')}
-                          </button>
+                          <Popover open={openMenuFileId === file.id} onOpenChange={(open) => setOpenMenuFileId(open ? file.id : null)}>
+                            <PopoverTrigger asChild>
+                              <button
+                                className="font-mono truncate text-left hover:text-primary hover:underline transition-colors cursor-pointer w-full text-left"
+                                title={`Click for actions on ${file.fileName}`}
+                              >
+                                {file.fileName.replace(/^FPOD_/, '')}
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="min-w-[400px] p-0" align="start">
+                              <div className="flex flex-col">
+                                {/* Open option */}
+                                <button
+                                  onClick={() => {
+                                    setOpenMenuFileId(null);
+                                    onFileClick(fileWithDate.file);
+                                  }}
+                                  className="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                                >
+                                  <FileText className="h-4 w-4" />
+                                  <div>
+                                    <div className="font-medium">Open</div>
+                                    <div className="text-xs text-muted-foreground">View data plots</div>
+                                  </div>
+                                </button>
+
+                                <Separator />
+
+                                {/* Info option */}
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button className="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left">
+                                      <Info className="h-4 w-4" />
+                                      <div>
+                                        <div className="font-medium">Info</div>
+                                        <div className="text-xs text-muted-foreground">File details</div>
+                                      </div>
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-72" side="right">
+                                    <div className="space-y-3">
+                                      <div className="flex items-center gap-2">
+                                        <div
+                                          className="w-3 h-3 rounded-sm"
+                                          style={{ backgroundColor: color }}
+                                        />
+                                        <span className="text-sm font-medium">{file.pinLabel}</span>
+                                      </div>
+                                      <div className="space-y-2 text-xs">
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">File:</span>
+                                          <span className="font-mono">{file.fileName}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">Size:</span>
+                                          <span>{file.fileSize ? `${(file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">Uploaded:</span>
+                                          <span>{format(new Date(file.uploadedAt), 'MMM d, yyyy')}</span>
+                                        </div>
+                                        {(() => {
+                                          const correctedDays = getCorrectDuration(dateRange.startDate, dateRange.endDate);
+                                          return correctedDays !== null && (
+                                            <>
+                                              <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Period:</span>
+                                                <span>{dateRange.startDate} to {dateRange.endDate}</span>
+                                              </div>
+                                              <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Duration:</span>
+                                                <span>{correctedDays} days</span>
+                                              </div>
+                                            </>
+                                          );
+                                        })()}
+                                      </div>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+
+                                {/* Rename option */}
+                                {onRenameFile && (
+                                  renamingFileId === file.id ? (
+                                    <div className="flex items-center gap-1 px-3 py-2.5">
+                                      <Input
+                                        value={renameValue}
+                                        onChange={(e) => setRenameValue(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            handleRenameFile(fileWithDate.file);
+                                          } else if (e.key === 'Escape') {
+                                            setRenamingFileId(null);
+                                          }
+                                        }}
+                                        className="h-7 text-xs min-w-[320px]"
+                                        autoFocus
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 w-7 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleRenameFile(fileWithDate.file);
+                                        }}
+                                      >
+                                        <Check className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 w-7 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setRenamingFileId(null);
+                                        }}
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => {
+                                        setOpenMenuFileId(null);
+                                        startRename(fileWithDate.file);
+                                      }}
+                                      className="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                      <div>
+                                        <div className="font-medium">Rename</div>
+                                        <div className="text-xs text-muted-foreground">Change file name</div>
+                                      </div>
+                                    </button>
+                                  )
+                                )}
+
+                                <Separator />
+
+                                {/* Fetch Times option - only if dates not present */}
+                                {!dateRange.startDate && !dateRange.endDate && (
+                                  <button
+                                    onClick={() => handleFetchTimes(fileWithDate.file)}
+                                    disabled={fetchingTimesFor === file.id}
+                                    className="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {fetchingTimesFor === file.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Clock className="h-4 w-4" />
+                                    )}
+                                    <div>
+                                      <div className="font-medium">Fetch Times</div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {fetchingTimesFor === file.id ? 'Analyzing...' : 'Get start/end dates'}
+                                      </div>
+                                    </div>
+                                  </button>
+                                )}
+
+                                <Separator />
+
+                                {/* Delete option */}
+                                {onDeleteFile && (
+                                  deleteConfirmFile?.id === file.id ? (
+                                    <div className="flex items-center gap-2 px-3 py-2.5 text-sm">
+                                      <span className="text-xs flex-1">Delete?</span>
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        className="h-7 px-3"
+                                        onClick={async () => {
+                                          setDeleteConfirmFile(null);
+                                          setOpenMenuFileId(null);
+                                          await handleDeleteFile(fileWithDate.file);
+                                        }}
+                                      >
+                                        Yes
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 px-3"
+                                        onClick={() => setDeleteConfirmFile(null)}
+                                      >
+                                        No
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => setDeleteConfirmFile({ id: file.id, name: file.fileName })}
+                                      className="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left text-destructive"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                      <div>
+                                        <div className="font-medium">Delete</div>
+                                        <div className="text-xs text-muted-foreground">Remove file permanently</div>
+                                      </div>
+                                    </button>
+                                  )
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
                         </td>
 
                         {/* Start Date */}
@@ -784,163 +791,6 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                             );
                           })()}
                         </td>
-
-                        {/* Info button and Delete button */}
-                        <td className="pl-2 text-right align-middle">
-                          <div className="flex items-center justify-end gap-2">
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-muted transition-colors">
-                                <Info className="h-3 w-3 text-muted-foreground" />
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-72 data-timeline-popover">
-                              <div className="space-y-3">
-                                <div className="flex items-center gap-2">
-                                  <div 
-                                    className="w-3 h-3 rounded-sm"
-                                    style={{ backgroundColor: color }}
-                                  />
-                                  <span className="text-sm font-medium">{file.pinLabel}</span>
-                                </div>
-                                <div className="space-y-2 text-xs">
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">File:</span>
-                                    <span className="font-mono">{file.fileName}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Size:</span>
-                                    <span>{file.fileSize ? `${(file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Uploaded:</span>
-                                    <span>{format(new Date(file.uploadedAt), 'MMM d, yyyy')}</span>
-                                  </div>
-                                  {(() => {
-                                    const correctedDays = getCorrectDuration(dateRange.startDate, dateRange.endDate);
-                                    return correctedDays !== null && (
-                                      <>
-                                        <div className="flex justify-between">
-                                          <span className="text-muted-foreground">Period:</span>
-                                          <span>{dateRange.startDate} to {dateRange.endDate}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                          <span className="text-muted-foreground">Duration:</span>
-                                          <span>{correctedDays} days</span>
-                                        </div>
-                                      </>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-                            </PopoverContent>
-                          </Popover>
-                          
-                          {/* Rename button or rename input */}
-                          {onRenameFile && renamingFileId === file.id ? (
-                            <div className="flex items-center gap-1">
-                              <Input
-                                value={renameValue}
-                                onChange={(e) => setRenameValue(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    handleRenameFile(fileWithDate.file);
-                                  } else if (e.key === 'Escape') {
-                                    setRenamingFileId(null);
-                                  }
-                                }}
-                                className="h-5 text-xs w-64"
-                                autoFocus
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-5 w-5 p-0"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRenameFile(fileWithDate.file);
-                                }}
-                              >
-                                <Check className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-5 w-5 p-0"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setRenamingFileId(null);
-                                }}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ) : (
-                            onRenameFile && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-4 w-4 p-0 hover:bg-muted transition-colors"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startRename(fileWithDate.file);
-                                }}
-                                title="Rename file"
-                              >
-                                <Pencil className="h-3 w-3 text-muted-foreground" />
-                              </Button>
-                            )
-                          )}
-
-                          {/* Delete confirmation or delete button */}
-                          {onDeleteFile && deleteConfirmFile?.id === file.id ? (
-                            // Show inline confirmation - positioned to the left
-                            <div className="flex items-center gap-1 text-xs">
-                              <span className="whitespace-nowrap">Delete?</span>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                className="h-5 w-5 p-0"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  setDeleteConfirmFile(null);
-                                  await handleDeleteFile(fileWithDate.file);
-                                }}
-                              >
-                                <Check className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-5 w-5 p-0"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeleteConfirmFile(null);
-                                }}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ) : (
-                            // Show normal buttons when not confirming
-                            onDeleteFile && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-4 w-4 p-0 hover:bg-muted transition-colors text-destructive hover:text-destructive"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeleteConfirmFile({ id: file.id, name: file.fileName });
-                                }}
-                                title="Delete file"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            )
-                          )}
-                          </div>
-                        </td>
                       </tr>
                     );
                   })
@@ -953,7 +803,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
         )}
 
         {/* TIMELINE VIEW: Table-Based Layout */}
-        {hasAnalyzed && viewMode === 'timeline' && timelineData.months.length > 0 && (
+        {viewMode === 'timeline' && timelineData.months.length > 0 && (
         <div className="relative bg-muted/20 rounded p-3">
           <table className="w-full border-collapse">
             <thead>
@@ -1079,7 +929,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                               {file.fileName.replace(/^FPOD_/, '')}
                             </button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-48 p-0" align="start">
+                          <PopoverContent className="min-w-[400px] p-0" align="start">
                             <div className="flex flex-col">
                               {/* Open option */}
                               <button
@@ -1092,7 +942,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
 
                               {/* Rename option */}
                               {onRenameFile && (
-                                renamingFileId === file.id ? (
+                                renamingFileId === fileWithDate.file.id ? (
                                   <div className="flex items-center gap-1 px-3 py-2 border-b">
                                     <Input
                                       value={renameValue}
@@ -1104,7 +954,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                           setRenamingFileId(null);
                                         }
                                       }}
-                                      className="h-6 text-xs w-64"
+                                      className="h-6 text-xs min-w-[320px]"
                                       autoFocus
                                       onClick={(e) => e.stopPropagation()}
                                     />
@@ -1160,20 +1010,20 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                         className="w-3 h-3 rounded-sm"
                                         style={{ backgroundColor: color }}
                                       />
-                                      <span className="text-sm font-medium">{file.pinLabel}</span>
+                                      <span className="text-sm font-medium">{fileWithDate.file.pinLabel}</span>
                                     </div>
                                     <div className="space-y-2 text-xs">
                                       <div className="flex justify-between">
                                         <span className="text-muted-foreground">File:</span>
-                                        <span className="font-mono">{file.fileName}</span>
+                                        <span className="font-mono">{fileWithDate.file.fileName}</span>
                                       </div>
                                       <div className="flex justify-between">
                                         <span className="text-muted-foreground">Size:</span>
-                                        <span>{file.fileSize ? `${(file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}</span>
+                                        <span>{fileWithDate.file.fileSize ? `${(fileWithDate.file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}</span>
                                       </div>
                                       <div className="flex justify-between">
                                         <span className="text-muted-foreground">Uploaded:</span>
-                                        <span>{format(new Date(file.uploadedAt), 'MMM d, yyyy')}</span>
+                                        <span>{format(new Date(fileWithDate.file.uploadedAt), 'MMM d, yyyy')}</span>
                                       </div>
                                       {dateRange.startDate && dateRange.endDate && (
                                         <>
@@ -1192,9 +1042,35 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                 </PopoverContent>
                               </Popover>
 
+                              {/* Fetch Times option - only if dates not present */}
+                              {!dateRange.startDate && !dateRange.endDate && (
+                                <>
+                                  <Separator />
+                                  <button
+                                    onClick={() => handleFetchTimes(fileWithDate.file)}
+                                    disabled={fetchingTimesFor === fileWithDate.file.id}
+                                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {fetchingTimesFor === fileWithDate.file.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Clock className="h-4 w-4" />
+                                    )}
+                                    <div>
+                                      <div className="font-medium">Fetch Times</div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {fetchingTimesFor === fileWithDate.file.id ? 'Analyzing...' : 'Get start/end dates'}
+                                      </div>
+                                    </div>
+                                  </button>
+                                </>
+                              )}
+
+                              <Separator />
+
                               {/* Delete option */}
                               {onDeleteFile && (
-                                deleteConfirmFile?.id === file.id ? (
+                                deleteConfirmFile?.id === fileWithDate.file.id ? (
                                   <div className="flex items-center gap-2 px-3 py-2 text-sm border-t">
                                     <span className="text-xs">Delete?</span>
                                     <Button
@@ -1225,7 +1101,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setDeleteConfirmFile({ id: file.id, name: file.fileName });
+                                      setDeleteConfirmFile({ id: fileWithDate.file.id, name: fileWithDate.file.fileName });
                                     }}
                                     className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left text-destructive border-t"
                                   >
@@ -1270,7 +1146,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                               backgroundColor: color,
                               minWidth: '2px'
                             }}
-                            title={`${file.pinLabel}: ${dateRange.startDate} - ${dateRange.endDate} (${getCorrectDuration(dateRange.startDate, dateRange.endDate) || 0} days)`}
+                            title={`${fileWithDate.file.pinLabel}: ${dateRange.startDate} - ${dateRange.endDate} (${getCorrectDuration(dateRange.startDate, dateRange.endDate) || 0} days)`}
                           >
                             {barMetrics.width > 12 && (() => {
                               const correctedDays = getCorrectDuration(dateRange.startDate, dateRange.endDate);

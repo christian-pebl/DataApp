@@ -516,7 +516,11 @@ export default function MapDrawingPage() {
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isUpdatingProject, setIsUpdatingProject] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
-  
+
+  // File filtering state
+  const [selectedPins, setSelectedPins] = useState<string[]>([]);
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+
   // Initialize Supabase client for CSV analysis
   const supabase = createClient();
   
@@ -6111,38 +6115,38 @@ export default function MapDrawingPage() {
         setShowProjectDataDialog(open);
       }}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden z-[9999] flex flex-col">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              Project Data Files
-            </DialogTitle>
-            <DialogDescription>
-              All data files grouped by type for {dynamicProjects[currentProjectContext || activeProjectId]?.name}
-            </DialogDescription>
+          <DialogHeader className="flex-shrink-0 pb-1.5 pr-8">
+            <div className="flex items-center justify-between gap-3">
+              <DialogTitle className="flex items-center gap-1.5 text-sm">
+                <Database className="h-3.5 w-3.5" />
+                <span>Project Data Files</span>
+                <span className="text-muted-foreground font-normal">·</span>
+                <span className="text-muted-foreground font-normal text-xs">
+                  {dynamicProjects[currentProjectContext || activeProjectId]?.name}
+                </span>
+              </DialogTitle>
+              {/* Upload Button - Inline with header */}
+              <Button
+                variant="default"
+                size="sm"
+                className="flex items-center gap-1.5 h-7 px-2.5"
+                disabled={isUploadingFiles}
+                onClick={handleInitiateFileUpload}
+              >
+                {isUploadingFiles ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span className="text-xs">Uploading...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-3 w-3" />
+                    <span className="text-xs">Upload</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </DialogHeader>
-
-          {/* Upload Button */}
-          <div className="flex justify-end mb-4 flex-shrink-0">
-            <Button
-              variant="default"
-              size="sm"
-              className="flex items-center gap-2"
-              disabled={isUploadingFiles}
-              onClick={handleInitiateFileUpload}
-            >
-              {isUploadingFiles ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Uploading...
-                </>
-              ) : (
-                <>
-                  <Upload className="h-4 w-4" />
-                  Upload Files
-                </>
-              )}
-            </Button>
-          </div>
           
           <div className="flex-1 overflow-y-auto">
             {(() => {
@@ -6208,83 +6212,174 @@ export default function MapDrawingPage() {
                   });
                 }
               };
-              
+
+              // Get unique pins and types
+              const uniquePins = Array.from(new Set(allFiles.map(file => file.pinLabel))).sort();
+              const uniqueTypes = Array.from(new Set(Object.keys(groupedFiles))).sort();
+
+              // Apply filters
+              const filteredFiles = allFiles.filter(file => {
+                const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
+                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => {
+                  const fileName = file.fileName.toLowerCase();
+                  if (type === 'SubCam') return fileName.includes('subcam');
+                  if (type === 'GP') return fileName.includes('gp');
+                  if (type === 'FPOD') return fileName.includes('fpod');
+                  return false;
+                });
+                return pinMatch && typeMatch;
+              });
+
               // Calculate project summary statistics
               const projectStats = {
                 totalFiles: allFiles.length,
+                filteredFiles: filteredFiles.length,
                 fileTypes: Object.entries(groupedFiles).map(([type, files]) => ({
                   type: type,
                   count: files.length
                 })).filter(({ count }) => count > 0),
                 totalSize: allFiles.reduce((sum, file) => sum + (file.fileSize || 0), 0),
-                uniquePins: Array.from(new Set(allFiles.map(file => file.pinLabel))).length
+                uniquePins: uniquePins.length
               };
 
+              const hasActiveFilters = selectedPins.length > 0 || selectedTypes.length > 0;
+
               return (
-                <div className="space-y-6">
-                  {/* Project Summary Info Section */}
-                  <div className="bg-muted/20 rounded-lg p-4 border border-border/30">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Info className="h-5 w-5 text-muted-foreground" />
-                      <h3 className="text-sm font-semibold">Project Summary</h3>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  {/* Compact Project Summary with Filters */}
+                  <div className="bg-muted/10 rounded p-1.5 border border-border/20">
+                    <div className="flex items-center gap-3 flex-wrap text-[11px]">
                       {/* Total Files */}
-                      <div className="flex items-center gap-2">
-                        <Database className="h-4 w-4 text-blue-500" />
-                        <div className="text-xs">
-                          <div className="font-medium">{projectStats.totalFiles} Files</div>
-                          <div className="text-muted-foreground">Total Data Files</div>
-                        </div>
+                      <div className="flex items-center gap-1">
+                        <Database className="h-3 w-3 text-blue-500" />
+                        <span className="font-semibold">
+                          {hasActiveFilters ? `${projectStats.filteredFiles}/${projectStats.totalFiles}` : projectStats.totalFiles}
+                        </span>
+                        <span className="text-muted-foreground">Files</span>
+                        {hasActiveFilters && (
+                          <button
+                            onClick={() => {
+                              setSelectedPins([]);
+                              setSelectedTypes([]);
+                            }}
+                            className="ml-1 text-primary hover:text-primary/80"
+                            title="Clear all filters"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
-                      
-                      {/* Unique Pins */}
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-green-500" />
-                        <div className="text-xs">
-                          <div className="font-medium">{projectStats.uniquePins} Pins</div>
-                          <div className="text-muted-foreground">Data Sources</div>
-                        </div>
-                      </div>
-                      
-                      {/* Total Size */}
-                      <div className="flex items-center gap-2">
-                        <Upload className="h-4 w-4 text-orange-500" />
-                        <div className="text-xs">
-                          <div className="font-medium">{(projectStats.totalSize / (1024 * 1024)).toFixed(1)} MB</div>
-                          <div className="text-muted-foreground">Total Size</div>
-                        </div>
-                      </div>
-                      
-                      {/* File Types */}
-                      <div className="flex items-center gap-2">
-                        <BarChart3 className="h-4 w-4 text-purple-500" />
-                        <div className="text-xs">
-                          <div className="font-medium">{projectStats.fileTypes.length} Types</div>
-                          <div className="text-muted-foreground">
-                            {projectStats.fileTypes.map(ft => ft.type).join(', ')}
+
+                      {/* Unique Pins - Filterable */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedPins.length > 0 ? 'bg-green-500/20 border border-green-500/50' : ''}`}>
+                            <MapPin className="h-3 w-3 text-green-500" />
+                            <span className="font-semibold">{selectedPins.length > 0 ? selectedPins.length : projectStats.uniquePins}</span>
+                            <span className="text-muted-foreground">Pins</span>
+                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 p-2" align="start">
+                          <div className="space-y-1">
+                            <div className="text-xs font-semibold mb-2 flex items-center justify-between">
+                              <span>Filter by Pin</span>
+                              {selectedPins.length > 0 && (
+                                <button
+                                  onClick={() => setSelectedPins([])}
+                                  className="text-primary hover:text-primary/80 text-[10px]"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                            </div>
+                            {uniquePins.map(pin => (
+                              <label key={pin} className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedPins.includes(pin)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedPins([...selectedPins, pin]);
+                                    } else {
+                                      setSelectedPins(selectedPins.filter(p => p !== pin));
+                                    }
+                                  }}
+                                  className="h-3 w-3"
+                                />
+                                <span>{pin}</span>
+                              </label>
+                            ))}
                           </div>
-                        </div>
+                        </PopoverContent>
+                      </Popover>
+
+                      {/* Total Size */}
+                      <div className="flex items-center gap-1">
+                        <Upload className="h-3 w-3 text-orange-500" />
+                        <span className="font-semibold">{(projectStats.totalSize / (1024 * 1024)).toFixed(1)}</span>
+                        <span className="text-muted-foreground">MB</span>
                       </div>
-                    </div>
-                    
-                    {/* File Type Breakdown */}
-                    {projectStats.fileTypes.length > 1 && (
-                      <div className="mt-3 pt-3 border-t border-border/20">
-                        <div className="text-xs text-muted-foreground mb-2">File Type Distribution:</div>
-                        <div className="flex flex-wrap gap-2">
+
+                      {/* File Types - Filterable */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedTypes.length > 0 ? 'bg-purple-500/20 border border-purple-500/50' : ''}`}>
+                            <BarChart3 className="h-3 w-3 text-purple-500" />
+                            <span className="font-semibold">{selectedTypes.length > 0 ? selectedTypes.length : projectStats.fileTypes.length}</span>
+                            <span className="text-muted-foreground">Types</span>
+                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 p-2" align="start">
+                          <div className="space-y-1">
+                            <div className="text-xs font-semibold mb-2 flex items-center justify-between">
+                              <span>Filter by Type</span>
+                              {selectedTypes.length > 0 && (
+                                <button
+                                  onClick={() => setSelectedTypes([])}
+                                  className="text-primary hover:text-primary/80 text-[10px]"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                            </div>
+                            {uniqueTypes.map(type => (
+                              <label key={type} className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedTypes.includes(type)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedTypes([...selectedTypes, type]);
+                                    } else {
+                                      setSelectedTypes(selectedTypes.filter(t => t !== type));
+                                    }
+                                  }}
+                                  className="h-3 w-3"
+                                />
+                                <span>{type}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+
+                      {/* File Type Distribution - Inline */}
+                      {projectStats.fileTypes.length > 0 && (
+                        <div className="flex items-center gap-1.5 ml-auto">
                           {projectStats.fileTypes.map(({ type, count }, index) => (
-                            <div key={type} className="bg-muted px-2 py-1 rounded-sm text-xs">
-                              <span className="font-medium">{type}</span>: {count} files
+                            <div key={type} className="bg-muted/80 px-1.5 py-0.5 rounded text-[10px] font-medium">
+                              {type}: {count}
                             </div>
                           ))}
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
-                  
+
                   <DataTimeline
-                    files={allFiles}
+                    files={filteredFiles}
                     getFileDateRange={getFileDateRange}
                     onFileClick={handleTimelineFileClick}
                     onRenameFile={async (file, newName) => {
