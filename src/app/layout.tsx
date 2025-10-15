@@ -14,12 +14,15 @@ const roboto = Roboto({
   weight: ['300', '400', '500', '700'],
   style: ['normal', 'italic'],
   variable: '--font-roboto',
+  display: 'swap', // Show fallback font immediately, swap when custom font loads
+  preload: true,   // Preload font for faster initial load
 });
 
 // Note: Futura is not available in Google Fonts, so we'll use a system fallback
 // In production, you would load Futura from a custom font file
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'),
   title: 'PEBL Ocean Data Platform',
   description: 'Advanced marine and meteorological data visualization platform for ocean energy applications.',
   keywords: ['ocean energy', 'marine data', 'weather analysis', 'PEBL', 'data visualization'],

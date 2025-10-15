@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { format, startOfMonth, endOfMonth, eachMonthOfInterval, differenceInDays, parseISO, isValid, getYear } from 'date-fns';
 import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText, Pencil, Clock, Loader2, Layers, Combine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,13 @@ import { type PinFile } from '@/lib/supabase/file-storage-service';
 import { useToast } from '@/hooks/use-toast';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { MergeFilesDialog } from './MergeFilesDialog';
+import { Checkbox } from '@/components/ui/checkbox';
+
+// Lazy load MergeFilesDialog - only loads when user clicks merge button
+const MergeFilesDialog = dynamic(
+  () => import('./MergeFilesDialog').then(mod => ({ default: mod.MergeFilesDialog })),
+  { ssr: false, loading: () => <div className="animate-pulse">Loading merge dialog...</div> }
+);
 
 interface DataTimelineProps {
   files: (PinFile & { pinLabel: string })[];
@@ -25,6 +32,7 @@ interface DataTimelineProps {
   onDeleteFile?: (file: PinFile & { pinLabel: string }) => void;
   onRenameFile?: (file: PinFile & { pinLabel: string }, newName: string) => Promise<boolean>;
   onDatesUpdated?: () => void;
+  onSelectMultipleFiles?: (files: (PinFile & { pinLabel: string })[]) => void;
 }
 
 interface FileWithDateRange {
@@ -157,7 +165,7 @@ const parseFileGrouping = (fileName: string): { project: string; dataType: strin
   return { project, dataType, station, groupKey };
 };
 
-export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFile, onRenameFile, onDatesUpdated }: DataTimelineProps) {
+export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFile, onRenameFile, onDatesUpdated, onSelectMultipleFiles }: DataTimelineProps) {
   const { toast } = useToast();
   const [filesWithDates, setFilesWithDates] = useState<FileWithDateRange[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'timeline'>('table');
@@ -173,6 +181,43 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [mergeGroupKey, setMergeGroupKey] = useState<string | null>(null);
   const [mergeFiles, setMergeFiles] = useState<FileWithDateRange[]>([]);
+  const [multiFileMode, setMultiFileMode] = useState(false);
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
+
+  // Toggle file selection for multi-file mode
+  const toggleFileSelection = (fileId: string) => {
+    setSelectedFileIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fileId)) {
+        newSet.delete(fileId);
+      } else {
+        newSet.add(fileId);
+      }
+      return newSet;
+    });
+  };
+
+  // Handle opening multiple files
+  const handleOpenMultiFile = () => {
+    if (!onSelectMultipleFiles || selectedFileIds.size < 2) {
+      toast({
+        variant: "destructive",
+        title: "Selection Required",
+        description: "Please select at least 2 files to merge"
+      });
+      return;
+    }
+
+    const selectedFiles = filesWithDates
+      .filter(f => selectedFileIds.has(f.file.id))
+      .map(f => f.file);
+
+    onSelectMultipleFiles(selectedFiles);
+
+    // Reset selection
+    setSelectedFileIds(new Set());
+    setMultiFileMode(false);
+  };
 
   // Delete file handler - just call parent's onDeleteFile
   const handleDeleteFile = async (file: PinFile & { pinLabel: string }) => {
@@ -706,6 +751,27 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
             </Button>
           )}
 
+          {/* Multi-file Toggle - Only show in table mode when onSelectMultipleFiles is provided */}
+          {viewMode === 'table' && onSelectMultipleFiles && (
+            <div className="flex items-center gap-2 bg-muted/30 rounded px-2 py-1">
+              <Layers className="h-3 w-3 text-muted-foreground" />
+              <Label htmlFor="multi-file-toggle" className="text-xs cursor-pointer">
+                Multi-file
+              </Label>
+              <Switch
+                id="multi-file-toggle"
+                checked={multiFileMode}
+                onCheckedChange={(checked) => {
+                  setMultiFileMode(checked);
+                  if (!checked) {
+                    setSelectedFileIds(new Set());
+                  }
+                }}
+                className="h-4 data-[state=checked]:bg-primary"
+              />
+            </div>
+          )}
+
           {/* Merged View Toggle - Only show in timeline mode */}
           {viewMode === 'timeline' && (
             <div className="flex items-center gap-2 bg-muted/30 rounded px-2 py-1">
@@ -754,6 +820,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-border/30 text-xs font-medium text-muted-foreground">
+                    {multiFileMode && <th className="text-left pb-2 pr-2 w-8"></th>}
                     <th className="text-left pb-2 pr-2">Pin</th>
                     <th className="text-left pb-2 pr-2">File Name</th>
                     <th className="text-center pb-2 px-2 bg-muted/10 rounded-tl-sm">Start Date</th>
@@ -772,6 +839,17 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                         className="h-[22px] text-xs hover:bg-muted/30 transition-colors opacity-0 animate-[fadeIn_0.4s_ease-in-out_forwards]"
                         style={{ animationDelay: `${index * 30}ms` }}
                       >
+                        {/* Checkbox for multi-file selection */}
+                        {multiFileMode && (
+                          <td className="pr-2 align-middle">
+                            <Checkbox
+                              checked={selectedFileIds.has(file.id)}
+                              onCheckedChange={() => toggleFileSelection(file.id)}
+                              className="flex-shrink-0"
+                            />
+                          </td>
+                        )}
+
                         {/* Pin indicator */}
                         <td className="pr-2 align-middle">
                           <div
@@ -1017,6 +1095,23 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                 }
                 </tbody>
               </table>
+
+              {/* Multi-file action bar */}
+              {multiFileMode && (
+                <div className="mt-3 flex items-center justify-between gap-4 p-3 bg-muted/30 rounded border border-border/30">
+                  <div className="text-sm text-muted-foreground">
+                    {selectedFileIds.size} file{selectedFileIds.size !== 1 ? 's' : ''} selected
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={handleOpenMultiFile}
+                    disabled={selectedFileIds.size < 2}
+                  >
+                    <Combine className="h-4 w-4 mr-2" />
+                    Open Multi-file
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

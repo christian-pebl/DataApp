@@ -457,3 +457,345 @@ export async function deleteFileAction(fileId: string): Promise<{
     };
   }
 }
+
+export async function downloadFileAction(fileId: string): Promise<{
+  success: boolean
+  data?: { blob: Blob; fileName: string }
+  error?: string
+}> {
+  try {
+    console.log('[Data Explorer Actions] Downloading file:', fileId);
+
+    const supabase = await createClient();
+
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error('[Data Explorer Actions] Authentication error:', authError);
+      return {
+        success: false,
+        error: 'Authentication required'
+      };
+    }
+
+    console.log('[Data Explorer Actions] User authenticated:', user.id);
+
+    // Get file metadata to verify ownership
+    const { data: fileData, error: getError } = await supabase
+      .from('pin_files')
+      .select('pin_id, file_path, file_name')
+      .eq('id', fileId)
+      .single();
+
+    if (getError || !fileData) {
+      console.error('[Data Explorer Actions] Error fetching file:', getError);
+      return {
+        success: false,
+        error: 'File not found'
+      };
+    }
+
+    console.log('[Data Explorer Actions] File to download:', fileData.file_name);
+
+    // Verify user owns the pin associated with this file
+    const { data: pinData, error: pinError } = await supabase
+      .from('pins')
+      .select('user_id')
+      .eq('id', fileData.pin_id)
+      .single();
+
+    if (pinError || !pinData) {
+      console.error('[Data Explorer Actions] Error fetching pin:', pinError);
+      return {
+        success: false,
+        error: 'Pin not found'
+      };
+    }
+
+    if (pinData.user_id !== user.id) {
+      console.error('[Data Explorer Actions] User does not own this file');
+      return {
+        success: false,
+        error: 'You do not have permission to download this file'
+      };
+    }
+
+    if (!fileData.file_path) {
+      console.error('[Data Explorer Actions] No file path found');
+      return {
+        success: false,
+        error: 'File path not found'
+      };
+    }
+
+    // Download file from storage
+    const { data: blob, error: downloadError } = await supabase.storage
+      .from('pin-files')
+      .download(fileData.file_path);
+
+    if (downloadError || !blob) {
+      console.error('[Data Explorer Actions] Error downloading file:', downloadError);
+      return {
+        success: false,
+        error: downloadError?.message || 'Failed to download file'
+      };
+    }
+
+    console.log('[Data Explorer Actions] File downloaded successfully');
+
+    return {
+      success: true,
+      data: {
+        blob,
+        fileName: fileData.file_name
+      }
+    };
+  } catch (error) {
+    console.error('[Data Explorer Actions] Error downloading file:', error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to download file'
+    };
+  }
+}
+
+export async function fetchFileDataAction(fileId: string): Promise<{
+  success: boolean
+  data?: Array<Record<string, any>>
+  error?: string
+}> {
+  try {
+    console.log('[Data Explorer Actions] Fetching file data:', fileId);
+
+    const supabase = await createClient();
+
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error('[Data Explorer Actions] Authentication error:', authError);
+      return {
+        success: false,
+        error: 'Authentication required'
+      };
+    }
+
+    console.log('[Data Explorer Actions] User authenticated:', user.id);
+
+    // Get file metadata to verify ownership
+    const { data: fileData, error: getError } = await supabase
+      .from('pin_files')
+      .select('pin_id, file_path, file_name')
+      .eq('id', fileId)
+      .single();
+
+    if (getError || !fileData) {
+      console.error('[Data Explorer Actions] Error fetching file:', getError);
+      return {
+        success: false,
+        error: 'File not found'
+      };
+    }
+
+    console.log('[Data Explorer Actions] File to fetch data from:', fileData.file_name);
+
+    // Verify user owns the pin associated with this file
+    const { data: pinData, error: pinError } = await supabase
+      .from('pins')
+      .select('user_id')
+      .eq('id', fileData.pin_id)
+      .single();
+
+    if (pinError || !pinData) {
+      console.error('[Data Explorer Actions] Error fetching pin:', pinError);
+      return {
+        success: false,
+        error: 'Pin not found'
+      };
+    }
+
+    if (pinData.user_id !== user.id) {
+      console.error('[Data Explorer Actions] User does not own this file');
+      return {
+        success: false,
+        error: 'You do not have permission to access this file'
+      };
+    }
+
+    if (!fileData.file_path) {
+      console.error('[Data Explorer Actions] No file path found');
+      return {
+        success: false,
+        error: 'File path not found'
+      };
+    }
+
+    // Download file from storage
+    const { data: blob, error: downloadError } = await supabase.storage
+      .from('pin-files')
+      .download(fileData.file_path);
+
+    if (downloadError || !blob) {
+      console.error('[Data Explorer Actions] Error downloading file:', downloadError);
+      return {
+        success: false,
+        error: downloadError?.message || 'Failed to download file'
+      };
+    }
+
+    console.log('[Data Explorer Actions] File downloaded, parsing CSV...');
+
+    // Parse CSV using papa-parse
+    const Papa = (await import('papaparse')).default;
+    const text = await blob.text();
+
+    const parseResult = Papa.parse(text, {
+      header: true,
+      dynamicTyping: true,
+      skipEmptyLines: true,
+    });
+
+    if (parseResult.errors.length > 0) {
+      console.error('[Data Explorer Actions] CSV parsing errors:', parseResult.errors);
+      return {
+        success: false,
+        error: 'Failed to parse CSV file'
+      };
+    }
+
+    console.log('[Data Explorer Actions] CSV parsed successfully, rows:', parseResult.data.length);
+
+    return {
+      success: true,
+      data: parseResult.data as Array<Record<string, any>>
+    };
+  } catch (error) {
+    console.error('[Data Explorer Actions] Error fetching file data:', error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch file data'
+    };
+  }
+}
+
+export async function uploadCleanedFileAction(
+  originalFileId: string,
+  cleanedData: Array<Record<string, any>>,
+  cleanedFileName: string
+): Promise<{
+  success: boolean
+  fileId?: string
+  error?: string
+}> {
+  try {
+    console.log('[Data Explorer Actions] Uploading cleaned file:', cleanedFileName);
+
+    const supabase = await createClient();
+
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error('[Data Explorer Actions] Authentication error:', authError);
+      return {
+        success: false,
+        error: 'Authentication required'
+      };
+    }
+
+    console.log('[Data Explorer Actions] User authenticated:', user.id);
+
+    // Get original file metadata
+    const { data: originalFile, error: getError } = await supabase
+      .from('pin_files')
+      .select('pin_id, project_id, file_type, start_date, end_date')
+      .eq('id', originalFileId)
+      .single();
+
+    if (getError || !originalFile) {
+      console.error('[Data Explorer Actions] Error fetching original file:', getError);
+      return {
+        success: false,
+        error: 'Original file not found'
+      };
+    }
+
+    // Verify user owns the pin
+    const { data: pinData, error: pinError } = await supabase
+      .from('pins')
+      .select('user_id')
+      .eq('id', originalFile.pin_id)
+      .single();
+
+    if (pinError || !pinData || pinData.user_id !== user.id) {
+      console.error('[Data Explorer Actions] User does not own this file');
+      return {
+        success: false,
+        error: 'You do not have permission to upload files to this pin'
+      };
+    }
+
+    // Convert cleaned data back to CSV
+    const Papa = (await import('papaparse')).default;
+    const csv = Papa.unparse(cleanedData);
+    const blob = new Blob([csv], { type: 'text/csv' });
+
+    // Upload to storage
+    const filePath = `${user.id}/${originalFile.pin_id}/${Date.now()}_${cleanedFileName}`;
+    const { error: uploadError } = await supabase.storage
+      .from('pin-files')
+      .upload(filePath, blob);
+
+    if (uploadError) {
+      console.error('[Data Explorer Actions] Error uploading file:', uploadError);
+      return {
+        success: false,
+        error: uploadError.message
+      };
+    }
+
+    console.log('[Data Explorer Actions] File uploaded to storage');
+
+    // Insert file record into database
+    const { data: newFile, error: insertError } = await supabase
+      .from('pin_files')
+      .insert({
+        pin_id: originalFile.pin_id,
+        project_id: originalFile.project_id,
+        file_name: cleanedFileName,
+        file_path: filePath,
+        file_type: 'text/csv',
+        start_date: originalFile.start_date,
+        end_date: originalFile.end_date,
+      })
+      .select('id')
+      .single();
+
+    if (insertError || !newFile) {
+      console.error('[Data Explorer Actions] Error inserting file record:', insertError);
+      // Try to clean up uploaded file
+      await supabase.storage.from('pin-files').remove([filePath]);
+      return {
+        success: false,
+        error: insertError?.message || 'Failed to create file record'
+      };
+    }
+
+    console.log('[Data Explorer Actions] Cleaned file uploaded successfully');
+
+    return {
+      success: true,
+      fileId: newFile.id
+    };
+  } catch (error) {
+    console.error('[Data Explorer Actions] Error uploading cleaned file:', error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to upload cleaned file'
+    };
+  }
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import dynamic from 'next/dynamic';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, ReferenceLine } from 'recharts';
 import { format, parseISO, isValid } from 'date-fns';
 import { HexColorPicker } from 'react-colorful';
@@ -18,7 +19,13 @@ import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
 import { fileStorageService } from '@/lib/supabase/file-storage-service';
-import { StylingRulesDialog, DEFAULT_STYLE_RULES, type StyleRule } from './StylingRulesDialog';
+import { DEFAULT_STYLE_RULES, type StyleRule } from './StylingRulesDialog';
+
+// Lazy load StylingRulesDialog - only loads when user clicks styling button
+const StylingRulesDialog = dynamic(
+  () => import('./StylingRulesDialog').then(mod => ({ default: mod.StylingRulesDialog })),
+  { ssr: false, loading: () => <div className="animate-pulse p-4">Loading styling options...</div> }
+);
 
 interface PinChartDisplayProps {
   data: ParsedDataPoint[];
@@ -1760,7 +1767,10 @@ export function PinChartDisplay({
           {/* Main Chart - Takes up most space */}
           <div className="flex-1 space-y-3">
       {visibleParameters.length > 0 && (
-        <div className={cn("h-52 w-full bg-card p-2", !minimalView && "border rounded-md")}>
+        <div
+          className={cn("w-full bg-card p-2", !minimalView && "border rounded-md")}
+          style={{ height: `${appliedStyleRule?.properties.chartHeight || 208}px` }}
+        >
           {/* Single Axis Mode */}
           {axisMode === 'single' && (
             <ResponsiveContainer width="100%" height="100%">
@@ -1772,7 +1782,7 @@ export function PinChartDisplay({
                     ? (appliedStyleRule?.properties.chartRightMargin || 80)
                     : 12,
                   left: 5,
-                  bottom: -5
+                  bottom: appliedStyleRule?.properties.chartBottomMargin ?? 10
                 }}
               >
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
@@ -1787,14 +1797,14 @@ export function PinChartDisplay({
                       : formatDateTick(value, dataSource, showYearInXAxis)
                   }
                   height={appliedStyleRule?.properties.xAxisTitle
-                    ? 45 + (appliedStyleRule.properties.xAxisTitlePosition || 40)
+                    ? 45 + (appliedStyleRule.properties.xAxisTitlePosition || 20)
                     : 45
                   }
                   label={appliedStyleRule?.properties.xAxisTitle ? {
                     value: appliedStyleRule.properties.xAxisTitle,
                     position: 'bottom',
-                    offset: (appliedStyleRule.properties.xAxisTitleMargin || 10),
-                    style: { textAnchor: 'middle', fontSize: '0.875rem', fill: 'hsl(var(--foreground))', fontWeight: 600 }
+                    offset: (appliedStyleRule.properties.xAxisTitleMargin ?? -5),
+                    style: { textAnchor: 'middle', fontSize: `${appliedStyleRule.properties.xAxisTitleFontSize || 10}px`, fill: 'hsl(var(--muted-foreground))' }
                   } : undefined}
                 />
 
@@ -1927,7 +1937,7 @@ export function PinChartDisplay({
                   top: 5,
                   right: Math.ceil(visibleParameters.length / 2) * 50,
                   left: 50,
-                  bottom: -5
+                  bottom: appliedStyleRule?.properties.chartBottomMargin ?? 10
                 }}
               >
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
@@ -1942,14 +1952,14 @@ export function PinChartDisplay({
                       : formatDateTick(value, dataSource, showYearInXAxis)
                   }
                   height={appliedStyleRule?.properties.xAxisTitle
-                    ? 45 + (appliedStyleRule.properties.xAxisTitlePosition || 40)
+                    ? 45 + (appliedStyleRule.properties.xAxisTitlePosition || 20)
                     : 45
                   }
                   label={appliedStyleRule?.properties.xAxisTitle ? {
                     value: appliedStyleRule.properties.xAxisTitle,
                     position: 'bottom',
-                    offset: (appliedStyleRule.properties.xAxisTitleMargin || 10),
-                    style: { textAnchor: 'middle', fontSize: '0.875rem', fill: 'hsl(var(--foreground))', fontWeight: 600 }
+                    offset: (appliedStyleRule.properties.xAxisTitleMargin ?? -5),
+                    style: { textAnchor: 'middle', fontSize: `${appliedStyleRule.properties.xAxisTitleFontSize || 10}px`, fill: 'hsl(var(--muted-foreground))' }
                   } : undefined}
                 />
 

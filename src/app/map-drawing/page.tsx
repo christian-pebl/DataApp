@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -58,7 +58,7 @@ import { projectService } from '@/lib/supabase/project-service';
 import { getTimeWindowSummary } from '@/lib/dateParser';
 import { fileStorageService, type PinFile } from '@/lib/supabase/file-storage-service';
 import { mapDataService } from '@/lib/supabase/map-data-service';
-import { ShareDialogSimplified } from '@/components/sharing/ShareDialogSimplified';
+import { perfLogger } from '@/lib/perf-logger';
 import { DataRestoreNotifications } from '@/components/auth/DataRestoreDialog';
 import { createClient } from '@/lib/supabase/client';
 import type { DateRange } from "react-day-picker";
@@ -67,15 +67,27 @@ import { ALL_PARAMETERS, PARAMETER_CONFIG } from '../om-marine-explorer/shared';
 import { fetchCombinedDataAction } from '../om-marine-explorer/actions';
 import { MarinePlotsGrid } from '@/components/marine/MarinePlotsGrid';
 import { DataTimeline } from '@/components/pin-data/DataTimeline';
+import { DEFAULT_MERGE_RULES, type MergeRule } from '@/components/pin-data/MergeRulesDialog';
 import { DatePickerWithRange } from '@/components/ui/date-picker-with-range';
-import { 
-  parseCoordinateInput, 
-  getCoordinateFormats, 
-  validateCoordinate, 
-  CoordinateFormat, 
-  COORDINATE_FORMAT_LABELS, 
-  COORDINATE_FORMAT_EXAMPLES 
+import {
+  parseCoordinateInput,
+  getCoordinateFormats,
+  validateCoordinate,
+  CoordinateFormat,
+  COORDINATE_FORMAT_LABELS,
+  COORDINATE_FORMAT_EXAMPLES
 } from '@/lib/coordinate-utils';
+
+// Lazy load heavy dialog components
+const ShareDialogSimplified = dynamic(
+  () => import('@/components/sharing/ShareDialogSimplified').then(mod => ({ default: mod.ShareDialogSimplified })),
+  { ssr: false, loading: () => <div className="animate-pulse">Loading...</div> }
+);
+
+const MergeRulesDialog = dynamic(
+  () => import('@/components/pin-data/MergeRulesDialog').then(mod => ({ default: mod.MergeRulesDialog })),
+  { ssr: false, loading: () => <div className="animate-pulse">Loading...</div> }
+);
 // Define types locally to avoid SSR issues with Leaflet
 interface LatLng {
   lat: number;
@@ -353,7 +365,7 @@ const PinMeteoPlotRow = React.memo(({
 PinMeteoPlotRow.displayName = 'PinMeteoPlotRow';
 
 
-export default function MapDrawingPage() {
+function MapDrawingPageContent() {
   const { view, setView } = useMapView('dev-user');
   const { settings, setSettings } = useSettings();
   const { toast, dismiss } = useToast();
@@ -419,6 +431,15 @@ export default function MapDrawingPage() {
   const [showDataDropdown, setShowDataDropdown] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [selectedPinForShare, setSelectedPinForShare] = useState<{ id: string; label: string } | null>(null);
+  const [showMultiFileConfirmDialog, setShowMultiFileConfirmDialog] = useState(false);
+  const [multiFileConfirmData, setMultiFileConfirmData] = useState<{
+    parsedFiles: any[];
+    validation: any;
+    downloadedFiles: File[];
+    fileType: 'GP' | 'FPOD' | 'Subcam';
+  } | null>(null);
+  const [multiFileMergeMode, setMultiFileMergeMode] = useState<'sequential' | 'stack-parameters'>('sequential');
+  const [mergeRules, setMergeRules] = useState<MergeRule[]>(DEFAULT_MERGE_RULES);
   const [showSharePopover, setShowSharePopover] = useState(false);
   const [sharePrivacyLevel, setSharePrivacyLevel] = useState<'private' | 'public' | 'specific'>('private');
   const [shareEmails, setShareEmails] = useState('');
@@ -439,20 +460,16 @@ export default function MapDrawingPage() {
       metadata?: PinFile; // Include metadata for downloading
     }> = [];
 
-    console.log('Building availableFilesForPlots...', {
-      pinFileMetadataKeys: Object.keys(pinFileMetadata),
-      pinFilesKeys: Object.keys(pinFiles),
-      pinsCount: pins.length
-    });
+    perfLogger.start('buildFileOptions');
+    let totalFiles = 0;
+    let totalPins = 0;
 
     for (const [pinId, metadata] of Object.entries(pinFileMetadata)) {
       const pin = pins.find(p => p.id === pinId);
-      if (!pin) {
-        console.log(`Pin ${pinId} not found in pins list`);
-        continue;
-      }
+      if (!pin) continue;
 
-      console.log(`Processing ${metadata.length} files for pin ${pin.label}`);
+      totalPins++;
+      totalFiles += metadata.length;
 
       for (const fileMeta of metadata) {
         // Determine file type from filename
@@ -475,8 +492,6 @@ export default function MapDrawingPage() {
           fileType = 'GP';
         }
 
-        console.log(`[FILE TYPE DETECTION] ${fileMeta.fileName} → ${fileType} (pos0: ${position0}, pos1: ${position1})`);
-
         // Check if we have the actual File object
         const actualFiles = pinFiles[pinId] || [];
         const matchingFile = actualFiles.find(f => f.name === fileMeta.fileName);
@@ -494,7 +509,7 @@ export default function MapDrawingPage() {
       }
     }
 
-    console.log(`Generated ${fileOptions.length} file options for plots`);
+    perfLogger.end('buildFileOptions', `${fileOptions.length} options from ${totalFiles} files across ${totalPins} pins`);
     return fileOptions;
   }, [pinFileMetadata, pins, pinFiles]);
   const [showExploreDropdown, setShowExploreDropdown] = useState(false);
@@ -602,15 +617,14 @@ export default function MapDrawingPage() {
 
   // Load dynamic projects from database
   const loadDynamicProjects = useCallback(async () => {
-    console.log('🔄 Loading dynamic projects from database...');
+    perfLogger.start('loadProjects');
     setIsLoadingProjects(true);
     try {
       const databaseProjects = await projectService.getProjects();
-      console.log('📂 Found database projects:', databaseProjects);
-      
+
       // Combine hardcoded projects with database projects
       const combinedProjects = { ...PROJECT_LOCATIONS };
-      
+
       databaseProjects.forEach(project => {
         // Use project ID as key, add isDynamic flag
         combinedProjects[project.id] = {
@@ -618,8 +632,8 @@ export default function MapDrawingPage() {
           isDynamic: true
         };
       });
-      
-      console.log('✅ Combined projects:', combinedProjects);
+
+      perfLogger.end('loadProjects', `${databaseProjects.length} projects loaded`);
       setDynamicProjects(combinedProjects);
       
       // Update project visibility to include new projects
@@ -804,35 +818,27 @@ export default function MapDrawingPage() {
   // Load pin files from Supabase when pins change
   useEffect(() => {
     const loadPinFiles = async () => {
-      if (pins.length === 0) {
-        console.log('🔍 No pins to load files for');
-        return;
-      }
-      
-      console.log(`🔍 Loading files for ${pins.length} pins...`);
+      if (pins.length === 0) return;
+
+      perfLogger.start('loadPinFiles');
       const fileMetadata: Record<string, PinFile[]> = {};
-      
+      let totalFiles = 0;
+
       // Load files for each pin
       for (const pin of pins) {
         try {
-          console.log(`  📍 Checking files for pin: ${pin.label || 'Unnamed'} (${pin.id})`);
           const files = await fileStorageService.getPinFiles(pin.id);
-          
+
           if (files.length > 0) {
-            console.log(`    ✅ Found ${files.length} file(s) for pin ${pin.id}`);
-            files.forEach(file => {
-              console.log(`      - ${file.fileName} (${(file.fileSize / 1024).toFixed(2)} KB)`);
-            });
             fileMetadata[pin.id] = files;
-          } else {
-            console.log(`    📭 No files found for pin ${pin.id}`);
+            totalFiles += files.length;
           }
         } catch (error) {
-          console.error(`    ❌ Error loading files for pin ${pin.id}:`, error);
+          perfLogger.error(`Failed to load files for pin ${pin.id}`, error);
         }
       }
-      
-      console.log(`📦 Total file metadata loaded:`, Object.keys(fileMetadata).length, 'pins with files');
+
+      perfLogger.end('loadPinFiles', `${totalFiles} files from ${Object.keys(fileMetadata).length}/${pins.length} pins`);
       setPinFileMetadata(fileMetadata);
     };
 
@@ -1877,7 +1883,6 @@ export default function MapDrawingPage() {
 
       // STEP 2: Detect date format from sample values
       const detectedFormat = detectDateFormat(sampleDateValues);
-      console.log(`[TIMELINE ANALYSIS] File: ${file.fileName} | Detected format: ${detectedFormat}`);
 
       // STEP 3: Parse date values from all data rows using detected format
       const dates: Date[] = [];
@@ -1977,18 +1982,7 @@ export default function MapDrawingPage() {
   // Self-test on page load to verify our date parsing
   React.useEffect(() => {
     const testISO = "2024-08-01T00:00:00.000Z";
-    const testDate = new Date(testISO);
-    const formatDateForCSV = (date: Date): string => {
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const year = String(date.getFullYear());
-      return `${day}/${month}/${year}`;
-    };
-    console.log('🧪 Date parsing self-test:');
-    console.log('Input ISO:', testISO);
-    console.log('Parsed Date:', testDate.toISOString());
-    console.log('Formatted Output:', formatDateForCSV(testDate));
-    console.log('Expected: 01/08/2024');
+    // Date parsing self-test removed - functionality verified
   }, []);
 
   // Parse various date formats commonly found in CSV files
@@ -1997,11 +1991,7 @@ export default function MapDrawingPage() {
    * Matches the logic from csvParser.ts for consistency
    */
   const detectDateFormat = (dateValues: string[]): 'DD/MM/YYYY' | 'MM/DD/YYYY' => {
-    console.log('[TIMELINE DATE DETECTION] Starting date format detection...');
-    console.log('[TIMELINE DATE DETECTION] Sample dates:', dateValues.slice(0, 5));
-
     if (dateValues.length === 0) {
-      console.log('[TIMELINE DATE DETECTION] No date values found, defaulting to DD/MM/YYYY');
       return 'DD/MM/YYYY'; // Default to European format
     }
 
@@ -2031,20 +2021,13 @@ export default function MapDrawingPage() {
       }
     }
 
-    console.log('[TIMELINE DATE DETECTION] First components:', firstComponents.slice(0, 10));
-    console.log('[TIMELINE DATE DETECTION] Second components:', secondComponents.slice(0, 10));
-    console.log('[TIMELINE DATE DETECTION] Has first > 12:', hasFirstComponentOver12);
-    console.log('[TIMELINE DATE DETECTION] Has second > 12:', hasSecondComponentOver12);
-
     // Rule 1: If first component > 12, must be DD/MM/YYYY
     if (hasFirstComponentOver12 && !hasSecondComponentOver12) {
-      console.log('[TIMELINE DATE DETECTION] ✓ Detected format: DD/MM/YYYY (Rule 1: first > 12)');
       return 'DD/MM/YYYY';
     }
 
     // Rule 2: If second component > 12, must be MM/DD/YYYY
     if (hasSecondComponentOver12 && !hasFirstComponentOver12) {
-      console.log('[TIMELINE DATE DETECTION] ✓ Detected format: MM/DD/YYYY (Rule 2: second > 12)');
       return 'MM/DD/YYYY';
     }
 
@@ -2058,24 +2041,18 @@ export default function MapDrawingPage() {
       const secondRange = Math.max(...secondComponents) - Math.min(...secondComponents);
       const secondUnique = new Set(secondComponents).size;
 
-      console.log('[TIMELINE DATE DETECTION] Pattern analysis - First range:', firstRange, 'unique:', firstUnique);
-      console.log('[TIMELINE DATE DETECTION] Pattern analysis - Second range:', secondRange, 'unique:', secondUnique);
-
       // If first component has wider range and more variety, likely to be days
       if (firstRange > secondRange && firstUnique > secondUnique) {
-        console.log('[TIMELINE DATE DETECTION] ✓ Detected format: DD/MM/YYYY (Rule 3: first has more variety)');
         return 'DD/MM/YYYY';
       }
 
       // If second component has wider range and more variety, likely to be days
       if (secondRange > firstRange && secondUnique > firstUnique) {
-        console.log('[TIMELINE DATE DETECTION] ✓ Detected format: MM/DD/YYYY (Rule 3: second has more variety)');
         return 'MM/DD/YYYY';
       }
     }
 
     // Default to European format (DD/MM/YYYY) if still ambiguous
-    console.log('[TIMELINE DATE DETECTION] ✓ Using default format: DD/MM/YYYY (ambiguous case)');
     return 'DD/MM/YYYY';
   };
 
@@ -2171,7 +2148,6 @@ export default function MapDrawingPage() {
             if (date.getMonth() + 1 !== monthNum) return null;
             if (date.getDate() !== dayNum) return null;
 
-            console.log(`[TIMELINE DATE PARSE] "${cleanValue}" → Format: ${dateFormat} → day=${day}, month=${month} → ${date.toISOString()}`);
             return date;
           }
         }
@@ -2218,7 +2194,6 @@ export default function MapDrawingPage() {
   // Clear the file date cache on component mount (run once)
   useEffect(() => {
     setFileDateCache({});
-    console.log('🔄 Cleared file date cache on mount');
   }, []);
 
   // Function to get or analyze file date range
@@ -3219,28 +3194,25 @@ export default function MapDrawingPage() {
       const failedUploads: string[] = [];
 
       // Upload each file to Supabase
-      console.log(`📤 Starting upload of ${csvFiles.length} file(s) to pin ${pinId}`);
-      console.log('Active project ID:', activeProjectId);
+      perfLogger.start('uploadFiles');
 
       for (const file of csvFiles) {
-        console.log(`  📎 Uploading: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`);
-
         try {
           const result = await fileStorageService.uploadPinFile(pinId, file, activeProjectId);
 
           if (result) {
-            console.log(`    ✅ Successfully uploaded: ${file.name}`);
-            console.log(`    📍 File path: ${result.filePath}`);
             uploadResults.push(result);
           } else {
-            console.error(`    ❌ Failed to upload: ${file.name} - check console for details`);
+            perfLogger.error(`Failed to upload: ${file.name}`);
             failedUploads.push(file.name);
           }
         } catch (uploadError) {
-          console.error(`    ❌ Exception during upload of ${file.name}:`, uploadError);
+          perfLogger.error(`Exception uploading ${file.name}`, uploadError);
           failedUploads.push(file.name);
         }
       }
+
+      perfLogger.end('uploadFiles', `${uploadResults.length}/${csvFiles.length} files uploaded successfully`);
 
       if (uploadResults.length > 0) {
         // Update local file metadata state
@@ -3362,16 +3334,25 @@ export default function MapDrawingPage() {
     // UI state is already preserved, no need to reopen anything
   }, []);
 
+  // Merge Rules Handler
+  const handleMergeRuleToggle = useCallback((suffix: string, enabled: boolean) => {
+    setMergeRules(prevRules =>
+      prevRules.map(rule =>
+        rule.suffix === suffix ? { ...rule, enabled } : rule
+      )
+    );
+  }, []);
+
   // Handle request to return to file selection from Add New Plot button
   const handleRequestFileSelection = useCallback(() => {
     // Close the marine device modal
     setShowMarineDeviceModal(false);
     setSelectedFileType(null);
     setSelectedFiles([]);
-    
+
     // UI state is already preserved, no need to reopen anything
     // The explore dropdown and object properties should still be open
-    
+
     // Reopen the object properties with the file selector
     // We need to find the original pin that was being edited
     const pinForReselection = selectedPinForExplore || 
@@ -6155,6 +6136,7 @@ export default function MapDrawingPage() {
                     onDownloadFile={handleDownloadFileForPlot}
                     objectLocation={objectGpsCoords}
                     objectName={objectName}
+                    multiFileMergeMode={multiFileMergeMode}
                   />
                 );
               })()
@@ -6760,6 +6742,73 @@ export default function MapDrawingPage() {
                       console.log('✅ Files reloaded with updated dates');
                       setPinFileMetadata(fileMetadata);
                     }}
+                    onSelectMultipleFiles={async (selectedFiles) => {
+                      try {
+                        console.log('🔄 Multi-file selection:', selectedFiles.map(f => f.fileName));
+
+                        // Determine file type from first file
+                        const firstFile = selectedFiles[0];
+                        let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+
+                        const parts = firstFile.fileName.split('_');
+                        const position0 = parts[0]?.toLowerCase() || '';
+                        const position1 = parts[1]?.toLowerCase() || '';
+
+                        if (position0.includes('fpod') || position1.includes('fpod')) {
+                          fileType = 'FPOD';
+                        } else if (position0.includes('subcam') || position1.includes('subcam')) {
+                          fileType = 'Subcam';
+                        } else if (position0.includes('gp') || position1.includes('gp')) {
+                          fileType = 'GP';
+                        }
+
+                        // Download all files
+                        const downloadedFiles: File[] = [];
+                        for (const file of selectedFiles) {
+                          const fileContent = await fileStorageService.downloadFile(file.filePath);
+                          if (fileContent) {
+                            const actualFile = new File([fileContent], file.fileName, {
+                              type: file.fileType || 'text/csv'
+                            });
+                            downloadedFiles.push(actualFile);
+                          } else {
+                            toast({
+                              variant: "destructive",
+                              title: "Download Failed",
+                              description: `Failed to download ${file.fileName}`
+                            });
+                            return;
+                          }
+                        }
+
+                        // Import multiFileValidator
+                        const { parseFile, validateFilesCompatibility } = await import('@/lib/multiFileValidator');
+
+                        // Parse all files
+                        const parsedFiles = await Promise.all(
+                          downloadedFiles.map(file => parseFile(file))
+                        );
+
+                        // Validate compatibility
+                        const validation = validateFilesCompatibility(parsedFiles);
+
+                        // Store data and show confirmation dialog
+                        setMultiFileConfirmData({
+                          parsedFiles,
+                          validation,
+                          downloadedFiles,
+                          fileType
+                        });
+                        setShowMultiFileConfirmDialog(true);
+                      } catch (error) {
+                        console.error('Multi-file selection error:', error);
+                        toast({
+                          variant: "destructive",
+                          title: "Error",
+                          description: error instanceof Error ? error.message : 'Failed to process multiple files'
+                        });
+                      }
+                    }}
                   />
                 </div>
               );
@@ -7228,8 +7277,39 @@ export default function MapDrawingPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Merge Rules Dialog */}
+      {multiFileConfirmData && (
+        <MergeRulesDialog
+          open={showMultiFileConfirmDialog}
+          onOpenChange={setShowMultiFileConfirmDialog}
+          parsedFiles={multiFileConfirmData.parsedFiles}
+          mergeRules={mergeRules}
+          onMergeRuleToggle={handleMergeRuleToggle}
+          onConfirm={(mode) => {
+            // Store the merge mode
+            setMultiFileMergeMode(mode);
+
+            // Open modal with all files (modal will handle merging with the selected mode)
+            openMarineDeviceModal(multiFileConfirmData.fileType, multiFileConfirmData.downloadedFiles);
+
+            toast({
+              title: "Multi-file Merge",
+              description: `Merging ${multiFileConfirmData.downloadedFiles.length} files in ${mode === 'stack-parameters' ? 'Stack Parameters' : 'Sequential'} mode`
+            });
+
+            // Close dialog and reset state
+            setShowMultiFileConfirmDialog(false);
+            setMultiFileConfirmData(null);
+          }}
+          onCancel={() => {
+            setShowMultiFileConfirmDialog(false);
+            setMultiFileConfirmData(null);
+          }}
+        />
+      )}
+
       {/* Data Restore Notifications */}
-      <DataRestoreNotifications 
+      <DataRestoreNotifications
         isActive={showDataRestore}
         onComplete={() => {
           setShowDataRestore(false);
@@ -7239,5 +7319,13 @@ export default function MapDrawingPage() {
       />
 
     </>
+  );
+}
+
+export default function MapDrawingPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen">Loading...</div>}>
+      <MapDrawingPageContent />
+    </Suspense>
   );
 }
