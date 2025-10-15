@@ -77,6 +77,9 @@ import {
   COORDINATE_FORMAT_LABELS,
   COORDINATE_FORMAT_EXAMPLES
 } from '@/lib/coordinate-utils';
+import { usePageLoadingState } from '@/hooks/usePageLoadingState';
+import { TopProgressBar } from '@/components/loading/TopProgressBar';
+import { MapSkeleton, MarinePlotsSkeleton, DataTimelineSkeleton } from '@/components/loading/PageSkeletons';
 
 // Lazy load heavy dialog components
 const ShareDialogSimplified = dynamic(
@@ -614,6 +617,20 @@ function MapDrawingPageContent() {
   const setActiveProjectId = (projectId: string) => {
     setPersistentActiveProject(projectId);
   };
+
+  // Unified loading state for smooth UX
+  const {
+    isLoading: isPageLoading,
+    progress: loadingProgress,
+    currentStage,
+    isInitialLoad
+  } = usePageLoadingState({
+    isLoadingProjects,
+    isLoadingActiveProject,
+    isLoadingPinMeteoData,
+    isDataLoading,
+    isUploadingFiles,
+  });
 
   // Load dynamic projects from database
   const loadDynamicProjects = useCallback(async () => {
@@ -3514,6 +3531,8 @@ function MapDrawingPageContent() {
 
   return (
     <>
+      {/* Top progress bar for smooth loading feedback */}
+      <TopProgressBar isLoading={isPageLoading} progress={loadingProgress} />
 
 
 

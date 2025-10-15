@@ -316,11 +316,31 @@ header, footer, main, section, article, aside, nav {
   display: none !important;
 }
 
-/* Smooth loading animations for DataTimeline component */
+/* Smooth loading animations for DataTimeline component and page-wide loading */
 @keyframes fadeIn {
   from {
     opacity: 0;
     transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInFast {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInSlow {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -337,10 +357,80 @@ header, footer, main, section, article, aside, nav {
   }
 }
 
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
 .animate-shimmer {
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
   background-size: 200% 100%;
   animation: shimmer 2s infinite;
+}
+
+/* Fade-in animation classes */
+.fade-in {
+  animation: fadeIn 300ms ease-out forwards;
+}
+
+.fade-in-fast {
+  animation: fadeInFast 150ms ease-out forwards;
+}
+
+.fade-in-slow {
+  animation: fadeInSlow 500ms ease-out forwards;
+}
+
+/* Skeleton loading styles */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted) / 0.2) 0%,
+    hsl(var(--muted) / 0.3) 50%,
+    hsl(var(--muted) / 0.2) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite linear;
+  border-radius: var(--radius);
+}
+
+/* Loading overlay transitions */
+.loading-overlay {
+  transition: opacity 300ms ease-out, transform 300ms ease-out;
+}
+
+.loading-overlay-enter {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.loading-overlay-exit {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+/* Preserve height during loading to prevent layout shifts */
+.preserve-height {
+  min-height: inherit;
+}
+
+/* Smooth progress bar animation */
+@keyframes progressFill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.progress-bar {
+  transform-origin: left;
+  transition: width 500ms ease-out, background-color 300ms ease-out;
 }
 
 /* Line Edit Mode Styles */
