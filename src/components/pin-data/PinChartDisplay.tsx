@@ -92,6 +92,37 @@ const format24HourTick = (timeValue: string | number): string => {
   }
 };
 
+// Calculate nice round numbers for Y-axis scaling
+const calculateNiceYAxisDomain = (min: number, max: number): { domain: [number, number], tickInterval: number } => {
+  const range = max - min;
+
+  // Determine the order of magnitude
+  const magnitude = Math.pow(10, Math.floor(Math.log10(range)));
+
+  // Calculate nice intervals based on range
+  let niceInterval: number;
+  const normalizedRange = range / magnitude;
+
+  if (normalizedRange <= 1.5) {
+    niceInterval = magnitude * 0.2; // e.g., 200 for range 1000
+  } else if (normalizedRange <= 3) {
+    niceInterval = magnitude * 0.5; // e.g., 500 for range 2500
+  } else if (normalizedRange <= 7) {
+    niceInterval = magnitude * 1; // e.g., 1000 for range 5000
+  } else {
+    niceInterval = magnitude * 2; // e.g., 2000 for range 15000
+  }
+
+  // Round min down and max up to nearest interval
+  const niceMin = Math.floor(min / niceInterval) * niceInterval;
+  const niceMax = Math.ceil(max / niceInterval) * niceInterval;
+
+  return {
+    domain: [Math.max(0, niceMin), niceMax], // Ensure min is at least 0
+    tickInterval: niceInterval
+  };
+};
+
 // Intelligent Y-axis formatter with nice rounded tick spacings
 const formatYAxisTick = (value: number, dataRange: number, dataMax: number): string => {
   if (!isFinite(value) || isNaN(value)) return '0';
@@ -220,6 +251,9 @@ export function PinChartDisplay({
   // Toggle state for switching between chart and table view
   const [showTable, setShowTable] = useState(false);
 
+  // Minimal view state - shows only selected parameters without borders
+  const [minimalView, setMinimalView] = useState(false);
+
   // Axis mode state - default to multi axis
   const [axisMode, setAxisMode] = useState<'single' | 'multi'>('multi');
 
@@ -246,9 +280,27 @@ export function PinChartDisplay({
   const [showModifiedCSV, setShowModifiedCSV] = useState(false);
   const [modifiedCSVContent, setModifiedCSVContent] = useState<string>('');
 
-  // Styling rules state
+  // Styling rules state - load from localStorage if available
   const [showStylingRules, setShowStylingRules] = useState(false);
-  const [styleRules, setStyleRules] = useState<StyleRule[]>(DEFAULT_STYLE_RULES);
+  const [styleRules, setStyleRules] = useState<StyleRule[]>(() => {
+    // Load saved style rules from localStorage
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('pinChartStyleRules');
+        if (saved) {
+          const savedRules = JSON.parse(saved) as StyleRule[];
+          // Merge saved customizations with defaults (in case new rules were added)
+          return DEFAULT_STYLE_RULES.map(defaultRule => {
+            const savedRule = savedRules.find(r => r.suffix === defaultRule.suffix);
+            return savedRule ? { ...defaultRule, ...savedRule } : defaultRule;
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load saved style rules:', error);
+      }
+    }
+    return DEFAULT_STYLE_RULES;
+  });
 
   // Detect applicable styling rule based on filename
   const appliedStyleRule = useMemo(() => {
@@ -534,10 +586,37 @@ export function PinChartDisplay({
       });
     });
 
-    // Add 5% padding to top and bottom
-    const padding = (max - min) * 0.05;
-    return [min - padding, max + padding];
-  }, [displayData, visibleParameters]);
+    // Use nice round numbers for 24hr_style, otherwise add 5% padding
+    if (appliedStyleRule?.styleName === '24hr_style') {
+      const { domain } = calculateNiceYAxisDomain(min, max);
+      return domain;
+    } else {
+      const padding = (max - min) * 0.05;
+      return [min - padding, max + padding];
+    }
+  }, [displayData, visibleParameters, appliedStyleRule]);
+
+  // Calculate tick interval for 24hr_style
+  const yAxisTickInterval = useMemo(() => {
+    if (appliedStyleRule?.styleName === '24hr_style' && displayData.length > 0 && visibleParameters.length > 0) {
+      let min = Infinity;
+      let max = -Infinity;
+
+      displayData.forEach(point => {
+        visibleParameters.forEach(param => {
+          const value = point[param];
+          if (typeof value === 'number' && !isNaN(value)) {
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+          }
+        });
+      });
+
+      const { tickInterval } = calculateNiceYAxisDomain(min, max);
+      return tickInterval;
+    }
+    return undefined;
+  }, [displayData, visibleParameters, appliedStyleRule]);
 
   // Calculate data range and max for Y-axis formatting
   const dataRange = useMemo(() => {
@@ -621,9 +700,43 @@ export function PinChartDisplay({
   };
 
   const handleStyleRuleToggle = (suffix: string, enabled: boolean) => {
-    setStyleRules(prev => prev.map(rule =>
-      rule.suffix === suffix ? { ...rule, enabled } : rule
-    ));
+    setStyleRules(prev => {
+      const updated = prev.map(rule =>
+        rule.suffix === suffix ? { ...rule, enabled } : rule
+      );
+
+      // Save to localStorage
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('pinChartStyleRules', JSON.stringify(updated));
+          console.log('✅ Style rules saved to localStorage');
+        } catch (error) {
+          console.error('❌ Failed to save style rules to localStorage:', error);
+        }
+      }
+
+      return updated;
+    });
+  };
+
+  const handleStyleRuleUpdate = (suffix: string, properties: Partial<import('./StylingRulesDialog').StyleProperties>) => {
+    setStyleRules(prev => {
+      const updated = prev.map(rule =>
+        rule.suffix === suffix ? { ...rule, properties: { ...rule.properties, ...properties } } : rule
+      );
+
+      // Save to localStorage
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('pinChartStyleRules', JSON.stringify(updated));
+          console.log('✅ Style rules saved to localStorage');
+        } catch (error) {
+          console.error('❌ Failed to save style rules to localStorage:', error);
+        }
+      }
+
+      return updated;
+    });
   };
 
   const toggleParameterVisibility = (parameter: string) => {
@@ -1362,18 +1475,29 @@ export function PinChartDisplay({
   };
 
   // Format parameter label with source
-  const formatParameterWithSource = (parameter: string): string => {
+  const formatParameterWithSource = (parameter: string, includeSource: boolean = true): string => {
     const baseLabel = getParameterLabelWithUnit(parameter);
 
     // Check if parameter already has a source label (e.g., "IR [GP]")
-    if (/\[(?:GP|FPOD|SC|Subcam|OM)\]$/.test(baseLabel)) {
+    const hasSourceLabel = /\[(?:GP|FPOD|SC|Subcam|OM)\]$/.test(baseLabel);
+
+    if (!includeSource && hasSourceLabel) {
+      // Remove source label if it exists and includeSource is false
+      return baseLabel.replace(/\s*\[(?:GP|FPOD|SC|Subcam|OM)\]$/, '');
+    }
+
+    if (hasSourceLabel) {
       // Already has source label, return as-is
       return baseLabel;
     }
 
-    // Add source label
-    const sourceLabel = getSourceLabel();
-    return `${baseLabel} [${sourceLabel}]`;
+    // Add source label if includeSource is true
+    if (includeSource) {
+      const sourceLabel = getSourceLabel();
+      return `${baseLabel} [${sourceLabel}]`;
+    }
+
+    return baseLabel;
   };
 
   const moveParameter = (parameter: string, direction: 'up' | 'down') => {
@@ -1429,6 +1553,18 @@ export function PinChartDisplay({
             <span className="text-xs text-muted-foreground">Table</span>
             <TableIcon className="h-4 w-4 text-muted-foreground" />
           </div>
+
+          {/* Minimal View Toggle - only show in chart mode */}
+          {!showTable && (
+            <div className="flex items-center gap-2 pl-4 border-l">
+              <span className="text-xs text-muted-foreground">Minimal view</span>
+              <Switch
+                checked={minimalView}
+                onCheckedChange={setMinimalView}
+                className="h-5 w-9"
+              />
+            </div>
+          )}
 
           {/* Single/Multi Axis Toggle - only show in chart mode */}
           {!showTable && (
@@ -1620,17 +1756,24 @@ export function PinChartDisplay({
         </div>
       ) : (
         // Chart View (existing chart code)
-        <div className="flex gap-3">
+        <div className="flex" style={{ gap: `${appliedStyleRule?.properties.plotToParametersGap ?? 12}px` }}>
           {/* Main Chart - Takes up most space */}
           <div className="flex-1 space-y-3">
       {visibleParameters.length > 0 && (
-        <div className="h-52 w-full border rounded-md bg-card p-2">
+        <div className={cn("h-52 w-full bg-card p-2", !minimalView && "border rounded-md")}>
           {/* Single Axis Mode */}
           {axisMode === 'single' && (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={displayData}
-                margin={{ top: 5, right: 12, left: 5, bottom: -5 }}
+                margin={{
+                  top: 5,
+                  right: axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled
+                    ? (appliedStyleRule?.properties.chartRightMargin || 80)
+                    : 12,
+                  left: 5,
+                  bottom: -5
+                }}
               >
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
 
@@ -1643,20 +1786,32 @@ export function PinChartDisplay({
                       ? format24HourTick(value)
                       : formatDateTick(value, dataSource, showYearInXAxis)
                   }
-                  height={45}
+                  height={appliedStyleRule?.properties.xAxisTitle
+                    ? 45 + (appliedStyleRule.properties.xAxisTitlePosition || 40)
+                    : 45
+                  }
                   label={appliedStyleRule?.properties.xAxisTitle ? {
                     value: appliedStyleRule.properties.xAxisTitle,
-                    position: 'insideBottom',
-                    offset: -35,
-                    style: { textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--muted-foreground))', fontWeight: 500 }
+                    position: 'bottom',
+                    offset: (appliedStyleRule.properties.xAxisTitleMargin || 10),
+                    style: { textAnchor: 'middle', fontSize: '0.875rem', fill: 'hsl(var(--foreground))', fontWeight: 600 }
                   } : undefined}
                 />
 
+                {/* Primary Y-Axis (Left) */}
                 <YAxis
+                  {...(axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? { yAxisId: "left" } : {})}
                   tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }}
                   stroke="hsl(var(--border))"
-                  width={(showYAxisLabels || appliedStyleRule?.properties.yAxisTitle) ? 80 : 50}
+                  width={(showYAxisLabels || appliedStyleRule?.properties.yAxisTitle) ? (appliedStyleRule?.properties.yAxisWidth || 80) : 50}
                   domain={yAxisDomain}
+                  ticks={yAxisTickInterval ? (() => {
+                    const ticks = [];
+                    for (let i = yAxisDomain[0]; i <= yAxisDomain[1]; i += yAxisTickInterval) {
+                      ticks.push(i);
+                    }
+                    return ticks;
+                  })() : undefined}
                   tickFormatter={(value) => formatYAxisTick(value, dataRange, dataMax)}
                   label={(showYAxisLabels || appliedStyleRule?.properties.yAxisTitle) ? {
                     value: appliedStyleRule?.properties.yAxisTitle || (visibleParameters.length === 1
@@ -1664,15 +1819,46 @@ export function PinChartDisplay({
                       : 'Value'),
                     angle: -90,
                     position: 'insideLeft',
-                    offset: getLabelOffset(maxTickDigits),
+                    offset: axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? 5 : getLabelOffset(maxTickDigits),
                     style: { textAnchor: 'middle', fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }
                   } : undefined}
                 />
 
+                {/* Secondary Y-Axis (Right) - Calculated */}
+                {axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled && (
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }}
+                    stroke="hsl(var(--border))"
+                    width={appliedStyleRule.properties.secondaryYAxis.width || 80}
+                    domain={[
+                      (yAxisDomain[0] / appliedStyleRule.properties.secondaryYAxis.divideBy) * 100,
+                      (yAxisDomain[1] / appliedStyleRule.properties.secondaryYAxis.divideBy) * 100
+                    ]}
+                    ticks={yAxisTickInterval ? (() => {
+                      const ticks = [];
+                      const divideBy = appliedStyleRule.properties.secondaryYAxis.divideBy;
+                      for (let i = yAxisDomain[0]; i <= yAxisDomain[1]; i += yAxisTickInterval) {
+                        ticks.push((i / divideBy) * 100);
+                      }
+                      return ticks;
+                    })() : undefined}
+                    tickFormatter={(value) => Math.round(value).toString()}
+                    label={{
+                      value: appliedStyleRule.properties.secondaryYAxis.title,
+                      angle: 90,
+                      position: 'insideRight',
+                      offset: 5,
+                      style: { textAnchor: 'middle', fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }
+                    }}
+                  />
+                )}
+
                 {/* Frame lines - top and right edges */}
-                <ReferenceLine y={yAxisDomain[1]} stroke="hsl(var(--border))" strokeWidth={1} strokeOpacity={0.3} />
+                <ReferenceLine {...(axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? { yAxisId: "left" } : {})} y={yAxisDomain[1]} stroke="hsl(var(--border))" strokeWidth={1} strokeOpacity={0.3} />
                 {displayData.length > 0 && (
-                  <ReferenceLine x={displayData[displayData.length - 1].time} stroke="hsl(var(--border))" strokeWidth={1} strokeOpacity={0.3} />
+                  <ReferenceLine {...(axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? { yAxisId: "left" } : {})} x={displayData[displayData.length - 1].time} stroke="hsl(var(--border))" strokeWidth={1} strokeOpacity={0.3} />
                 )}
 
                 <RechartsTooltip
@@ -1713,6 +1899,7 @@ export function PinChartDisplay({
                   return (
                     <Line
                       key={parameter}
+                      {...(axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? { yAxisId: "left" } : {})}
                       type="monotone"
                       dataKey={parameter}
                       stroke={colorValue}
@@ -1754,12 +1941,15 @@ export function PinChartDisplay({
                       ? format24HourTick(value)
                       : formatDateTick(value, dataSource, showYearInXAxis)
                   }
-                  height={45}
+                  height={appliedStyleRule?.properties.xAxisTitle
+                    ? 45 + (appliedStyleRule.properties.xAxisTitlePosition || 40)
+                    : 45
+                  }
                   label={appliedStyleRule?.properties.xAxisTitle ? {
                     value: appliedStyleRule.properties.xAxisTitle,
-                    position: 'insideBottom',
-                    offset: -35,
-                    style: { textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--muted-foreground))', fontWeight: 500 }
+                    position: 'bottom',
+                    offset: (appliedStyleRule.properties.xAxisTitleMargin || 10),
+                    style: { textAnchor: 'middle', fontSize: '0.875rem', fill: 'hsl(var(--foreground))', fontWeight: 600 }
                   } : undefined}
                 />
 
@@ -1920,33 +2110,43 @@ export function PinChartDisplay({
           </div>
 
           {/* Parameter Controls - On the right side */}
-          <div className={cn("space-y-2 transition-all duration-300", isParameterPanelExpanded ? "w-56" : "w-40")}>
-            {/* Header with expand button and label */}
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-4 w-4 hover:bg-accent/50"
-                onClick={() => setIsParameterPanelExpanded(!isParameterPanelExpanded)}
-                title={isParameterPanelExpanded ? "Collapse panel" : "Expand panel"}
-              >
-                {isParameterPanelExpanded ? (
-                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                ) : (
-                  <ChevronLeft className="h-3 w-3 text-muted-foreground" />
-                )}
-              </Button>
+          <div className={cn("space-y-2 transition-all duration-300", isParameterPanelExpanded ? "w-72" : "w-40")}>
+            {/* Header with expand button and label - hidden in minimal view */}
+            {!minimalView && (
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-4 w-4 hover:bg-accent/50"
+                  onClick={() => setIsParameterPanelExpanded(!isParameterPanelExpanded)}
+                  title={isParameterPanelExpanded ? "Collapse panel" : "Expand panel"}
+                >
+                  {isParameterPanelExpanded ? (
+                    <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                  ) : (
+                    <ChevronLeft className="h-3 w-3 text-muted-foreground" />
+                  )}
+                </Button>
 
-              <p className="text-xs font-medium">
-                Parameters ({visibleParameters.length} visible)
-                {axisMode === 'multi' && visibleParameters.length > 0 && (
-                  <span className="text-muted-foreground font-normal ml-1">- Multi-axis</span>
-                )}
-              </p>
-            </div>
+                <p className="text-xs font-medium">
+                  Parameters ({visibleParameters.length} visible)
+                  {axisMode === 'multi' && visibleParameters.length > 0 && (
+                    <span className="text-muted-foreground font-normal ml-1">- Multi-axis</span>
+                  )}
+                </p>
+              </div>
+            )}
 
             <div className="space-y-1 h-[210px] overflow-y-auto">
-              {numericParameters.map((parameter, index) => {
+              {(() => {
+                // In minimal view, filter to show only visible parameters and sort alphabetically
+                const parametersToShow = minimalView
+                  ? numericParameters
+                      .filter(param => parameterStates[param]?.visible)
+                      .sort((a, b) => a.localeCompare(b))
+                  : numericParameters;
+
+                return parametersToShow.map((parameter, index) => {
                 const state = parameterStates[parameter];
                 if (!state) return null;
 
@@ -1957,31 +2157,36 @@ export function PinChartDisplay({
                 const colorValue = getColorValue(state.color);
 
                 return (
-                  <div key={parameter} className="flex items-center justify-between p-1.5 rounded border bg-card/50">
+                  <div key={parameter} className={cn("flex items-center justify-between p-1.5 rounded bg-card/50", !minimalView && "border")}>
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <Checkbox
-                        id={`param-${parameter}`}
-                        checked={state.visible}
-                        onCheckedChange={() => toggleParameterVisibility(parameter)}
-                        className="h-3 w-3"
-                      />
+                      {/* Checkbox - hidden in minimal view */}
+                      {!minimalView && (
+                        <Checkbox
+                          id={`param-${parameter}`}
+                          checked={state.visible}
+                          onCheckedChange={() => toggleParameterVisibility(parameter)}
+                          className="h-3 w-3"
+                        />
+                      )}
 
-                      {/* Solo button - small circular button */}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={cn(
-                          "h-4 w-4 p-0 rounded-full hover:bg-accent",
-                          state.isSolo && "bg-primary/20 hover:bg-primary/30"
-                        )}
-                        onClick={() => toggleSolo(parameter)}
-                        title={state.isSolo ? "Exit solo mode" : "Show only this parameter"}
-                      >
-                        <Circle className={cn(
-                          "h-2.5 w-2.5",
-                          state.isSolo ? "fill-primary text-primary" : "text-muted-foreground"
-                        )} />
-                      </Button>
+                      {/* Solo button - small circular button, hidden in minimal view */}
+                      {!minimalView && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={cn(
+                            "h-4 w-4 p-0 rounded-full hover:bg-accent",
+                            state.isSolo && "bg-primary/20 hover:bg-primary/30"
+                          )}
+                          onClick={() => toggleSolo(parameter)}
+                          title={state.isSolo ? "Exit solo mode" : "Show only this parameter"}
+                        >
+                          <Circle className={cn(
+                            "h-2.5 w-2.5",
+                            state.isSolo ? "fill-primary text-primary" : "text-muted-foreground"
+                          )} />
+                        </Button>
+                      )}
 
                       <div
                         className="flex items-center gap-1 flex-1 min-w-0 cursor-pointer"
@@ -1990,10 +2195,10 @@ export function PinChartDisplay({
                       >
                         <Label
                           htmlFor={`param-${parameter}`}
-                          className="text-xs cursor-pointer truncate"
-                          title={formatParameterWithSource(parameter)}
+                          className={cn("text-xs cursor-pointer", !minimalView && !isParameterPanelExpanded && "truncate")}
+                          title={formatParameterWithSource(parameter, !minimalView)}
                         >
-                          {formatParameterWithSource(parameter)}
+                          {formatParameterWithSource(parameter, !minimalView)}
                         </Label>
                         {/* Filter indicator */}
                         {state.timeFilter?.enabled && (
@@ -2010,6 +2215,10 @@ export function PinChartDisplay({
                           />
                         )}
                       </div>
+                    </div>
+
+                    {/* Right side controls */}
+                    <div className="flex items-center gap-1.5">
                       {/* Show axis indicator in multi-axis mode */}
                       {axisMode === 'multi' && state.visible && axisPosition && (
                         <span
@@ -2254,7 +2463,7 @@ export function PinChartDisplay({
                     </div>
                   </div>
                 );
-              })}
+              })})()}
             </div>
           </div>
         </div>
@@ -2471,7 +2680,9 @@ export function PinChartDisplay({
         onOpenChange={setShowStylingRules}
         styleRules={styleRules}
         onStyleRuleToggle={handleStyleRuleToggle}
+        onStyleRuleUpdate={handleStyleRuleUpdate}
       />
     </div>
   );
 }
+
