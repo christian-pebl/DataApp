@@ -13,11 +13,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock } from "lucide-react";
+import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock, Palette } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
 import { fileStorageService } from '@/lib/supabase/file-storage-service';
+import { StylingRulesDialog, DEFAULT_STYLE_RULES, type StyleRule } from './StylingRulesDialog';
 
 interface PinChartDisplayProps {
   data: ParsedDataPoint[];
@@ -75,6 +76,17 @@ const formatDateTick = (timeValue: string | number, dataSource?: 'csv' | 'marine
     if (!isValid(dateObj)) return String(timeValue);
     // Use dd/MM or dd/MM/yy format based on showYear parameter
     return format(dateObj, showYear ? 'dd/MM/yy' : 'dd/MM');
+  } catch (e) {
+    return String(timeValue);
+  }
+};
+
+// Format time as HH:MM for 24-hour data
+const format24HourTick = (timeValue: string | number): string => {
+  try {
+    const dateObj = typeof timeValue === 'string' ? parseISO(timeValue) : new Date(timeValue);
+    if (!isValid(dateObj)) return String(timeValue);
+    return format(dateObj, 'HH:mm');
   } catch (e) {
     return String(timeValue);
   }
@@ -234,6 +246,22 @@ export function PinChartDisplay({
   const [showModifiedCSV, setShowModifiedCSV] = useState(false);
   const [modifiedCSVContent, setModifiedCSVContent] = useState<string>('');
 
+  // Styling rules state
+  const [showStylingRules, setShowStylingRules] = useState(false);
+  const [styleRules, setStyleRules] = useState<StyleRule[]>(DEFAULT_STYLE_RULES);
+
+  // Detect applicable styling rule based on filename
+  const appliedStyleRule = useMemo(() => {
+    if (!fileName) return null;
+
+    // Find matching rule that is enabled
+    const matchingRule = styleRules.find(rule =>
+      rule.enabled && fileName.endsWith(rule.suffix)
+    );
+
+    return matchingRule || null;
+  }, [fileName, styleRules]);
+
   // Log when data changes
   React.useEffect(() => {
     if (data.length > 0) {
@@ -241,6 +269,13 @@ export function PinChartDisplay({
       console.log('[CHART DISPLAY] currentDateFormat:', currentDateFormat);
     }
   }, [data, currentDateFormat]);
+
+  // Apply styling rule defaults when rule changes
+  React.useEffect(() => {
+    if (appliedStyleRule?.properties.defaultAxisMode) {
+      setAxisMode(appliedStyleRule.properties.defaultAxisMode);
+    }
+  }, [appliedStyleRule]);
 
   // Get all parameters (for table view)
   const allParameters = useMemo(() => {
@@ -583,6 +618,12 @@ export function PinChartDisplay({
       setBrushStartIndex(brushData.startIndex ?? 0);
       setBrushEndIndex(brushData.endIndex);
     }
+  };
+
+  const handleStyleRuleToggle = (suffix: string, enabled: boolean) => {
+    setStyleRules(prev => prev.map(rule =>
+      rule.suffix === suffix ? { ...rule, enabled } : rule
+    ));
   };
 
   const toggleParameterVisibility = (parameter: string) => {
@@ -1431,6 +1472,19 @@ export function PinChartDisplay({
                     <p className="text-[0.65rem] text-muted-foreground">
                       {showYearInXAxis ? 'Format: DD/MM/YY' : 'Format: DD/MM'}
                     </p>
+
+                    {/* Styling Rules Button */}
+                    <div className="pt-2 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full h-8 text-xs justify-start gap-2"
+                        onClick={() => setShowStylingRules(true)}
+                      >
+                        <Palette className="h-3.5 w-3.5" />
+                        Styling Rules
+                      </Button>
+                    </div>
                   </div>
                 </PopoverContent>
               </Popover>
@@ -1584,20 +1638,30 @@ export function PinChartDisplay({
                   dataKey="time"
                   tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 8 }}
                   stroke="hsl(var(--border))"
-                  tickFormatter={(value) => formatDateTick(value, dataSource, showYearInXAxis)}
+                  tickFormatter={(value) =>
+                    appliedStyleRule?.properties.xAxisRange
+                      ? format24HourTick(value)
+                      : formatDateTick(value, dataSource, showYearInXAxis)
+                  }
                   height={45}
+                  label={appliedStyleRule?.properties.xAxisTitle ? {
+                    value: appliedStyleRule.properties.xAxisTitle,
+                    position: 'insideBottom',
+                    offset: -35,
+                    style: { textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--muted-foreground))', fontWeight: 500 }
+                  } : undefined}
                 />
 
                 <YAxis
                   tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }}
                   stroke="hsl(var(--border))"
-                  width={showYAxisLabels ? 80 : 50}
+                  width={(showYAxisLabels || appliedStyleRule?.properties.yAxisTitle) ? 80 : 50}
                   domain={yAxisDomain}
                   tickFormatter={(value) => formatYAxisTick(value, dataRange, dataMax)}
-                  label={showYAxisLabels ? {
-                    value: visibleParameters.length === 1
+                  label={(showYAxisLabels || appliedStyleRule?.properties.yAxisTitle) ? {
+                    value: appliedStyleRule?.properties.yAxisTitle || (visibleParameters.length === 1
                       ? formatParameterWithSource(visibleParameters[0])
-                      : 'Value',
+                      : 'Value'),
                     angle: -90,
                     position: 'insideLeft',
                     offset: getLabelOffset(maxTickDigits),
@@ -1685,8 +1749,18 @@ export function PinChartDisplay({
                   dataKey="time"
                   tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 8 }}
                   stroke="hsl(var(--border))"
-                  tickFormatter={(value) => formatDateTick(value, dataSource, showYearInXAxis)}
+                  tickFormatter={(value) =>
+                    appliedStyleRule?.properties.xAxisRange
+                      ? format24HourTick(value)
+                      : formatDateTick(value, dataSource, showYearInXAxis)
+                  }
                   height={45}
+                  label={appliedStyleRule?.properties.xAxisTitle ? {
+                    value: appliedStyleRule.properties.xAxisTitle,
+                    position: 'insideBottom',
+                    offset: -35,
+                    style: { textAnchor: 'middle', fontSize: '0.7rem', fill: 'hsl(var(--muted-foreground))', fontWeight: 500 }
+                  } : undefined}
                 />
 
                 {/* One YAxis per visible parameter */}
@@ -2390,6 +2464,14 @@ export function PinChartDisplay({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Styling Rules Dialog */}
+      <StylingRulesDialog
+        open={showStylingRules}
+        onOpenChange={setShowStylingRules}
+        styleRules={styleRules}
+        onStyleRuleToggle={handleStyleRuleToggle}
+      />
     </div>
   );
 }

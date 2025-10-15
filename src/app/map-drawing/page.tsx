@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X, Search, CheckCircle2, XCircle, ChevronUp, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle, Move3D, Copy } from 'lucide-react';
+import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map as MapIcon, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X, Search, CheckCircle2, XCircle, ChevronUp, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle, Move3D, Copy, FileCode } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line as RechartsLine, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, Brush, LabelList, ReferenceLine } from 'recharts';
 import type { LucideIcon } from "lucide-react";
 import { Checkbox } from '@/components/ui/checkbox';
@@ -522,6 +522,14 @@ export default function MapDrawingPage() {
   // File filtering state
   const [selectedPins, setSelectedPins] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [selectedSuffixes, setSelectedSuffixes] = useState<string[]>([]);
+  const [selectedDateRanges, setSelectedDateRanges] = useState<string[]>([]);
+
+  // Extract date range from filename (format: YYMM_YYMM)
+  const extractDateRange = (fileName: string): string | null => {
+    const match = fileName.match(/(\d{4}_\d{4})/);
+    return match ? match[1] : null;
+  };
 
   // Initialize Supabase client for CSV analysis
   const supabase = createClient();
@@ -6282,22 +6290,121 @@ export default function MapDrawingPage() {
                 }
               };
 
-              // Get unique pins and types
-              const uniquePins = Array.from(new Set(allFiles.map(file => file.pinLabel))).sort();
-              const uniqueTypes = Array.from(new Set(Object.keys(groupedFiles))).sort();
+              // Helper function to check if file matches type filter
+              const matchesType = (file: any, type: string): boolean => {
+                const fileName = file.fileName.toLowerCase();
+                if (type === 'SubCam') return fileName.includes('subcam');
+                if (type === 'GP') return fileName.includes('gp');
+                if (type === 'FPOD') return fileName.includes('fpod');
+                return false;
+              };
 
-              // Apply filters
+              // Helper function to extract suffix from filename
+              const extractSuffix = (fileName: string): string => {
+                const nameWithoutExt = fileName.replace(/\.[^/.]+$/, '');
+                const parts = nameWithoutExt.split('_');
+                return parts.length > 0 ? parts[parts.length - 1] : '';
+              };
+
+              // Apply filters to get filtered files
               const filteredFiles = allFiles.filter(file => {
                 const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
-                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => {
-                  const fileName = file.fileName.toLowerCase();
-                  if (type === 'SubCam') return fileName.includes('subcam');
-                  if (type === 'GP') return fileName.includes('gp');
-                  if (type === 'FPOD') return fileName.includes('fpod');
-                  return false;
+                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
+                
+                // Suffix filter
+                const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
+                  const fileSuffix = extractSuffix(file.fileName);
+                  return fileSuffix === suffix;
                 });
-                return pinMatch && typeMatch;
+
+                // Date range filter
+                const dateRangeMatch = selectedDateRanges.length === 0 || selectedDateRanges.some(range => {
+                  const fileRange = extractDateRange(file.fileName);
+                  return fileRange === range;
+                });
+
+                return pinMatch && typeMatch && suffixMatch && dateRangeMatch;
               });
+
+              // Calculate unique values for cascading filters
+              // Each unique* array shows options available given OTHER active filters
+
+              // For pins: show pins available after applying type, suffix, and dateRange filters
+              const filesForPinOptions = allFiles.filter(file => {
+                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
+                const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
+                  const fileSuffix = extractSuffix(file.fileName);
+                  return fileSuffix === suffix;
+                });
+                const dateRangeMatch = selectedDateRanges.length === 0 || selectedDateRanges.some(range => {
+                  const fileRange = extractDateRange(file.fileName);
+                  return fileRange === range;
+                });
+                return typeMatch && suffixMatch && dateRangeMatch;
+              });
+              const uniquePins = Array.from(new Set(filesForPinOptions.map(file => file.pinLabel))).sort();
+
+              // For types: show types available after applying pin, suffix, and dateRange filters
+              const filesForTypeOptions = allFiles.filter(file => {
+                const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
+                const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
+                  const fileSuffix = extractSuffix(file.fileName);
+                  return fileSuffix === suffix;
+                });
+                const dateRangeMatch = selectedDateRanges.length === 0 || selectedDateRanges.some(range => {
+                  const fileRange = extractDateRange(file.fileName);
+                  return fileRange === range;
+                });
+                return pinMatch && suffixMatch && dateRangeMatch;
+              });
+              // Build type list from filesForTypeOptions
+              const typeMap = new Map<string, any[]>();
+              filesForTypeOptions.forEach(file => {
+                const fileName = file.fileName.toLowerCase();
+                if (fileName.includes('subcam')) {
+                  if (!typeMap.has('SubCam')) typeMap.set('SubCam', []);
+                  typeMap.get('SubCam')!.push(file);
+                }
+                if (fileName.includes('gp')) {
+                  if (!typeMap.has('GP')) typeMap.set('GP', []);
+                  typeMap.get('GP')!.push(file);
+                }
+                if (fileName.includes('fpod')) {
+                  if (!typeMap.has('FPOD')) typeMap.set('FPOD', []);
+                  typeMap.get('FPOD')!.push(file);
+                }
+              });
+              const uniqueTypes = Array.from(typeMap.keys()).sort();
+
+              // For suffixes: show suffixes available after applying pin, type, and dateRange filters
+              const filesForSuffixOptions = allFiles.filter(file => {
+                const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
+                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
+                const dateRangeMatch = selectedDateRanges.length === 0 || selectedDateRanges.some(range => {
+                  const fileRange = extractDateRange(file.fileName);
+                  return fileRange === range;
+                });
+                return pinMatch && typeMatch && dateRangeMatch;
+              });
+              const uniqueSuffixes = Array.from(new Set(filesForSuffixOptions.map(file => {
+                return extractSuffix(file.fileName);
+              }).filter(suffix => suffix !== ''))).sort();
+
+              // For date ranges: show date ranges available after applying pin, type, and suffix filters
+              const filesForDateRangeOptions = allFiles.filter(file => {
+                const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
+                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
+                const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
+                  const fileSuffix = extractSuffix(file.fileName);
+                  return fileSuffix === suffix;
+                });
+                return pinMatch && typeMatch && suffixMatch;
+              });
+              const uniqueDateRanges = Array.from(new Set(filesForDateRangeOptions.map(file => {
+                return extractDateRange(file.fileName);
+              }).filter(range => range !== null))).sort() as string[];
+
+
 
               // Calculate project summary statistics
               const projectStats = {
@@ -6311,7 +6418,7 @@ export default function MapDrawingPage() {
                 uniquePins: uniquePins.length
               };
 
-              const hasActiveFilters = selectedPins.length > 0 || selectedTypes.length > 0;
+              const hasActiveFilters = selectedPins.length > 0 || selectedTypes.length > 0 || selectedSuffixes.length > 0 || selectedDateRanges.length > 0;
 
               return (
                 <div className="space-y-2">
@@ -6330,6 +6437,8 @@ export default function MapDrawingPage() {
                             onClick={() => {
                               setSelectedPins([]);
                               setSelectedTypes([]);
+                              setSelectedSuffixes([]);
+                              setSelectedDateRanges([]);
                             }}
                             className="ml-1 text-primary hover:text-primary/80"
                             title="Clear all filters"
@@ -6433,6 +6542,95 @@ export default function MapDrawingPage() {
                           </div>
                         </PopoverContent>
                       </Popover>
+
+                      {/* File Suffixes - Filterable */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedSuffixes.length > 0 ? 'bg-amber-500/20 border border-amber-500/50' : ''}`}>
+                            <FileCode className="h-3 w-3 text-amber-500" />
+                            <span className="font-semibold">{selectedSuffixes.length > 0 ? selectedSuffixes.length : uniqueSuffixes.length}</span>
+                            <span className="text-muted-foreground">Suffixes</span>
+                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 p-2" align="start">
+                          <div className="space-y-1">
+                            <div className="text-xs font-semibold mb-2 flex items-center justify-between">
+                              <span>Filter by Suffix</span>
+                              {selectedSuffixes.length > 0 && (
+                                <button
+                                  onClick={() => setSelectedSuffixes([])}
+                                  className="text-primary hover:text-primary/80 text-[10px]"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                            </div>
+                            {uniqueSuffixes.map(suffix => (
+                              <label key={suffix} className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedSuffixes.includes(suffix)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedSuffixes([...selectedSuffixes, suffix]);
+                                    } else {
+                                      setSelectedSuffixes(selectedSuffixes.filter(s => s !== suffix));
+                                    }
+                                  }}
+                                  className="h-3 w-3"
+                                />
+                                <span className="font-mono">{suffix}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+
+                      {/* Date Ranges - Filterable */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedDateRanges.length > 0 ? 'bg-cyan-500/20 border border-cyan-500/50' : ''}`}>
+                            <Calendar className="h-3 w-3 text-cyan-500" />
+                            <span className="font-semibold">{selectedDateRanges.length > 0 ? selectedDateRanges.length : uniqueDateRanges.length}</span>
+                            <span className="text-muted-foreground">Date Ranges</span>
+                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 p-2" align="start">
+                          <div className="space-y-1">
+                            <div className="text-xs font-semibold mb-2 flex items-center justify-between">
+                              <span>Filter by Date Range</span>
+                              {selectedDateRanges.length > 0 && (
+                                <button
+                                  onClick={() => setSelectedDateRanges([])}
+                                  className="text-primary hover:text-primary/80 text-[10px]"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                            </div>
+                            {uniqueDateRanges.map(range => (
+                              <label key={range} className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedDateRanges.includes(range)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedDateRanges([...selectedDateRanges, range]);
+                                    } else {
+                                      setSelectedDateRanges(selectedDateRanges.filter(r => r !== range));
+                                    }
+                                  }}
+                                  className="h-3 w-3"
+                                />
+                                <span className="font-mono">{range}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+
 
                       {/* File Type Distribution - Inline */}
                       {projectStats.fileTypes.length > 0 && (

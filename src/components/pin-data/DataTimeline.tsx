@@ -2,13 +2,16 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { format, startOfMonth, endOfMonth, eachMonthOfInterval, differenceInDays, parseISO, isValid, getYear } from 'date-fns';
-import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText, Pencil, Clock, Loader2 } from 'lucide-react';
+import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText, Pencil, Clock, Loader2, Layers, Combine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { type PinFile } from '@/lib/supabase/file-storage-service';
 import { useToast } from '@/hooks/use-toast';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { MergeFilesDialog } from './MergeFilesDialog';
 
 interface DataTimelineProps {
   files: (PinFile & { pinLabel: string })[];
@@ -33,6 +36,18 @@ interface FileWithDateRange {
     error?: string;
     loading: boolean;
   };
+}
+
+interface MergedGroup {
+  groupKey: string; // Project_DataType_Station
+  project: string;
+  dataType: string;
+  station: string;
+  files: FileWithDateRange[];
+  startDate: string | null;
+  endDate: string | null;
+  totalDays: number | null;
+  color: string;
 }
 
 const COLORS = [
@@ -119,13 +134,27 @@ const parseCustomDate = (dateString: string): Date | null => {
 // Helper function to calculate correct duration from corrected dates
 const getCorrectDuration = (startDateString: string | null, endDateString: string | null): number | null => {
   if (!startDateString || !endDateString) return null;
-  
+
   const startDate = parseCustomDate(startDateString);
   const endDate = parseCustomDate(endDateString);
-  
+
   if (!startDate || !endDate) return null;
-  
+
   return differenceInDays(endDate, startDate) + 1;
+};
+
+// Parse file name to extract Project_DataType_Station grouping key
+// Example: "Control_FPOD_S_2024-01-15.csv" -> { project: "Control", dataType: "FPOD", station: "S" }
+const parseFileGrouping = (fileName: string): { project: string; dataType: string; station: string; groupKey: string } | null => {
+  const parts = fileName.split('_');
+  if (parts.length < 3) return null;
+
+  const project = parts[0];
+  const dataType = parts[1];
+  const station = parts[2];
+  const groupKey = `${project}_${dataType}_${station}`;
+
+  return { project, dataType, station, groupKey };
 };
 
 export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFile, onRenameFile, onDatesUpdated }: DataTimelineProps) {
@@ -140,6 +169,10 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
   const [fetchingTimesFor, setFetchingTimesFor] = useState<string | null>(null);
   const [openMenuFileId, setOpenMenuFileId] = useState<string | null>(null);
   const [isBulkFetching, setIsBulkFetching] = useState(false);
+  const [showMergedView, setShowMergedView] = useState(false);
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [mergeGroupKey, setMergeGroupKey] = useState<string | null>(null);
+  const [mergeFiles, setMergeFiles] = useState<FileWithDateRange[]>([]);
 
   // Delete file handler - just call parent's onDeleteFile
   const handleDeleteFile = async (file: PinFile & { pinLabel: string }) => {
@@ -378,6 +411,65 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
     return colorMap;
   }, [files]);
 
+  // Create merged groups based on Project_DataType_Station
+  const mergedGroups = useMemo(() => {
+    const groups = new Map<string, MergedGroup>();
+
+    sortedFilesWithDates.forEach((fileWithDate) => {
+      const grouping = parseFileGrouping(fileWithDate.file.fileName);
+      if (!grouping) return; // Skip files that don't match the naming pattern
+
+      const { groupKey, project, dataType, station } = grouping;
+
+      if (!groups.has(groupKey)) {
+        // Initialize new group
+        groups.set(groupKey, {
+          groupKey,
+          project,
+          dataType,
+          station,
+          files: [],
+          startDate: null,
+          endDate: null,
+          totalDays: null,
+          color: pinColorMap.get(fileWithDate.file.pinLabel) || COLORS[0]
+        });
+      }
+
+      const group = groups.get(groupKey)!;
+      group.files.push(fileWithDate);
+
+      // Update merged date range
+      if (fileWithDate.dateRange.startDate && fileWithDate.dateRange.endDate) {
+        const fileStart = parseCustomDate(fileWithDate.dateRange.startDate);
+        const fileEnd = parseCustomDate(fileWithDate.dateRange.endDate);
+
+        if (fileStart && fileEnd) {
+          const groupStart = group.startDate ? parseCustomDate(group.startDate) : null;
+          const groupEnd = group.endDate ? parseCustomDate(group.endDate) : null;
+
+          // Update earliest start date
+          if (!groupStart || fileStart < groupStart) {
+            group.startDate = fileWithDate.dateRange.startDate;
+          }
+
+          // Update latest end date
+          if (!groupEnd || fileEnd > groupEnd) {
+            group.endDate = fileWithDate.dateRange.endDate;
+          }
+
+          // Recalculate total days
+          if (group.startDate && group.endDate) {
+            group.totalDays = getCorrectDuration(group.startDate, group.endDate);
+          }
+        }
+      }
+    });
+
+    // Sort groups alphabetically by groupKey
+    return Array.from(groups.values()).sort((a, b) => a.groupKey.localeCompare(b.groupKey));
+  }, [sortedFilesWithDates, pinColorMap]);
+
   // Initialize files with dates from database
   useEffect(() => {
     if (files.length === 0) {
@@ -426,42 +518,72 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
 
   // Calculate timeline bounds and headers
   const timelineData = useMemo(() => {
-    const validFiles = filesWithDates.filter(
-      ({ dateRange }) => 
-        !dateRange.loading && 
-        !dateRange.error && 
-        dateRange.startDate && 
-        dateRange.endDate
-    );
+    // Use merged groups or individual files based on toggle
+    const dataSource = showMergedView ? mergedGroups : sortedFilesWithDates;
 
-    if (validFiles.length === 0) {
+    if (dataSource.length === 0) {
       return { months: [], years: [], minDate: null, maxDate: null, totalDays: 0 };
     }
 
-    // Find the earliest and latest dates using custom parser
-    const startDates = validFiles.map(({ dateRange }) => parseCustomDate(dateRange.startDate!)).filter(date => date !== null) as Date[];
-    const endDates = validFiles.map(({ dateRange }) => parseCustomDate(dateRange.endDate!)).filter(date => date !== null) as Date[];
+    // Extract dates based on data source type
+    let allStartDates: Date[] = [];
+    let allEndDates: Date[] = [];
 
-    if (startDates.length === 0 || endDates.length === 0) {
+    if (showMergedView) {
+      // Use merged group dates
+      mergedGroups.forEach((group) => {
+        if (group.startDate && group.endDate) {
+          const start = parseCustomDate(group.startDate);
+          const end = parseCustomDate(group.endDate);
+          if (start) allStartDates.push(start);
+          if (end) allEndDates.push(end);
+        }
+      });
+    } else {
+      // Use individual file dates
+      sortedFilesWithDates
+        .filter(({ dateRange }) => !dateRange.loading && !dateRange.error && dateRange.startDate && dateRange.endDate)
+        .forEach(({ dateRange }) => {
+          const start = parseCustomDate(dateRange.startDate!);
+          const end = parseCustomDate(dateRange.endDate!);
+          if (start) allStartDates.push(start);
+          if (end) allEndDates.push(end);
+        });
+    }
+
+    if (allStartDates.length === 0 || allEndDates.length === 0) {
       return { months: [], years: [], minDate: null, maxDate: null, totalDays: 0 };
     }
 
-    const minDate = new Date(Math.min(...startDates.map(d => d.getTime())));
-    const maxDate = new Date(Math.max(...endDates.map(d => d.getTime())));
+    const minDate = new Date(Math.min(...allStartDates.map(d => d.getTime())));
+    const maxDate = new Date(Math.max(...allEndDates.map(d => d.getTime())));
 
     // Find all unique months that contain data
     const dataMonthsSet = new Set<string>();
-    validFiles.forEach(({ dateRange }) => {
-      const start = parseCustomDate(dateRange.startDate!);
-      const end = parseCustomDate(dateRange.endDate!);
-      if (start && end) {
-        // Add all months between start and end for this file
-        const fileMonths = eachMonthOfInterval({ start: startOfMonth(start), end: endOfMonth(end) });
-        fileMonths.forEach(month => {
-          dataMonthsSet.add(format(month, 'yyyy-MM'));
-        });
-      }
-    });
+
+    if (showMergedView) {
+      mergedGroups.forEach((group) => {
+        if (group.startDate && group.endDate) {
+          const start = parseCustomDate(group.startDate);
+          const end = parseCustomDate(group.endDate);
+          if (start && end) {
+            const monthsInRange = eachMonthOfInterval({ start: startOfMonth(start), end: endOfMonth(end) });
+            monthsInRange.forEach(month => dataMonthsSet.add(format(month, 'yyyy-MM')));
+          }
+        }
+      });
+    } else {
+      sortedFilesWithDates.forEach(({ dateRange }) => {
+        if (dateRange.startDate && dateRange.endDate) {
+          const start = parseCustomDate(dateRange.startDate);
+          const end = parseCustomDate(dateRange.endDate);
+          if (start && end) {
+            const monthsInRange = eachMonthOfInterval({ start: startOfMonth(start), end: endOfMonth(end) });
+            monthsInRange.forEach(month => dataMonthsSet.add(format(month, 'yyyy-MM')));
+          }
+        }
+      });
+    }
 
     // Convert back to Date objects and sort
     const months = Array.from(dataMonthsSet)
@@ -495,11 +617,11 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
     const totalDays = differenceInDays(maxDate, minDate) + 1;
 
     return { months, years, minDate, maxDate, totalDays };
-  }, [filesWithDates]);
+  }, [sortedFilesWithDates, mergedGroups, showMergedView]);
 
-  // Calculate bar positions and widths
+  // Calculate bar positions and widths for individual files
   const calculateBarMetrics = (file: FileWithDateRange) => {
-    if (!timelineData.minDate || !timelineData.totalDays || 
+    if (!timelineData.minDate || !timelineData.totalDays ||
         !file.dateRange.startDate || !file.dateRange.endDate) {
       return { left: 0, width: 0 };
     }
@@ -512,6 +634,29 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
         startDate: file.dateRange.startDate,
         endDate: file.dateRange.endDate
       });
+      return { left: 0, width: 0 };
+    }
+
+    const daysFromStart = differenceInDays(startDate, timelineData.minDate);
+    const barDuration = differenceInDays(endDate, startDate) + 1;
+
+    const left = Math.max(0, (daysFromStart / timelineData.totalDays) * 100);
+    const width = Math.max(0.1, (barDuration / timelineData.totalDays) * 100);
+
+    return { left, width };
+  };
+
+  // Calculate bar positions and widths for merged groups
+  const calculateMergedBarMetrics = (group: MergedGroup) => {
+    if (!timelineData.minDate || !timelineData.totalDays ||
+        !group.startDate || !group.endDate) {
+      return { left: 0, width: 0 };
+    }
+
+    const startDate = parseCustomDate(group.startDate);
+    const endDate = parseCustomDate(group.endDate);
+
+    if (!startDate || !endDate) {
       return { left: 0, width: 0 };
     }
 
@@ -559,6 +704,22 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                 </>
               )}
             </Button>
+          )}
+
+          {/* Merged View Toggle - Only show in timeline mode */}
+          {viewMode === 'timeline' && (
+            <div className="flex items-center gap-2 bg-muted/30 rounded px-2 py-1">
+              <Layers className="h-3 w-3 text-muted-foreground" />
+              <Label htmlFor="merge-toggle" className="text-xs cursor-pointer">
+                Merge
+              </Label>
+              <Switch
+                id="merge-toggle"
+                checked={showMergedView}
+                onCheckedChange={setShowMergedView}
+                className="h-4 data-[state=checked]:bg-primary"
+              />
+            </div>
           )}
 
           {/* View Mode Toggle - Always visible */}
@@ -963,7 +1124,141 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
               </tr>
             </thead>
             <tbody>
-              {sortedFilesWithDates.map((fileWithDate, index) => {
+              {/* MERGED VIEW: Show grouped timelines with individual file bars */}
+              {showMergedView && mergedGroups.map((group, index) => {
+                return (
+                  <tr key={`merged-${group.groupKey}-${index}`} className="h-[22px]">
+                    {/* LEFT CELL: Group Info */}
+                    <td className="pr-4 align-middle">
+                      <div className="flex items-center gap-2">
+                        {/* Pin color indicator */}
+                        <div
+                          className="w-2 h-2 rounded-sm flex-shrink-0"
+                          style={{ backgroundColor: group.color }}
+                          title={`Group: ${group.groupKey}`}
+                        />
+
+                        {/* Group name with popover menu */}
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button className="text-xs font-mono flex-1 truncate text-left hover:text-primary hover:underline transition-colors cursor-pointer font-semibold">
+                              {group.groupKey}
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-80" align="start">
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-2 pb-2 border-b">
+                                <div
+                                  className="w-3 h-3 rounded-sm"
+                                  style={{ backgroundColor: group.color }}
+                                />
+                                <span className="text-sm font-semibold">{group.groupKey}</span>
+                              </div>
+                              <div className="space-y-2 text-xs">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Files:</span>
+                                  <span className="font-medium">{group.files.length}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Period:</span>
+                                  <span>{group.startDate} to {group.endDate}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Total Coverage:</span>
+                                  <span className="font-medium">{group.totalDays} days</span>
+                                </div>
+                              </div>
+                              <Separator />
+                              <div className="space-y-1">
+                                <div className="text-xs font-medium text-muted-foreground uppercase">Included Files:</div>
+                                <div className="max-h-48 overflow-y-auto space-y-1">
+                                  {group.files.map((fileWithDate, idx) => (
+                                    <div
+                                      key={`group-file-${fileWithDate.file.id}-${idx}`}
+                                      className="text-xs font-mono bg-muted/30 px-2 py-1 rounded"
+                                    >
+                                      <div className="truncate">{fileWithDate.file.fileName}</div>
+                                      <div className="text-[10px] text-muted-foreground">
+                                        {fileWithDate.dateRange.startDate} - {fileWithDate.dateRange.endDate}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <Separator />
+                              <button
+                                onClick={() => {
+                                  setMergeDialogOpen(true);
+                                  setMergeGroupKey(group.groupKey);
+                                  setMergeFiles(group.files);
+                                }}
+                                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors font-medium text-primary"
+                              >
+                                <Combine className="h-4 w-4" />
+                                <span>Merge Files</span>
+                              </button>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+
+                        {/* File count badge */}
+                        <span className="text-xs text-muted-foreground bg-muted px-1 rounded">
+                          {group.files.length}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* RIGHT CELL: Multiple Timeline Bars (one per file) */}
+                    <td className="align-middle">
+                      <div className="relative h-4 w-full bg-muted/30 rounded">
+                        {/* Render a bar for each file in the group */}
+                        {group.files.map((fileWithDate, fileIdx) => {
+                          const barMetrics = calculateBarMetrics(fileWithDate);
+                          const { dateRange } = fileWithDate;
+
+                          if (barMetrics.width === 0 || !dateRange.startDate || !dateRange.endDate) {
+                            return null;
+                          }
+
+                          const fileDuration = getCorrectDuration(dateRange.startDate, dateRange.endDate);
+
+                          return (
+                            <div
+                              key={`merged-bar-${fileWithDate.file.id}-${fileIdx}`}
+                              className="absolute h-full rounded flex items-center text-white font-medium shadow-sm transition-all hover:shadow-md hover:z-10"
+                              style={{
+                                left: `${barMetrics.left}%`,
+                                width: `${barMetrics.width}%`,
+                                backgroundColor: group.color,
+                                minWidth: '2px'
+                              }}
+                              title={`${fileWithDate.file.fileName}: ${dateRange.startDate} - ${dateRange.endDate} (${fileDuration || 0} days)`}
+                            >
+                              {barMetrics.width > 8 && fileDuration && (
+                                <div className="flex items-center justify-center w-full">
+                                  <span className="text-xs font-medium">
+                                    {fileDuration}d
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* Show "No data" if no files have valid dates */}
+                        {group.files.every(f => !f.dateRange.startDate || !f.dateRange.endDate) && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-xs text-muted-foreground">No data</span>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {/* INDIVIDUAL VIEW: Show individual files */}
+              {!showMergedView && sortedFilesWithDates.map((fileWithDate, index) => {
                 const { file, dateRange } = fileWithDate;
                 const color = pinColorMap.get(file.pinLabel) || COLORS[0];
 
@@ -1208,6 +1503,17 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
           </table>
         </div>
       )}
+
+      <MergeFilesDialog
+        open={mergeDialogOpen}
+        onOpenChange={setMergeDialogOpen}
+        groupKey={mergeGroupKey}
+        files={mergeFiles}
+        onSuccess={() => {
+          // Reload files after successful merge
+          if (onDatesUpdated) onDatesUpdated();
+        }}
+      />
     </div>
   );
 }
