@@ -10,6 +10,8 @@ export interface PinFile {
   fileType: string
   uploadedAt: Date
   projectId: string
+  startDate?: Date
+  endDate?: Date
 }
 
 class FileStorageService {
@@ -210,7 +212,9 @@ class FileStorageService {
         fileSize: item.file_size,
         fileType: item.file_type,
         projectId: item.project_id,
-        uploadedAt: new Date(item.uploaded_at)
+        uploadedAt: new Date(item.uploaded_at),
+        startDate: item.start_date ? new Date(item.start_date) : undefined,
+        endDate: item.end_date ? new Date(item.end_date) : undefined
       }))
     } catch (error) {
       console.error('Get pin files error:', error)

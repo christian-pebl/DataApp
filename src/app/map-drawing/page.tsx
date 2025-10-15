@@ -513,6 +513,8 @@ export default function MapDrawingPage() {
   const [showUploadPinSelector, setShowUploadPinSelector] = useState(false);
   const [selectedUploadPinId, setSelectedUploadPinId] = useState<string>('');
   const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
+  const [duplicateFiles, setDuplicateFiles] = useState<{fileName: string, existingFile: PinFile}[]>([]);
+  const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isUpdatingProject, setIsUpdatingProject] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
@@ -3150,7 +3152,7 @@ export default function MapDrawingPage() {
   };
 
   // Handle file upload for pins - now receives files and pinId
-  const handleFileUpload = async (pinId: string, filesToUpload?: File[]) => {
+  const handleFileUpload = async (pinId: string, filesToUpload?: File[], skipDuplicateCheck: boolean = false) => {
     const csvFiles = filesToUpload || pendingUploadFiles;
 
     if (csvFiles.length === 0) {
@@ -3172,6 +3174,35 @@ export default function MapDrawingPage() {
     }
 
     console.log('User authenticated for upload:', user.id);
+
+    // Check for duplicate file names (unless we're replacing)
+    if (!skipDuplicateCheck) {
+      console.log('🔍 Checking for duplicate files...');
+
+      // Fetch existing files from database to ensure we have latest data
+      const existingFiles = await fileStorageService.getPinFiles(pinId);
+      console.log(`📂 Found ${existingFiles.length} existing files for pin ${pinId}`);
+
+      const duplicates: {fileName: string, existingFile: PinFile}[] = [];
+
+      csvFiles.forEach(file => {
+        const existing = existingFiles.find(ef => ef.fileName === file.name);
+        if (existing) {
+          console.log(`⚠️  Duplicate detected: ${file.name}`);
+          duplicates.push({ fileName: file.name, existingFile: existing });
+        }
+      });
+
+      // If duplicates found, show warning dialog
+      if (duplicates.length > 0) {
+        console.log(`🚫 Found ${duplicates.length} duplicate file(s), showing warning dialog`);
+        setDuplicateFiles(duplicates);
+        setShowDuplicateWarning(true);
+        return; // Don't proceed with upload yet
+      } else {
+        console.log('✅ No duplicates found, proceeding with upload');
+      }
+    }
 
     setIsUploadingFiles(true);
 
@@ -3249,6 +3280,44 @@ export default function MapDrawingPage() {
       setPendingUploadFiles([]);
       setSelectedUploadPinId('');
     }
+  };
+
+  // Handle replacing duplicate files
+  const handleReplaceDuplicates = async () => {
+    if (!selectedUploadPinId) return;
+
+    setShowDuplicateWarning(false);
+
+    // Delete the existing duplicate files first
+    for (const dup of duplicateFiles) {
+      try {
+        await fileStorageService.deleteFile(dup.existingFile.id);
+        console.log(`Deleted duplicate file: ${dup.fileName}`);
+
+        // Also update local state to remove the deleted file
+        setPinFileMetadata(prev => ({
+          ...prev,
+          [selectedUploadPinId]: (prev[selectedUploadPinId] || []).filter(f => f.id !== dup.existingFile.id)
+        }));
+      } catch (error) {
+        console.error(`Failed to delete duplicate file ${dup.fileName}:`, error);
+      }
+    }
+
+    // Clear duplicates list
+    setDuplicateFiles([]);
+
+    // Now proceed with the upload, skipping duplicate check
+    await handleFileUpload(selectedUploadPinId, pendingUploadFiles, true);
+  };
+
+  // Handle cancelling duplicate upload
+  const handleCancelDuplicateUpload = () => {
+    setShowDuplicateWarning(false);
+    setDuplicateFiles([]);
+    setPendingUploadFiles([]);
+    setSelectedUploadPinId('');
+    setShowUploadPinSelector(false);
   };
 
   // Handle explore data with file type selection
@@ -6473,6 +6542,26 @@ export default function MapDrawingPage() {
                         });
                       }
                     }}
+                    onDatesUpdated={async () => {
+                      console.log('📅 Dates updated, reloading files...');
+
+                      // Reload files for all pins to get updated dates
+                      const fileMetadata: Record<string, PinFile[]> = {};
+
+                      for (const pin of pins) {
+                        try {
+                          const files = await fileStorageService.getPinFiles(pin.id);
+                          if (files.length > 0) {
+                            fileMetadata[pin.id] = files;
+                          }
+                        } catch (error) {
+                          console.error(`Error reloading files for pin ${pin.id}:`, error);
+                        }
+                      }
+
+                      console.log('✅ Files reloaded with updated dates');
+                      setPinFileMetadata(fileMetadata);
+                    }}
                   />
                 </div>
               );
@@ -6584,6 +6673,84 @@ export default function MapDrawingPage() {
                   </>
                 ) : (
                   'Upload Files'
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Duplicate File Warning Dialog */}
+      <Dialog open={showDuplicateWarning} onOpenChange={(open) => {
+        if (!open) {
+          handleCancelDuplicateUpload();
+        }
+      }}>
+        <DialogContent className="sm:max-w-md z-[9999]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertCircle className="h-5 w-5" />
+              Duplicate Files Detected
+            </DialogTitle>
+            <DialogDescription>
+              The following file{duplicateFiles.length > 1 ? 's' : ''} already exist{duplicateFiles.length === 1 ? 's' : ''} for this pin.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Show duplicate files */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Duplicate Files:</label>
+              <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 max-h-32 overflow-y-auto">
+                {duplicateFiles.map((dup, index) => (
+                  <div key={index} className="text-xs font-mono text-amber-900 dark:text-amber-100 py-1 flex items-center gap-2">
+                    <AlertCircle className="h-3 w-3 flex-shrink-0" />
+                    <span>{dup.fileName}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-muted/50 rounded-md p-3 text-sm text-muted-foreground">
+              <p className="font-medium mb-1">What would you like to do?</p>
+              <ul className="space-y-1 text-xs">
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-amber-600">Replace:</span>
+                  <span>Delete existing files and upload new ones</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="font-bold">Cancel:</span>
+                  <span>Keep existing files, discard upload</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCancelDuplicateUpload}
+              >
+                Cancel Upload
+              </Button>
+              <Button
+                size="sm"
+                variant="default"
+                className="bg-amber-600 hover:bg-amber-700"
+                onClick={handleReplaceDuplicates}
+                disabled={isUploadingFiles}
+              >
+                {isUploadingFiles ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Replacing...
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Replace Files
+                  </>
                 )}
               </Button>
             </div>

@@ -21,6 +21,7 @@ interface DataTimelineProps {
   onFileClick: (file: PinFile & { pinLabel: string }) => void;
   onDeleteFile?: (file: PinFile & { pinLabel: string }) => void;
   onRenameFile?: (file: PinFile & { pinLabel: string }, newName: string) => Promise<boolean>;
+  onDatesUpdated?: () => void;
 }
 
 interface FileWithDateRange {
@@ -127,7 +128,7 @@ const getCorrectDuration = (startDateString: string | null, endDateString: strin
   return differenceInDays(endDate, startDate) + 1;
 };
 
-export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFile, onRenameFile }: DataTimelineProps) {
+export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFile, onRenameFile, onDatesUpdated }: DataTimelineProps) {
   const { toast } = useToast();
   const [filesWithDates, setFilesWithDates] = useState<FileWithDateRange[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'timeline'>('table');
@@ -138,6 +139,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
   const [renameValue, setRenameValue] = useState<string>('');
   const [fetchingTimesFor, setFetchingTimesFor] = useState<string | null>(null);
   const [openMenuFileId, setOpenMenuFileId] = useState<string | null>(null);
+  const [isBulkFetching, setIsBulkFetching] = useState(false);
 
   // Delete file handler - just call parent's onDeleteFile
   const handleDeleteFile = async (file: PinFile & { pinLabel: string }) => {
@@ -174,90 +176,145 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
     setRenameValue(file.fileName);
   };
 
-  // Fetch times for a file
-  const handleFetchTimes = async (file: PinFile & { pinLabel: string }) => {
-    setFetchingTimesFor(file.id);
-    setOpenMenuFileId(null); // Close menu
+  // Bulk fetch missing dates
+  const handleFetchMissingDates = async () => {
+    const filesWithoutDates = filesWithDates.filter(
+      ({ dateRange }) => !dateRange.startDate || !dateRange.endDate
+    );
+
+    if (filesWithoutDates.length === 0) {
+      toast({
+        title: "All dates present",
+        description: "All files already have start and end dates"
+      });
+      return;
+    }
+
+    setIsBulkFetching(true);
 
     try {
-      toast({ title: "Fetching dates...", description: `Analyzing ${file.fileName}` });
-
-      // Get date range from CSV
-      const result = await getFileDateRange(file);
-
-      if (result.error) {
-        throw new Error(result.error);
-      }
-
-      if (!result.startDate || !result.endDate) {
-        throw new Error('No dates found in file');
-      }
-
-      // Convert dates from DD/MM/YYYY to YYYY-MM-DD format for database
-      const convertToDbFormat = (dateStr: string): string => {
-        // Handle DD/MM/YYYY format
-        const parts = dateStr.split('/');
-        if (parts.length === 3) {
-          const [day, month, year] = parts;
-          return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-        }
-        // If already in YYYY-MM-DD format, return as is
-        return dateStr;
-      };
-
-      const startDateDb = convertToDbFormat(result.startDate);
-      const endDateDb = convertToDbFormat(result.endDate);
-
-      // Update database with dates
-      const { updateFileDatesAction } = await import('@/app/data-explorer/actions');
-      const updateResult = await updateFileDatesAction(file.id, startDateDb, endDateDb);
-
-      if (!updateResult.success) {
-        throw new Error(updateResult.error || 'Failed to update dates');
-      }
-
-      // Update local state
-      setFilesWithDates(prev =>
-        prev.map(f =>
-          f.file.id === file.id
-            ? {
-                ...f,
-                file: {
-                  ...f.file,
-                  startDate: new Date(startDateDb),
-                  endDate: new Date(endDateDb)
-                },
-                dateRange: {
-                  startDate: startDateDb,  // Use YYYY-MM-DD format for display
-                  endDate: endDateDb,      // Use YYYY-MM-DD format for display
-                  totalDays: result.totalDays,
-                  loading: false
-                }
-              }
-            : f
-        )
-      );
-
       toast({
-        title: "Dates Updated",
-        description: `${file.fileName}: ${result.startDate} to ${result.endDate}`
+        title: "Fetching missing dates...",
+        description: `Analyzing ${filesWithoutDates.length} file(s)`
       });
 
-      // Reload the page to fetch updated data from database
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Process files sequentially to avoid overwhelming the system
+      for (const fileWithDate of filesWithoutDates) {
+        const file = fileWithDate.file;
+        setFetchingTimesFor(file.id);
+
+        try {
+          // Get date range from CSV
+          const result = await getFileDateRange(file);
+
+          if (result.error || !result.startDate || !result.endDate) {
+            errorCount++;
+            continue;
+          }
+
+          // Convert dates from DD/MM/YYYY to YYYY-MM-DD format for database
+          const convertToDbFormat = (dateStr: string): string => {
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+              const [day, month, year] = parts;
+              return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            }
+            return dateStr;
+          };
+
+          const startDateDb = convertToDbFormat(result.startDate);
+          const endDateDb = convertToDbFormat(result.endDate);
+
+          console.log(`[DataTimeline] Updating ${file.fileName}:`, { fileId: file.id, startDateDb, endDateDb });
+
+          // Update database with dates
+          const { updateFileDatesAction } = await import('@/app/data-explorer/actions');
+          const updateResult = await updateFileDatesAction(file.id, startDateDb, endDateDb);
+
+          console.log(`[DataTimeline] Update result for ${file.fileName}:`, updateResult);
+
+          if (!updateResult.success) {
+            console.error(`[DataTimeline] Failed to update ${file.fileName}:`, updateResult.error);
+            errorCount++;
+            continue;
+          }
+
+          console.log(`[DataTimeline] Successfully updated ${file.fileName} with dates`);
+
+          // Update local state
+          setFilesWithDates(prev =>
+            prev.map(f =>
+              f.file.id === file.id
+                ? {
+                    ...f,
+                    file: {
+                      ...f.file,
+                      startDate: new Date(startDateDb),
+                      endDate: new Date(endDateDb)
+                    },
+                    dateRange: {
+                      startDate: startDateDb,
+                      endDate: endDateDb,
+                      totalDays: result.totalDays,
+                      loading: false
+                    }
+                  }
+                : f
+            )
+          );
+
+          successCount++;
+        } catch (error) {
+          console.error(`Error fetching dates for ${file.fileName}:`, error);
+          errorCount++;
+        }
+      }
+
+      setFetchingTimesFor(null);
+
+      // Show result
+      if (successCount > 0) {
+        toast({
+          title: "Dates fetched successfully",
+          description: `Updated ${successCount} file(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}`
+        });
+
+        // Notify parent to reload files
+        if (onDatesUpdated) {
+          onDatesUpdated();
+        }
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Failed to fetch dates",
+          description: `Could not fetch dates for any files`
+        });
+      }
     } catch (error) {
-      console.error('Error fetching times:', error);
+      console.error('Error in bulk fetch:', error);
       toast({
         variant: "destructive",
         title: "Error",
         description: error instanceof Error ? error.message : 'Failed to fetch dates'
       });
     } finally {
+      setIsBulkFetching(false);
       setFetchingTimesFor(null);
     }
   };
+
+  // Check if any files are missing dates
+  const hasMissingDates = useMemo(() => {
+    return filesWithDates.some(({ dateRange }) => !dateRange.startDate || !dateRange.endDate);
+  }, [filesWithDates]);
+
+  // Count files missing dates
+  const missingDatesCount = useMemo(() => {
+    return filesWithDates.filter(({ dateRange }) => !dateRange.startDate || !dateRange.endDate).length;
+  }, [filesWithDates]);
 
   // Toggle sort order handler
   const toggleSortOrder = () => {
@@ -480,26 +537,51 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">Project Data Files</h3>
 
-        {/* View Mode Toggle - Always visible */}
-        <div className="flex items-center gap-1 bg-muted/50 rounded p-1">
-          <Button
-            variant={viewMode === 'table' ? 'default' : 'ghost'}
-            size="sm"
-            className="h-6 px-2"
-            onClick={() => setViewMode('table')}
-          >
-            <Calendar className="h-3 w-3 mr-1" />
-            <span className="text-xs">Table</span>
-          </Button>
-          <Button
-            variant={viewMode === 'timeline' ? 'default' : 'ghost'}
-            size="sm"
-            className="h-6 px-2"
-            onClick={() => setViewMode('timeline')}
-          >
-            <BarChart3 className="h-3 w-3 mr-1" />
-            <span className="text-xs">Timeline</span>
-          </Button>
+        <div className="flex items-center gap-2">
+          {/* Fetch Missing Dates Button - Only show if some files are missing dates */}
+          {hasMissingDates && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2"
+              onClick={handleFetchMissingDates}
+              disabled={isBulkFetching}
+            >
+              {isBulkFetching ? (
+                <>
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  <span className="text-xs">Fetching...</span>
+                </>
+              ) : (
+                <>
+                  <Clock className="h-3 w-3 mr-1" />
+                  <span className="text-xs">Fetch Dates ({missingDatesCount})</span>
+                </>
+              )}
+            </Button>
+          )}
+
+          {/* View Mode Toggle - Always visible */}
+          <div className="flex items-center gap-1 bg-muted/50 rounded p-1">
+            <Button
+              variant={viewMode === 'table' ? 'default' : 'ghost'}
+              size="sm"
+              className="h-6 px-2"
+              onClick={() => setViewMode('table')}
+            >
+              <Calendar className="h-3 w-3 mr-1" />
+              <span className="text-xs">Table</span>
+            </Button>
+            <Button
+              variant={viewMode === 'timeline' ? 'default' : 'ghost'}
+              size="sm"
+              className="h-6 px-2"
+              onClick={() => setViewMode('timeline')}
+            >
+              <BarChart3 className="h-3 w-3 mr-1" />
+              <span className="text-xs">Timeline</span>
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -677,29 +759,6 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                       </div>
                                     </button>
                                   )
-                                )}
-
-                                <Separator />
-
-                                {/* Fetch Times option - only if dates not present */}
-                                {!dateRange.startDate && !dateRange.endDate && (
-                                  <button
-                                    onClick={() => handleFetchTimes(fileWithDate.file)}
-                                    disabled={fetchingTimesFor === file.id}
-                                    className="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    {fetchingTimesFor === file.id ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <Clock className="h-4 w-4" />
-                                    )}
-                                    <div>
-                                      <div className="font-medium">Fetch Times</div>
-                                      <div className="text-xs text-muted-foreground">
-                                        {fetchingTimesFor === file.id ? 'Analyzing...' : 'Get start/end dates'}
-                                      </div>
-                                    </div>
-                                  </button>
                                 )}
 
                                 <Separator />
@@ -1041,30 +1100,6 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                   </div>
                                 </PopoverContent>
                               </Popover>
-
-                              {/* Fetch Times option - only if dates not present */}
-                              {!dateRange.startDate && !dateRange.endDate && (
-                                <>
-                                  <Separator />
-                                  <button
-                                    onClick={() => handleFetchTimes(fileWithDate.file)}
-                                    disabled={fetchingTimesFor === fileWithDate.file.id}
-                                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    {fetchingTimesFor === fileWithDate.file.id ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <Clock className="h-4 w-4" />
-                                    )}
-                                    <div>
-                                      <div className="font-medium">Fetch Times</div>
-                                      <div className="text-xs text-muted-foreground">
-                                        {fetchingTimesFor === fileWithDate.file.id ? 'Analyzing...' : 'Get start/end dates'}
-                                      </div>
-                                    </div>
-                                  </button>
-                                </>
-                              )}
 
                               <Separator />
 
