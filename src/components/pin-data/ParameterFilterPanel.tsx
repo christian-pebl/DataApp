@@ -2,26 +2,25 @@
 
 import React from "react";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Filter, X } from "lucide-react";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Filter, X, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ParameterFilterPanelProps {
   parameters: string[];
-  sourceFilter: string;
-  dateFilter: string;
-  unitFilter: string;
-  stationFilter: string;
-  onSourceFilterChange: (value: string) => void;
-  onDateFilterChange: (value: string) => void;
-  onUnitFilterChange: (value: string) => void;
-  onStationFilterChange: (value: string) => void;
+  sourceFilter: string[];
+  dateFilter: string[];
+  unitFilter: string[];
+  stationFilter: string[];
+  onSourceFilterChange: (value: string[]) => void;
+  onDateFilterChange: (value: string[]) => void;
+  onUnitFilterChange: (value: string[]) => void;
+  onStationFilterChange: (value: string[]) => void;
   onClearFilters: () => void;
 }
 
@@ -134,7 +133,16 @@ export function ParameterFilterPanel({
   }, [parameters]);
 
   // Check if any filters are active
-  const hasActiveFilters = sourceFilter !== 'all' || dateFilter !== 'all' || unitFilter !== 'all' || stationFilter !== 'all';
+  const hasActiveFilters = sourceFilter.length > 0 || dateFilter.length > 0 || unitFilter.length > 0 || stationFilter.length > 0;
+
+  // Toggle helper functions for adding/removing items from filter arrays
+  const toggleFilter = (currentFilter: string[], value: string, onChange: (value: string[]) => void) => {
+    if (currentFilter.includes(value)) {
+      onChange(currentFilter.filter(item => item !== value));
+    } else {
+      onChange([...currentFilter, value]);
+    }
+  };
 
   // Debug: Log final filter counts
   React.useEffect(() => {
@@ -183,88 +191,136 @@ export function ParameterFilterPanel({
         {/* Source Filter */}
         {availableSources.length > 0 && (
           <div className="space-y-0.5">
-            <Label htmlFor="source-filter" className="text-[9px] text-muted-foreground" title={`${availableSources.length} sources detected: ${availableSources.join(', ')}`}>
+            <Label className="text-[9px] text-muted-foreground" title={`${availableSources.length} sources detected: ${availableSources.join(', ')}`}>
               Source ({availableSources.length})
             </Label>
-            <Select value={sourceFilter} onValueChange={onSourceFilterChange}>
-              <SelectTrigger id="source-filter" className="h-6 text-[10px] px-1.5">
-                <SelectValue placeholder="All sources" />
-              </SelectTrigger>
-              <SelectContent className="z-[9999]">
-                <SelectItem value="all" className="text-[11px]">All sources</SelectItem>
-                {availableSources.map((source) => (
-                  <SelectItem key={source} value={source} className="text-[11px]">
-                    {source}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full h-6 text-[10px] px-1.5 justify-between font-normal">
+                  <span className="truncate">{sourceFilter.length === 0 ? 'All...' : `${sourceFilter.length} selected`}</span>
+                  <ChevronDown className="h-3 w-3 opacity-50 ml-1 flex-shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-2" align="start">
+                <div className="space-y-1">
+                  {availableSources.map((source) => (
+                    <div key={source} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`source-${source}`}
+                        checked={sourceFilter.includes(source)}
+                        onCheckedChange={() => toggleFilter(sourceFilter, source, onSourceFilterChange)}
+                        className="h-3 w-3"
+                      />
+                      <Label htmlFor={`source-${source}`} className="text-xs cursor-pointer flex-1">
+                        {source}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         )}
 
         {/* Unit Filter */}
         {availableUnits.length > 0 && (
           <div className="space-y-0.5">
-            <Label htmlFor="unit-filter" className="text-[9px] text-muted-foreground" title={`${availableUnits.length} units detected: ${availableUnits.join(', ')}`}>
+            <Label className="text-[9px] text-muted-foreground" title={`${availableUnits.length} units detected: ${availableUnits.join(', ')}`}>
               Unit ({availableUnits.length})
             </Label>
-            <Select value={unitFilter} onValueChange={onUnitFilterChange}>
-              <SelectTrigger id="unit-filter" className="h-6 text-[10px] px-1.5">
-                <SelectValue placeholder="All units" />
-              </SelectTrigger>
-              <SelectContent className="z-[9999]">
-                <SelectItem value="all" className="text-[11px]">All units</SelectItem>
-                {availableUnits.map((unit) => (
-                  <SelectItem key={unit} value={unit} className="text-[11px]">
-                    {unit}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full h-6 text-[10px] px-1.5 justify-between font-normal">
+                  <span className="truncate">{unitFilter.length === 0 ? 'All...' : unitFilter.join(', ')}</span>
+                  <ChevronDown className="h-3 w-3 opacity-50 ml-1 flex-shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-2" align="start">
+                <div className="space-y-1">
+                  {availableUnits.map((unit) => (
+                    <div key={unit} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`unit-${unit}`}
+                        checked={unitFilter.includes(unit)}
+                        onCheckedChange={() => toggleFilter(unitFilter, unit, onUnitFilterChange)}
+                        className="h-3 w-3"
+                      />
+                      <Label htmlFor={`unit-${unit}`} className="text-xs cursor-pointer flex-1">
+                        {unit}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         )}
 
         {/* Station Filter */}
         {availableStations.length > 0 && (
           <div className="space-y-0.5">
-            <Label htmlFor="station-filter" className="text-[9px] text-muted-foreground" title={`${availableStations.length} stations detected: ${availableStations.join(', ')}`}>
+            <Label className="text-[9px] text-muted-foreground" title={`${availableStations.length} stations detected: ${availableStations.join(', ')}`}>
               Station ({availableStations.length})
             </Label>
-            <Select value={stationFilter} onValueChange={onStationFilterChange}>
-              <SelectTrigger id="station-filter" className="h-6 text-[10px] px-1.5">
-                <SelectValue placeholder="All stations" />
-              </SelectTrigger>
-              <SelectContent className="z-[9999]">
-                <SelectItem value="all" className="text-[11px]">All stations</SelectItem>
-                {availableStations.map((station) => (
-                  <SelectItem key={station} value={station} className="text-[11px]">
-                    [{station}]
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full h-6 text-[10px] px-1.5 justify-between font-normal">
+                  <span className="truncate">{stationFilter.length === 0 ? 'All...' : `${stationFilter.length} selected`}</span>
+                  <ChevronDown className="h-3 w-3 opacity-50 ml-1 flex-shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-2" align="start">
+                <div className="space-y-1">
+                  {availableStations.map((station) => (
+                    <div key={station} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`station-${station}`}
+                        checked={stationFilter.includes(station)}
+                        onCheckedChange={() => toggleFilter(stationFilter, station, onStationFilterChange)}
+                        className="h-3 w-3"
+                      />
+                      <Label htmlFor={`station-${station}`} className="text-xs cursor-pointer flex-1">
+                        [{station}]
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         )}
 
         {/* Date Range Filter */}
         {availableDateRanges.length > 0 && (
           <div className="space-y-0.5">
-            <Label htmlFor="date-filter" className="text-[9px] text-muted-foreground" title={`${availableDateRanges.length} time frames detected: ${availableDateRanges.join(', ')}`}>
+            <Label className="text-[9px] text-muted-foreground" title={`${availableDateRanges.length} time frames detected: ${availableDateRanges.join(', ')}`}>
               Time Frame ({availableDateRanges.length})
             </Label>
-            <Select value={dateFilter} onValueChange={onDateFilterChange}>
-              <SelectTrigger id="date-filter" className="h-6 text-[10px] px-1.5">
-                <SelectValue placeholder="All time frames" />
-              </SelectTrigger>
-              <SelectContent className="z-[9999]">
-                <SelectItem value="all" className="text-[11px]">All time frames</SelectItem>
-                {availableDateRanges.map((dateRange) => (
-                  <SelectItem key={dateRange} value={dateRange} className="text-[11px]">
-                    [{dateRange}]
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full h-6 text-[10px] px-1.5 justify-between font-normal">
+                  <span className="truncate">{dateFilter.length === 0 ? 'All...' : `${dateFilter.length} selected`}</span>
+                  <ChevronDown className="h-3 w-3 opacity-50 ml-1 flex-shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-2" align="start">
+                <div className="space-y-1">
+                  {availableDateRanges.map((dateRange) => (
+                    <div key={dateRange} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`date-${dateRange}`}
+                        checked={dateFilter.includes(dateRange)}
+                        onCheckedChange={() => toggleFilter(dateFilter, dateRange, onDateFilterChange)}
+                        className="h-3 w-3"
+                      />
+                      <Label htmlFor={`date-${dateRange}`} className="text-xs cursor-pointer flex-1">
+                        [{dateRange}]
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         )}
       </div>

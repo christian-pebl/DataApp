@@ -14,12 +14,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock, Palette } from "lucide-react";
+import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock, Palette, Eye } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
 import { fileStorageService } from '@/lib/supabase/file-storage-service';
 import { DEFAULT_STYLE_RULES, type StyleRule } from './StylingRulesDialog';
+import { ParameterFilterPanel } from './ParameterFilterPanel';
 
 // Lazy load StylingRulesDialog - only loads when user clicks styling button
 const StylingRulesDialog = dynamic(
@@ -60,10 +61,23 @@ const CHART_COLORS = [
   '--chart-6', '--chart-7', '--chart-8', '--chart-9'
 ];
 
+// Palette of 8 contrasting colors for quick picking
+const DEFAULT_COLOR_PALETTE = [
+  '#3b82f6', // Blue
+  '#ef4444', // Red
+  '#10b981', // Green
+  '#f59e0b', // Amber
+  '#8b5cf6', // Purple
+  '#ec4899', // Pink
+  '#06b6d4', // Cyan
+  '#f97316', // Orange
+];
+
 interface ParameterState {
   visible: boolean;
   color: string;
   opacity?: number; // 0-1 range, defaults to 1 (fully opaque)
+  lineStyle?: 'solid' | 'dashed'; // Line style, defaults to 'solid'
   isSolo?: boolean;
   timeFilter?: {
     enabled: boolean;
@@ -261,11 +275,36 @@ export function PinChartDisplay({
   // Minimal view state - shows only selected parameters without borders
   const [minimalView, setMinimalView] = useState(false);
 
+  // Minimal view parameter name filtering
+  const [hideUnits, setHideUnits] = useState(false);
+  const [hideDates, setHideDates] = useState(false);
+  const [hideStations, setHideStations] = useState(false);
+
   // Axis mode state - default to multi axis
   const [axisMode, setAxisMode] = useState<'single' | 'multi'>('multi');
 
   // Parameter panel expansion state
   const [isParameterPanelExpanded, setIsParameterPanelExpanded] = useState(defaultParametersExpanded);
+
+  // Parameter filter state (for 24hr style parameters)
+  // Default to DPM for 24hr files - now using arrays for multi-select
+  const is24hrFile = fileName?.endsWith('_24hr.csv') || false;
+  const [sourceFilter, setSourceFilter] = useState<string[]>([]);
+  const [dateFilter, setDateFilter] = useState<string[]>([]);
+  const [unitFilter, setUnitFilter] = useState<string[]>(is24hrFile ? ['DPM'] : []);
+  const [stationFilter, setStationFilter] = useState<string[]>([]);
+
+  // Reset filters to default when file changes
+  React.useEffect(() => {
+    if (fileName?.endsWith('_24hr.csv')) {
+      setUnitFilter(['DPM']);
+    } else {
+      setUnitFilter([]);
+    }
+    setSourceFilter([]);
+    setDateFilter([]);
+    setStationFilter([]);
+  }, [fileName]);
 
   // X-axis year display toggle
   const [showYearInXAxis, setShowYearInXAxis] = useState(false);
@@ -812,6 +851,16 @@ export function PinChartDisplay({
       [parameter]: {
         ...prev[parameter],
         opacity: Math.max(0, Math.min(1, opacity)) // Clamp between 0 and 1
+      }
+    }));
+  };
+
+  const updateParameterLineStyle = (parameter: string, lineStyle: 'solid' | 'dashed') => {
+    setParameterStates(prev => ({
+      ...prev,
+      [parameter]: {
+        ...prev[parameter],
+        lineStyle
       }
     }));
   };
@@ -1507,6 +1556,33 @@ export function PinChartDisplay({
     return baseLabel;
   };
 
+  // Format parameter name based on minimal view settings
+  const formatParameterName = (parameter: string): string => {
+    let formatted = getParameterLabelWithUnit(parameter);
+
+    // Hide units in parentheses (e.g., "(DPM)", "(Clicks)", "(°C)")
+    if (hideUnits) {
+      formatted = formatted.replace(/\s*\([^)]+\)\s*/g, ' ').trim();
+    }
+
+    // Hide dates in brackets (e.g., "[2406_2407]", "[2408_2409]")
+    // Dates match pattern: 4 digits, separator, 4 digits
+    if (hideDates) {
+      formatted = formatted.replace(/\s*\[\d{4}[_\-]\d{4}\]\s*/g, ' ').trim();
+    }
+
+    // Hide station identifiers in brackets (e.g., "[C_S]", "[F_L]")
+    // Stations are brackets that DON'T match the date pattern
+    if (hideStations) {
+      formatted = formatted.replace(/\s*\[(?!\d{4}[_\-]\d{4}\])[^\]]+\]\s*/g, ' ').trim();
+    }
+
+    // Clean up any double spaces that may have been created
+    formatted = formatted.replace(/\s+/g, ' ').trim();
+
+    return formatted;
+  };
+
   const moveParameter = (parameter: string, direction: 'up' | 'down') => {
     // This would implement parameter reordering - simplified for now
     console.log(`Move ${parameter} ${direction}`);
@@ -1563,14 +1639,16 @@ export function PinChartDisplay({
 
           {/* Minimal View Toggle - only show in chart mode */}
           {!showTable && (
-            <div className="flex items-center gap-2 pl-4 border-l">
-              <span className="text-xs text-muted-foreground">Minimal view</span>
-              <Switch
-                checked={minimalView}
-                onCheckedChange={setMinimalView}
-                className="h-5 w-9"
-              />
-            </div>
+            <>
+              <div className="flex items-center gap-2 pl-4 border-l">
+                <span className="text-xs text-muted-foreground">Minimal view</span>
+                <Switch
+                  checked={minimalView}
+                  onCheckedChange={setMinimalView}
+                  className="h-5 w-9"
+                />
+              </div>
+            </>
           )}
 
           {/* Single/Multi Axis Toggle - only show in chart mode */}
@@ -1914,6 +1992,7 @@ export function PinChartDisplay({
                       dataKey={parameter}
                       stroke={colorValue}
                       strokeWidth={2}
+                      strokeDasharray={state.lineStyle === 'dashed' ? '5 5' : undefined}
                       dot={false}
                       connectNulls={false}
                       name={parameter}
@@ -2071,6 +2150,7 @@ export function PinChartDisplay({
                       yAxisId={yAxisId}
                       stroke={colorValue}
                       strokeWidth={2}
+                      strokeDasharray={state.lineStyle === 'dashed' ? '5 5' : undefined}
                       dot={false}
                       connectNulls={false}
                       name={parameter}
@@ -2147,14 +2227,66 @@ export function PinChartDisplay({
               </div>
             )}
 
+            {/* Parameter Filters - shown when panel is expanded and filters are available */}
+            {isParameterPanelExpanded && !minimalView && (
+              <ParameterFilterPanel
+                parameters={numericParameters}
+                sourceFilter={sourceFilter}
+                dateFilter={dateFilter}
+                unitFilter={unitFilter}
+                stationFilter={stationFilter}
+                onSourceFilterChange={setSourceFilter}
+                onDateFilterChange={setDateFilter}
+                onUnitFilterChange={setUnitFilter}
+                onStationFilterChange={setStationFilter}
+                onClearFilters={() => {
+                  setSourceFilter([]);
+                  setDateFilter([]);
+                  setUnitFilter([]);
+                  setStationFilter([]);
+                }}
+              />
+            )}
+
             <div className="space-y-1 h-[210px] overflow-y-auto">
               {(() => {
+                // Apply filters to parameters - now supports multiple selections
+                let filteredParameters = numericParameters;
+
+                // Apply source filter (Porpoise, Dolphin, Sonar)
+                if (sourceFilter.length > 0) {
+                  filteredParameters = filteredParameters.filter(param =>
+                    sourceFilter.some(source => param.toLowerCase().includes(source.toLowerCase()))
+                  );
+                }
+
+                // Apply date filter (e.g., [2406_2407])
+                if (dateFilter.length > 0) {
+                  filteredParameters = filteredParameters.filter(param =>
+                    dateFilter.some(date => param.includes(`[${date}]`))
+                  );
+                }
+
+                // Apply unit filter (DPM, Clicks)
+                if (unitFilter.length > 0) {
+                  filteredParameters = filteredParameters.filter(param =>
+                    unitFilter.some(unit => param.includes(`(${unit})`))
+                  );
+                }
+
+                // Apply station filter (e.g., [C_S], [C_W], [F_L])
+                if (stationFilter.length > 0) {
+                  filteredParameters = filteredParameters.filter(param =>
+                    stationFilter.some(station => param.includes(`[${station}]`))
+                  );
+                }
+
                 // In minimal view, filter to show only visible parameters and sort alphabetically
                 const parametersToShow = minimalView
-                  ? numericParameters
+                  ? filteredParameters
                       .filter(param => parameterStates[param]?.visible)
                       .sort((a, b) => a.localeCompare(b))
-                  : numericParameters;
+                  : filteredParameters;
 
                 return parametersToShow.map((parameter, index) => {
                 const state = parameterStates[parameter];
@@ -2167,7 +2299,7 @@ export function PinChartDisplay({
                 const colorValue = getColorValue(state.color);
 
                 return (
-                  <div key={parameter} className={cn("flex items-center justify-between p-1.5 rounded bg-card/50", !minimalView && "border")}>
+                  <div key={parameter} className={cn("flex items-center justify-between rounded bg-card/50", minimalView ? "p-0.5" : "p-1.5 border")}>
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       {/* Checkbox - hidden in minimal view */}
                       {!minimalView && (
@@ -2198,6 +2330,134 @@ export function PinChartDisplay({
                         </Button>
                       )}
 
+                      {/* Colored circle in minimal view - shown to the left of parameter name */}
+                      {minimalView && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <div
+                              className="w-3 h-3 rounded-full border cursor-pointer hover:ring-2 hover:ring-offset-1 transition-all flex-shrink-0"
+                              style={{
+                                backgroundColor: getColorValue(state.color, state.opacity ?? 1.0),
+                                '--tw-ring-color': colorValue
+                              } as React.CSSProperties}
+                              title="Change color and transparency"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-3" align="end" onClick={(e) => e.stopPropagation()}>
+                            <div className="space-y-3">
+                              <p className="text-xs font-medium">Color & Style</p>
+
+                              {/* Quick color palette */}
+                              <div className="space-y-2">
+                                <Label className="text-xs">Quick Colors</Label>
+                                <div className="grid grid-cols-8 gap-1.5">
+                                  {DEFAULT_COLOR_PALETTE.map((color) => (
+                                    <button
+                                      key={color}
+                                      className="w-6 h-6 rounded border-2 hover:scale-110 transition-transform"
+                                      style={{ backgroundColor: color, borderColor: state.color === color ? 'hsl(var(--foreground))' : 'hsl(var(--border))' }}
+                                      onClick={() => updateParameterColor(parameter, color)}
+                                      title={color}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="relative">
+                                <HexColorPicker
+                                  color={state.color.startsWith('#') ? state.color : cssVarToHex(state.color)}
+                                  onChange={(hex) => updateParameterColor(parameter, hex)}
+                                  style={{ width: '200px', height: '150px' }}
+                                />
+                              </div>
+
+                              {/* Line Style */}
+                              <div className="space-y-2">
+                                <Label className="text-xs">Line Style</Label>
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant={state.lineStyle === 'solid' || !state.lineStyle ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="h-8 text-xs flex-1"
+                                    onClick={() => updateParameterLineStyle(parameter, 'solid')}
+                                  >
+                                    <div className="flex items-center gap-1.5">
+                                      <div className="w-6 h-0.5 bg-current" />
+                                      <span>Solid</span>
+                                    </div>
+                                  </Button>
+                                  <Button
+                                    variant={state.lineStyle === 'dashed' ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="h-8 text-xs flex-1"
+                                    onClick={() => updateParameterLineStyle(parameter, 'dashed')}
+                                  >
+                                    <div className="flex items-center gap-1.5">
+                                      <div className="w-6 h-0.5 bg-current" style={{ backgroundImage: 'repeating-linear-gradient(90deg, currentColor 0, currentColor 2px, transparent 2px, transparent 4px)' }} />
+                                      <span>Dashed</span>
+                                    </div>
+                                  </Button>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <Label className="text-xs">Opacity</Label>
+                                  <span className="text-xs text-muted-foreground">
+                                    {Math.round((state.opacity ?? 1.0) * 100)}%
+                                  </span>
+                                </div>
+                                <Input
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  step="5"
+                                  value={Math.round((state.opacity ?? 1.0) * 100)}
+                                  onChange={(e) => updateParameterOpacity(parameter, parseInt(e.target.value) / 100)}
+                                  className="h-2 cursor-pointer"
+                                />
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-6 text-xs flex-1"
+                                    onClick={() => updateParameterOpacity(parameter, 0.25)}
+                                  >
+                                    25%
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-6 text-xs flex-1"
+                                    onClick={() => updateParameterOpacity(parameter, 0.5)}
+                                  >
+                                    50%
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-6 text-xs flex-1"
+                                    onClick={() => updateParameterOpacity(parameter, 0.75)}
+                                  >
+                                    75%
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-6 text-xs flex-1"
+                                    onClick={() => updateParameterOpacity(parameter, 1.0)}
+                                  >
+                                    100%
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
+
+                      {/* Parameter label with click to toggle */}
                       <div
                         className="flex items-center gap-1 flex-1 min-w-0 cursor-pointer"
                         onClick={() => toggleParameterVisibility(parameter)}
@@ -2205,11 +2465,11 @@ export function PinChartDisplay({
                       >
                         <Label
                           htmlFor={`param-${parameter}`}
-                          className={cn("text-xs cursor-pointer", !minimalView && !isParameterPanelExpanded && "truncate")}
-                          title={formatParameterWithSource(parameter, !minimalView)}
+                          className={cn("text-[11px] font-normal cursor-pointer", !minimalView && !isParameterPanelExpanded && "truncate")}
                         >
-                          {formatParameterWithSource(parameter, !minimalView)}
+                          {minimalView ? formatParameterName(parameter) : getParameterLabelWithUnit(parameter)}
                         </Label>
+
                         {/* Filter indicator */}
                         {state.timeFilter?.enabled && (
                           <Filter
@@ -2239,7 +2499,8 @@ export function PinChartDisplay({
                         </span>
                       )}
 
-                      {/* Colored circle with color picker */}
+                      {/* Colored circle with color picker - hidden in minimal view (shown next to parameter name instead) */}
+                      {!minimalView && (
                       <Popover>
                         <PopoverTrigger asChild>
                           <div
@@ -2253,7 +2514,24 @@ export function PinChartDisplay({
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-3" align="end" onClick={(e) => e.stopPropagation()}>
                           <div className="space-y-3">
-                            <p className="text-xs font-medium">Color & Transparency</p>
+                            <p className="text-xs font-medium">Color & Style</p>
+
+                            {/* Quick color palette */}
+                            <div className="space-y-2">
+                              <Label className="text-xs">Quick Colors</Label>
+                              <div className="grid grid-cols-8 gap-1.5">
+                                {DEFAULT_COLOR_PALETTE.map((color) => (
+                                  <button
+                                    key={color}
+                                    className="w-6 h-6 rounded border-2 hover:scale-110 transition-transform"
+                                    style={{ backgroundColor: color, borderColor: state.color === color ? 'hsl(var(--foreground))' : 'hsl(var(--border))' }}
+                                    onClick={() => updateParameterColor(parameter, color)}
+                                    title={color}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+
                             <div className="relative">
                               <HexColorPicker
                                 color={state.color.startsWith('#') ? state.color : cssVarToHex(state.color)}
@@ -2261,6 +2539,36 @@ export function PinChartDisplay({
                                 style={{ width: '200px', height: '150px' }}
                               />
                             </div>
+
+                            {/* Line Style */}
+                            <div className="space-y-2">
+                              <Label className="text-xs">Line Style</Label>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant={state.lineStyle === 'solid' || !state.lineStyle ? 'default' : 'outline'}
+                                  size="sm"
+                                  className="h-8 text-xs flex-1"
+                                  onClick={() => updateParameterLineStyle(parameter, 'solid')}
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-6 h-0.5 bg-current" />
+                                    <span>Solid</span>
+                                  </div>
+                                </Button>
+                                <Button
+                                  variant={state.lineStyle === 'dashed' ? 'default' : 'outline'}
+                                  size="sm"
+                                  className="h-8 text-xs flex-1"
+                                  onClick={() => updateParameterLineStyle(parameter, 'dashed')}
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-6 h-0.5 bg-current" style={{ backgroundImage: 'repeating-linear-gradient(90deg, currentColor 0, currentColor 2px, transparent 2px, transparent 4px)' }} />
+                                    <span>Dashed</span>
+                                  </div>
+                                </Button>
+                              </div>
+                            </div>
+
                             <div className="space-y-2">
                               <div className="flex items-center justify-between">
                                 <Label className="text-xs">Opacity</Label>
@@ -2315,6 +2623,7 @@ export function PinChartDisplay({
                           </div>
                         </PopoverContent>
                       </Popover>
+                      )}
 
                       {/* Settings icon - contains filters and MA */}
                       <Popover>
@@ -2467,6 +2776,51 @@ export function PinChartDisplay({
                                 </div>
                               )}
                             </div>
+
+                            {/* Display Options Section - only show in minimal view */}
+                            {minimalView && (
+                              <div className="space-y-2 border-t pt-3">
+                                <div className="flex items-center gap-2">
+                                  <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <span className="text-xs font-medium">Display Options</span>
+                                </div>
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      id="hide-units"
+                                      checked={hideUnits}
+                                      onCheckedChange={(checked) => setHideUnits(checked as boolean)}
+                                      className="h-3 w-3"
+                                    />
+                                    <Label htmlFor="hide-units" className="text-xs cursor-pointer">
+                                      Hide units (DPM, Clicks, etc.)
+                                    </Label>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      id="hide-dates"
+                                      checked={hideDates}
+                                      onCheckedChange={(checked) => setHideDates(checked as boolean)}
+                                      className="h-3 w-3"
+                                    />
+                                    <Label htmlFor="hide-dates" className="text-xs cursor-pointer">
+                                      Hide dates [2406_2407]
+                                    </Label>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      id="hide-stations"
+                                      checked={hideStations}
+                                      onCheckedChange={(checked) => setHideStations(checked as boolean)}
+                                      className="h-3 w-3"
+                                    />
+                                    <Label htmlFor="hide-stations" className="text-xs cursor-pointer">
+                                      Hide stations [C_S, F_L, etc.]
+                                    </Label>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </PopoverContent>
                       </Popover>
