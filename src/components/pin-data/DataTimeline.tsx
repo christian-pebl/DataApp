@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { format, startOfMonth, endOfMonth, eachMonthOfInterval, differenceInDays, parseISO, isValid, getYear } from 'date-fns';
-import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText, Pencil, Clock, Loader2, Layers, Combine } from 'lucide-react';
+import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText, Pencil, Clock, Loader2, Layers, Combine, Upload, AlertCircle, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { getMergedFilesByProjectAction } from '@/app/api/merged-files/actions';
+import type { MergedFile } from '@/lib/supabase/merged-files-service';
 
 // Lazy load MergeFilesDialog - only loads when user clicks merge button
 const MergeFilesDialog = dynamic(
@@ -26,6 +28,8 @@ interface DataTimelineProps {
     totalDays: number | null;
     startDate: string | null;
     endDate: string | null;
+    uniqueDates?: string[];
+    isCrop?: boolean;
     error?: string;
   }>;
   onFileClick: (file: PinFile & { pinLabel: string }) => void;
@@ -33,6 +37,11 @@ interface DataTimelineProps {
   onRenameFile?: (file: PinFile & { pinLabel: string }, newName: string) => Promise<boolean>;
   onDatesUpdated?: () => void;
   onSelectMultipleFiles?: (files: (PinFile & { pinLabel: string })[]) => void;
+  projectId?: string;
+  onMergedFileClick?: (mergedFile: MergedFile) => void;
+  onAddFilesToMergedFile?: (mergedFile: MergedFile) => void;
+  multiFileMergeMode?: boolean;
+  onMultiFileMergeModeChange?: (mode: boolean) => void;
 }
 
 interface FileWithDateRange {
@@ -41,6 +50,8 @@ interface FileWithDateRange {
     totalDays: number | null;
     startDate: string | null;
     endDate: string | null;
+    uniqueDates?: string[];
+    isCrop?: boolean;
     error?: string;
     loading: boolean;
   };
@@ -151,6 +162,17 @@ const getCorrectDuration = (startDateString: string | null, endDateString: strin
   return differenceInDays(endDate, startDate) + 1;
 };
 
+// Helper function to format date as YY-MM-DD
+const formatCompactDate = (dateString: string | null): string => {
+  if (!dateString) return '-';
+
+  const date = parseCustomDate(dateString);
+  if (!date) return dateString; // Return original if can't parse
+
+  // Format as YY-MM-DD
+  return format(date, 'yy-MM-dd');
+};
+
 // Parse file name to extract Project_DataType_Station grouping key
 // Example: "Control_FPOD_S_2024-01-15.csv" -> { project: "Control", dataType: "FPOD", station: "S" }
 const parseFileGrouping = (fileName: string): { project: string; dataType: string; station: string; groupKey: string } | null => {
@@ -165,7 +187,7 @@ const parseFileGrouping = (fileName: string): { project: string; dataType: strin
   return { project, dataType, station, groupKey };
 };
 
-export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFile, onRenameFile, onDatesUpdated, onSelectMultipleFiles }: DataTimelineProps) {
+export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFile, onRenameFile, onDatesUpdated, onSelectMultipleFiles, projectId, onMergedFileClick, onAddFilesToMergedFile, multiFileMergeMode = false, onMultiFileMergeModeChange }: DataTimelineProps) {
   const { toast } = useToast();
   const [filesWithDates, setFilesWithDates] = useState<FileWithDateRange[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'timeline'>('table');
@@ -181,7 +203,6 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [mergeGroupKey, setMergeGroupKey] = useState<string | null>(null);
   const [mergeFiles, setMergeFiles] = useState<FileWithDateRange[]>([]);
-  const [multiFileMode, setMultiFileMode] = useState(false);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
 
   // Toggle file selection for multi-file mode
@@ -214,10 +235,25 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
 
     onSelectMultipleFiles(selectedFiles);
 
-    // Reset selection
-    setSelectedFileIds(new Set());
-    setMultiFileMode(false);
+    // Don't reset immediately - will reset after successful merge
   };
+
+  // Reset merge mode when files change (after successful merge)
+  useEffect(() => {
+    // If we're in merge mode with selections, but the file list changes (new merge created),
+    // reset the merge mode
+    if (multiFileMergeMode && selectedFileIds.size > 0) {
+      const allSelectedFilesStillExist = Array.from(selectedFileIds).every(id =>
+        filesWithDates.some(f => f.file.id === id)
+      );
+
+      // If files changed significantly (merge was created), reset
+      if (!allSelectedFilesStillExist || filesWithDates.length === 0) {
+        setSelectedFileIds(new Set());
+        onMultiFileMergeModeChange?.(false);
+      }
+    }
+  }, [files.length]); // Watch for changes in file count
 
   // Delete file handler - just call parent's onDeleteFile
   const handleDeleteFile = async (file: PinFile & { pinLabel: string }) => {
@@ -337,6 +373,8 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                       startDate: startDateDb,
                       endDate: endDateDb,
                       totalDays: result.totalDays,
+                      uniqueDates: result.uniqueDates,
+                      isCrop: result.isCrop,
                       loading: false
                     }
                   }
@@ -691,6 +729,26 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
     return { left, width };
   };
 
+  // Calculate discrete bar metrics for CROP files (one bar per sampling day)
+  const calculateDiscreteBars = (file: FileWithDateRange): Array<{left: number; width: number; date: string}> => {
+    if (!timelineData.minDate || !timelineData.totalDays || !file.dateRange.uniqueDates) {
+      return [];
+    }
+
+    return file.dateRange.uniqueDates.map(dateStr => {
+      const samplingDate = parseCustomDate(dateStr);
+      if (!samplingDate) return null;
+
+      const daysFromStart = differenceInDays(samplingDate, timelineData.minDate);
+      const barDuration = 1; // Each bar is 1 day
+
+      const left = Math.max(0, (daysFromStart / timelineData.totalDays) * 100);
+      const width = Math.max(0.3, (barDuration / timelineData.totalDays) * 100); // Minimum 0.3% width for visibility
+
+      return { left, width, date: dateStr };
+    }).filter(bar => bar !== null) as Array<{left: number; width: number; date: string}>;
+  };
+
   // Calculate bar positions and widths for merged groups
   const calculateMergedBarMetrics = (group: MergedGroup) => {
     if (!timelineData.minDate || !timelineData.totalDays ||
@@ -725,10 +783,45 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Project Data Files</h3>
+        <h3 className="text-sm font-semibold">
+          Project Data Files
+        </h3>
 
         <div className="flex items-center gap-2">
-          {/* Fetch Missing Dates Button - Only show if some files are missing dates */}
+          {/* Merge Button / Merge Selected Files Button */}
+          {multiFileMergeMode && selectedFileIds.size >= 2 ? (
+            // Green "Merge Selected Files" button when files are selected
+            <Button
+              variant="default"
+              size="sm"
+              className="h-6 px-2 bg-green-600 hover:bg-green-700"
+              onClick={handleOpenMultiFile}
+            >
+              <Combine className="h-3 w-3 mr-1" />
+              <span className="text-xs">Merge Selected Files ({selectedFileIds.size})</span>
+            </Button>
+          ) : (
+            // "+ Merge" button when no files or less than 2 files selected
+            onSelectMultipleFiles && (
+              <Button
+                variant={multiFileMergeMode ? 'default' : 'outline'}
+                size="sm"
+                className="h-6 px-2"
+                onClick={() => {
+                  const newMode = !multiFileMergeMode;
+                  onMultiFileMergeModeChange?.(newMode);
+                  if (!newMode) {
+                    setSelectedFileIds(new Set());
+                  }
+                }}
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                <span className="text-xs">Merge</span>
+              </Button>
+            )
+          )}
+
+          {/* Fetch Missing Dates Button - Show when there are missing dates */}
           {hasMissingDates && (
             <Button
               variant="outline"
@@ -751,28 +844,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
             </Button>
           )}
 
-          {/* Multi-file Toggle - Only show in table mode when onSelectMultipleFiles is provided */}
-          {viewMode === 'table' && onSelectMultipleFiles && (
-            <div className="flex items-center gap-2 bg-muted/30 rounded px-2 py-1">
-              <Layers className="h-3 w-3 text-muted-foreground" />
-              <Label htmlFor="multi-file-toggle" className="text-xs cursor-pointer">
-                Multi-file
-              </Label>
-              <Switch
-                id="multi-file-toggle"
-                checked={multiFileMode}
-                onCheckedChange={(checked) => {
-                  setMultiFileMode(checked);
-                  if (!checked) {
-                    setSelectedFileIds(new Set());
-                  }
-                }}
-                className="h-4 data-[state=checked]:bg-primary"
-              />
-            </div>
-          )}
-
-          {/* Merged View Toggle - Only show in timeline mode */}
+          {/* Merged View Toggle - Show in timeline mode */}
           {viewMode === 'timeline' && (
             <div className="flex items-center gap-2 bg-muted/30 rounded px-2 py-1">
               <Layers className="h-3 w-3 text-muted-foreground" />
@@ -820,7 +892,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-border/30 text-xs font-medium text-muted-foreground">
-                    {multiFileMode && <th className="text-left pb-2 pr-2 w-8"></th>}
+                    {multiFileMergeMode && <th className="text-left pb-2 pr-2 w-8"></th>}
                     <th className="text-left pb-2 pr-2">Pin</th>
                     <th className="text-left pb-2 pr-2">File Name</th>
                     <th className="text-center pb-2 px-2 bg-muted/10 rounded-tl-sm">Start Date</th>
@@ -840,7 +912,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                         style={{ animationDelay: `${index * 30}ms` }}
                       >
                         {/* Checkbox for multi-file selection */}
-                        {multiFileMode && (
+                        {multiFileMergeMode && (
                           <td className="pr-2 align-middle">
                             <Checkbox
                               checked={selectedFileIds.has(file.id)}
@@ -850,13 +922,20 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                           </td>
                         )}
 
-                        {/* Pin indicator */}
+                        {/* Pin indicator / Merge icon */}
                         <td className="pr-2 align-middle">
-                          <div
-                            className="w-3 h-3 rounded-sm transition-transform hover:scale-110"
-                            style={{ backgroundColor: color }}
-                            title={file.pinLabel}
-                          />
+                          {(file as any).fileSource === 'merged' ? (
+                            <Combine
+                              className="w-3 h-3 text-green-600"
+                              title="Merged File"
+                            />
+                          ) : (
+                            <div
+                              className="w-3 h-3 rounded-sm transition-transform hover:scale-110"
+                              style={{ backgroundColor: color }}
+                              title={file.pinLabel}
+                            />
+                          )}
                         </td>
 
                         {/* File name - Clickable with menu */}
@@ -903,11 +982,17 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                   <PopoverContent className="w-72" side="right">
                                     <div className="space-y-3">
                                       <div className="flex items-center gap-2">
-                                        <div
-                                          className="w-3 h-3 rounded-sm"
-                                          style={{ backgroundColor: color }}
-                                        />
-                                        <span className="text-sm font-medium">{file.pinLabel}</span>
+                                        {(file as any).fileSource === 'merged' ? (
+                                          <Combine className="w-3 h-3 text-green-600" />
+                                        ) : (
+                                          <div
+                                            className="w-3 h-3 rounded-sm"
+                                            style={{ backgroundColor: color }}
+                                          />
+                                        )}
+                                        <span className="text-sm font-medium">
+                                          {(file as any).fileSource === 'merged' ? 'Merged File' : file.pinLabel}
+                                        </span>
                                       </div>
                                       <div className="space-y-2 text-xs">
                                         <div className="flex justify-between">
@@ -919,24 +1004,73 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                           <span>{file.fileSize ? `${(file.fileSize / 1024).toFixed(1)} KB` : 'Unknown'}</span>
                                         </div>
                                         <div className="flex justify-between">
-                                          <span className="text-muted-foreground">Uploaded:</span>
+                                          <span className="text-muted-foreground">
+                                            {(file as any).fileSource === 'merged' ? 'Created:' : 'Uploaded:'}
+                                          </span>
                                           <span>{format(new Date(file.uploadedAt), 'MMM d, yyyy')}</span>
                                         </div>
-                                        {(() => {
-                                          const correctedDays = getCorrectDuration(dateRange.startDate, dateRange.endDate);
-                                          return correctedDays !== null && (
-                                            <>
-                                              <div className="flex justify-between">
-                                                <span className="text-muted-foreground">Period:</span>
-                                                <span>{dateRange.startDate} to {dateRange.endDate}</span>
+                                        {(file as any).fileSource === 'merged' ? (
+                                          // Merged file info
+                                          <>
+                                            {(file as any).sourceFilesMetadata && (
+                                              <div className="pt-2">
+                                                <span className="text-muted-foreground block mb-1">Source Files:</span>
+                                                <div className="space-y-1">
+                                                  {Object.values((file as any).sourceFilesMetadata as Record<string, any>).map((sourceMeta: any, idx: number) => (
+                                                    <div key={idx} className="text-[11px] font-mono bg-muted/30 px-2 py-1 rounded">
+                                                      {sourceMeta.fileName}
+                                                    </div>
+                                                  ))}
+                                                </div>
                                               </div>
-                                              <div className="flex justify-between">
-                                                <span className="text-muted-foreground">Duration:</span>
-                                                <span>{correctedDays} days</span>
+                                            )}
+                                            <Separator className="my-2" />
+                                            <div className="flex justify-between">
+                                              <span className="text-muted-foreground">Merge Mode:</span>
+                                              <span className="font-medium">
+                                                {(file as any).mergeMode === 'stack-parameters' ? 'Stack Parameters' : 'Sequential'}
+                                              </span>
+                                            </div>
+                                            {(() => {
+                                              const correctedDays = getCorrectDuration(dateRange.startDate, dateRange.endDate);
+                                              return correctedDays !== null && (
+                                                <div className="flex justify-between">
+                                                  <span className="text-muted-foreground">Duration:</span>
+                                                  <span>{correctedDays} days</span>
+                                                </div>
+                                              );
+                                            })()}
+                                            {(file as any).mergeRules && (file as any).mergeRules.length > 0 && (
+                                              <div className="pt-1">
+                                                <span className="text-muted-foreground block mb-1">Applied Rules:</span>
+                                                <div className="pl-2 space-y-0.5">
+                                                  {(file as any).mergeRules.map((rule: any, idx: number) => (
+                                                    <div key={idx} className="text-[10px] text-muted-foreground">
+                                                      • {rule.name || rule.type}
+                                                    </div>
+                                                  ))}
+                                                </div>
                                               </div>
-                                            </>
-                                          );
-                                        })()}
+                                            )}
+                                          </>
+                                        ) : (
+                                          // Regular file info - show period and duration
+                                          (() => {
+                                            const correctedDays = getCorrectDuration(dateRange.startDate, dateRange.endDate);
+                                            return correctedDays !== null && (
+                                              <>
+                                                <div className="flex justify-between">
+                                                  <span className="text-muted-foreground">Period:</span>
+                                                  <span>{dateRange.startDate} to {dateRange.endDate}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                  <span className="text-muted-foreground">Duration:</span>
+                                                  <span>{correctedDays} days</span>
+                                                </div>
+                                              </>
+                                            );
+                                          })()
+                                        )}
                                       </div>
                                     </div>
                                   </PopoverContent>
@@ -1050,12 +1184,12 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                         <td className="px-2 text-center bg-muted/5 align-middle">
                           {dateRange.loading ? (
                             <div className="relative inline-block">
-                              <Shimmer className="h-3 w-16" />
+                              <Shimmer className="h-3 w-12" />
                             </div>
                           ) : dateRange.error ? (
                             <span className="text-muted-foreground">-</span>
                           ) : (
-                            <span className="font-mono">{dateRange.startDate || '-'}</span>
+                            <span className="font-mono text-[11px]">{formatCompactDate(dateRange.startDate)}</span>
                           )}
                         </td>
 
@@ -1063,12 +1197,12 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                         <td className="px-2 text-center bg-muted/5 align-middle">
                           {dateRange.loading ? (
                             <div className="relative inline-block">
-                              <Shimmer className="h-3 w-16" />
+                              <Shimmer className="h-3 w-12" />
                             </div>
                           ) : dateRange.error ? (
                             <span className="text-muted-foreground">-</span>
                           ) : (
-                            <span className="font-mono">{dateRange.endDate || '-'}</span>
+                            <span className="font-mono text-[11px]">{formatCompactDate(dateRange.endDate)}</span>
                           )}
                         </td>
 
@@ -1095,23 +1229,6 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                 }
                 </tbody>
               </table>
-
-              {/* Multi-file action bar */}
-              {multiFileMode && (
-                <div className="mt-3 flex items-center justify-between gap-4 p-3 bg-muted/30 rounded border border-border/30">
-                  <div className="text-sm text-muted-foreground">
-                    {selectedFileIds.size} file{selectedFileIds.size !== 1 ? 's' : ''} selected
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={handleOpenMultiFile}
-                    disabled={selectedFileIds.size < 2}
-                  >
-                    <Combine className="h-4 w-4 mr-2" />
-                    Open Multi-file
-                  </Button>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -1562,7 +1679,25 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                           <div className="absolute inset-0 flex items-center justify-center">
                             <span className="text-xs text-muted-foreground">-</span>
                           </div>
+                        ) : dateRange.isCrop && dateRange.uniqueDates ? (
+                          // Discrete bars for CROP files (one bar per sampling day)
+                          <>
+                            {calculateDiscreteBars(fileWithDate).map((bar, idx) => (
+                              <div
+                                key={`discrete-bar-${file.id}-${idx}`}
+                                className="absolute h-full rounded shadow-sm transition-all hover:shadow-md hover:z-10"
+                                style={{
+                                  left: `${bar.left}%`,
+                                  width: `${bar.width}%`,
+                                  backgroundColor: color,
+                                  minWidth: '2px'
+                                }}
+                                title={`${fileWithDate.file.pinLabel}: ${bar.date} (sampling day ${idx + 1}/${dateRange.uniqueDates.length})`}
+                              />
+                            ))}
+                          </>
                         ) : barMetrics.width > 0 ? (
+                          // Continuous bar for regular files (GP, FPOD, Subcam, etc.)
                           <div
                             className="absolute h-full rounded flex items-center text-white font-medium shadow-sm transition-all hover:shadow-md"
                             style={{

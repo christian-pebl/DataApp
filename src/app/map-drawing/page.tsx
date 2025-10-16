@@ -69,6 +69,8 @@ import { MarinePlotsGrid } from '@/components/marine/MarinePlotsGrid';
 import { DataTimeline } from '@/components/pin-data/DataTimeline';
 import { DEFAULT_MERGE_RULES, type MergeRule } from '@/components/pin-data/MergeRulesDialog';
 import { DatePickerWithRange } from '@/components/ui/date-picker-with-range';
+import { getMergedFilesByProjectAction } from '@/app/api/merged-files/actions';
+import type { MergedFile } from '@/lib/supabase/merged-files-service';
 import {
   parseCoordinateInput,
   getCoordinateFormats,
@@ -440,6 +442,7 @@ function MapDrawingPageContent() {
     validation: any;
     downloadedFiles: File[];
     fileType: 'GP' | 'FPOD' | 'Subcam';
+    selectedFiles: any[]; // Add selectedFiles to store original file metadata
   } | null>(null);
   const [multiFileMergeMode, setMultiFileMergeMode] = useState<'sequential' | 'stack-parameters'>('sequential');
   const [mergeRules, setMergeRules] = useState<MergeRule[]>(DEFAULT_MERGE_RULES);
@@ -480,14 +483,22 @@ function MapDrawingPageContent() {
         // Example: ALGA_GP_F_L_PELAGIC_2504-2506_LOG_AVG.csv
         // Old format: DATATYPE_ProjectName_Station_YYMM-YYMM
         // Example: GP-Pel_Alga-Control-S_2410-2411_LOG_AVG.CSV
-        let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'WQ' = 'GP';
 
         const parts = fileMeta.fileName.split('_');
         const position0 = parts[0]?.toLowerCase() || '';
         const position1 = parts[1]?.toLowerCase() || '';
+        const fileNameLower = fileMeta.fileName.toLowerCase();
 
         // Check first two positions for data type (case-insensitive)
-        if (position0.includes('fpod') || position1.includes('fpod')) {
+        // Also check for _chem and _wq suffixes
+        if (position0.includes('crop') || position1.includes('crop')) {
+          fileType = 'CROP';
+        } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
+          fileType = 'CHEM';
+        } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
+          fileType = 'WQ';
+        } else if (position0.includes('fpod') || position1.includes('fpod')) {
           fileType = 'FPOD';
         } else if (position0.includes('subcam') || position1.includes('subcam')) {
           fileType = 'Subcam';
@@ -542,6 +553,11 @@ function MapDrawingPageContent() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedSuffixes, setSelectedSuffixes] = useState<string[]>([]);
   const [selectedDateRanges, setSelectedDateRanges] = useState<string[]>([]);
+  const [selectedFileSources, setSelectedFileSources] = useState<string[]>(['upload', 'merged']); // Both selected by default
+
+  // Merged files state
+  const [mergedFiles, setMergedFiles] = useState<(MergedFile & { fileSource: 'merged', pinLabel: string })[]>([]);
+  const [isLoadingMergedFiles, setIsLoadingMergedFiles] = useState(false);
 
   // Extract date range from filename (format: YYMM_YYMM)
   const extractDateRange = (fileName: string): string | null => {
@@ -1012,7 +1028,48 @@ function MapDrawingPageContent() {
       setPinMeteoBrushEndIndex(undefined);
     }
   }, [pinMeteoData, pinMeteoBrushEndIndex]);
-  
+
+  // Fetch merged files when dialog opens or project changes
+  useEffect(() => {
+    const fetchMergedFiles = async () => {
+      const projectId = currentProjectContext || activeProjectId;
+      if (!projectId || !showProjectDataDialog) {
+        setMergedFiles([]);
+        return;
+      }
+
+      setIsLoadingMergedFiles(true);
+      try {
+        const result = await getMergedFilesByProjectAction(projectId);
+        if (result.success && result.data) {
+          // Convert MergedFile to PinFile-like format with pinLabel
+          const mergedFilesWithLabel = result.data.map(mf => ({
+            ...mf,
+            fileSource: 'merged' as const,
+            pinLabel: 'Merged', // Merged files don't have a specific pin, use generic label
+            id: mf.id,
+            fileName: mf.fileName,
+            filePath: mf.filePath,
+            fileSize: mf.fileSize,
+            fileType: mf.fileType,
+            uploadedAt: mf.createdAt
+          }));
+          setMergedFiles(mergedFilesWithLabel);
+        } else {
+          console.error('Failed to fetch merged files:', result.error);
+          setMergedFiles([]);
+        }
+      } catch (error) {
+        console.error('Error fetching merged files:', error);
+        setMergedFiles([]);
+      } finally {
+        setIsLoadingMergedFiles(false);
+      }
+    };
+
+    fetchMergedFiles();
+  }, [showProjectDataDialog, currentProjectContext, activeProjectId]);
+
   // Stable callback that calls the current handler
   const handleMapMove = useCallback((center: LatLng, zoom: number) => {
     mapMoveHandlerRef.current?.(center, zoom);
@@ -1785,6 +1842,8 @@ function MapDrawingPageContent() {
     totalDays: number | null;
     startDate: string | null;
     endDate: string | null;
+    uniqueDates?: string[]; // Array of unique date strings for discrete sampling (CROP files)
+    isCrop?: boolean; // Flag to indicate CROP file type
     error?: string;
   }> => {
     try {
@@ -1935,9 +1994,6 @@ function MapDrawingPageContent() {
       dates.sort((a, b) => a.getTime() - b.getTime());
       const startDate = dates[0];
       const endDate = dates[dates.length - 1];
-      
-      // Calculate total days
-      const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
       // Format dates in DD/MM/YYYY format for CSV files
       const formatDateForCSV = (date: Date): string => {
@@ -1946,6 +2002,34 @@ function MapDrawingPageContent() {
         const year = String(date.getFullYear()); // Full 4-digit year
         return `${day}/${month}/${year}`;
       };
+
+      // Detect if this is a CROP file (discrete sampling days)
+      const isCrop = file.fileName.toLowerCase().includes('crop');
+
+      // For CROP files, count unique days; for others, calculate continuous range
+      let totalDays: number;
+      let uniqueDates: string[] | undefined;
+
+      if (isCrop) {
+        // Get unique dates (date-only, ignoring time)
+        const uniqueDateSet = new Set<string>();
+        dates.forEach(date => {
+          const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+          uniqueDateSet.add(formatDateForCSV(dateOnly));
+        });
+        uniqueDates = Array.from(uniqueDateSet).sort((a, b) => {
+          // Parse dates back for proper sorting
+          const [dayA, monthA, yearA] = a.split('/').map(Number);
+          const [dayB, monthB, yearB] = b.split('/').map(Number);
+          const dateA = new Date(yearA, monthA - 1, dayA);
+          const dateB = new Date(yearB, monthB - 1, dayB);
+          return dateA.getTime() - dateB.getTime();
+        });
+        totalDays = uniqueDates.length; // Number of unique sampling days
+      } else {
+        // Continuous data: calculate range
+        totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      }
 
       const formattedStartDate = formatDateForCSV(startDate);
       const formattedEndDate = formatDateForCSV(endDate);
@@ -1978,6 +2062,8 @@ function MapDrawingPageContent() {
         totalDays,
         startDate: formattedStartDate,
         endDate: formattedEndDate,
+        uniqueDates,
+        isCrop,
       };
 
     } catch (error) {
@@ -2205,6 +2291,8 @@ function MapDrawingPageContent() {
     totalDays: number | null;
     startDate: string | null;
     endDate: string | null;
+    uniqueDates?: string[];
+    isCrop?: boolean;
     error?: string;
   }>>({});
 
@@ -6203,26 +6291,31 @@ function MapDrawingPageContent() {
                   {dynamicProjects[currentProjectContext || activeProjectId]?.name}
                 </span>
               </DialogTitle>
-              {/* Upload Button - Inline with header */}
-              <Button
-                variant="default"
-                size="sm"
-                className="flex items-center gap-1.5 h-7 px-2.5"
-                disabled={isUploadingFiles}
-                onClick={handleInitiateFileUpload}
-              >
-                {isUploadingFiles ? (
-                  <>
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span className="text-xs">Uploading...</span>
-                  </>
-                ) : (
-                  <>
-                    <Upload className="h-3 w-3" />
-                    <span className="text-xs">Upload</span>
-                  </>
-                )}
-              </Button>
+              {/* Action Buttons - Inline with header */}
+              <div className="flex items-center gap-2">
+                {/* Merge Button - Moved to DataTimeline header */}
+
+                {/* Upload Button */}
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="flex items-center gap-1.5 h-7 px-2.5"
+                  disabled={isUploadingFiles}
+                  onClick={handleInitiateFileUpload}
+                >
+                  {isUploadingFiles ? (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span className="text-xs">Uploading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-3 w-3" />
+                      <span className="text-xs">Upload</span>
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           </DialogHeader>
           
@@ -6230,8 +6323,17 @@ function MapDrawingPageContent() {
             {(() => {
               const projectFiles = getProjectFiles(currentProjectContext || activeProjectId);
               const groupedFiles = groupFilesByType(projectFiles);
-              const hasFiles = projectFiles.length > 0;
-              
+
+              // Add fileSource property to uploaded files
+              const uploadedFiles = Object.values(groupedFiles).flat().map(file => ({
+                ...file,
+                fileSource: 'upload' as const
+              }));
+
+              // Combine uploaded and merged files for timeline display
+              const allFiles = [...uploadedFiles, ...mergedFiles];
+              const hasFiles = allFiles.length > 0;
+
               if (!hasFiles) {
                 return (
                   <div className="text-center py-8">
@@ -6241,22 +6343,26 @@ function MapDrawingPageContent() {
                 );
               }
               
-              // Flatten all files for timeline display
-              const allFiles = Object.values(groupedFiles).flat();
-              
               // Handler for clicking file names in timeline
               const handleTimelineFileClick = async (file: PinFile & { pinLabel: string }) => {
                 try {
                   // Determine file type from filename
                   // New format: PROJECTNAME_DATATYPE_STATION_DIRECTION_[PELAGIC]_YYMM-YYMM
                   // Old format: DATATYPE_ProjectName_Station_YYMM-YYMM
-                  let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+                  let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'WQ' = 'GP';
 
                   const parts = file.fileName.split('_');
                   const position0 = parts[0]?.toLowerCase() || '';
                   const position1 = parts[1]?.toLowerCase() || '';
+                  const fileNameLower = file.fileName.toLowerCase();
 
-                  if (position0.includes('fpod') || position1.includes('fpod')) {
+                  if (position0.includes('crop') || position1.includes('crop')) {
+                    fileType = 'CROP';
+                  } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
+                    fileType = 'CHEM';
+                  } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
+                    fileType = 'WQ';
+                  } else if (position0.includes('fpod') || position1.includes('fpod')) {
                     fileType = 'FPOD';
                   } else if (position0.includes('subcam') || position1.includes('subcam')) {
                     fileType = 'Subcam';
@@ -6311,7 +6417,7 @@ function MapDrawingPageContent() {
               const filteredFiles = allFiles.filter(file => {
                 const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
                 const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
-                
+
                 // Suffix filter
                 const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
                   const fileSuffix = extractSuffix(file.fileName);
@@ -6324,7 +6430,10 @@ function MapDrawingPageContent() {
                   return fileRange === range;
                 });
 
-                return pinMatch && typeMatch && suffixMatch && dateRangeMatch;
+                // File source filter (upload vs merged)
+                const fileSourceMatch = selectedFileSources.length === 0 || selectedFileSources.includes(file.fileSource);
+
+                return pinMatch && typeMatch && suffixMatch && dateRangeMatch && fileSourceMatch;
               });
 
               // Calculate unique values for cascading filters
@@ -6419,7 +6528,7 @@ function MapDrawingPageContent() {
                 uniquePins: uniquePins.length
               };
 
-              const hasActiveFilters = selectedPins.length > 0 || selectedTypes.length > 0 || selectedSuffixes.length > 0 || selectedDateRanges.length > 0;
+              const hasActiveFilters = selectedPins.length > 0 || selectedTypes.length > 0 || selectedSuffixes.length > 0 || selectedDateRanges.length > 0 || selectedFileSources.length < 2;
 
               return (
                 <div className="space-y-2">
@@ -6440,6 +6549,7 @@ function MapDrawingPageContent() {
                               setSelectedTypes([]);
                               setSelectedSuffixes([]);
                               setSelectedDateRanges([]);
+                              setSelectedFileSources(['upload', 'merged']);
                             }}
                             className="ml-1 text-primary hover:text-primary/80"
                             title="Clear all filters"
@@ -6499,6 +6609,65 @@ function MapDrawingPageContent() {
                         <span className="font-semibold">{(projectStats.totalSize / (1024 * 1024)).toFixed(1)}</span>
                         <span className="text-muted-foreground">MB</span>
                       </div>
+
+                      {/* File Source Filter - Uploaded vs Merged */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedFileSources.length < 2 ? 'bg-indigo-500/20 border border-indigo-500/50' : ''}`}>
+                            <Cloud className="h-3 w-3 text-indigo-500" />
+                            <span className="font-semibold">{selectedFileSources.length === 2 ? 'All' : selectedFileSources.length === 1 ? '1' : '0'}</span>
+                            <span className="text-muted-foreground">Source</span>
+                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 p-2" align="start">
+                          <div className="space-y-1">
+                            <div className="text-xs font-semibold mb-2 flex items-center justify-between">
+                              <span>Filter by Source</span>
+                              {selectedFileSources.length < 2 && (
+                                <button
+                                  onClick={() => setSelectedFileSources(['upload', 'merged'])}
+                                  className="text-primary hover:text-primary/80 text-[10px]"
+                                >
+                                  Show All
+                                </button>
+                              )}
+                            </div>
+                            <label className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedFileSources.includes('upload')}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedFileSources([...selectedFileSources, 'upload']);
+                                  } else {
+                                    setSelectedFileSources(selectedFileSources.filter(s => s !== 'upload'));
+                                  }
+                                }}
+                                className="h-3 w-3"
+                              />
+                              <Upload className="h-3 w-3 text-blue-500" />
+                              <span>Upload Files</span>
+                            </label>
+                            <label className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedFileSources.includes('merged')}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedFileSources([...selectedFileSources, 'merged']);
+                                  } else {
+                                    setSelectedFileSources(selectedFileSources.filter(s => s !== 'merged'));
+                                  }
+                                }}
+                                className="h-3 w-3"
+                              />
+                              <FileCode className="h-3 w-3 text-green-500" />
+                              <span>Merged Files</span>
+                            </label>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
 
                       {/* File Types - Filterable */}
                       <Popover>
@@ -6702,35 +6871,62 @@ function MapDrawingPageContent() {
                       console.log('Timeline delete request for file:', file.id, file.fileName);
 
                       try {
-                        console.log('Calling deleteFileSimple with ID:', file.id);
-                        const success = await fileStorageService.deleteFileSimple(file.id);
-                        console.log('Delete result from service:', success);
+                        // Check if this is a merged file
+                        const isMergedFile = (file as any).fileSource === 'merged';
 
-                        if (success) {
-                          console.log('Delete successful, updating UI...');
-                          // Find which pin this file belongs to and update that pin's metadata
-                          const pinId = Object.keys(pinFileMetadata).find(pinId =>
-                            pinFileMetadata[pinId]?.some(f => f.id === file.id)
-                          );
+                        if (isMergedFile) {
+                          console.log('Deleting merged file with ID:', file.id);
+                          const { deleteMergedFileAction } = await import('@/app/api/merged-files/actions');
+                          const result = await deleteMergedFileAction(file.id);
 
-                          if (pinId) {
-                            // Update the state immediately to remove the file from UI
-                            setPinFileMetadata(prev => ({
-                              ...prev,
-                              [pinId]: prev[pinId]?.filter(f => f.id !== file.id) || []
-                            }));
+                          if (result.success) {
+                            console.log('Merged file deleted successfully');
+                            // Remove from merged files state
+                            setMergedFiles(prev => prev.filter(f => f.id !== file.id));
+
+                            toast({
+                              title: "Merged File Deleted",
+                              description: `${file.fileName} has been deleted.`
+                            });
+                          } else {
+                            toast({
+                              variant: "destructive",
+                              title: "Delete Failed",
+                              description: result.error || "Failed to delete the merged file."
+                            });
                           }
-
-                          toast({
-                            title: "File Deleted",
-                            description: `${file.fileName} has been deleted.`
-                          });
                         } else {
-                          toast({
-                            variant: "destructive",
-                            title: "Delete Failed",
-                            description: "Failed to delete the file. Please try again."
-                          });
+                          // Regular uploaded file
+                          console.log('Calling deleteFileSimple with ID:', file.id);
+                          const success = await fileStorageService.deleteFileSimple(file.id);
+                          console.log('Delete result from service:', success);
+
+                          if (success) {
+                            console.log('Delete successful, updating UI...');
+                            // Find which pin this file belongs to and update that pin's metadata
+                            const pinId = Object.keys(pinFileMetadata).find(pinId =>
+                              pinFileMetadata[pinId]?.some(f => f.id === file.id)
+                            );
+
+                            if (pinId) {
+                              // Update the state immediately to remove the file from UI
+                              setPinFileMetadata(prev => ({
+                                ...prev,
+                                [pinId]: prev[pinId]?.filter(f => f.id !== file.id) || []
+                              }));
+                            }
+
+                            toast({
+                              title: "File Deleted",
+                              description: `${file.fileName} has been deleted.`
+                            });
+                          } else {
+                            toast({
+                              variant: "destructive",
+                              title: "Delete Failed",
+                              description: "Failed to delete the file. Please try again."
+                            });
+                          }
                         }
                       } catch (error) {
                         console.error('Delete file error:', error);
@@ -6767,13 +6963,20 @@ function MapDrawingPageContent() {
 
                         // Determine file type from first file
                         const firstFile = selectedFiles[0];
-                        let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+                        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'WQ' = 'GP';
 
                         const parts = firstFile.fileName.split('_');
                         const position0 = parts[0]?.toLowerCase() || '';
                         const position1 = parts[1]?.toLowerCase() || '';
+                        const fileNameLower = firstFile.fileName.toLowerCase();
 
-                        if (position0.includes('fpod') || position1.includes('fpod')) {
+                        if (position0.includes('crop') || position1.includes('crop')) {
+                          fileType = 'CROP';
+                        } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
+                          fileType = 'CHEM';
+                        } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
+                          fileType = 'WQ';
+                        } else if (position0.includes('fpod') || position1.includes('fpod')) {
                           fileType = 'FPOD';
                         } else if (position0.includes('subcam') || position1.includes('subcam')) {
                           fileType = 'Subcam';
@@ -6803,9 +7006,15 @@ function MapDrawingPageContent() {
                         // Import multiFileValidator
                         const { parseFile, validateFilesCompatibility } = await import('@/lib/multiFileValidator');
 
-                        // Parse all files
+                        // Parse all files with file IDs
                         const parsedFiles = await Promise.all(
-                          downloadedFiles.map(file => parseFile(file))
+                          downloadedFiles.map(async (file, idx) => {
+                            const parsed = await parseFile(file);
+                            return {
+                              ...parsed,
+                              fileId: selectedFiles[idx].id // Add file ID for tracking
+                            };
+                          })
                         );
 
                         // Validate compatibility
@@ -6816,7 +7025,8 @@ function MapDrawingPageContent() {
                           parsedFiles,
                           validation,
                           downloadedFiles,
-                          fileType
+                          fileType,
+                          selectedFiles // Add selectedFiles with pin metadata
                         });
                         setShowMultiFileConfirmDialog(true);
                       } catch (error) {
@@ -6828,6 +7038,63 @@ function MapDrawingPageContent() {
                         });
                       }
                     }}
+                    projectId={activeProjectId}
+                    onMergedFileClick={async (mergedFile) => {
+                      try {
+                        console.log('🔄 Opening merged file:', mergedFile.fileName);
+
+                        // Download the merged file
+                        const { downloadMergedFileAction } = await import('@/app/api/merged-files/actions');
+                        const result = await downloadMergedFileAction(mergedFile.filePath);
+
+                        if (!result.success || !result.data) {
+                          throw new Error(result.error || 'Failed to download merged file');
+                        }
+
+                        // Convert the CSV text back to a File object
+                        const file = new File([result.data], mergedFile.fileName, { type: 'text/csv' });
+
+                        // Determine file type
+                        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'WQ' = 'GP';
+                        const parts = mergedFile.fileName.split('_');
+                        const position0 = parts[0]?.toLowerCase() || '';
+                        const position1 = parts[1]?.toLowerCase() || '';
+                        const fileNameLower = mergedFile.fileName.toLowerCase();
+
+                        if (position0.includes('crop') || position1.includes('crop')) {
+                          fileType = 'CROP';
+                        } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
+                          fileType = 'CHEM';
+                        } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
+                          fileType = 'WQ';
+                        } else if (position0.includes('fpod') || position1.includes('fpod')) {
+                          fileType = 'FPOD';
+                        } else if (position0.includes('subcam') || position1.includes('subcam')) {
+                          fileType = 'Subcam';
+                        } else if (position0.includes('gp') || position1.includes('gp')) {
+                          fileType = 'GP';
+                        }
+
+                        // Open in modal
+                        openMarineDeviceModal(fileType, [file]);
+                      } catch (error) {
+                        console.error('Error opening merged file:', error);
+                        toast({
+                          variant: "destructive",
+                          title: "Error",
+                          description: error instanceof Error ? error.message : 'Failed to open merged file'
+                        });
+                      }
+                    }}
+                    onAddFilesToMergedFile={async (mergedFile) => {
+                      toast({
+                        title: "Add Files Feature",
+                        description: "This feature is coming soon! You'll be able to add more files to this merge."
+                      });
+                      // TODO: Implement add files to merged file dialog
+                    }}
+                    multiFileMergeMode={multiFileMergeMode}
+                    onMultiFileMergeModeChange={setMultiFileMergeMode}
                   />
                 </div>
               );
@@ -7304,21 +7571,130 @@ function MapDrawingPageContent() {
           parsedFiles={multiFileConfirmData.parsedFiles}
           mergeRules={mergeRules}
           onMergeRuleToggle={handleMergeRuleToggle}
-          onConfirm={(mode) => {
-            // Store the merge mode
-            setMultiFileMergeMode(mode);
+          onConfirm={async (mode) => {
+            try {
+              // Store the merge mode
+              setMultiFileMergeMode(mode);
 
-            // Open modal with all files (modal will handle merging with the selected mode)
-            openMarineDeviceModal(multiFileConfirmData.fileType, multiFileConfirmData.downloadedFiles);
+              // Import merge utilities
+              const { mergeFiles } = await import('@/lib/multiFileValidator');
+              const Papa = await import('papaparse');
+              const { createMergedFileAction } = await import('@/app/api/merged-files/actions');
 
-            toast({
-              title: "Multi-file Merge",
-              description: `Merging ${multiFileConfirmData.downloadedFiles.length} files in ${mode === 'stack-parameters' ? 'Stack Parameters' : 'Sequential'} mode`
-            });
+              // Perform the merge
+              const mergedData = mergeFiles(multiFileConfirmData.parsedFiles, mode);
 
-            // Close dialog and reset state
-            setShowMultiFileConfirmDialog(false);
-            setMultiFileConfirmData(null);
+              // Convert merged data to CSV
+              const csvContent = Papa.unparse({
+                fields: mergedData.headers,
+                data: mergedData.data.map(row =>
+                  mergedData.headers.map(header => row[header])
+                )
+              });
+
+              // Generate smart merged filename
+              const fileNames = multiFileConfirmData.parsedFiles.map(f => f.fileName);
+
+              // Function to generate smart merged filename
+              const generateMergedFileName = (fileNames: string[]): string => {
+                if (fileNames.length === 0) return `merged_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv`;
+
+                // Remove file extensions and split by underscore
+                const nameParts = fileNames.map(name =>
+                  name.replace(/\.(csv|txt)$/i, '').split('_')
+                );
+
+                // Find the minimum number of parts (in case files have different structures)
+                const minParts = Math.min(...nameParts.map(parts => parts.length));
+
+                // Build merged name part by part
+                const mergedParts: string[] = [];
+                for (let i = 0; i < minParts; i++) {
+                  const partsAtPosition = nameParts.map(parts => parts[i]);
+                  const firstPart = partsAtPosition[0];
+
+                  // Check if all files have the same value at this position
+                  const allSame = partsAtPosition.every(part => part === firstPart);
+
+                  if (allSame) {
+                    mergedParts.push(firstPart);
+                  } else {
+                    mergedParts.push('merge');
+                  }
+                }
+
+                return `${mergedParts.join('_')}.csv`;
+              };
+
+              const mergedFileName = generateMergedFileName(fileNames);
+
+              // Get date range from merged data
+              const timeColumn = mergedData.headers[0];
+              const dates = mergedData.data
+                .map(row => row[timeColumn])
+                .filter(d => d)
+                .map(d => new Date(d));
+
+              const startDate = dates.length > 0 ? format(new Date(Math.min(...dates.map(d => d.getTime()))), 'yyyy-MM-dd') : undefined;
+              const endDate = dates.length > 0 ? format(new Date(Math.max(...dates.map(d => d.getTime()))), 'yyyy-MM-dd') : undefined;
+
+              // Get source file IDs and metadata
+              const sourceFileIds = multiFileConfirmData.parsedFiles.map(f => f.fileId).filter(Boolean);
+              const sourceFilesMetadata = multiFileConfirmData.parsedFiles.reduce((acc, f) => {
+                if (f.fileId) {
+                  acc[f.fileId] = {
+                    fileName: f.fileName,
+                    rowCount: f.data.length,
+                    headers: f.headers
+                  };
+                }
+                return acc;
+              }, {} as Record<string, any>);
+
+              // Get pin ID from selected files
+              const pinId = multiFileConfirmData.selectedFiles[0]?.pinId;
+              if (!pinId) {
+                throw new Error('Could not determine pin ID');
+              }
+
+              // Save merged file
+              const result = await createMergedFileAction({
+                pinId,
+                fileName: mergedFileName,
+                csvContent,
+                mergeMode: mode,
+                mergeRules: mergeRules.filter(r => r.enabled),
+                sourceFileIds,
+                sourceFilesMetadata,
+                startDate,
+                endDate,
+                projectId: activeProjectId
+              });
+
+              if (!result.success) {
+                throw new Error(result.error || 'Failed to create merged file');
+              }
+
+              toast({
+                title: "Merged File Created",
+                description: `Successfully created ${mergedFileName}`
+              });
+
+              // Close dialog and reset state
+              setShowMultiFileConfirmDialog(false);
+              setMultiFileConfirmData(null);
+              setMultiFileMergeMode(false); // Reset merge mode to show "+ Merge" button again
+
+              // Optionally switch to merged files view in timeline
+              // This will be handled by the DataTimeline component if user navigates there
+            } catch (error) {
+              console.error('Error creating merged file:', error);
+              toast({
+                variant: "destructive",
+                title: "Merge Failed",
+                description: error instanceof Error ? error.message : 'Failed to create merged file'
+              });
+            }
           }}
           onCancel={() => {
             setShowMultiFileConfirmDialog(false);
