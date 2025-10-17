@@ -78,6 +78,7 @@ interface ParameterState {
   color: string;
   opacity?: number; // 0-1 range, defaults to 1 (fully opaque)
   lineStyle?: 'solid' | 'dashed'; // Line style, defaults to 'solid'
+  lineWidth?: number; // 0.5-4 range, defaults to 2 (position 4 of 8 options)
   isSolo?: boolean;
   timeFilter?: {
     enabled: boolean;
@@ -142,6 +143,31 @@ const calculateNiceYAxisDomain = (min: number, max: number): { domain: [number, 
     domain: [Math.max(0, niceMin), niceMax], // Ensure min is at least 0
     tickInterval: niceInterval
   };
+};
+
+// Generate a lighter shade of a hex color for MA parameters
+const lightenColor = (hex: string, percent: number): string => {
+  // Handle CSS variable colors (like '--chart-1')
+  if (hex.startsWith('--')) {
+    return hex; // Return as-is for CSS variables
+  }
+
+  // Remove # if present
+  const cleanHex = hex.replace('#', '');
+
+  // Convert to RGB
+  const num = parseInt(cleanHex, 16);
+  const r = (num >> 16) & 0xff;
+  const g = (num >> 8) & 0xff;
+  const b = num & 0xff;
+
+  // Lighten by blending with white
+  const newR = Math.min(255, Math.floor(r + (255 - r) * percent));
+  const newG = Math.min(255, Math.floor(g + (255 - g) * percent));
+  const newB = Math.min(255, Math.floor(b + (255 - b) * percent));
+
+  // Convert back to hex
+  return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
 };
 
 // Intelligent Y-axis formatter with nice rounded tick spacings
@@ -279,9 +305,24 @@ export function PinChartDisplay({
   const [hideUnits, setHideUnits] = useState(false);
   const [hideDates, setHideDates] = useState(false);
   const [hideStations, setHideStations] = useState(false);
+  const [hideParameterName, setHideParameterName] = useState(false);
+
+  // Custom parameter names for direct editing in minimal view
+  const [customParameterNames, setCustomParameterNames] = useState<Record<string, string>>({});
 
   // Axis mode state - default to multi axis
   const [axisMode, setAxisMode] = useState<'single' | 'multi'>('multi');
+
+  // MA update counter to force data recalculation
+  const [maUpdateCounter, setMaUpdateCounter] = useState(0);
+
+  // Store MA-enriched data separately
+  const [dataWithMA, setDataWithMA] = useState<ParsedDataPoint[]>([]);
+
+  // Log axis mode changes for MA debugging
+  React.useEffect(() => {
+    console.log('[MA DEBUG] Current axis mode:', axisMode);
+  }, [axisMode]);
 
   // Parameter panel expansion state
   const [isParameterPanelExpanded, setIsParameterPanelExpanded] = useState(defaultParametersExpanded);
@@ -421,7 +462,9 @@ export function PinChartDisplay({
       initialState[param] = {
         visible: index < defaultVisibleCount,
         color: hexColor, // Store as hex, not CSS variable
-        opacity: 1.0 // Default to fully opaque
+        opacity: appliedStyleRule?.properties.defaultOpacity ?? 1.0,
+        lineStyle: appliedStyleRule?.properties.defaultLineStyle ?? 'solid',
+        lineWidth: appliedStyleRule?.properties.defaultLineWidth ?? 1
       };
     });
     return initialState;
@@ -440,20 +483,61 @@ export function PinChartDisplay({
         if (prev[param]) {
           newState[param] = prev[param];
         } else {
-          // Initialize new parameter with hex color
+          // Initialize new parameter with hex color and apply styling rules
           const cssVar = CHART_COLORS[index % CHART_COLORS.length];
           const hexColor = cssVarToHex(cssVar);
           newState[param] = {
             visible: index < defaultVisibleCount,
             color: hexColor, // Store as hex, not CSS variable
-            opacity: 1.0 // Default to fully opaque
+            opacity: appliedStyleRule?.properties.defaultOpacity ?? 1.0,
+            lineStyle: appliedStyleRule?.properties.defaultLineStyle ?? 'solid',
+            lineWidth: appliedStyleRule?.properties.defaultLineWidth ?? 1
           };
+        }
+      });
+
+      // Manage MA parameter states based on base parameters
+      Object.keys(newState).forEach(param => {
+        const state = newState[param];
+        const maKey = `${param}_ma`;
+
+        if (state?.movingAverage?.enabled && state?.movingAverage?.showLine !== false) {
+          // Create or update MA parameter state
+          if (!newState[maKey]) {
+            console.log('[MA DEBUG] Creating MA parameter state:', {
+              baseParam: param,
+              maKey,
+              baseColor: state.color,
+              maColor: lightenColor(state.color, 0.3)
+            });
+            newState[maKey] = {
+              visible: true, // MA parameters are always visible when enabled
+              color: lightenColor(state.color, 0.3), // Lighter shade of base color
+              opacity: 0.8, // Slightly transparent
+              lineStyle: 'dashed' // Dashed line style for MA
+            };
+          } else {
+            // Update existing MA parameter to ensure visibility matches showLine
+            newState[maKey] = {
+              ...newState[maKey],
+              visible: true
+            };
+          }
+        } else {
+          // Remove MA parameter state if MA is disabled or showLine is false
+          if (newState[maKey]) {
+            console.log('[MA DEBUG] Removing MA parameter state:', { baseParam: param, maKey });
+          }
+          delete newState[maKey];
         }
       });
 
       return newState;
     });
-  }, [numericParameters.join(','), fileType, dataSource]); // Use join to avoid array reference changes
+  }, [numericParameters.join(','), fileType, dataSource, appliedStyleRule]); // Use join to avoid array reference changes
+
+  // NOTE: MA parameter states are now created directly in updateMovingAverage()
+  // to avoid timing issues with useEffect watching parameterStates
 
   // Brush state for time range selection (local state for separate mode)
   const [brushStartIndex, setBrushStartIndex] = useState<number>(0);
@@ -463,6 +547,78 @@ export function PinChartDisplay({
   const visibleParameters = useMemo(() => {
     return numericParameters.filter(param => parameterStates[param]?.visible);
   }, [numericParameters, parameterStates]);
+
+  // Calculate dynamic chart height based on number of visible parameters
+  const dynamicChartHeight = useMemo(() => {
+    const baseHeight = appliedStyleRule?.properties.chartHeight || 208;
+    const visibleCount = visibleParameters.length;
+    const hasExplicitHeight = appliedStyleRule?.properties.chartHeight !== undefined;
+
+    console.log('[CHART HEIGHT DEBUG]', {
+      fileName,
+      baseHeight,
+      visibleCount,
+      hasExplicitHeight,
+      appliedStyleRule: appliedStyleRule?.styleName
+    });
+
+    // If a styling rule explicitly sets chartHeight, always use it (don't cap it)
+    if (hasExplicitHeight) {
+      console.log('[CHART HEIGHT] Using explicit height from styling rule:', baseHeight);
+      return baseHeight;
+    }
+
+    // For plots WITHOUT explicit height styling, reduce height to minimize white space
+    if (visibleCount === 1) {
+      const finalHeight = Math.min(baseHeight, 150);
+      console.log('[CHART HEIGHT] Dynamic height for 1 param:', finalHeight);
+      return finalHeight;
+    } else if (visibleCount === 2) {
+      const finalHeight = Math.min(baseHeight, 170);
+      console.log('[CHART HEIGHT] Dynamic height for 2 params:', finalHeight);
+      return finalHeight;
+    } else if (visibleCount === 3) {
+      const finalHeight = Math.min(baseHeight, 190);
+      console.log('[CHART HEIGHT] Dynamic height for 3 params:', finalHeight);
+      return finalHeight;
+    }
+
+    // For 4+ parameters, use the full height
+    console.log('[CHART HEIGHT] Using full height for 4+ params:', baseHeight);
+    return baseHeight;
+  }, [visibleParameters.length, appliedStyleRule?.properties.chartHeight, fileName, appliedStyleRule?.styleName]);
+
+  // Get moving average parameters (for display in parameter list)
+  const movingAverageParameters = useMemo(() => {
+    const maParams: string[] = [];
+
+    Object.entries(parameterStates).forEach(([param, state]) => {
+      // Only add MA parameters for base parameters (not for MA parameters themselves)
+      if (!param.endsWith('_ma') && state?.movingAverage?.enabled && state?.movingAverage?.showLine !== false) {
+        console.log('[MA DEBUG] Adding MA parameter:', {
+          baseParam: param,
+          maParam: `${param}_ma`,
+          windowDays: state.movingAverage.windowDays,
+          showLine: state.movingAverage.showLine
+        });
+        maParams.push(`${param}_ma`);
+      }
+    });
+
+    console.log('[MA DEBUG] movingAverageParameters:', maParams);
+    return maParams;
+  }, [parameterStates]);
+
+  // Combine base parameters and MA parameters for display
+  const allDisplayParameters = useMemo(() => {
+    const combined = [...visibleParameters, ...movingAverageParameters];
+    console.log('[MA DEBUG] allDisplayParameters:', {
+      visibleParameters,
+      movingAverageParameters,
+      combined
+    });
+    return combined;
+  }, [visibleParameters, movingAverageParameters]);
 
   // Track previous visibility state to avoid infinite loops
   const prevVisibilityRef = React.useRef<string>('');
@@ -518,7 +674,17 @@ export function PinChartDisplay({
   const activeBrushEnd = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.endIndex : brushEndIndex;
 
   // Get data slice for current brush selection
+  // Create a stable key for MA settings to track changes
+  const maSettingsKey = useMemo(() => {
+    return Object.entries(parameterStates)
+      .filter(([param, state]) => !param.endsWith('_ma') && state?.movingAverage?.enabled)
+      .map(([param, state]) => `${param}:${state?.movingAverage?.windowDays}:${state?.movingAverage?.showLine}`)
+      .join('|');
+  }, [parameterStates]);
+
   const displayData = useMemo(() => {
+    console.log('[MA DEBUG] displayData useMemo RUNNING. maSettingsKey:', maSettingsKey, 'maUpdateCounter:', maUpdateCounter);
+
     if (data.length === 0) return [];
 
     // Step 1: Get base data based on brush/time range
@@ -545,12 +711,10 @@ export function PinChartDisplay({
     // Step 2: Apply time-of-day filters (if any parameter has them enabled)
     const hasTimeFilters = Object.values(parameterStates).some(state => state?.timeFilter?.enabled);
 
-    if (!hasTimeFilters) {
-      return baseData; // No filters, return as-is
-    }
+    console.log('[MA DEBUG] Step 2: hasTimeFilters:', hasTimeFilters);
 
-    // Apply time filters
-    const filteredData = baseData.map(point => {
+    // Apply time filters (if any enabled)
+    const filteredData = !hasTimeFilters ? baseData : baseData.map(point => {
       const newPoint = { ...point };
 
       // For each parameter with time filter enabled
@@ -571,11 +735,40 @@ export function PinChartDisplay({
     // Step 3: Calculate moving averages (if any parameter has them enabled)
     const hasMovingAverages = Object.values(parameterStates).some(state => state?.movingAverage?.enabled);
 
+    console.log('[MA DEBUG] hasMovingAverages:', hasMovingAverages);
+    console.log('[MA DEBUG] parameterStates:', parameterStates);
+
     if (!hasMovingAverages) {
+      console.log('[MA DEBUG] No MA enabled, returning filtered data without MA calculation');
       return filteredData; // No MA, return filtered data
     }
 
     // Calculate moving averages and add MA data keys
+    const maEnabledParams = Object.entries(parameterStates)
+      .filter(([param, state]) => state?.movingAverage?.enabled)
+      .map(([param]) => param);
+
+    if (maEnabledParams.length > 0) {
+      console.log('[MA DEBUG] MA enabled for parameters:', maEnabledParams);
+    }
+
+    // Calculate actual data frequency from timestamps to convert days to data points
+    let pointsPerDay = 24; // Default: assume hourly data
+    if (filteredData.length > 1) {
+      try {
+        const time1 = parseISO(filteredData[0].time);
+        const time2 = parseISO(filteredData[1].time);
+        if (isValid(time1) && isValid(time2)) {
+          const intervalMs = Math.abs(time2.getTime() - time1.getTime());
+          const intervalHours = intervalMs / (1000 * 60 * 60);
+          pointsPerDay = Math.round(24 / intervalHours);
+          console.log('[MA DEBUG] Data frequency:', intervalHours, 'hours between points,', pointsPerDay, 'points per day');
+        }
+      } catch (e) {
+        console.warn('[MA DEBUG] Could not calculate data frequency, using default (hourly)');
+      }
+    }
+
     return filteredData.map((point, index) => {
       const newPoint = { ...point };
 
@@ -585,8 +778,8 @@ export function PinChartDisplay({
         if (state?.movingAverage?.enabled) {
           const windowDays = state.movingAverage.windowDays || 7;
 
-          // Calculate window size (assume hourly data: 24 points/day)
-          const windowSize = windowDays * 24;
+          // Calculate window size based on actual data frequency
+          const windowSize = windowDays * pointsPerDay;
 
           // Collect values in window (looking backward from current index)
           const windowStart = Math.max(0, index - windowSize + 1);
@@ -603,6 +796,20 @@ export function PinChartDisplay({
           if (windowValues.length > 0) {
             const sum = windowValues.reduce((a, b) => a + b, 0);
             newPoint[`${param}_ma`] = sum / windowValues.length;
+
+            // Log first few points for debugging
+            if (index < 3) {
+              console.log('[MA DEBUG] Calculated MA for point', index, {
+                param,
+                maKey: `${param}_ma`,
+                windowDays,
+                pointsPerDay,
+                windowSize,
+                windowValues: windowValues.length,
+                maValue: newPoint[`${param}_ma`],
+                originalValue: point[param]
+              });
+            }
           } else {
             newPoint[`${param}_ma`] = null;
           }
@@ -611,7 +818,19 @@ export function PinChartDisplay({
 
       return newPoint;
     });
-  }, [data, activeBrushStart, activeBrushEnd, timeAxisMode, globalTimeRange, dataSource, parameterStates]);
+  }, [data, activeBrushStart, activeBrushEnd, timeAxisMode, globalTimeRange, dataSource, parameterStates, maUpdateCounter, maSettingsKey]);
+
+  // Log displayData sample for debugging MA
+  React.useEffect(() => {
+    if (displayData.length > 0) {
+      const firstPoint = displayData[0];
+      const maKeys = Object.keys(firstPoint).filter(k => k.endsWith('_ma'));
+      if (maKeys.length > 0) {
+        console.log('[MA DEBUG] displayData contains MA keys:', maKeys);
+        console.log('[MA DEBUG] Sample data point:', firstPoint);
+      }
+    }
+  }, [displayData]);
 
   // Calculate Y-axis domain based on visible parameters in displayData (for single axis mode)
   const yAxisDomain = useMemo(() => {
@@ -865,6 +1084,16 @@ export function PinChartDisplay({
     }));
   };
 
+  const updateParameterLineWidth = (parameter: string, lineWidth: number) => {
+    setParameterStates(prev => ({
+      ...prev,
+      [parameter]: {
+        ...prev[parameter],
+        lineWidth: Math.max(0.5, Math.min(4, lineWidth)) // Clamp between 0.5 and 4
+      }
+    }));
+  };
+
   const updateTimeFilter = (parameter: string, enabled: boolean, excludeStart?: string, excludeEnd?: string) => {
     setParameterStates(prev => ({
       ...prev,
@@ -880,17 +1109,53 @@ export function PinChartDisplay({
   };
 
   const updateMovingAverage = (parameter: string, enabled: boolean, windowDays?: number, showLine?: boolean) => {
-    setParameterStates(prev => ({
-      ...prev,
-      [parameter]: {
+    console.log('[MA DEBUG] updateMovingAverage called:', { parameter, enabled, windowDays, showLine });
+
+    setParameterStates(prev => {
+      const updated = { ...prev };
+      const maKey = `${parameter}_ma`;
+
+      // Update base parameter's MA settings
+      updated[parameter] = {
         ...prev[parameter],
         movingAverage: {
           enabled,
           windowDays: windowDays || 7,
           showLine: showLine !== undefined ? showLine : true
         }
+      };
+
+      // Immediately create/update/remove MA parameter state
+      if (enabled && (showLine !== false)) {
+        // Create or update MA parameter state
+        if (!updated[maKey]) {
+          console.log('[MA DEBUG] Creating MA parameter state in updateMovingAverage:', maKey);
+          updated[maKey] = {
+            visible: true,
+            color: lightenColor(prev[parameter].color, 0.3),
+            opacity: 0.8,
+            lineStyle: 'dashed'
+          };
+        } else {
+          updated[maKey] = {
+            ...updated[maKey],
+            visible: true
+          };
+        }
+      } else {
+        // Remove MA parameter state
+        if (updated[maKey]) {
+          console.log('[MA DEBUG] Removing MA parameter state in updateMovingAverage:', maKey);
+          delete updated[maKey];
+        }
       }
-    }));
+
+      console.log('[MA DEBUG] Updated parameterStates:', updated);
+      return updated;
+    });
+
+    // CRITICAL: Force data recalculation by incrementing a counter
+    setMaUpdateCounter(prev => prev + 1);
   };
 
   // Helper to get color value for rendering (supports both CSS vars and hex, with opacity)
@@ -1558,7 +1823,21 @@ export function PinChartDisplay({
 
   // Format parameter name based on minimal view settings
   const formatParameterName = (parameter: string): string => {
+    // Check if there's a custom name set for this parameter
+    if (customParameterNames[parameter]) {
+      return customParameterNames[parameter];
+    }
+
     let formatted = getParameterLabelWithUnit(parameter);
+
+    // Hide parameter name (e.g., "Dolphin", "Porpoise clicks")
+    // Parameter name is the part before any parentheses or brackets
+    if (hideParameterName) {
+      // Extract only the parts in parentheses and brackets
+      const units = formatted.match(/\([^)]+\)/g) || [];
+      const brackets = formatted.match(/\[[^\]]+\]/g) || [];
+      formatted = [...units, ...brackets].join(' ').trim();
+    }
 
     // Hide units in parentheses (e.g., "(DPM)", "(Clicks)", "(°C)")
     if (hideUnits) {
@@ -1847,7 +2126,7 @@ export function PinChartDisplay({
       {visibleParameters.length > 0 && (
         <div
           className={cn("w-full bg-card p-2", !minimalView && "border rounded-md")}
-          style={{ height: `${appliedStyleRule?.properties.chartHeight || 208}px` }}
+          style={{ height: `${dynamicChartHeight}px` }}
         >
           {/* Single Axis Mode */}
           {axisMode === 'single' && (
@@ -1979,30 +2258,51 @@ export function PinChartDisplay({
                   - Render Area components FIRST (they will be in the background)
                   - Render Line components AFTER areas (they will be on top and clickable)
                   - Lines have increased strokeWidth (2px) and activeDot for better clickability
+                  - Now includes MA parameters (SINGLE AXIS MODE)
                 */}
-                {visibleParameters.map((parameter) => {
-                  const state = parameterStates[parameter];
-                  const colorValue = getColorValue(state.color, state.opacity ?? 1.0);
+                {(() => {
+                  const maLines = allDisplayParameters.filter(p => p.endsWith('_ma'));
+                  if (maLines.length > 0) {
+                    console.log('[MA DEBUG] [SINGLE AXIS] Rendering MA lines:', maLines);
+                  }
+                  return allDisplayParameters.map((parameter) => {
+                    const state = parameterStates[parameter];
+                    if (!state) {
+                      console.warn('[MA DEBUG] [SINGLE AXIS] No state found for parameter:', parameter);
+                      return null;
+                    }
 
-                  return (
-                    <Line
-                      key={parameter}
-                      {...(axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? { yAxisId: "left" } : {})}
-                      type="monotone"
-                      dataKey={parameter}
-                      stroke={colorValue}
-                      strokeWidth={2}
-                      strokeDasharray={state.lineStyle === 'dashed' ? '5 5' : undefined}
-                      dot={false}
-                      connectNulls={false}
-                      name={parameter}
-                      isAnimationActive={false}
-                      activeDot={{ r: 6, strokeWidth: 2 }}
-                      onClick={() => toggleParameterVisibility(parameter)}
-                      style={{ cursor: 'pointer' }}
-                    />
-                  );
-                })}
+                    const isMA = parameter.endsWith('_ma');
+                    const colorValue = getColorValue(state.color, state.opacity ?? 1.0);
+
+                    if (isMA) {
+                      console.log('[MA DEBUG] [SINGLE AXIS] Rendering MA line:', {
+                        parameter,
+                        color: colorValue,
+                        state
+                      });
+                    }
+
+                    return (
+                      <Line
+                        key={parameter}
+                        {...(axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? { yAxisId: "left" } : {})}
+                        type="monotone"
+                        dataKey={parameter}
+                        stroke={colorValue}
+                        strokeWidth={state.lineWidth ?? 2}
+                        strokeDasharray={state.lineStyle === 'dashed' ? '5 5' : undefined}
+                        dot={false}
+                        connectNulls={false}
+                        name={parameter}
+                        isAnimationActive={false}
+                        activeDot={{ r: isMA ? 4 : 6, strokeWidth: 2 }}
+                        onClick={() => toggleParameterVisibility(parameter)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    );
+                  });
+                })()}
               </LineChart>
             </ResponsiveContainer>
           )}
@@ -2136,31 +2436,56 @@ export function PinChartDisplay({
                   - Render Area components FIRST (they will be in the background)
                   - Render Line components AFTER areas (they will be on top and clickable)
                   - Lines have increased strokeWidth (2px) and activeDot for better clickability
+                  - Now includes MA parameters which share Y-axis with their base parameter
                 */}
-                {visibleParameters.map((parameter) => {
-                  const state = parameterStates[parameter];
-                  const yAxisId = `axis-${parameter}`;
-                  const colorValue = getColorValue(state.color, state.opacity ?? 1.0);
+                {(() => {
+                  const maLines = allDisplayParameters.filter(p => p.endsWith('_ma'));
+                  if (maLines.length > 0) {
+                    console.log('[MA DEBUG] [MULTI AXIS] Rendering MA lines:', maLines);
+                  }
+                  return allDisplayParameters.map((parameter) => {
+                    const state = parameterStates[parameter];
+                    if (!state) {
+                      console.warn('[MA DEBUG] [MULTI AXIS] No state found for parameter:', parameter);
+                      return null;
+                    }
 
-                  return (
-                    <Line
-                      key={parameter}
-                      type="monotone"
-                      dataKey={parameter}
-                      yAxisId={yAxisId}
-                      stroke={colorValue}
-                      strokeWidth={2}
-                      strokeDasharray={state.lineStyle === 'dashed' ? '5 5' : undefined}
-                      dot={false}
-                      connectNulls={false}
-                      name={parameter}
-                      isAnimationActive={false}
-                      activeDot={{ r: 6, strokeWidth: 2 }}
-                      onClick={() => toggleParameterVisibility(parameter)}
-                      style={{ cursor: 'pointer' }}
-                    />
-                  );
-                })}
+                    // For MA parameters, use the base parameter's Y-axis
+                    const isMA = parameter.endsWith('_ma');
+                    const baseParam = isMA ? parameter.replace('_ma', '') : parameter;
+                    const yAxisId = `axis-${baseParam}`;
+                    const colorValue = getColorValue(state.color, state.opacity ?? 1.0);
+
+                    if (isMA) {
+                      console.log('[MA DEBUG] [MULTI AXIS] Rendering MA line:', {
+                        parameter,
+                        baseParam,
+                        yAxisId,
+                        color: colorValue,
+                        state
+                      });
+                    }
+
+                    return (
+                      <Line
+                        key={parameter}
+                        type="monotone"
+                        dataKey={parameter}
+                        yAxisId={yAxisId}
+                        stroke={colorValue}
+                        strokeWidth={state.lineWidth ?? 2}
+                        strokeDasharray={state.lineStyle === 'dashed' ? '5 5' : undefined}
+                        dot={false}
+                        connectNulls={false}
+                        name={parameter}
+                        isAnimationActive={false}
+                        activeDot={{ r: isMA ? 4 : 6, strokeWidth: 2 }} // Smaller dots for MA
+                        onClick={() => toggleParameterVisibility(parameter)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    );
+                  });
+                })()}
               </LineChart>
             </ResponsiveContainer>
           )}
@@ -2251,7 +2576,8 @@ export function PinChartDisplay({
             <div className="space-y-1 h-[210px] overflow-y-auto">
               {(() => {
                 // Apply filters to parameters - now supports multiple selections
-                let filteredParameters = numericParameters;
+                // Use allDisplayParameters to include both base and MA parameters
+                let filteredParameters = allDisplayParameters;
 
                 // Apply source filter (Porpoise, Dolphin, Sonar)
                 if (sourceFilter.length > 0) {
@@ -2292,6 +2618,18 @@ export function PinChartDisplay({
                 const state = parameterStates[parameter];
                 if (!state) return null;
 
+                // Check if this is an MA parameter
+                const isMA = parameter.endsWith('_ma');
+                const baseParam = isMA ? parameter.replace('_ma', '') : parameter;
+                const baseState = isMA ? parameterStates[baseParam] : null;
+
+                // Get display name for MA parameters
+                let displayName = parameter;
+                if (isMA && baseState?.movingAverage) {
+                  const windowDays = baseState.movingAverage.windowDays || 7;
+                  displayName = `${baseParam} MA (${windowDays}d)`;
+                }
+
                 // Get axis position for this parameter in multi-axis mode
                 const visibleIndex = visibleParameters.indexOf(parameter);
                 const axisPosition = visibleIndex >= 0 ? (visibleIndex % 2 === 0 ? 'L' : 'R') : null;
@@ -2299,7 +2637,11 @@ export function PinChartDisplay({
                 const colorValue = getColorValue(state.color);
 
                 return (
-                  <div key={parameter} className={cn("flex items-center justify-between rounded bg-card/50", minimalView ? "p-0.5" : "p-1.5 border")}>
+                  <div key={parameter} className={cn(
+                    "flex items-center justify-between rounded bg-card/50",
+                    minimalView ? "p-0.5" : "p-1.5 border",
+                    isMA && !minimalView && "ml-4" // Indent MA parameters
+                  )}>
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       {/* Checkbox - hidden in minimal view */}
                       {!minimalView && (
@@ -2452,6 +2794,101 @@ export function PinChartDisplay({
                                   </Button>
                                 </div>
                               </div>
+
+                              {/* Line Width */}
+                              <div className="space-y-2">
+                                <Label className="text-xs">Line Width</Label>
+                                <div className="grid grid-cols-4 gap-1.5">
+                                  <Button
+                                    variant={(state.lineWidth ?? 2) === 0.5 ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="h-8 text-xs px-1"
+                                    onClick={() => updateParameterLineWidth(parameter, 0.5)}
+                                  >
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <div className="w-full h-[1px] bg-current" />
+                                      <span className="text-[0.6rem]">0.5</span>
+                                    </div>
+                                  </Button>
+                                  <Button
+                                    variant={(state.lineWidth ?? 2) === 1 ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="h-8 text-xs px-1"
+                                    onClick={() => updateParameterLineWidth(parameter, 1)}
+                                  >
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <div className="w-full h-[1.5px] bg-current" />
+                                      <span className="text-[0.6rem]">1</span>
+                                    </div>
+                                  </Button>
+                                  <Button
+                                    variant={(state.lineWidth ?? 2) === 1.5 ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="h-8 text-xs px-1"
+                                    onClick={() => updateParameterLineWidth(parameter, 1.5)}
+                                  >
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <div className="w-full h-[2px] bg-current" />
+                                      <span className="text-[0.6rem]">1.5</span>
+                                    </div>
+                                  </Button>
+                                  <Button
+                                    variant={(state.lineWidth ?? 2) === 2 ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="h-8 text-xs px-1"
+                                    onClick={() => updateParameterLineWidth(parameter, 2)}
+                                  >
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <div className="w-full h-[2.5px] bg-current" />
+                                      <span className="text-[0.6rem]">2</span>
+                                    </div>
+                                  </Button>
+                                  <Button
+                                    variant={(state.lineWidth ?? 2) === 2.5 ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="h-8 text-xs px-1"
+                                    onClick={() => updateParameterLineWidth(parameter, 2.5)}
+                                  >
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <div className="w-full h-[3px] bg-current" />
+                                      <span className="text-[0.6rem]">2.5</span>
+                                    </div>
+                                  </Button>
+                                  <Button
+                                    variant={(state.lineWidth ?? 2) === 3 ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="h-8 text-xs px-1"
+                                    onClick={() => updateParameterLineWidth(parameter, 3)}
+                                  >
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <div className="w-full h-[3.5px] bg-current" />
+                                      <span className="text-[0.6rem]">3</span>
+                                    </div>
+                                  </Button>
+                                  <Button
+                                    variant={(state.lineWidth ?? 2) === 3.5 ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="h-8 text-xs px-1"
+                                    onClick={() => updateParameterLineWidth(parameter, 3.5)}
+                                  >
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <div className="w-full h-1 bg-current" />
+                                      <span className="text-[0.6rem]">3.5</span>
+                                    </div>
+                                  </Button>
+                                  <Button
+                                    variant={(state.lineWidth ?? 2) === 4 ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="h-8 text-xs px-1"
+                                    onClick={() => updateParameterLineWidth(parameter, 4)}
+                                  >
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <div className="w-full h-[5px] bg-current" />
+                                      <span className="text-[0.6rem]">4</span>
+                                    </div>
+                                  </Button>
+                                </div>
+                              </div>
                             </div>
                           </PopoverContent>
                         </Popover>
@@ -2465,9 +2902,16 @@ export function PinChartDisplay({
                       >
                         <Label
                           htmlFor={`param-${parameter}`}
-                          className={cn("text-[11px] font-normal cursor-pointer", !minimalView && !isParameterPanelExpanded && "truncate")}
+                          className={cn(
+                            "text-[11px] font-normal cursor-pointer",
+                            !minimalView && !isParameterPanelExpanded && "truncate",
+                            isMA && "italic text-muted-foreground" // Style MA parameters differently
+                          )}
                         >
-                          {minimalView ? formatParameterName(parameter) : getParameterLabelWithUnit(parameter)}
+                          {isMA
+                            ? (minimalView ? formatParameterName(displayName) : displayName) // Apply minimal view formatting to MA parameters too
+                            : (minimalView ? formatParameterName(parameter) : getParameterLabelWithUnit(parameter))
+                          }
                         </Label>
 
                         {/* Filter indicator */}
@@ -2489,8 +2933,8 @@ export function PinChartDisplay({
 
                     {/* Right side controls */}
                     <div className="flex items-center gap-1.5">
-                      {/* Show axis indicator in multi-axis mode */}
-                      {axisMode === 'multi' && state.visible && axisPosition && (
+                      {/* Show axis indicator in multi-axis mode - hidden in minimal view */}
+                      {!minimalView && axisMode === 'multi' && state.visible && axisPosition && (
                         <span
                           className="text-[0.6rem] font-semibold px-1 rounded"
                           style={{ color: colorValue, backgroundColor: `${colorValue}1a` }}
@@ -2620,12 +3064,108 @@ export function PinChartDisplay({
                                 </Button>
                               </div>
                             </div>
+
+                            {/* Line Width */}
+                            <div className="space-y-2">
+                              <Label className="text-xs">Line Width</Label>
+                              <div className="grid grid-cols-4 gap-1.5">
+                                <Button
+                                  variant={(state.lineWidth ?? 2) === 0.5 ? 'default' : 'outline'}
+                                  size="sm"
+                                  className="h-8 text-xs px-1"
+                                  onClick={() => updateParameterLineWidth(parameter, 0.5)}
+                                >
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <div className="w-full h-[1px] bg-current" />
+                                    <span className="text-[0.6rem]">0.5</span>
+                                  </div>
+                                </Button>
+                                <Button
+                                  variant={(state.lineWidth ?? 2) === 1 ? 'default' : 'outline'}
+                                  size="sm"
+                                  className="h-8 text-xs px-1"
+                                  onClick={() => updateParameterLineWidth(parameter, 1)}
+                                >
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <div className="w-full h-[1.5px] bg-current" />
+                                    <span className="text-[0.6rem]">1</span>
+                                  </div>
+                                </Button>
+                                <Button
+                                  variant={(state.lineWidth ?? 2) === 1.5 ? 'default' : 'outline'}
+                                  size="sm"
+                                  className="h-8 text-xs px-1"
+                                  onClick={() => updateParameterLineWidth(parameter, 1.5)}
+                                >
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <div className="w-full h-[2px] bg-current" />
+                                    <span className="text-[0.6rem]">1.5</span>
+                                  </div>
+                                </Button>
+                                <Button
+                                  variant={(state.lineWidth ?? 2) === 2 ? 'default' : 'outline'}
+                                  size="sm"
+                                  className="h-8 text-xs px-1"
+                                  onClick={() => updateParameterLineWidth(parameter, 2)}
+                                >
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <div className="w-full h-[2.5px] bg-current" />
+                                    <span className="text-[0.6rem]">2</span>
+                                  </div>
+                                </Button>
+                                <Button
+                                  variant={(state.lineWidth ?? 2) === 2.5 ? 'default' : 'outline'}
+                                  size="sm"
+                                  className="h-8 text-xs px-1"
+                                  onClick={() => updateParameterLineWidth(parameter, 2.5)}
+                                >
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <div className="w-full h-[3px] bg-current" />
+                                    <span className="text-[0.6rem]">2.5</span>
+                                  </div>
+                                </Button>
+                                <Button
+                                  variant={(state.lineWidth ?? 2) === 3 ? 'default' : 'outline'}
+                                  size="sm"
+                                  className="h-8 text-xs px-1"
+                                  onClick={() => updateParameterLineWidth(parameter, 3)}
+                                >
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <div className="w-full h-[3.5px] bg-current" />
+                                    <span className="text-[0.6rem]">3</span>
+                                  </div>
+                                </Button>
+                                <Button
+                                  variant={(state.lineWidth ?? 2) === 3.5 ? 'default' : 'outline'}
+                                  size="sm"
+                                  className="h-8 text-xs px-1"
+                                  onClick={() => updateParameterLineWidth(parameter, 3.5)}
+                                >
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <div className="w-full h-1 bg-current" />
+                                    <span className="text-[0.6rem]">3.5</span>
+                                  </div>
+                                </Button>
+                                <Button
+                                  variant={(state.lineWidth ?? 2) === 4 ? 'default' : 'outline'}
+                                  size="sm"
+                                  className="h-8 text-xs px-1"
+                                  onClick={() => updateParameterLineWidth(parameter, 4)}
+                                >
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <div className="w-full h-[5px] bg-current" />
+                                    <span className="text-[0.6rem]">4</span>
+                                  </div>
+                                </Button>
+                              </div>
+                            </div>
                           </div>
                         </PopoverContent>
                       </Popover>
                       )}
 
-                      {/* Settings icon - contains filters and MA */}
+                      {/* Settings icon - contains filters and MA - only show for base parameters, not MA */}
+                      {!isMA && (
                       <Popover>
                         <PopoverTrigger asChild>
                           <Button
@@ -2644,13 +3184,10 @@ export function PinChartDisplay({
                           <div className="space-y-4">
                             <p className="text-xs font-semibold border-b pb-2">Settings - {parameter}</p>
 
-                            {/* Time Filter Section */}
-                            <div className="space-y-2">
+                            {/* Time Filter Section - Compact */}
+                            <div className="space-y-1.5">
                               <div className="flex items-center gap-2">
-                                <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-                                <span className="text-xs font-medium">Data Filter</span>
-                              </div>
-                              <div className="flex items-center gap-2">
+                                <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                                 <Checkbox
                                   id={`filter-${parameter}`}
                                   checked={state.timeFilter?.enabled || false}
@@ -2662,17 +3199,14 @@ export function PinChartDisplay({
                                       state.timeFilter?.excludeEnd
                                     )
                                   }
-                                  className="h-3 w-3"
+                                  className="h-3 w-3 shrink-0"
                                 />
-                                <Label htmlFor={`filter-${parameter}`} className="text-xs cursor-pointer">
-                                  Enable time filter
+                                <Label htmlFor={`filter-${parameter}`} className="text-xs cursor-pointer shrink-0">
+                                  Filter
                                 </Label>
-                              </div>
-                              {state.timeFilter?.enabled && (
-                                <div className="pl-5 space-y-2">
-                                  <p className="text-xs text-muted-foreground">Hide data between:</p>
-                                  <div className="flex items-center gap-2">
-                                    <Label className="text-xs w-12">From:</Label>
+                                {state.timeFilter?.enabled && (
+                                  <>
+                                    <span className="text-xs text-muted-foreground shrink-0">Hide:</span>
                                     <Input
                                       type="time"
                                       value={state.timeFilter?.excludeStart || '08:00'}
@@ -2684,11 +3218,9 @@ export function PinChartDisplay({
                                           state.timeFilter?.excludeEnd
                                         )
                                       }
-                                      className="h-7 text-xs"
+                                      className="h-6 text-xs w-20"
                                     />
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Label className="text-xs w-12">To:</Label>
+                                    <span className="text-xs text-muted-foreground shrink-0">to</span>
                                     <Input
                                       type="time"
                                       value={state.timeFilter?.excludeEnd || '18:00'}
@@ -2700,23 +3232,22 @@ export function PinChartDisplay({
                                           e.target.value
                                         )
                                       }
-                                      className="h-7 text-xs"
+                                      className="h-6 text-xs w-20"
                                     />
-                                  </div>
-                                  <p className="text-[0.65rem] text-muted-foreground italic">
-                                    Filters applied to each day in the time series
-                                  </p>
-                                </div>
+                                  </>
+                                )}
+                              </div>
+                              {state.timeFilter?.enabled && (
+                                <p className="text-[0.65rem] text-muted-foreground italic pl-5">
+                                  Applied to each day in the time series
+                                </p>
                               )}
                             </div>
 
-                            {/* Moving Average Section */}
-                            <div className="space-y-2 border-t pt-3">
-                              <div className="flex items-center gap-2">
-                                <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-                                <span className="text-xs font-medium">Moving Average</span>
-                              </div>
-                              <div className="flex items-center gap-2">
+                            {/* Moving Average Section - Compact */}
+                            <div className="border-t pt-3">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <BarChart3 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                                 <Checkbox
                                   id={`ma-${parameter}`}
                                   checked={state.movingAverage?.enabled || false}
@@ -2728,16 +3259,14 @@ export function PinChartDisplay({
                                       state.movingAverage?.showLine
                                     )
                                   }
-                                  className="h-3 w-3"
+                                  className="h-3 w-3 shrink-0"
                                 />
-                                <Label htmlFor={`ma-${parameter}`} className="text-xs cursor-pointer">
-                                  Enable moving average
+                                <Label htmlFor={`ma-${parameter}`} className="text-xs cursor-pointer shrink-0">
+                                  Moving Avg
                                 </Label>
-                              </div>
-                              {state.movingAverage?.enabled && (
-                                <div className="pl-5 space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    <Label className="text-xs w-16">Window:</Label>
+                                {state.movingAverage?.enabled && (
+                                  <>
+                                    <span className="text-xs text-muted-foreground shrink-0">Window:</span>
                                     <Input
                                       type="number"
                                       min="1"
@@ -2751,11 +3280,9 @@ export function PinChartDisplay({
                                           state.movingAverage?.showLine
                                         )
                                       }
-                                      className="h-7 text-xs w-20"
+                                      className="h-6 text-xs w-16"
                                     />
-                                    <span className="text-xs text-muted-foreground">days</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-muted-foreground shrink-0">days</span>
                                     <Checkbox
                                       id={`ma-show-${parameter}`}
                                       checked={state.movingAverage?.showLine !== false}
@@ -2767,14 +3294,14 @@ export function PinChartDisplay({
                                           checked as boolean
                                         )
                                       }
-                                      className="h-3 w-3"
+                                      className="h-3 w-3 shrink-0"
                                     />
-                                    <Label htmlFor={`ma-show-${parameter}`} className="text-xs cursor-pointer">
-                                      Show MA line on chart
+                                    <Label htmlFor={`ma-show-${parameter}`} className="text-xs cursor-pointer shrink-0">
+                                      Show line
                                     </Label>
-                                  </div>
-                                </div>
-                              )}
+                                  </>
+                                )}
+                              </div>
                             </div>
 
                             {/* Display Options Section - only show in minimal view */}
@@ -2818,12 +3345,187 @@ export function PinChartDisplay({
                                       Hide stations [C_S, F_L, etc.]
                                     </Label>
                                   </div>
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      id="hide-parameter-name"
+                                      checked={hideParameterName}
+                                      onCheckedChange={(checked) => setHideParameterName(checked as boolean)}
+                                      className="h-3 w-3"
+                                    />
+                                    <Label htmlFor="hide-parameter-name" className="text-xs cursor-pointer">
+                                      Hide parameter name (Dolphin, etc.)
+                                    </Label>
+                                  </div>
+
+                                  {/* Custom parameter name input */}
+                                  <div className="space-y-1.5 pt-2 border-t">
+                                    <Label htmlFor={`custom-name-${parameter}`} className="text-xs font-medium">
+                                      Custom Display Name
+                                    </Label>
+                                    <div className="flex gap-1.5">
+                                      <Input
+                                        id={`custom-name-${parameter}`}
+                                        type="text"
+                                        placeholder={formatParameterName(parameter)}
+                                        value={customParameterNames[parameter] || ''}
+                                        onChange={(e) => {
+                                          setCustomParameterNames(prev => ({
+                                            ...prev,
+                                            [parameter]: e.target.value
+                                          }));
+                                        }}
+                                        className="h-7 text-xs"
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                      {customParameterNames[parameter] && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-7 px-2 text-xs"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setCustomParameterNames(prev => {
+                                              const updated = { ...prev };
+                                              delete updated[parameter];
+                                              return updated;
+                                            });
+                                          }}
+                                          title="Reset to default"
+                                        >
+                                          Reset
+                                        </Button>
+                                      )}
+                                    </div>
+                                    <p className="text-[0.65rem] text-muted-foreground">
+                                      Leave empty to use auto-formatted name
+                                    </p>
+                                  </div>
                                 </div>
                               </div>
                             )}
                           </div>
                         </PopoverContent>
                       </Popover>
+                      )}
+
+                      {/* Settings cog for MA parameters in minimal view - right-aligned */}
+                      {isMA && minimalView && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-4 w-4 p-0 hover:bg-accent flex-shrink-0"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Settings className="h-2.5 w-2.5 text-muted-foreground" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-64 p-3" align="end" onClick={(e) => e.stopPropagation()}>
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium">Display Settings</p>
+
+                              {/* Display Options for MA parameters */}
+                              <div className="space-y-1.5 border-t pt-2">
+                                <div className="flex items-center gap-2">
+                                  <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <span className="text-xs font-medium">Display Options</span>
+                                </div>
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`ma-hide-units-${parameter}`}
+                                      checked={hideUnits}
+                                      onCheckedChange={(checked) => setHideUnits(checked as boolean)}
+                                      className="h-3 w-3"
+                                    />
+                                    <Label htmlFor={`ma-hide-units-${parameter}`} className="text-xs cursor-pointer">
+                                      Hide units (DPM, Clicks, etc.)
+                                    </Label>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`ma-hide-dates-${parameter}`}
+                                      checked={hideDates}
+                                      onCheckedChange={(checked) => setHideDates(checked as boolean)}
+                                      className="h-3 w-3"
+                                    />
+                                    <Label htmlFor={`ma-hide-dates-${parameter}`} className="text-xs cursor-pointer">
+                                      Hide dates [2406_2407]
+                                    </Label>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`ma-hide-stations-${parameter}`}
+                                      checked={hideStations}
+                                      onCheckedChange={(checked) => setHideStations(checked as boolean)}
+                                      className="h-3 w-3"
+                                    />
+                                    <Label htmlFor={`ma-hide-stations-${parameter}`} className="text-xs cursor-pointer">
+                                      Hide stations [C_S, F_L, etc.]
+                                    </Label>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`ma-hide-parameter-name-${parameter}`}
+                                      checked={hideParameterName}
+                                      onCheckedChange={(checked) => setHideParameterName(checked as boolean)}
+                                      className="h-3 w-3"
+                                    />
+                                    <Label htmlFor={`ma-hide-parameter-name-${parameter}`} className="text-xs cursor-pointer">
+                                      Hide parameter name (Dolphin, etc.)
+                                    </Label>
+                                  </div>
+
+                                  {/* Custom parameter name input for MA */}
+                                  <div className="space-y-1.5 pt-2 border-t">
+                                    <Label htmlFor={`ma-custom-name-${parameter}`} className="text-xs font-medium">
+                                      Custom Display Name
+                                    </Label>
+                                    <div className="flex gap-1.5">
+                                      <Input
+                                        id={`ma-custom-name-${parameter}`}
+                                        type="text"
+                                        placeholder={formatParameterName(displayName)}
+                                        value={customParameterNames[displayName] || ''}
+                                        onChange={(e) => {
+                                          setCustomParameterNames(prev => ({
+                                            ...prev,
+                                            [displayName]: e.target.value
+                                          }));
+                                        }}
+                                        className="h-7 text-xs"
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                      {customParameterNames[displayName] && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-7 px-2 text-xs"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setCustomParameterNames(prev => {
+                                              const updated = { ...prev };
+                                              delete updated[displayName];
+                                              return updated;
+                                            });
+                                          }}
+                                          title="Reset to default"
+                                        >
+                                          Reset
+                                        </Button>
+                                      )}
+                                    </div>
+                                    <p className="text-[0.65rem] text-muted-foreground">
+                                      Leave empty to use auto-formatted name
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
                     </div>
                   </div>
                 );

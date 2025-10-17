@@ -6,16 +6,20 @@ import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PlusCircle, LayoutGrid, Minus, AlignHorizontalJustifyCenter } from "lucide-react";
+import { PlusCircle, LayoutGrid, Minus, AlignHorizontalJustifyCenter, Save, FolderOpen } from "lucide-react";
 
 import { PinPlotInstance } from "./PinPlotInstance";
 import { PinMarineMeteoPlot } from "./PinMarineMeteoPlot";
-import { FileSelector } from "./FileSelector";
+import { FileSelectionDialog } from "./FileSelectionDialog";
 import { PlotTypeSelector } from "./PlotTypeSelector";
-import { parseISO, isValid, formatISO } from 'date-fns';
+import { MergeRulesDialog, DEFAULT_MERGE_RULES, type MergeRule } from "./MergeRulesDialog";
+import { SavePlotViewDialog } from "./SavePlotViewDialog";
+import { LoadPlotViewDialog } from "./LoadPlotViewDialog";
+import { parseISO, isValid, formatISO, format } from 'date-fns';
 import { useToast } from "@/hooks/use-toast";
 import type { ParseResult } from "./csvParser";
 import type { CombinedDataPoint } from "@/app/om-marine-explorer/shared";
+import type { SavedPlotViewConfig, SavedPlotView, PlotViewValidationResult } from "@/lib/supabase/plot-view-types";
 
 interface MergedParameterConfig {
   parameter: string;
@@ -67,7 +71,7 @@ interface FileOption {
   pinId: string;
   pinName: string;
   pinLocation?: { lat: number; lng: number };
-  fileType: 'GP' | 'FPOD' | 'Subcam';
+  fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'MERGED';
   files: File[];
   fileName: string;
   metadata?: PinFile; // Include metadata for downloading
@@ -81,12 +85,24 @@ interface PinMarineDeviceDataProps {
   // Props for multi-file support
   availableFiles?: FileOption[];
   onDownloadFile?: (pinId: string, fileName: string) => Promise<File | null>; // Callback to download file on-demand
+  multiFileMergeMode?: 'sequential' | 'stack-parameters'; // Merge mode for multi-file selection
   // Props for marine/meteo integration
   objectLocation?: { lat: number; lng: number };
   objectName?: string;
+  // Props for FileSelectionDialog (DataTimeline integration)
+  allProjectFilesForTimeline?: (PinFile & { pinLabel: string })[];
+  getFileDateRange?: (file: PinFile) => Promise<{
+    totalDays: number | null;
+    startDate: string | null;
+    endDate: string | null;
+    uniqueDates?: string[];
+    isCrop?: boolean;
+    error?: string;
+  }>;
+  projectId?: string;
 }
 
-export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, objectLocation, objectName }: PinMarineDeviceDataProps) {
+export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, multiFileMergeMode = 'sequential', objectLocation, objectName, allProjectFilesForTimeline, getFileDateRange, projectId }: PinMarineDeviceDataProps) {
   const { toast } = useToast();
 
   // State for managing plots with file data
@@ -112,18 +128,49 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   const [mergeRawData, setMergeRawData] = useState<ParseResult | null>(null); // Unrounded data
   const [timeRoundingInterval, setTimeRoundingInterval] = useState<string>('1hr'); // Default 1 hour
 
+  // CSV preview for subtract
+  const [showSubtractPreview, setShowSubtractPreview] = useState(false);
+  const [subtractPreviewData, setSubtractPreviewData] = useState<ParseResult | null>(null);
+  const [subtractRawData, setSubtractRawData] = useState<ParseResult | null>(null);
+  const [subtractDirection, setSubtractDirection] = useState<'1-2' | '2-1'>('1-2'); // Plot1 - Plot2 by default
+  const [subtractMissingDataMode, setSubtractMissingDataMode] = useState<'skip' | 'zero'>('skip'); // Skip by default
+  const [subtractUnitsWarning, setSubtractUnitsWarning] = useState<string | null>(null);
+
   // Sparse data smoothing state
   const [smoothingApplied, setSmoothingApplied] = useState(false);
   const [smoothedParameterName, setSmoothedParameterName] = useState<string | null>(null);
   const [originalObsCount, setOriginalObsCount] = useState<number>(0);
-  const [smoothedObsCount, setSmoothedObsCount] = useState<number>(0)
+  const [smoothedObsCount, setSmoothedObsCount] = useState<number>(0);
+
+  // Multi-file confirmation dialog state
+  const [showMultiFileConfirmDialog, setShowMultiFileConfirmDialog] = useState(false);
+  const [multiFileConfirmData, setMultiFileConfirmData] = useState<{
+    parsedFiles: any[];
+    validation: any;
+    downloadedFiles: File[];
+    fileType: 'GP' | 'FPOD' | 'Subcam';
+  } | null>(null);
+  const [mergeRules, setMergeRules] = useState<MergeRule[]>(DEFAULT_MERGE_RULES);
+
+  // Save/Load Plot View state
+  const [showSavePlotViewDialog, setShowSavePlotViewDialog] = useState(false);
+  const [showLoadPlotViewDialog, setShowLoadPlotViewDialog] = useState(false);
+
+  // Merge rule toggle handler
+  const handleMergeRuleToggle = useCallback((suffix: string, enabled: boolean) => {
+    setMergeRules(prevRules =>
+      prevRules.map(rule =>
+        rule.suffix === suffix ? { ...rule, enabled } : rule
+      )
+    );
+  }, []);
 
   // Get file display name
-  const getFileName = (fileList: File[]) => {
+  const getFileName = useCallback((fileList: File[]) => {
     if (fileList.length === 0) return 'No files';
     if (fileList.length === 1) return fileList[0].name;
     return `${fileList.length} files`;
-  };
+  }, []);
 
   // Time rounding function
   const roundTimeToInterval = useCallback((isoTimeStr: string, interval: string): string => {
@@ -529,6 +576,151 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     }
   }, []);
 
+  // Serialize current plot state for saving
+  const serializePlotViewState = useCallback((): SavedPlotViewConfig => {
+    // Calculate date range display
+    const calculateDateRangeDisplay = (): string => {
+      const allDates: Date[] = [];
+
+      Object.values(plotsData).forEach(plotData => {
+        if (plotData && plotData.data.length > 0) {
+          plotData.data.forEach(row => {
+            const date = parseISO(row.time);
+            if (isValid(date)) {
+              allDates.push(date);
+            }
+          });
+        }
+      });
+
+      if (allDates.length === 0) return 'No data';
+
+      const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
+      const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
+
+      return `${format(minDate, 'MMM d, yyyy')} - ${format(maxDate, 'MMM d, yyyy')}`;
+    };
+
+    return {
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+      timeAxisMode,
+      globalBrushRange,
+      plots: plots.map(plot => ({
+        id: plot.id,
+        title: plot.title,
+        type: plot.type,
+        fileType: plot.fileType,
+        pinId: plot.pinId,
+        fileName: plot.fileName,
+        fileId: plot.files?.[0] ? undefined : undefined, // TODO: Add file ID tracking
+        filePath: plot.files?.[0] ? undefined : undefined, // TODO: Add file path tracking
+        location: plot.location,
+        locationName: plot.locationName,
+        timeRange: plot.timeRange,
+        isMerged: plot.isMerged,
+        mergedParams: plot.mergedParams,
+        visibleParameters: plotVisibilityState[plot.id]?.params || [],
+        parameterColors: plotVisibilityState[plot.id]?.colors || {}
+      })),
+      timeRoundingInterval,
+      mergeRules,
+      metadata: {
+        totalPlots: plots.length,
+        datasetNames: plots.map(p => p.fileName || p.locationName || p.title || 'Unknown'),
+        dateRangeDisplay: calculateDateRangeDisplay()
+      }
+    };
+  }, [plots, plotsData, plotVisibilityState, timeAxisMode, globalBrushRange, timeRoundingInterval, mergeRules]);
+
+  // Deserialize and restore plot state
+  const restorePlotViewState = useCallback(async (
+    view: SavedPlotView,
+    validation: PlotViewValidationResult
+  ) => {
+    try {
+      console.log('🔄 Restoring plot view:', view.name);
+
+      const config = view.view_config;
+
+      // Filter plots to only include those with available files
+      const availablePlots = config.plots.filter(plot =>
+        validation.availablePlotIds.includes(plot.id)
+      );
+
+      if (availablePlots.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Cannot Restore View",
+          description: "None of the plots in this view can be restored"
+        });
+        return;
+      }
+
+      // Show warning if some plots are missing
+      if (availablePlots.length < config.plots.length) {
+        toast({
+          variant: "default",
+          title: "Partial Restore",
+          description: `Restored ${availablePlots.length} of ${config.plots.length} plots. Some files are no longer available.`
+        });
+      }
+
+      // Restore time axis configuration
+      setTimeAxisMode(config.timeAxisMode);
+      setGlobalBrushRange(config.globalBrushRange);
+
+      // Restore settings
+      setTimeRoundingInterval(config.timeRoundingInterval);
+      setMergeRules(config.mergeRules);
+
+      // Restore visibility state
+      const newVisibilityState: Record<string, { params: string[], colors: Record<string, string> }> = {};
+      availablePlots.forEach(plot => {
+        newVisibilityState[plot.id] = {
+          params: plot.visibleParameters,
+          colors: plot.parameterColors
+        };
+      });
+      setPlotVisibilityState(newVisibilityState);
+
+      // Restore plots
+      // Note: For device plots with files, we need to re-download them
+      // This is a simplified version - full implementation would need file re-downloading
+      const restoredPlots: PlotConfig[] = availablePlots.map(savedPlot => ({
+        id: savedPlot.id,
+        title: savedPlot.title,
+        type: savedPlot.type,
+        fileType: savedPlot.fileType,
+        pinId: savedPlot.pinId,
+        fileName: savedPlot.fileName,
+        files: [], // TODO: Re-download files if needed
+        location: savedPlot.location,
+        locationName: savedPlot.locationName,
+        timeRange: savedPlot.timeRange,
+        isMerged: savedPlot.isMerged,
+        mergedParams: savedPlot.mergedParams
+      }));
+
+      setPlots(restoredPlots);
+
+      console.log('✅ Plot view restored successfully');
+
+      toast({
+        title: "View Restored",
+        description: `"${view.name}" has been loaded`
+      });
+
+    } catch (error) {
+      console.error('❌ Error restoring plot view:', error);
+      toast({
+        variant: "destructive",
+        title: "Restore Failed",
+        description: "Failed to restore plot view"
+      });
+    }
+  }, [toast]);
+
   // Plot management functions
   const addPlot = useCallback((
     type: 'device' | 'marine-meteo',
@@ -610,8 +802,38 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     }
   }, [plots, plotVisibilityState]);
 
+  // Helper function to extract base parameter name (before brackets)
+  const getBaseParameterName = useCallback((paramName: string): string => {
+    // Remove everything in brackets and trim
+    const baseName = paramName.replace(/\[.*?\]/g, '').trim();
+    return baseName;
+  }, []);
+
+  // Check if plots are eligible for subtracting
+  const canSubtractPlots = useMemo(() => {
+    if (plots.length < 2) return false;
+    const firstState = plotVisibilityState[plots[0].id];
+    const secondState = plotVisibilityState[plots[1].id];
+
+    // Check if both have exactly 1 visible parameter
+    if (firstState?.params.length !== 1 || secondState?.params.length !== 1) {
+      return false;
+    }
+
+    const firstParam = firstState.params[0];
+    const secondParam = secondState.params[0];
+
+    // Extract base parameter names (without brackets)
+    const firstBaseParam = getBaseParameterName(firstParam);
+    const secondBaseParam = getBaseParameterName(secondParam);
+
+    // Parameters must match (at least the base name)
+    // e.g., "Porpoise clicks [Station A]" and "Porpoise clicks [Station B]" should match
+    return firstBaseParam === secondBaseParam;
+  }, [plots, plotVisibilityState, getBaseParameterName]);
+
   // Handler for merging first 2 plots
-  const handleMergePlots = () => {
+  const handleMergePlots = useCallback(() => {
     if (plots.length < 2) return;
 
     const firstPlot = plots[0];
@@ -724,7 +946,26 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     // Get source labels for each parameter
     const getSourceLabel = (plot: PlotConfig): string => {
       if (plot.type === 'marine-meteo') return 'OM';
-      return plot.fileType || 'GP';
+
+      // Try to get file type from plot config first
+      if (plot.fileType) return plot.fileType;
+
+      // Extract file type from filename if available (text after first underscore)
+      if (plot.fileName) {
+        const parts = plot.fileName.split('_');
+        if (parts.length >= 2) {
+          const extractedType = parts[1].toUpperCase();
+          // Validate that it's a known file type
+          if (['GP', 'FPOD', 'SC', 'SUBCAM'].includes(extractedType)) {
+            console.log(`🏷️ Extracted file type "${extractedType}" from filename "${plot.fileName}"`);
+            return extractedType === 'SUBCAM' ? 'SC' : extractedType;
+          }
+        }
+      }
+
+      // Fall back to 'GP' if extraction fails
+      console.warn(`⚠️ Could not extract file type from filename "${plot.fileName}", defaulting to GP`);
+      return 'GP';
     };
 
     const source1Label = getSourceLabel(firstPlot);
@@ -831,10 +1072,10 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     // Show preview dialog with rounded data
     setMergePreviewData(roundedData);
     setShowMergePreview(true);
-  };
+  }, [plots, plotVisibilityState, plotsData, timeRoundingInterval, applyTimeRounding]);
 
   // Handler to confirm merge after preview
-  const confirmMerge = () => {
+  const confirmMerge = useCallback(() => {
     if (!mergePreviewData || plots.length < 2) return;
 
     const firstPlot = plots[0];
@@ -896,10 +1137,10 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     // Close preview
     setShowMergePreview(false);
     setMergePreviewData(null);
-  };
+  }, [mergePreviewData, plots, plotVisibilityState, smoothingApplied, smoothedParameterName, originalObsCount, smoothedObsCount]);
 
   // Handler for unmerging plots
-  const handleUnmergePlot = (mergedPlotId: string) => {
+  const handleUnmergePlot = useCallback((mergedPlotId: string) => {
     const mergedPlot = plots.find(p => p.id === mergedPlotId);
     if (!mergedPlot?.isMerged || !mergedPlot.mergedParams || mergedPlot.mergedParams.length !== 2) {
       return;
@@ -947,7 +1188,292 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       plot2,
       ...plots.slice(mergedIndex + 1)
     ]);
-  };
+  }, [plots]);
+
+  // Handler for subtracting first 2 plots
+  const handleSubtractPlots = useCallback(() => {
+    if (plots.length < 2) return;
+
+    const firstPlot = plots[0];
+    const secondPlot = plots[1];
+
+    const firstState = plotVisibilityState[firstPlot.id];
+    const secondState = plotVisibilityState[secondPlot.id];
+
+    if (!firstState || !secondState || firstState.params.length !== 1 || secondState.params.length !== 1) {
+      return;
+    }
+
+    const param1 = firstState.params[0];
+    const param2 = secondState.params[0];
+
+    console.log('➖ Subtract: Parameter names from visibility state:', {
+      param1,
+      param2,
+    });
+
+    // Get the actual data from both plots
+    const firstPlotData = plotsData[firstPlot.id];
+    const secondPlotData = plotsData[secondPlot.id];
+
+    if (!firstPlotData || !secondPlotData) {
+      console.error('Cannot subtract: plot data not loaded');
+      return;
+    }
+
+    // Helper function to find the actual data key for a parameter
+    const findDataKey = (dataPoint: any, paramName: string): string | null => {
+      if (paramName in dataPoint) return paramName;
+
+      const normalizedParam = paramName.replace(/\s+/g, '').toLowerCase();
+      for (const key of Object.keys(dataPoint)) {
+        if (key.toLowerCase() === normalizedParam) {
+          return key;
+        }
+      }
+
+      const cleanedParam = paramName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      for (const key of Object.keys(dataPoint)) {
+        const cleanedKey = key.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        if (cleanedKey.includes(cleanedParam) || cleanedParam.includes(cleanedKey)) {
+          return key;
+        }
+      }
+
+      return null;
+    };
+
+    // Find actual data keys for both parameters
+    const firstSamplePoint = firstPlotData.data[0];
+    const secondSamplePoint = secondPlotData.data[0];
+    const actualParam1Key = findDataKey(firstSamplePoint, param1) || param1;
+    const actualParam2Key = findDataKey(secondSamplePoint, param2) || param2;
+
+    // Helper function to normalize time to ISO format
+    const normalizeTimeToISO = (timeStr: string): string => {
+      try {
+        const date = parseISO(timeStr);
+        if (isValid(date)) {
+          return date.toISOString();
+        }
+        return timeStr;
+      } catch (e) {
+        return timeStr;
+      }
+    };
+
+    // Get source labels for each parameter
+    const getSourceLabel = (plot: PlotConfig): string => {
+      if (plot.type === 'marine-meteo') return 'OM';
+      if (plot.fileType) return plot.fileType;
+      if (plot.fileName) {
+        const parts = plot.fileName.split('_');
+        if (parts.length >= 2) {
+          const extractedType = parts[1].toUpperCase();
+          if (['GP', 'FPOD', 'SC', 'SUBCAM'].includes(extractedType)) {
+            return extractedType === 'SUBCAM' ? 'SC' : extractedType;
+          }
+        }
+      }
+      return 'GP';
+    };
+
+    const source1Label = getSourceLabel(firstPlot);
+    const source2Label = getSourceLabel(secondPlot);
+
+    // Build maps: time -> value for each parameter
+    const leftMap = new Map<string, any>();
+    firstPlotData.data.forEach(point => {
+      const value = point[actualParam1Key];
+      if (value !== null && value !== undefined && !isNaN(Number(value))) {
+        leftMap.set(normalizeTimeToISO(point.time), value);
+      }
+    });
+
+    const rightMap = new Map<string, any>();
+    secondPlotData.data.forEach(point => {
+      const value = point[actualParam2Key];
+      if (value !== null && value !== undefined && !isNaN(Number(value))) {
+        rightMap.set(normalizeTimeToISO(point.time), value);
+      }
+    });
+
+    // Get UNION of all timestamps (sorted)
+    const allTimestamps = Array.from(
+      new Set([
+        ...Array.from(leftMap.keys()),
+        ...Array.from(rightMap.keys())
+      ])
+    ).sort();
+
+    // Create smart parameter name by omitting matching text
+    // e.g., "Porpoise clicks [Station A]" and "Porpoise clicks [Station B]" -> "Difference (A - B)"
+    // For merged files: "Porpoise(DPM)[C_S]" and "Porpoise(DPM)[F_L]" -> "Difference (Porpoise(DPM)[C_S] - Porpoise(DPM)[F_L])"
+    const smartParameterName = (() => {
+      const base1 = getBaseParameterName(param1);
+      const base2 = getBaseParameterName(param2);
+
+      // Extract the differing parts (typically the source/station names)
+      const extractDifference = (fullName: string, baseName: string): string => {
+        // Check if this is a merged file parameter (has both parentheses AND brackets)
+        // This indicates station identifiers like "Porpoise(DPM)[C_S]"
+        const hasParentheses = /\([^)]+\)/.test(fullName);
+        const hasBrackets = /\[[^\]]+\]/.test(fullName);
+
+        if (hasParentheses && hasBrackets) {
+          // For merged files, keep the ENTIRE parameter name with all identifiers
+          return fullName;
+        }
+
+        // For simpler parameters, extract only the bracketed part (original logic)
+        const bracketMatch = fullName.match(/\[(.*?)\]/);
+        if (bracketMatch) {
+          return bracketMatch[1];
+        }
+
+        // If no brackets, return the source label
+        return fullName.replace(baseName, '').trim() || fullName;
+      };
+
+      const diff1 = extractDifference(param1, base1) || source1Label;
+      const diff2 = extractDifference(param2, base2) || source2Label;
+
+      return `Difference (${diff1} - ${diff2})`;
+    })();
+
+    // Perform subtraction based on direction
+    const subtractedData = allTimestamps.map(time => {
+      const val1 = leftMap.get(time);
+      const val2 = rightMap.get(time);
+
+      let result: number | null = null;
+
+      if (val1 !== null && val1 !== undefined && val2 !== null && val2 !== undefined) {
+        // Both values exist
+        // ZERO RULE: If either value is zero, set result to zero (default rule)
+        if (Number(val1) === 0 || Number(val2) === 0) {
+          result = 0;
+        } else {
+          result = subtractDirection === '1-2' ? Number(val1) - Number(val2) : Number(val2) - Number(val1);
+        }
+      } else if (subtractMissingDataMode === 'zero') {
+        // Use zero for missing values
+        // ZERO RULE: When using 'zero' mode, result is always zero (since at least one value is missing/zero)
+        result = 0;
+      }
+      // else: skip mode, result stays null
+
+      return {
+        time,
+        [smartParameterName]: result
+      };
+    });
+
+    // Filter out null results if in skip mode
+    const filteredData = subtractMissingDataMode === 'skip'
+      ? subtractedData.filter(row => row[smartParameterName] !== null)
+      : subtractedData;
+
+    console.log('➖ SUBTRACT DEBUG:', {
+      smartParameterName,
+      direction: subtractDirection,
+      missingDataMode: subtractMissingDataMode,
+      leftMapSize: leftMap.size,
+      rightMapSize: rightMap.size,
+      allTimestampsCount: allTimestamps.length,
+      filteredDataCount: filteredData.length,
+      sampleResult: filteredData[0]
+    });
+
+    // Create ParseResult structure for the RAW subtracted data
+    const rawSubtractedData: ParseResult = {
+      data: filteredData as any,
+      headers: ['time', smartParameterName],
+      errors: [],
+      summary: {
+        totalRows: filteredData.length,
+        validRows: filteredData.length,
+        columns: 2,
+        timeColumn: 'time'
+      }
+    };
+
+    // Save raw data
+    setSubtractRawData(rawSubtractedData);
+
+    // Apply default time rounding (1 hr)
+    const roundedData = applyTimeRounding(rawSubtractedData, timeRoundingInterval);
+
+    // TODO: Check for units mismatch and set warning
+
+    // Show preview dialog with rounded data
+    setSubtractPreviewData(roundedData);
+    setShowSubtractPreview(true);
+  }, [plots, plotVisibilityState, plotsData, getBaseParameterName, subtractDirection, subtractMissingDataMode, timeRoundingInterval, applyTimeRounding]);
+
+  // Handler to confirm subtract after preview
+  const confirmSubtract = useCallback(() => {
+    if (!subtractPreviewData || plots.length < 2) return;
+
+    const firstPlot = plots[0];
+    const secondPlot = plots[1];
+    const firstState = plotVisibilityState[firstPlot.id];
+    const secondState = plotVisibilityState[secondPlot.id];
+
+    if (!firstState || !secondState) return;
+
+    const param1 = firstState.params[0];
+    const param2 = secondState.params[0];
+
+    // Get the result parameter name from headers
+    const resultParamName = subtractPreviewData.headers[1];
+
+    // Check if both source plots are _std files to apply _std styling to difference
+    const isFirstPlotStd = firstPlot.fileName?.includes('_std') || false;
+    const isSecondPlotStd = secondPlot.fileName?.includes('_std') || false;
+    const bothAreStd = isFirstPlotStd && isSecondPlotStd;
+
+    // Create filename with _std suffix if both sources are _std files
+    const subtractedFileName = bothAreStd
+      ? `Subtracted_std: ${resultParamName}`
+      : `Subtracted: ${resultParamName}`;
+
+    console.log('➖ Subtracted plot filename logic:', {
+      firstPlotFileName: firstPlot.fileName,
+      secondPlotFileName: secondPlot.fileName,
+      isFirstPlotStd,
+      isSecondPlotStd,
+      bothAreStd,
+      subtractedFileName
+    });
+
+    // Create a virtual device plot with subtracted data
+    const subtractedPlot: PlotConfig = {
+      id: `subtracted-${Date.now()}`,
+      title: resultParamName,
+      type: 'device',
+      fileType: firstPlot.fileType || 'GP',
+      files: [],
+      fileName: subtractedFileName,
+      isMerged: true,
+      mergedData: subtractPreviewData,
+    };
+
+    // Keep first 2 plots and add subtracted plot below them
+    setPlots([plots[0], plots[1], subtractedPlot, ...plots.slice(2)]);
+
+    // Force common mode for subtracted plots
+    setTimeAxisMode('common');
+
+    // Close preview
+    setShowSubtractPreview(false);
+    setSubtractPreviewData(null);
+
+    toast({
+      title: "Subtraction Complete",
+      description: `Created plot: ${resultParamName}`
+    });
+  }, [subtractPreviewData, plots, plotVisibilityState, toast]);
 
   // Handler for adding marine/meteo plot
   const handleAddMarineMeteoPlot = useCallback(() => {
@@ -1009,6 +1535,39 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     });
   }, [plots, plotsData, objectLocation, objectName, extractTimeRangeFromPlotData, addPlot, toast]);
 
+  // Handler for copying the previous plot
+  const handleCopyPreviousPlot = useCallback(() => {
+    if (plots.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Cannot Copy Plot",
+        description: "No plots available to copy."
+      });
+      return;
+    }
+
+    // Get the last plot in the array (the one directly above the "Add Plot" button)
+    const lastPlot = plots[plots.length - 1];
+
+    // Create a copy with a new ID and modified title
+    const copiedPlot: PlotConfig = {
+      ...lastPlot,
+      id: `${lastPlot.type}-copy-${Date.now()}`,
+      title: lastPlot.title ? `${lastPlot.title} (Copy)` : `Plot ${plots.length + 1}`,
+      fileName: lastPlot.fileName ? `${lastPlot.fileName} (Copy)` : undefined,
+    };
+
+    // Add the copied plot to the end of the array
+    setPlots([...plots, copiedPlot]);
+
+    setShowPlotTypeSelector(false);
+
+    toast({
+      title: "Plot Copied",
+      description: `Created a copy of "${lastPlot.title || lastPlot.fileName || 'Plot'}"`
+    });
+  }, [plots, toast]);
+
   // Initialize with one plot for the initially selected files
   React.useEffect(() => {
     if (!plotsInitialized.current && plots.length === 0 && files.length > 0) {
@@ -1031,20 +1590,51 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         ) : (
           // Plots container - scrollable with Add Plot button
           <div className="h-full flex flex-col gap-3">
-            {/* Time Axis Mode Toggle - Sticky at top */}
-            {plots.length > 1 && (
+            {/* Time Axis Mode Toggle and Save/Load Buttons - Sticky at top */}
+            {/* Always show this header bar when there are plots */}
+            {plots.length > 0 && (
               <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b pb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">Time Axis Mode:</span>
-                  <Minus className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Separate</span>
-                  <Switch
-                    checked={timeAxisMode === 'common'}
-                    onCheckedChange={(checked) => setTimeAxisMode(checked ? 'common' : 'separate')}
-                    className="h-5 w-9"
-                  />
-                  <span className="text-xs text-muted-foreground">Common</span>
-                  <AlignHorizontalJustifyCenter className="h-4 w-4 text-muted-foreground" />
+                <div className="flex items-center justify-between gap-4">
+                  {/* Left side: Time Axis Mode (only show when multiple plots) */}
+                  {plots.length > 1 ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">Time Axis Mode:</span>
+                      <Minus className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Separate</span>
+                      <Switch
+                        checked={timeAxisMode === 'common'}
+                        onCheckedChange={(checked) => setTimeAxisMode(checked ? 'common' : 'separate')}
+                        className="h-5 w-9"
+                      />
+                      <span className="text-xs text-muted-foreground">Common</span>
+                      <AlignHorizontalJustifyCenter className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <div className="flex-1" />
+                  )}
+
+                  {/* Right side: Save/Load Plot View buttons - Always visible */}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowSavePlotViewDialog(true)}
+                      disabled={plots.length === 0}
+                      className="h-8"
+                    >
+                      <Save className="h-3.5 w-3.5 mr-1.5" />
+                      Save View
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowLoadPlotViewDialog(true)}
+                      className="h-8"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
+                      Load View
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -1126,50 +1716,69 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             handleMergePlots();
             setShowPlotTypeSelector(false);
           }}
+          onSelectSubtract={() => {
+            handleSubtractPlots();
+            setShowPlotTypeSelector(false);
+          }}
+          onSelectCopyPrevious={handleCopyPreviousPlot}
           canMergePlots={canMergePlots}
+          canSubtractPlots={canSubtractPlots}
+          canCopyPrevious={plots.length > 0}
           onCancel={() => setShowPlotTypeSelector(false)}
         />
       )}
 
-      {/* File Selector Modal */}
-      {(() => {
-        console.log('FileSelector render check:', { showFileSelector, availableFiles, hasFiles: availableFiles?.length });
-        return showFileSelector && availableFiles && (
-          <FileSelector
-            availableFiles={availableFiles}
-            onSelectFile={async (fileOption) => {
-              // Check if files need to be downloaded
-              if (fileOption.files.length === 0 && onDownloadFile && fileOption.metadata) {
-                console.log('📥 File not loaded, downloading...', fileOption.fileName);
-                const downloadedFile = await onDownloadFile(fileOption.pinId, fileOption.fileName);
+      {/* File Selector Modal - Using DataTimeline for selection */}
+      {showFileSelector && allProjectFilesForTimeline && getFileDateRange && (
+        <FileSelectionDialog
+          open={showFileSelector}
+          onOpenChange={setShowFileSelector}
+          files={allProjectFilesForTimeline}
+          getFileDateRange={getFileDateRange}
+          projectId={projectId}
+          excludeFileNames={plots.filter(p => p.type === 'device').map(p => p.fileName!)}
+          onFileSelected={async (file) => {
+            // Map the file to FileOption format for download handling
+            const fileOption = {
+              pinId: file.pinId,
+              pinName: file.pinLabel,
+              fileType: 'GP' as 'GP' | 'FPOD' | 'Subcam', // Will detect properly from filename
+              files: [], // No files loaded yet
+              fileName: file.fileName,
+              metadata: file
+            };
 
-                if (downloadedFile) {
-                  // Add plot with downloaded file
-                  addPlot('device', [downloadedFile], {
-                    fileType: fileOption.fileType,
-                    customTitle: fileOption.fileName,
-                    pinId: fileOption.pinId
-                  });
-                  setShowFileSelector(false);
-                } else {
-                  console.error('Failed to download file:', fileOption.fileName);
-                  // Don't close the modal, let user try again or cancel
-                }
-              } else {
-                // Files already loaded, add plot directly
-                addPlot('device', fileOption.files, {
+            // Check if files need to be downloaded
+            if (fileOption.files.length === 0 && onDownloadFile && fileOption.metadata) {
+              console.log('📥 File not loaded, downloading...', fileOption.fileName);
+              const downloadedFile = await onDownloadFile(fileOption.pinId, fileOption.fileName);
+
+              if (downloadedFile) {
+                // Add plot with downloaded file
+                addPlot('device', [downloadedFile], {
                   fileType: fileOption.fileType,
                   customTitle: fileOption.fileName,
                   pinId: fileOption.pinId
                 });
-                setShowFileSelector(false);
+              } else {
+                console.error('Failed to download file:', fileOption.fileName);
+                toast({
+                  variant: "destructive",
+                  title: "Download Failed",
+                  description: `Could not download ${fileOption.fileName}`
+                });
               }
-            }}
-            onCancel={() => setShowFileSelector(false)}
-            excludeFileNames={plots.filter(p => p.type === 'device').map(p => p.fileName!)}
-          />
-        );
-      })()}
+            } else {
+              // Files already loaded, add plot directly
+              addPlot('device', fileOption.files, {
+                fileType: fileOption.fileType,
+                customTitle: fileOption.fileName,
+                pinId: fileOption.pinId
+              });
+            }
+          }}
+        />
+      )}
 
       {/* Merge CSV Preview Dialog */}
       {showMergePreview && mergePreviewData && (
@@ -1371,6 +1980,322 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             </div>
           </div>
         </div>
+      )}
+
+      {/* Subtract CSV Preview Dialog */}
+      {showSubtractPreview && subtractPreviewData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]" onClick={() => {
+          setShowSubtractPreview(false);
+          setSubtractPreviewData(null);
+        }}>
+          <div className="bg-background p-6 rounded-lg shadow-lg max-w-4xl w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 space-y-3">
+              <h3 className="text-lg font-semibold mb-1">Preview Subtracted Data</h3>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {subtractPreviewData.summary.totalRows} rows × {subtractPreviewData.headers.length} columns
+                </p>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="subtract-time-rounding" className="text-sm">Time Rounding:</Label>
+                  <Select
+                    value={timeRoundingInterval}
+                    onValueChange={(value) => {
+                      setTimeRoundingInterval(value);
+                      if (subtractRawData) {
+                        const rounded = applyTimeRounding(subtractRawData, value);
+                        setSubtractPreviewData(rounded);
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="subtract-time-rounding" className="w-32 h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1min">1 Minute</SelectItem>
+                      <SelectItem value="10min">10 Minutes</SelectItem>
+                      <SelectItem value="30min">30 Minutes</SelectItem>
+                      <SelectItem value="1hr">1 Hour</SelectItem>
+                      <SelectItem value="6hr">6 Hours</SelectItem>
+                      <SelectItem value="1day">1 Day</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Control Panel */}
+              <div className="bg-muted/30 border rounded-md p-3 space-y-2">
+                {/* Direction Control */}
+                <div className="flex items-center gap-4">
+                  <Label className="text-sm font-medium">Direction:</Label>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="direction"
+                        checked={subtractDirection === '1-2'}
+                        onChange={() => {
+                          setSubtractDirection('1-2');
+                          if (subtractRawData) {
+                            // Reapply subtraction with new direction
+                            handleSubtractPlots();
+                          }
+                        }}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm">Plot 1 - Plot 2</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="direction"
+                        checked={subtractDirection === '2-1'}
+                        onChange={() => {
+                          setSubtractDirection('2-1');
+                          if (subtractRawData) {
+                            // Reapply subtraction with new direction
+                            handleSubtractPlots();
+                          }
+                        }}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm">Plot 2 - Plot 1</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Missing Data Mode Control */}
+                <div className="flex items-center gap-4">
+                  <Label className="text-sm font-medium">Missing Data:</Label>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="missingData"
+                        checked={subtractMissingDataMode === 'skip'}
+                        onChange={() => {
+                          setSubtractMissingDataMode('skip');
+                          if (subtractRawData) {
+                            handleSubtractPlots();
+                          }
+                        }}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm">Skip (only where both exist)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="missingData"
+                        checked={subtractMissingDataMode === 'zero'}
+                        onChange={() => {
+                          setSubtractMissingDataMode('zero');
+                          if (subtractRawData) {
+                            handleSubtractPlots();
+                          }
+                        }}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm">Use zero for missing values</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Units Warning Banner (if applicable) */}
+              {subtractUnitsWarning && (
+                <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md p-3">
+                  <p className="text-sm font-medium text-amber-900 dark:text-amber-100 mb-1">
+                    Units May Differ
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    {subtractUnitsWarning}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Table Preview */}
+            <div className="flex-1 overflow-auto border rounded-md mb-4">
+              <table className="w-full text-sm">
+                <thead className="bg-muted sticky top-0">
+                  <tr>
+                    {subtractPreviewData.headers.map(header => (
+                      <th key={header} className="p-2 text-left border-b font-semibold">
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {subtractPreviewData.data.slice(0, 100).map((row, idx) => (
+                    <tr key={idx} className="border-b hover:bg-muted/50">
+                      {subtractPreviewData.headers.map(header => (
+                        <td key={header} className="p-2">
+                          {row[header] !== null && row[header] !== undefined
+                            ? String(row[header])
+                            : '-'}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {subtractPreviewData.data.length > 100 && (
+                <div className="p-2 text-center text-xs text-muted-foreground bg-muted/50">
+                  Showing first 100 of {subtractPreviewData.data.length} rows
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowSubtractPreview(false);
+                  setSubtractPreviewData(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Download CSV
+                  const csvContent = [
+                    subtractPreviewData.headers.join(','),
+                    ...subtractPreviewData.data.map(row =>
+                      subtractPreviewData.headers.map(header => {
+                        const value = row[header];
+                        return value !== null && value !== undefined ? value : '';
+                      }).join(',')
+                    )
+                  ].join('\n');
+
+                  const blob = new Blob([csvContent], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `subtracted-${subtractPreviewData.headers[1].replace(/[^a-z0-9]/gi, '_')}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+
+                  toast({
+                    title: "CSV Downloaded",
+                    description: "Subtracted CSV file has been saved"
+                  });
+                }}
+              >
+                Save as CSV
+              </Button>
+              <Button onClick={confirmSubtract}>
+                Create Subtracted Plot
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Plot View Dialog */}
+      {projectId && (
+        <SavePlotViewDialog
+          open={showSavePlotViewDialog}
+          onOpenChange={setShowSavePlotViewDialog}
+          viewConfig={serializePlotViewState()}
+          projectId={projectId}
+          onSaveSuccess={() => {
+            // Optionally refresh the list when a view is saved
+            console.log('Plot view saved successfully');
+          }}
+        />
+      )}
+
+      {/* Load Plot View Dialog */}
+      {projectId && (
+        <LoadPlotViewDialog
+          open={showLoadPlotViewDialog}
+          onOpenChange={setShowLoadPlotViewDialog}
+          projectId={projectId}
+          onLoad={restorePlotViewState}
+        />
+      )}
+
+      {/* Merge Rules Dialog */}
+      {multiFileConfirmData && (
+        <MergeRulesDialog
+          open={showMultiFileConfirmDialog}
+          onOpenChange={setShowMultiFileConfirmDialog}
+          parsedFiles={multiFileConfirmData.parsedFiles}
+          mergeRules={mergeRules}
+          onMergeRuleToggle={handleMergeRuleToggle}
+          onConfirm={async (mode) => {
+            console.log('✅ Confirm & Merge clicked!', { mode, multiFileConfirmData });
+            try {
+              // Import merge utilities
+              const { mergeFiles } = await import('@/lib/multiFileValidator');
+
+              // Merge files with selected mode
+              console.log(`🔄 Merging files after confirmation using ${mode} mode...`);
+              console.log('📁 Parsed files to merge:', multiFileConfirmData.parsedFiles);
+              const mergedData = mergeFiles(multiFileConfirmData.parsedFiles, mode);
+              console.log('✅ Merge completed:', mergedData);
+
+              // Convert merged data to ParseResult format
+              const parseResult = {
+                data: mergedData.data,
+                headers: mergedData.headers,
+                errors: [],
+                summary: {
+                  totalRows: mergedData.data.length,
+                  validRows: mergedData.data.length,
+                  columns: mergedData.headers.length,
+                  timeColumn: mergedData.timeColumn
+                }
+              };
+
+              // Create a merged plot
+              const modeLabel = mode === 'stack-parameters' ? 'Stacked' : 'Sequential';
+              const mergedFileName = `${modeLabel}: ${mergedData.sourceFiles.map(f => f.split('.')[0]).join(' + ')}`;
+
+              // Add plot with merged data
+              const mergedPlot: PlotConfig = {
+                id: `multi-file-${Date.now()}`,
+                title: mergedFileName,
+                type: 'device',
+                fileType: multiFileConfirmData.fileType,
+                files: [],
+                fileName: mergedFileName,
+                isMerged: true,
+                mergedData: parseResult,
+              };
+
+              console.log('📊 Adding merged plot to plots:', mergedPlot);
+              setPlots([...plots, mergedPlot]);
+              console.log('✅ Plot added, closing dialog');
+              setShowMultiFileConfirmDialog(false);
+              setMultiFileConfirmData(null);
+
+              console.log('🎉 Showing success toast');
+              toast({
+                title: "Files Merged Successfully",
+                description: `Combined ${mergedData.sourceFiles.length} files in ${modeLabel} mode with ${mergedData.data.length} data points`,
+                duration: 4000
+              });
+            } catch (error) {
+              console.error('Error merging files:', error);
+              toast({
+                variant: "destructive",
+                title: "Multi-file Merge Failed",
+                description: error instanceof Error ? error.message : 'An unknown error occurred',
+                duration: 6000
+              });
+            }
+          }}
+          onCancel={() => {
+            setShowMultiFileConfirmDialog(false);
+            setMultiFileConfirmData(null);
+          }}
+        />
       )}
     </div>
   );

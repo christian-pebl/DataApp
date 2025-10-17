@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { format, startOfMonth, endOfMonth, eachMonthOfInterval, differenceInDays, parseISO, isValid, getYear } from 'date-fns';
-import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText, Pencil, Clock, Loader2, Layers, Combine, Upload, AlertCircle, Plus } from 'lucide-react';
+import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText, Pencil, Clock, Loader2, Layers, Combine, Upload, AlertCircle, Plus, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
@@ -171,6 +171,13 @@ const formatCompactDate = (dateString: string | null): string => {
 
   // Format as YY-MM-DD
   return format(date, 'yy-MM-dd');
+};
+
+// Helper function to check if file is a merged file
+const isMergedFile = (file: PinFile & { pinLabel: string }): boolean => {
+  return (file as any).fileSource === 'merged' ||
+         file.fileName.includes('_merge_') ||
+         file.fileName.includes('merge_std');
 };
 
 // Parse file name to extract Project_DataType_Station grouping key
@@ -346,7 +353,13 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
 
           // Update database with dates
           const { updateFileDatesAction } = await import('@/app/data-explorer/actions');
-          const updateResult = await updateFileDatesAction(file.id, startDateDb, endDateDb);
+          const updateResult = await updateFileDatesAction(
+            file.id,
+            startDateDb,
+            endDateDb,
+            result.isCrop,
+            result.uniqueDates
+          );
 
           console.log(`[DataTimeline] Update result for ${file.fileName}:`, updateResult);
 
@@ -590,6 +603,8 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
           totalDays,
           startDate,
           endDate,
+          uniqueDates: file.uniqueDates,
+          isCrop: file.isDiscrete,
           loading: false
         }
       };
@@ -788,6 +803,23 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
         </h3>
 
         <div className="flex items-center gap-2">
+          {/* Select All Button - Show when in merge mode */}
+          {multiFileMergeMode && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2"
+              onClick={() => {
+                // Select all files in current view
+                const allFileIds = new Set(sortedFilesWithDates.map(f => f.file.id));
+                setSelectedFileIds(allFileIds);
+              }}
+            >
+              <CheckCircle2 className="h-3 w-3 mr-1" />
+              <span className="text-xs">Select All ({sortedFilesWithDates.length})</span>
+            </Button>
+          )}
+
           {/* Merge Button / Merge Selected Files Button */}
           {multiFileMergeMode && selectedFileIds.size >= 2 ? (
             // Green "Merge Selected Files" button when files are selected
@@ -924,7 +956,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
 
                         {/* Pin indicator / Merge icon */}
                         <td className="pr-2 align-middle">
-                          {(file as any).fileSource === 'merged' ? (
+                          {isMergedFile(file) ? (
                             <Combine
                               className="w-3 h-3 text-green-600"
                               title="Merged File"
@@ -982,7 +1014,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                   <PopoverContent className="w-72" side="right">
                                     <div className="space-y-3">
                                       <div className="flex items-center gap-2">
-                                        {(file as any).fileSource === 'merged' ? (
+                                        {isMergedFile(file) ? (
                                           <Combine className="w-3 h-3 text-green-600" />
                                         ) : (
                                           <div
@@ -991,7 +1023,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                           />
                                         )}
                                         <span className="text-sm font-medium">
-                                          {(file as any).fileSource === 'merged' ? 'Merged File' : file.pinLabel}
+                                          {isMergedFile(file) ? 'Merged File' : file.pinLabel}
                                         </span>
                                       </div>
                                       <div className="space-y-2 text-xs">
@@ -1005,11 +1037,11 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                         </div>
                                         <div className="flex justify-between">
                                           <span className="text-muted-foreground">
-                                            {(file as any).fileSource === 'merged' ? 'Created:' : 'Uploaded:'}
+                                            {isMergedFile(file) ? 'Created:' : 'Uploaded:'}
                                           </span>
                                           <span>{format(new Date(file.uploadedAt), 'MMM d, yyyy')}</span>
                                         </div>
-                                        {(file as any).fileSource === 'merged' ? (
+                                        {isMergedFile(file) ? (
                                           // Merged file info
                                           <>
                                             {(file as any).sourceFilesMetadata && (
@@ -1481,12 +1513,19 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                     {/* LEFT CELL: File Info */}
                     <td className="pr-4 align-middle">
                       <div className="flex items-center gap-2">
-                        {/* Pin color indicator */}
-                        <div
-                          className="w-2 h-2 rounded-sm flex-shrink-0"
-                          style={{ backgroundColor: color }}
-                          title={`Pin: ${file.pinLabel}`}
-                        />
+                        {/* Pin color indicator / Merge icon */}
+                        {isMergedFile(file) ? (
+                          <Combine
+                            className="w-3 h-3 text-green-600 flex-shrink-0"
+                            title="Merged File"
+                          />
+                        ) : (
+                          <div
+                            className="w-2 h-2 rounded-sm flex-shrink-0"
+                            style={{ backgroundColor: color }}
+                            title={`Pin: ${file.pinLabel}`}
+                          />
+                        )}
 
                         {/* File name with popover menu */}
                         <Popover>
@@ -1679,7 +1718,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                           <div className="absolute inset-0 flex items-center justify-center">
                             <span className="text-xs text-muted-foreground">-</span>
                           </div>
-                        ) : dateRange.isCrop && dateRange.uniqueDates ? (
+                        ) : dateRange.isCrop && dateRange.uniqueDates && dateRange.uniqueDates.length > 0 ? (
                           // Discrete bars for CROP files (one bar per sampling day)
                           <>
                             {calculateDiscreteBars(fileWithDate).map((bar, idx) => (

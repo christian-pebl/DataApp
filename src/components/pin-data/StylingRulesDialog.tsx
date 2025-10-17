@@ -32,6 +32,14 @@ export interface StyleProperties {
   chartRightMargin?: number; // Right margin inside chart (space between plot border and right Y-axis, default: 80)
   xAxisTitlePosition?: number; // Vertical position of X-axis title from bottom (default: 40, in px)
   xAxisTitleMargin?: number; // Margin between X-axis title and plot boundary (default: 10, in px)
+  chartBottomMargin?: number; // Bottom margin inside chart (space for X-axis and title, default: -5)
+  chartHeight?: number; // Total chart container height (default: 208, which is h-52 in Tailwind)
+  xAxisTitleFontSize?: number; // Font size for X-axis title (default: 14 = 0.875rem)
+
+  // Parameter-level styling properties
+  defaultLineStyle?: 'solid' | 'dashed' | 'dotted'; // Line style for parameters (default: solid)
+  defaultOpacity?: number; // Opacity for parameters (default: 1.0, range: 0-1)
+  defaultLineWidth?: number; // Line width for parameters (default: 1, range: 1-4)
 }
 
 // Define the styling rules structure
@@ -52,7 +60,7 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
     enabled: true,
     properties: {
       xAxisRange: { min: "00:00", max: "24:00" },
-      xAxisTitle: "time",
+      xAxisTitle: "Time",
       defaultAxisMode: 'single',
       yAxisTitle: "Detection Positive Minutes (DPM)",
       yAxisWidth: 80,
@@ -64,8 +72,41 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
       },
       plotToParametersGap: 12, // Default gap (gap-3 equivalent)
       chartRightMargin: 80, // Default right margin inside chart
-      xAxisTitlePosition: 40, // Default X-axis title position from bottom
-      xAxisTitleMargin: 10 // Default margin between X-axis title and plot
+      xAxisTitlePosition: 20, // Default X-axis title position from bottom (reduced from 40)
+      xAxisTitleMargin: -5, // Default margin between X-axis title and plot (negative brings it closer)
+      chartBottomMargin: 10, // Default bottom margin (positive value for proper spacing)
+      chartHeight: 208, // Default chart height (h-52 in Tailwind = 208px)
+      xAxisTitleFontSize: 10 // Default font size to match Y-axis (0.65rem ≈ 10px)
+    }
+  },
+  {
+    suffix: "_std.csv",
+    styleName: "std_style",
+    description: "Standard interval data styling with dual y-axes showing daily DPM and DPM rate percentage",
+    enabled: true,
+    properties: {
+      xAxisTitle: "Time",
+      defaultAxisMode: 'single',
+      yAxisTitle: "Daily DPM (DPM/hr)",
+      yAxisWidth: 80,
+      secondaryYAxis: {
+        enabled: true,
+        title: "DPM rate (%hr)",
+        divideBy: 60,  // DPM / 60 * 100 = percentage of hour
+        width: 80
+      },
+      plotToParametersGap: 12, // Default gap (gap-3 equivalent)
+      chartRightMargin: 80, // Default right margin inside chart
+      xAxisTitlePosition: 20, // Default X-axis title position from bottom
+      xAxisTitleMargin: -5, // Default margin between X-axis title and plot (negative brings it closer)
+      chartBottomMargin: 10, // Default bottom margin (positive value for proper spacing)
+      chartHeight: 208, // Default chart height (h-52 in Tailwind = 208px)
+      xAxisTitleFontSize: 10, // Default font size to match Y-axis (0.65rem ≈ 10px)
+
+      // Parameter-level styling for _std files
+      defaultLineStyle: 'dashed', // Use dashed lines for _std parameters
+      defaultOpacity: 1.0, // Full opacity
+      defaultLineWidth: 1 // Standard line width
     }
   },
   // Add more rules as needed
@@ -94,10 +135,16 @@ export function StylingRulesDialog({
     rightMargin: number;
     xAxisTitlePosition: number;
     xAxisTitleMargin: number;
+    chartBottomMargin: number;
+    chartHeight: number;
+    xAxisTitleFontSize: number;
+    xAxisTitle: string;
+    yAxisTitle: string;
+    secondaryYAxisTitle: string;
   } | null>(null);
 
   // Draggable dialog state
-  const [position, setPosition] = useState({ x: 0, y: -30 }); // Start slightly higher
+  const [position, setPosition] = useState({ x: 0, y: 20 }); // Start slightly lower
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const dialogRef = React.useRef<HTMLDivElement>(null);
@@ -141,8 +188,14 @@ export function StylingRulesDialog({
       rightWidth: rule.properties.secondaryYAxis?.width || 80,
       gap: rule.properties.plotToParametersGap || 12,
       rightMargin: rule.properties.chartRightMargin || 80,
-      xAxisTitlePosition: rule.properties.xAxisTitlePosition || 40,
-      xAxisTitleMargin: rule.properties.xAxisTitleMargin || 10
+      xAxisTitlePosition: rule.properties.xAxisTitlePosition || 20,
+      xAxisTitleMargin: rule.properties.xAxisTitleMargin ?? -5,
+      chartBottomMargin: rule.properties.chartBottomMargin ?? 10,
+      chartHeight: rule.properties.chartHeight || 208,
+      xAxisTitleFontSize: rule.properties.xAxisTitleFontSize || 10,
+      xAxisTitle: rule.properties.xAxisTitle || "Time",
+      yAxisTitle: rule.properties.yAxisTitle || "Detection Positive Minutes (DPM)",
+      secondaryYAxisTitle: rule.properties.secondaryYAxis?.title || "Detection Rate (% of hour)"
     });
     setEditingRule(rule.suffix);
   };
@@ -202,6 +255,61 @@ export function StylingRulesDialog({
     }
   };
 
+  const handleChartBottomMarginChange = (suffix: string, value: number) => {
+    if (onStyleRuleUpdate) {
+      onStyleRuleUpdate(suffix, {
+        chartBottomMargin: value
+      });
+    }
+  };
+
+  const handleChartHeightChange = (suffix: string, value: number) => {
+    if (onStyleRuleUpdate) {
+      onStyleRuleUpdate(suffix, {
+        chartHeight: value
+      });
+    }
+  };
+
+  const handleXAxisTitleFontSizeChange = (suffix: string, value: number) => {
+    if (onStyleRuleUpdate) {
+      onStyleRuleUpdate(suffix, {
+        xAxisTitleFontSize: value
+      });
+    }
+  };
+
+  const handleXAxisTitleChange = (suffix: string, value: string) => {
+    if (onStyleRuleUpdate) {
+      onStyleRuleUpdate(suffix, {
+        xAxisTitle: value
+      });
+    }
+  };
+
+  const handleYAxisTitleChange = (suffix: string, value: string) => {
+    if (onStyleRuleUpdate) {
+      onStyleRuleUpdate(suffix, {
+        yAxisTitle: value
+      });
+    }
+  };
+
+  const handleSecondaryYAxisTitleChange = (suffix: string, value: string) => {
+    if (onStyleRuleUpdate) {
+      const rule = styleRules.find(r => r.suffix === suffix);
+      onStyleRuleUpdate(suffix, {
+        secondaryYAxis: {
+          ...rule?.properties.secondaryYAxis,
+          title: value,
+          enabled: rule?.properties.secondaryYAxis?.enabled || false,
+          divideBy: rule?.properties.secondaryYAxis?.divideBy || 60,
+          width: rule?.properties.secondaryYAxis?.width || 80
+        }
+      });
+    }
+  };
+
   const handleSaveChanges = () => {
     // Changes are already applied, just close
     setEditingRule(null);
@@ -211,18 +319,24 @@ export function StylingRulesDialog({
   const handleCancelChanges = (suffix: string) => {
     // Revert to original values
     if (originalValues && onStyleRuleUpdate) {
+      const rule = styleRules.find(r => r.suffix === suffix);
       onStyleRuleUpdate(suffix, {
         yAxisWidth: originalValues.leftWidth,
+        yAxisTitle: originalValues.yAxisTitle,
+        xAxisTitle: originalValues.xAxisTitle,
         plotToParametersGap: originalValues.gap,
         chartRightMargin: originalValues.rightMargin,
         xAxisTitlePosition: originalValues.xAxisTitlePosition,
         xAxisTitleMargin: originalValues.xAxisTitleMargin,
+        chartBottomMargin: originalValues.chartBottomMargin,
+        chartHeight: originalValues.chartHeight,
+        xAxisTitleFontSize: originalValues.xAxisTitleFontSize,
         secondaryYAxis: {
-          ...styleRules.find(r => r.suffix === suffix)?.properties.secondaryYAxis,
+          ...rule?.properties.secondaryYAxis,
           width: originalValues.rightWidth,
-          enabled: styleRules.find(r => r.suffix === suffix)?.properties.secondaryYAxis?.enabled || false,
-          title: styleRules.find(r => r.suffix === suffix)?.properties.secondaryYAxis?.title || "",
-          divideBy: styleRules.find(r => r.suffix === suffix)?.properties.secondaryYAxis?.divideBy || 60
+          title: originalValues.secondaryYAxisTitle,
+          enabled: rule?.properties.secondaryYAxis?.enabled || false,
+          divideBy: rule?.properties.secondaryYAxis?.divideBy || 60
         }
       });
     }
@@ -233,7 +347,7 @@ export function StylingRulesDialog({
   // Reset position when dialog opens
   React.useEffect(() => {
     if (open) {
-      setPosition({ x: 0, y: -30 });
+      setPosition({ x: 0, y: 20 });
     }
   }, [open]);
 
@@ -253,10 +367,6 @@ export function StylingRulesDialog({
             <DialogTitle>Styling Rules</DialogTitle>
             <span className="text-xs text-muted-foreground ml-auto">(drag to move)</span>
           </div>
-          <DialogDescription>
-            Configure automatic styling rules applied to stacked plots based on file suffixes.
-            These rules are applied by default when plots are loaded but can be toggled on/off.
-          </DialogDescription>
         </DialogHeader>
 
         <div className="mt-4">
@@ -297,28 +407,135 @@ export function StylingRulesDialog({
                     </TableCell>
                     <TableCell>
                       <div className="space-y-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium text-foreground leading-relaxed flex-1">{rule.description}</p>
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Info Button - Shows Configuration Details */}
+                            <TooltipProvider delayDuration={200}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 w-7 p-0"
+                                        title="View configuration details"
+                                      >
+                                        <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-80 p-3" align="end" side="left">
+                                      <div className="space-y-2">
+                                        <h4 className="text-sm font-semibold mb-2">Configuration Details</h4>
+                                        <p className="text-xs text-muted-foreground mb-2 pb-2 border-b">{rule.description}</p>
+                                        <div className="text-xs text-muted-foreground space-y-1">
+                                          {rule.properties.xAxisRange && (
+                                            <div className="flex items-start gap-1.5">
+                                              <span className="text-primary mt-0.5">•</span>
+                                              <span><strong>X-axis range:</strong> {rule.properties.xAxisRange.min} to {rule.properties.xAxisRange.max}</span>
+                                            </div>
+                                          )}
+                                          {rule.properties.xAxisTitle && (
+                                            <div className="flex items-start gap-1.5">
+                                              <span className="text-primary mt-0.5">•</span>
+                                              <span><strong>X-axis title:</strong> "{rule.properties.xAxisTitle}"</span>
+                                            </div>
+                                          )}
+                                          {rule.properties.defaultAxisMode && (
+                                            <div className="flex items-start gap-1.5">
+                                              <span className="text-primary mt-0.5">•</span>
+                                              <span><strong>Default mode:</strong> {rule.properties.defaultAxisMode} axis</span>
+                                            </div>
+                                          )}
+                                          {rule.properties.yAxisTitle && (
+                                            <div className="flex items-start gap-1.5">
+                                              <span className="text-primary mt-0.5">•</span>
+                                              <span><strong>Y-axis title:</strong> "{rule.properties.yAxisTitle}"</span>
+                                            </div>
+                                          )}
+                                          {rule.properties.secondaryYAxis?.enabled && (
+                                            <div className="flex items-start gap-1.5">
+                                              <span className="text-primary mt-0.5">•</span>
+                                              <span><strong>Secondary Y-axis:</strong> "{rule.properties.secondaryYAxis.title}" (calculated as: value ÷ {rule.properties.secondaryYAxis.divideBy} × 100)</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <p>View configuration details</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
 
-                          {/* Edit Axes Button */}
-                          {onStyleRuleUpdate && (
-                            <Popover open={editingRule === rule.suffix} onOpenChange={(open) => !open && setEditingRule(null)}>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0"
-                                  onClick={() => handleEditClick(rule)}
-                                  title="Edit layout and spacing"
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-80 max-h-[450px] overflow-y-auto p-4" align="end" side="left" sideOffset={10}>
+                            {/* Edit Axes Button */}
+                            {onStyleRuleUpdate && (
+                              <Popover open={editingRule === rule.suffix} onOpenChange={(open) => !open && setEditingRule(null)}>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0"
+                                    onClick={() => handleEditClick(rule)}
+                                    title="Edit layout and spacing"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-80 max-h-[450px] overflow-y-auto p-4" align="end" side="left" sideOffset={10}>
                                 <TooltipProvider delayDuration={200}>
                                   <div className="space-y-3">
                                     <div>
-                                      <h4 className="text-sm font-semibold">Adjust Layout & Spacing</h4>
+                                      <h4 className="text-sm font-semibold">Axis Titles & Layout</h4>
+                                    </div>
+
+                                    {/* Axis Title Text Inputs */}
+                                    <div className="space-y-2 border-b pb-3">
+                                      {/* X-Axis Title Input */}
+                                      <div className="space-y-1">
+                                        <Label htmlFor={`x-axis-title-${rule.suffix}`} className="text-xs font-medium">
+                                          X-Axis Title
+                                        </Label>
+                                        <Input
+                                          id={`x-axis-title-${rule.suffix}`}
+                                          value={rule.properties.xAxisTitle || "Time"}
+                                          onChange={(e) => handleXAxisTitleChange(rule.suffix, e.target.value)}
+                                          className="h-8 text-xs"
+                                          placeholder="Enter X-axis title"
+                                        />
+                                      </div>
+
+                                      {/* Left Y-Axis Title Input */}
+                                      <div className="space-y-1">
+                                        <Label htmlFor={`y-axis-title-${rule.suffix}`} className="text-xs font-medium">
+                                          Left Y-Axis Title
+                                        </Label>
+                                        <Input
+                                          id={`y-axis-title-${rule.suffix}`}
+                                          value={rule.properties.yAxisTitle || "Detection Positive Minutes (DPM)"}
+                                          onChange={(e) => handleYAxisTitleChange(rule.suffix, e.target.value)}
+                                          className="h-8 text-xs"
+                                          placeholder="Enter left Y-axis title"
+                                        />
+                                      </div>
+
+                                      {/* Right Y-Axis Title Input (if secondary axis enabled) */}
+                                      {rule.properties.secondaryYAxis?.enabled && (
+                                        <div className="space-y-1">
+                                          <Label htmlFor={`secondary-y-axis-title-${rule.suffix}`} className="text-xs font-medium">
+                                            Right Y-Axis Title
+                                          </Label>
+                                          <Input
+                                            id={`secondary-y-axis-title-${rule.suffix}`}
+                                            value={rule.properties.secondaryYAxis?.title || "Detection Rate (% of hour)"}
+                                            onChange={(e) => handleSecondaryYAxisTitleChange(rule.suffix, e.target.value)}
+                                            className="h-8 text-xs"
+                                            placeholder="Enter right Y-axis title"
+                                          />
+                                        </div>
+                                      )}
                                     </div>
 
                                     {/* Left Y-Axis Width Slider */}
@@ -457,11 +674,11 @@ export function StylingRulesDialog({
                                             </TooltipContent>
                                           </Tooltip>
                                         </div>
-                                        <span className="text-xs text-muted-foreground">{rule.properties.xAxisTitlePosition || 40}px</span>
+                                        <span className="text-xs text-muted-foreground">{rule.properties.xAxisTitlePosition || 20}px</span>
                                       </div>
                                       <Slider
                                         id={`x-title-pos-${rule.suffix}`}
-                                        value={[rule.properties.xAxisTitlePosition || 40]}
+                                        value={[rule.properties.xAxisTitlePosition || 20]}
                                         onValueChange={(values) => handleXAxisTitlePositionChange(rule.suffix, values[0])}
                                         min={20}
                                         max={100}
@@ -486,15 +703,102 @@ export function StylingRulesDialog({
                                             </TooltipContent>
                                           </Tooltip>
                                         </div>
-                                        <span className="text-xs text-muted-foreground">{rule.properties.xAxisTitleMargin || 10}px</span>
+                                        <span className="text-xs text-muted-foreground">{rule.properties.xAxisTitleMargin ?? -5}px</span>
                                       </div>
                                       <Slider
                                         id={`x-title-margin-${rule.suffix}`}
-                                        value={[rule.properties.xAxisTitleMargin || 10]}
+                                        value={[rule.properties.xAxisTitleMargin ?? -5]}
                                         onValueChange={(values) => handleXAxisTitleMarginChange(rule.suffix, values[0])}
-                                        min={0}
+                                        min={-20}
                                         max={30}
                                         step={2}
+                                        className="w-full"
+                                      />
+                                    </div>
+
+                                    {/* Chart Bottom Margin Slider - CRITICAL FOR X-AXIS TITLE VISIBILITY */}
+                                    <div className="space-y-1.5 border-t pt-3">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-1.5">
+                                          <Label htmlFor={`chart-bottom-margin-${rule.suffix}`} className="text-xs font-medium text-primary">
+                                            Chart Bottom Margin ⚠️
+                                          </Label>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Info className="h-3 w-3 text-primary cursor-help" />
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right" className="max-w-xs text-xs">
+                                              <p><strong>CRITICAL:</strong> Negative values will hide the X-axis title! Try increasing to 20-50 to see the title appear.</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </div>
+                                        <span className="text-xs font-semibold text-primary">{rule.properties.chartBottomMargin ?? 10}px</span>
+                                      </div>
+                                      <Slider
+                                        id={`chart-bottom-margin-${rule.suffix}`}
+                                        value={[rule.properties.chartBottomMargin ?? 10]}
+                                        onValueChange={(values) => handleChartBottomMarginChange(rule.suffix, values[0])}
+                                        min={-20}
+                                        max={80}
+                                        step={5}
+                                        className="w-full"
+                                      />
+                                    </div>
+
+                                    {/* Chart Height Slider */}
+                                    <div className="space-y-1.5">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-1.5">
+                                          <Label htmlFor={`chart-height-${rule.suffix}`} className="text-xs font-medium">
+                                            Chart Container Height
+                                          </Label>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right" className="max-w-xs text-xs">
+                                              <p>Total height of chart container. Increase if title is still cut off.</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </div>
+                                        <span className="text-xs text-muted-foreground">{rule.properties.chartHeight || 208}px</span>
+                                      </div>
+                                      <Slider
+                                        id={`chart-height-${rule.suffix}`}
+                                        value={[rule.properties.chartHeight || 208]}
+                                        onValueChange={(values) => handleChartHeightChange(rule.suffix, values[0])}
+                                        min={150}
+                                        max={400}
+                                        step={10}
+                                        className="w-full"
+                                      />
+                                    </div>
+
+                                    {/* X-Axis Title Font Size Slider */}
+                                    <div className="space-y-1.5">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-1.5">
+                                          <Label htmlFor={`x-title-font-${rule.suffix}`} className="text-xs font-medium">
+                                            X-Axis Title Font Size
+                                          </Label>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right" className="max-w-xs text-xs">
+                                              <p>Font size for the X-axis title text</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </div>
+                                        <span className="text-xs text-muted-foreground">{rule.properties.xAxisTitleFontSize || 10}px</span>
+                                      </div>
+                                      <Slider
+                                        id={`x-title-font-${rule.suffix}`}
+                                        value={[rule.properties.xAxisTitleFontSize || 10]}
+                                        onValueChange={(values) => handleXAxisTitleFontSizeChange(rule.suffix, values[0])}
+                                        min={8}
+                                        max={24}
+                                        step={1}
                                         className="w-full"
                                       />
                                     </div>
@@ -523,39 +827,7 @@ export function StylingRulesDialog({
                               </PopoverContent>
                             </Popover>
                           )}
-                        </div>
-
-                        <div className="text-xs text-muted-foreground space-y-1 bg-muted/30 p-2 rounded border">
-                          {rule.properties.xAxisRange && (
-                            <div className="flex items-start gap-1.5">
-                              <span className="text-primary mt-0.5">•</span>
-                              <span><strong>X-axis range:</strong> {rule.properties.xAxisRange.min} to {rule.properties.xAxisRange.max}</span>
-                            </div>
-                          )}
-                          {rule.properties.xAxisTitle && (
-                            <div className="flex items-start gap-1.5">
-                              <span className="text-primary mt-0.5">•</span>
-                              <span><strong>X-axis title:</strong> "{rule.properties.xAxisTitle}"</span>
-                            </div>
-                          )}
-                          {rule.properties.defaultAxisMode && (
-                            <div className="flex items-start gap-1.5">
-                              <span className="text-primary mt-0.5">•</span>
-                              <span><strong>Default mode:</strong> {rule.properties.defaultAxisMode} axis</span>
-                            </div>
-                          )}
-                          {rule.properties.yAxisTitle && (
-                            <div className="flex items-start gap-1.5">
-                              <span className="text-primary mt-0.5">•</span>
-                              <span><strong>Y-axis title:</strong> "{rule.properties.yAxisTitle}"</span>
-                            </div>
-                          )}
-                          {rule.properties.secondaryYAxis?.enabled && (
-                            <div className="flex items-start gap-1.5">
-                              <span className="text-primary mt-0.5">•</span>
-                              <span><strong>Secondary Y-axis:</strong> "{rule.properties.secondaryYAxis.title}" (calculated as: value ÷ {rule.properties.secondaryYAxis.divideBy} × 100)</span>
-                            </div>
-                          )}
+                          </div>
                         </div>
                       </div>
                     </TableCell>
@@ -564,21 +836,6 @@ export function StylingRulesDialog({
               </TableBody>
             </Table>
           )}
-        </div>
-
-        <div className="mt-4 p-3 bg-muted/50 rounded-md border">
-          <div className="flex items-start gap-2">
-            <Palette className="h-4 w-4 mt-0.5 text-muted-foreground" />
-            <div className="text-xs text-muted-foreground">
-              <p className="font-semibold mb-1">How Styling Rules Work:</p>
-              <ul className="list-disc list-inside space-y-1">
-                <li>Rules are automatically applied when files matching the suffix are loaded</li>
-                <li>Each file suffix can have its own unique styling configuration</li>
-                <li>Toggle rules on/off to control which styling is applied</li>
-                <li>More styling options will be added in future updates</li>
-              </ul>
-            </div>
-          </div>
         </div>
       </DialogContent>
     </Dialog>
