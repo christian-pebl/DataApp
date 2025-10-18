@@ -1,5 +1,6 @@
 import { createClient } from './client'
 import { v4 as uuidv4 } from 'uuid'
+import { perfLogger } from '../perf-logger'
 
 export interface PinFile {
   id: string
@@ -12,6 +13,8 @@ export interface PinFile {
   projectId: string
   startDate?: Date
   endDate?: Date
+  isDiscrete?: boolean
+  uniqueDates?: string[]
 }
 
 class FileStorageService {
@@ -152,19 +155,18 @@ class FileStorageService {
    * Get all files for a specific pin (with user authentication check)
    */
   async getPinFiles(pinId: string): Promise<PinFile[]> {
+    perfLogger.start(`getPinFiles-${pinId.slice(0, 8)}`);
+
     try {
       // Get current user to ensure they have access to this pin
-      console.log(`🔍 Getting files for pin ${pinId}...`);
       const { data: { user }, error: authError } = await this.supabase.auth.getUser()
-      
+
       if (authError || !user) {
-        console.error('❌ Authentication required to get pin files:', authError)
+        perfLogger.warn(`Auth required for pin ${pinId.slice(0, 8)}`);
         return []
       }
-      console.log(`✅ Authenticated as user: ${user.id}`);
 
       // First verify that the user owns the pin
-      console.log(`🔐 Verifying pin ownership for retrieval...`);
       const { data: pinData, error: pinError } = await this.supabase
         .from('pins')
         .select('id, user_id')
@@ -173,17 +175,11 @@ class FileStorageService {
         .single()
 
       if (pinError || !pinData) {
-        console.log('⚠️ Pin not accessible to user:', {
-          pinId,
-          userId: user.id,
-          error: pinError?.message || 'Pin not found or access denied'
-        })
+        perfLogger.warn(`Pin ${pinId.slice(0, 8)} not accessible`);
         return []
       }
-      console.log('✅ Pin ownership verified for retrieval');
 
       // Now get the files - RLS policies will handle additional filtering
-      console.log(`📂 Querying pin_files table for pin ${pinId}...`);
       const { data, error } = await this.supabase
         .from('pin_files')
         .select('*')
@@ -191,17 +187,11 @@ class FileStorageService {
         .order('uploaded_at', { ascending: false })  // Use snake_case column name
 
       if (error) {
-        console.error('❌ Get pin files error:', error)
-        console.error('Query: pin_id =', pinId);
+        perfLogger.error(`Get pin files error for ${pinId.slice(0, 8)}`, error);
         return []
       }
-      
-      console.log(`✅ Found ${data?.length || 0} file(s) in database for pin ${pinId}`);
-      if (data && data.length > 0) {
-        data.forEach((file: any) => {
-          console.log(`  - ${file.file_name} (${file.file_path})`);
-        });
-      }
+
+      perfLogger.end(`getPinFiles-${pinId.slice(0, 8)}`, `${data?.length || 0} files`);
 
       // Transform snake_case to camelCase for return
       return (data || []).map(item => ({
@@ -214,16 +204,18 @@ class FileStorageService {
         projectId: item.project_id,
         uploadedAt: new Date(item.uploaded_at),
         startDate: item.start_date ? new Date(item.start_date) : undefined,
-        endDate: item.end_date ? new Date(item.end_date) : undefined
+        endDate: item.end_date ? new Date(item.end_date) : undefined,
+        isDiscrete: item.is_discrete || false,
+        uniqueDates: item.unique_dates || undefined
       }))
     } catch (error) {
-      console.error('Get pin files error:', error)
+      perfLogger.error(`Get pin files exception for ${pinId.slice(0, 8)}`, error);
       return []
     }
   }
 
   /**
-   * Download a file from Supabase Storage
+   * Download a file from Supabase Storage by file path
    */
   async downloadFile(filePath: string): Promise<Blob | null> {
     try {
@@ -240,6 +232,47 @@ class FileStorageService {
     } catch (error) {
       console.error('Download file error:', error)
       return null
+    }
+  }
+
+  /**
+   * Download a file from Supabase Storage by file ID
+   * First queries the database to get the file path, then downloads
+   */
+  async downloadFileById(fileId: string): Promise<{ success: boolean; data?: { blob: Blob; fileName: string }; error?: string }> {
+    try {
+      console.log('📥 Downloading file by ID:', fileId);
+
+      // Get file metadata from database
+      const { data: fileData, error: dbError } = await this.supabase
+        .from('pin_files')
+        .select('file_path, file_name')
+        .eq('id', fileId)
+        .single();
+
+      if (dbError || !fileData) {
+        console.error('❌ Failed to get file metadata:', dbError);
+        return { success: false, error: 'File not found in database' };
+      }
+
+      console.log('📄 File metadata:', { filePath: fileData.file_path, fileName: fileData.file_name });
+
+      // Download the file using the file path
+      const { data, error } = await this.supabase.storage
+        .from('pin-files')
+        .download(fileData.file_path);
+
+      if (error) {
+        console.error('❌ Download error:', error);
+        return { success: false, error: error.message };
+      }
+
+      console.log('✅ File downloaded successfully');
+      return { success: true, data: { blob: data, fileName: fileData.file_name } };
+
+    } catch (error) {
+      console.error('❌ Download file by ID error:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 
@@ -496,24 +529,51 @@ class FileStorageService {
   }
 
   /**
-   * Get all files for a project
+   * Get all files for a project (with user authentication check)
    */
   async getProjectFiles(projectId: string): Promise<PinFile[]> {
-    try {
-      const { data, error } = await this.supabase
-        .from('pin_files')
-        .select('*')
-        .eq('projectId', projectId)
-        .order('uploadedAt', { ascending: false })
+    perfLogger.start(`getProjectFiles-${projectId.slice(0, 8)}`);
 
-      if (error) {
-        console.error('Get project files error:', error)
+    try {
+      // Get current user to ensure they have access
+      const { data: { user }, error: authError } = await this.supabase.auth.getUser()
+
+      if (authError || !user) {
+        perfLogger.warn(`Auth required for project ${projectId.slice(0, 8)}`);
         return []
       }
 
-      return data || []
+      // Query all files for the project - RLS policies will handle access control
+      const { data, error } = await this.supabase
+        .from('pin_files')
+        .select('*')
+        .eq('project_id', projectId)  // Use snake_case column name
+        .order('uploaded_at', { ascending: false })  // Use snake_case column name
+
+      if (error) {
+        perfLogger.error(`Get project files error for ${projectId.slice(0, 8)}`, error);
+        return []
+      }
+
+      perfLogger.end(`getProjectFiles-${projectId.slice(0, 8)}`, `${data?.length || 0} files`);
+
+      // Transform snake_case to camelCase for return
+      return (data || []).map(item => ({
+        id: item.id,
+        pinId: item.pin_id,
+        fileName: item.file_name,
+        filePath: item.file_path,
+        fileSize: item.file_size,
+        fileType: item.file_type,
+        projectId: item.project_id,
+        uploadedAt: new Date(item.uploaded_at),
+        startDate: item.start_date ? new Date(item.start_date) : undefined,
+        endDate: item.end_date ? new Date(item.end_date) : undefined,
+        isDiscrete: item.is_discrete || false,
+        uniqueDates: item.unique_dates || undefined
+      }))
     } catch (error) {
-      console.error('Get project files error:', error)
+      perfLogger.error(`Get project files exception for ${projectId.slice(0, 8)}`, error);
       return []
     }
   }
@@ -531,6 +591,103 @@ class FileStorageService {
     } catch (error) {
       console.error('Get public URL error:', error)
       return null
+    }
+  }
+
+  /**
+   * Update visual properties (style rules) for a file
+   */
+  async updateFileVisualProperties(
+    fileId: string,
+    visualProperties: Record<string, any>
+  ): Promise<boolean> {
+    try {
+      console.log('🎨 Updating visual properties for file:', fileId);
+
+      // Get current user to ensure they have access
+      const { data: { user }, error: authError } = await this.supabase.auth.getUser();
+
+      if (authError || !user) {
+        console.error('❌ Authentication required to update visual properties:', authError);
+        return false;
+      }
+
+      console.log(`✅ Authenticated as user: ${user.id}`);
+
+      // Get file metadata to verify ownership
+      const { data: fileData, error: getError } = await this.supabase
+        .from('pin_files')
+        .select('pin_id, visual_properties')
+        .eq('id', fileId)
+        .single();
+
+      if (getError || !fileData) {
+        console.error('❌ Get file data error:', getError);
+        return false;
+      }
+
+      // Verify user owns the pin
+      const { data: pinData, error: pinError } = await this.supabase
+        .from('pins')
+        .select('user_id')
+        .eq('id', fileData.pin_id)
+        .single();
+
+      if (pinError || !pinData) {
+        console.error('❌ Get pin data error:', pinError);
+        return false;
+      }
+
+      // Check if user owns the pin associated with this file
+      if (pinData.user_id !== user.id) {
+        console.error('🚫 User does not have permission to update this file');
+        return false;
+      }
+
+      // Merge new visual properties with existing ones
+      const existingProps = fileData.visual_properties || {};
+      const mergedProps = { ...existingProps, ...visualProperties };
+
+      // Update the visual properties in the database
+      console.log('💾 Updating visual properties in database...');
+      const { error: updateError } = await this.supabase
+        .from('pin_files')
+        .update({ visual_properties: mergedProps })
+        .eq('id', fileId);
+
+      if (updateError) {
+        console.error('❌ Database update error:', updateError);
+        return false;
+      }
+
+      console.log('✅ Visual properties updated successfully');
+      return true;
+    } catch (error) {
+      console.error('❌ Update visual properties error:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get visual properties for a file
+   */
+  async getFileVisualProperties(fileId: string): Promise<Record<string, any> | null> {
+    try {
+      const { data, error } = await this.supabase
+        .from('pin_files')
+        .select('visual_properties')
+        .eq('id', fileId)
+        .single();
+
+      if (error) {
+        console.error('❌ Get visual properties error:', error);
+        return null;
+      }
+
+      return data?.visual_properties || {};
+    } catch (error) {
+      console.error('❌ Get visual properties error:', error);
+      return null;
     }
   }
 }

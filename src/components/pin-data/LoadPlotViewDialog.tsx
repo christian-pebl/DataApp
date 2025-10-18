@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { FolderOpen, Trash2, AlertTriangle, FileText, Calendar } from "lucide-react";
+import { FolderOpen, Trash2, AlertTriangle, FileText, Calendar, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import type { SavedPlotView, PlotViewValidationResult } from "@/lib/supabase/plot-view-types";
@@ -52,14 +52,7 @@ export function LoadPlotViewDialog({
   const [viewToDelete, setViewToDelete] = useState<SavedPlotView | null>(null);
   const { toast } = useToast();
 
-  // Load views when dialog opens
-  useEffect(() => {
-    if (open) {
-      loadViews();
-    }
-  }, [open, projectId]);
-
-  const loadViews = async () => {
+  const loadViews = useCallback(async () => {
     setIsLoading(true);
 
     try {
@@ -85,7 +78,14 @@ export function LoadPlotViewDialog({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [projectId, toast]);
+
+  // Load views when dialog opens
+  useEffect(() => {
+    if (open) {
+      loadViews();
+    }
+  }, [open, loadViews]);
 
   const handleLoadView = async (view: SavedPlotView) => {
     console.log('📂 Loading plot view:', view.name);
@@ -246,10 +246,14 @@ export function LoadPlotViewDialog({
                             variant="ghost"
                             size="sm"
                             onClick={() => handleDeleteClick(view)}
-                            disabled={deletingViewId === view.id}
+                            disabled={deletingViewId === view.id || isLoading}
                             className="h-8 text-destructive hover:text-destructive"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            {deletingViewId === view.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
                           </Button>
                         </div>
                       </TableCell>
@@ -276,12 +280,20 @@ export function LoadPlotViewDialog({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={!!deletingViewId}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteConfirm}
+              disabled={!!deletingViewId}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {deletingViewId ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

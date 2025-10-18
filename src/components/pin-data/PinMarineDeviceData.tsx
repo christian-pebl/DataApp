@@ -45,6 +45,7 @@ interface PlotConfig {
   fileType?: 'GP' | 'FPOD' | 'Subcam';
   files?: File[];
   fileName?: string; // Display name of the file(s)
+  fileId?: string; // Database ID of the file for restoration
   pinId?: string; // Pin ID for saving corrected files to database
   // For marine/meteo plots
   location?: { lat: number; lon: number };
@@ -100,9 +101,11 @@ interface PinMarineDeviceDataProps {
     error?: string;
   }>;
   projectId?: string;
+  // Auto-load saved plot view
+  initialViewToLoad?: string; // Plot view ID to auto-load on mount
 }
 
-export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, multiFileMergeMode = 'sequential', objectLocation, objectName, allProjectFilesForTimeline, getFileDateRange, projectId }: PinMarineDeviceDataProps) {
+export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, multiFileMergeMode = 'sequential', objectLocation, objectName, allProjectFilesForTimeline, getFileDateRange, projectId, initialViewToLoad }: PinMarineDeviceDataProps) {
   const { toast } = useToast();
 
   // State for managing plots with file data
@@ -613,8 +616,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         fileType: plot.fileType,
         pinId: plot.pinId,
         fileName: plot.fileName,
-        fileId: plot.files?.[0] ? undefined : undefined, // TODO: Add file ID tracking
-        filePath: plot.files?.[0] ? undefined : undefined, // TODO: Add file path tracking
+        fileId: plot.fileId, // Now using the actual stored fileId
         location: plot.location,
         locationName: plot.locationName,
         timeRange: plot.timeRange,
@@ -639,16 +641,33 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     validation: PlotViewValidationResult
   ) => {
     try {
-      console.log('🔄 Restoring plot view:', view.name);
+      console.log('🎨 [RESTORE] Starting plot view restoration:', view.name);
+      console.log('🎨 [RESTORE] View created at:', view.created_at);
 
       const config = view.view_config;
+
+      console.log('🎨 [RESTORE] View config details:', {
+        totalPlots: config.metadata.totalPlots,
+        timeAxisMode: config.timeAxisMode,
+        globalBrushRange: config.globalBrushRange,
+        timeRoundingInterval: config.timeRoundingInterval,
+        mergeRulesCount: config.mergeRules.length
+      });
 
       // Filter plots to only include those with available files
       const availablePlots = config.plots.filter(plot =>
         validation.availablePlotIds.includes(plot.id)
       );
 
+      console.log('🎨 [RESTORE] Plot availability:', {
+        totalInView: config.plots.length,
+        available: availablePlots.length,
+        unavailable: config.plots.length - availablePlots.length,
+        availableIds: availablePlots.map(p => p.id)
+      });
+
       if (availablePlots.length === 0) {
+        console.error('❌ [RESTORE] No plots available to restore');
         toast({
           variant: "destructive",
           title: "Cannot Restore View",
@@ -659,6 +678,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
 
       // Show warning if some plots are missing
       if (availablePlots.length < config.plots.length) {
+        console.warn('⚠️ [RESTORE] Partial restoration - some files unavailable');
         toast({
           variant: "default",
           title: "Partial Restore",
@@ -666,14 +686,17 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         });
       }
 
+      console.log('⚙️ [RESTORE] Restoring time axis configuration...');
       // Restore time axis configuration
       setTimeAxisMode(config.timeAxisMode);
       setGlobalBrushRange(config.globalBrushRange);
 
+      console.log('⚙️ [RESTORE] Restoring settings...');
       // Restore settings
       setTimeRoundingInterval(config.timeRoundingInterval);
       setMergeRules(config.mergeRules);
 
+      console.log('👁️ [RESTORE] Restoring visibility state...');
       // Restore visibility state
       const newVisibilityState: Record<string, { params: string[], colors: Record<string, string> }> = {};
       availablePlots.forEach(plot => {
@@ -684,35 +707,180 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       });
       setPlotVisibilityState(newVisibilityState);
 
-      // Restore plots
-      // Note: For device plots with files, we need to re-download them
-      // This is a simplified version - full implementation would need file re-downloading
-      const restoredPlots: PlotConfig[] = availablePlots.map(savedPlot => ({
-        id: savedPlot.id,
-        title: savedPlot.title,
-        type: savedPlot.type,
-        fileType: savedPlot.fileType,
-        pinId: savedPlot.pinId,
-        fileName: savedPlot.fileName,
-        files: [], // TODO: Re-download files if needed
-        location: savedPlot.location,
-        locationName: savedPlot.locationName,
-        timeRange: savedPlot.timeRange,
-        isMerged: savedPlot.isMerged,
-        mergedParams: savedPlot.mergedParams
-      }));
+      console.log('👁️ [RESTORE] Visibility state:', newVisibilityState);
+
+      // Restore plots - download files for device plots
+      console.log('📥 [RESTORE] Starting plot restoration. Available plots:', availablePlots.length);
+
+      // Log each plot's data
+      availablePlots.forEach((plot, idx) => {
+        console.log(`📊 [RESTORE] Plot ${idx + 1}/${availablePlots.length}:`, {
+          id: plot.id,
+          title: plot.title,
+          type: plot.type,
+          location: plot.location,
+          locationName: plot.locationName,
+          timeRange: plot.timeRange,
+          fileId: plot.fileId,
+          fileName: plot.fileName,
+          visibleParameters: plot.visibleParameters,
+          hasColors: Object.keys(plot.parameterColors).length > 0
+        });
+      });
+
+      console.log('📦 [RESTORE] Starting file downloads for device plots...');
+
+      const restoredPlots: PlotConfig[] = await Promise.all(
+        availablePlots.map(async (savedPlot, idx) => {
+          console.log(`📦 [RESTORE] Processing plot ${idx + 1}/${availablePlots.length}: "${savedPlot.title}"`);
+          console.log(`🔍 [RESTORE] savedPlot details:`, {
+            type: savedPlot.type,
+            fileId: savedPlot.fileId,
+            fileName: savedPlot.fileName,
+            fileType: savedPlot.fileType,
+            pinId: savedPlot.pinId,
+            hasFileId: !!savedPlot.fileId,
+            entireObject: savedPlot
+          });
+          let downloadedFiles: File[] = [];
+
+          // If it's a device plot with a file ID, download the file
+          if (savedPlot.type === 'device' && savedPlot.fileName) {
+            try {
+              let fileIdToUse = savedPlot.fileId;
+
+              // FALLBACK: If fileId is missing (old saved plots), look it up by fileName
+              if (!fileIdToUse) {
+                console.warn(`⚠️ [RESTORE] fileId missing for "${savedPlot.fileName}", attempting lookup by fileName...`);
+
+                const { createClient } = await import('@/lib/supabase/client');
+                const supabase = createClient();
+
+                // Try to find the file by name in pin_files table
+                const { data: fileRecord, error: lookupError } = await supabase
+                  .from('pin_files')
+                  .select('id, file_name')
+                  .eq('file_name', savedPlot.fileName)
+                  .limit(1)
+                  .single();
+
+                if (lookupError || !fileRecord) {
+                  console.error(`❌ [RESTORE] Could not find file "${savedPlot.fileName}" in database:`, lookupError);
+
+                  // Try merged_files table as fallback
+                  const { data: mergedRecord, error: mergedLookupError } = await supabase
+                    .from('merged_files')
+                    .select('id, file_name')
+                    .eq('file_name', savedPlot.fileName)
+                    .limit(1)
+                    .single();
+
+                  if (mergedLookupError || !mergedRecord) {
+                    console.error(`❌ [RESTORE] File not found in merged_files either:`, mergedLookupError);
+                  } else {
+                    fileIdToUse = mergedRecord.id;
+                    console.log(`✅ [RESTORE] Found file in merged_files table: ${fileIdToUse}`);
+                  }
+                } else {
+                  fileIdToUse = fileRecord.id;
+                  console.log(`✅ [RESTORE] Found file in pin_files table: ${fileIdToUse}`);
+                }
+              }
+
+              if (!fileIdToUse) {
+                console.error(`❌ [RESTORE] Cannot download file - no fileId available for "${savedPlot.fileName}"`);
+                throw new Error(`File "${savedPlot.fileName}" not found in database`);
+              }
+
+              console.log(`📥 [RESTORE] Plot is device type, downloading file...`, {
+                fileName: savedPlot.fileName,
+                fileId: fileIdToUse,
+                fileType: savedPlot.fileType,
+                wasLookedUp: !savedPlot.fileId
+              });
+
+              // Import the file storage service
+              const { fileStorageService } = await import('@/lib/supabase/file-storage-service');
+
+              // Download the file by ID (will query database for path first)
+              const result = await fileStorageService.downloadFileById(fileIdToUse);
+
+              console.log(`📥 [RESTORE] Download result for "${savedPlot.title}":`, {
+                success: result.success,
+                hasData: !!result.data,
+                error: result.error,
+                blobSize: result.data?.blob.size
+              });
+
+              if (result.success && result.data) {
+                // Convert blob to File object
+                const file = new File(
+                  [result.data.blob],
+                  result.data.fileName,
+                  { type: 'text/csv' }
+                );
+                downloadedFiles = [file];
+                console.log(`✅ [RESTORE] File downloaded successfully: ${result.data.fileName} (${result.data.blob.size} bytes)`);
+              } else {
+                console.error(`❌ [RESTORE] Failed to download file for plot "${savedPlot.title}":`, result.error);
+              }
+            } catch (error) {
+              console.error(`❌ [RESTORE] Exception while downloading file for plot "${savedPlot.title}":`, error);
+            }
+          } else if (savedPlot.type === 'marine-meteo') {
+            console.log(`🌊 [RESTORE] Plot is marine-meteo type, no file download needed`);
+          } else {
+            console.log(`ℹ️ [RESTORE] Plot type "${savedPlot.type}" does not require file download`);
+          }
+
+          const restoredPlot = {
+            id: savedPlot.id,
+            title: savedPlot.title,
+            type: savedPlot.type,
+            fileType: savedPlot.fileType,
+            pinId: savedPlot.pinId,
+            fileName: savedPlot.fileName,
+            files: downloadedFiles,
+            location: savedPlot.location,
+            locationName: savedPlot.locationName,
+            timeRange: savedPlot.timeRange,
+            isMerged: savedPlot.isMerged,
+            mergedParams: savedPlot.mergedParams
+          };
+
+          console.log(`✅ [RESTORE] Plot object created for "${savedPlot.title}":`, {
+            id: restoredPlot.id,
+            type: restoredPlot.type,
+            filesCount: restoredPlot.files.length,
+            hasLocation: !!restoredPlot.location
+          });
+
+          return restoredPlot;
+        })
+      );
+
+      console.log('📋 [RESTORE] All plots processed, setting plots state...', {
+        plotsCount: restoredPlots.length,
+        plotIds: restoredPlots.map(p => p.id)
+      });
 
       setPlots(restoredPlots);
 
-      console.log('✅ Plot view restored successfully');
+      console.log('✅✅✅ [RESTORE] Plot view restored successfully! ✅✅✅');
+      console.log('📊 [RESTORE] Final state:', {
+        plots: restoredPlots.length,
+        timeAxisMode: config.timeAxisMode,
+        globalBrushRange: config.globalBrushRange
+      });
 
       toast({
         title: "View Restored",
-        description: `"${view.name}" has been loaded`
+        description: `"${view.name}" has been loaded with ${restoredPlots.length} plot(s)`
       });
 
     } catch (error) {
-      console.error('❌ Error restoring plot view:', error);
+      console.error('❌ [RESTORE] Error restoring plot view:', error);
+      console.error('❌ [RESTORE] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
       toast({
         variant: "destructive",
         title: "Restore Failed",
@@ -720,6 +888,137 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       });
     }
   }, [toast]);
+
+  // Auto-load plot from session storage (redirected from data-explorer)
+  useEffect(() => {
+    const checkForPendingPlotLoad = async () => {
+      try {
+        console.log('🔍 [PINMARINEDEVICEDATA] useEffect triggered - checking for pending plot load');
+        console.log('🔍 [PINMARINEDEVICEDATA] Current state:', {
+          projectId: projectId || 'NOT SET',
+          fileType,
+          filesLength: files.length,
+          hasRestoreFunction: !!restorePlotViewState
+        });
+
+        const storedData = sessionStorage.getItem('pebl-load-plot-view');
+        if (!storedData) {
+          console.log('ℹ️ [PINMARINEDEVICEDATA] No pending plot load in sessionStorage');
+          return;
+        }
+
+        const parsedData = JSON.parse(storedData);
+        const { viewId, viewName, timestamp } = parsedData;
+
+        console.log('✅ [PINMARINEDEVICEDATA] Found pending plot load:', {
+          viewId,
+          viewName,
+          timestamp,
+          age: Date.now() - timestamp,
+          maxAge: 30000
+        });
+
+        // Only auto-load if the timestamp is recent (within 30 seconds)
+        const now = Date.now();
+        if (now - timestamp > 30000) {
+          console.warn('⏰ [PINMARINEDEVICEDATA] Plot load expired (>30s old), removing from sessionStorage');
+          sessionStorage.removeItem('pebl-load-plot-view');
+          return;
+        }
+
+        console.log('🔄 [PINMARINEDEVICEDATA] Starting auto-load of plot view:', viewName);
+
+        // Clear the flag immediately to prevent re-loading
+        sessionStorage.removeItem('pebl-load-plot-view');
+        console.log('🗑️ [PINMARINEDEVICEDATA] Cleared sessionStorage to prevent duplicate loads');
+
+        if (!projectId) {
+          console.error('❌ [PINMARINEDEVICEDATA] Cannot auto-load plot: No projectId available');
+          console.error('❌ [PINMARINEDEVICEDATA] projectId is:', projectId);
+          toast({
+            variant: "destructive",
+            title: "Cannot Load Plot",
+            description: "Project context not available"
+          });
+          return;
+        }
+
+        console.log('📡 [PINMARINEDEVICEDATA] Loading plot view from database...', {
+          viewId,
+          projectId
+        });
+
+        // Load and restore the plot view
+        const { plotViewService } = await import('@/lib/supabase/plot-view-service');
+
+        const loadResult = await plotViewService.loadPlotView(viewId);
+
+        console.log('📦 [PINMARINEDEVICEDATA] Load result:', {
+          success: loadResult.success,
+          hasData: !!loadResult.data,
+          error: loadResult.error,
+          viewName: loadResult.data?.name
+        });
+
+        if (!loadResult.success || !loadResult.data) {
+          console.error('❌ [PINMARINEDEVICEDATA] Failed to load plot view:', loadResult.error);
+          toast({
+            variant: "destructive",
+            title: "Failed to Load Plot",
+            description: loadResult.error || "Could not load the saved plot"
+          });
+          return;
+        }
+
+        console.log('✅ [PINMARINEDEVICEDATA] Plot view loaded successfully, validating...');
+        console.log('📊 [PINMARINEDEVICEDATA] View config:', {
+          totalPlots: loadResult.data.view_config.metadata.totalPlots,
+          timeAxisMode: loadResult.data.view_config.timeAxisMode,
+          plotCount: loadResult.data.view_config.plots.length
+        });
+
+        const validation = await plotViewService.validatePlotView(loadResult.data.view_config);
+
+        console.log('🔍 [PINMARINEDEVICEDATA] Validation result:', {
+          valid: validation.valid,
+          allFilesAvailable: validation.allFilesAvailable,
+          availablePlotIds: validation.availablePlotIds,
+          missingFiles: validation.missingFiles,
+          warnings: validation.warnings
+        });
+
+        if (!validation.valid) {
+          console.error('❌ [PINMARINEDEVICEDATA] Validation failed - view references unavailable files');
+          toast({
+            variant: "destructive",
+            title: "Cannot Load Plot",
+            description: "This plot references files that are no longer available"
+          });
+          return;
+        }
+
+        console.log('🎨 [PINMARINEDEVICEDATA] Validation passed, restoring plot view state...');
+
+        // Restore the plot view
+        await restorePlotViewState(loadResult.data, validation);
+
+        console.log('✅ [PINMARINEDEVICEDATA] Plot view restoration complete!');
+
+      } catch (error) {
+        console.error('❌ [PINMARINEDEVICEDATA] Error auto-loading plot view:', error);
+        console.error('❌ [PINMARINEDEVICEDATA] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+        toast({
+          variant: "destructive",
+          title: "Auto-Load Failed",
+          description: "Failed to automatically load the plot"
+        });
+        // Clear the flag on error
+        sessionStorage.removeItem('pebl-load-plot-view');
+      }
+    };
+
+    checkForPendingPlotLoad();
+  }, [projectId, toast, restorePlotViewState, fileType, files.length]);
 
   // Plot management functions
   const addPlot = useCallback((
@@ -732,6 +1031,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       locationName?: string;
       timeRange?: { startDate: string; endDate: string };
       pinId?: string;
+      fileId?: string; // Database ID of the file for restoration
     }
   ) => {
     setPlots((prevPlots) => [
@@ -744,6 +1044,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         fileType: options?.fileType,
         files: type === 'device' ? files : undefined,
         fileName: type === 'device' ? getFileName(files) : undefined,
+        fileId: options?.fileId, // Store the database file ID
         pinId: options?.pinId,
         // Marine/meteo plot properties
         location: options?.location,
@@ -1754,11 +2055,12 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
               const downloadedFile = await onDownloadFile(fileOption.pinId, fileOption.fileName);
 
               if (downloadedFile) {
-                // Add plot with downloaded file
+                // Add plot with downloaded file AND its database ID
                 addPlot('device', [downloadedFile], {
                   fileType: fileOption.fileType,
                   customTitle: fileOption.fileName,
-                  pinId: fileOption.pinId
+                  pinId: fileOption.pinId,
+                  fileId: file.id // Store the database file ID for restoration
                 });
               } else {
                 console.error('Failed to download file:', fileOption.fileName);
@@ -1773,7 +2075,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
               addPlot('device', fileOption.files, {
                 fileType: fileOption.fileType,
                 customTitle: fileOption.fileName,
-                pinId: fileOption.pinId
+                pinId: fileOption.pinId,
+                fileId: file.id // Store the database file ID for restoration
               });
             }
           }}
