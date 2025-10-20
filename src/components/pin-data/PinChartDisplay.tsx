@@ -1005,19 +1005,40 @@ export function PinChartDisplay({
   };
 
   const toggleParameterVisibility = (parameter: string) => {
-    setParameterStates(prev => ({
-      ...prev,
-      [parameter]: {
-        ...prev[parameter],
-        visible: !prev[parameter]?.visible
-      }
-    }));
+    console.log('[TOGGLE VISIBILITY] Called for parameter:', parameter);
+    console.log('[TOGGLE VISIBILITY] Current state:', parameterStates[parameter]);
+
+    setParameterStates(prev => {
+      const newValue = !prev[parameter]?.visible;
+      console.log('[TOGGLE VISIBILITY] Setting visible to:', newValue);
+      console.log('[TOGGLE VISIBILITY] All parameters before update:', Object.keys(prev).map(k => ({ name: k, visible: prev[k]?.visible })));
+
+      const updated = {
+        ...prev,
+        [parameter]: {
+          ...prev[parameter],
+          visible: newValue
+        }
+      };
+
+      console.log('[TOGGLE VISIBILITY] All parameters after update:', Object.keys(updated).map(k => ({ name: k, visible: updated[k]?.visible })));
+      return updated;
+    });
   };
 
   const toggleSolo = (parameter: string) => {
+    console.log('[TOGGLE SOLO] Called for parameter:', parameter);
+
     setParameterStates(prev => {
       const newState = { ...prev };
       const currentlySolo = newState[parameter]?.isSolo || false;
+
+      console.log('[TOGGLE SOLO] Currently solo?:', currentlySolo);
+      console.log('[TOGGLE SOLO] Before update - All parameters:', Object.keys(newState).map(k => ({
+        name: k,
+        visible: newState[k]?.visible,
+        isSolo: newState[k]?.isSolo
+      })));
 
       // If this parameter is currently solo, turn off solo and show all
       // If not solo, make this one solo and hide others
@@ -1036,13 +1057,28 @@ export function PinChartDisplay({
           };
         }
       });
+
+      console.log('[TOGGLE SOLO] After update - All parameters:', Object.keys(newState).map(k => ({
+        name: k,
+        visible: newState[k]?.visible,
+        isSolo: newState[k]?.isSolo
+      })));
+
       return newState;
     });
   };
 
   const showOnlyParameter = (parameter: string) => {
+    console.log('[SHOW ONLY] Called for parameter:', parameter);
+
     setParameterStates(prev => {
       const newState = { ...prev };
+
+      console.log('[SHOW ONLY] Before update - All parameters:', Object.keys(newState).map(k => ({
+        name: k,
+        visible: newState[k]?.visible
+      })));
+
       // Hide all parameters except the clicked one
       Object.keys(newState).forEach(key => {
         newState[key] = {
@@ -1050,6 +1086,12 @@ export function PinChartDisplay({
           visible: key === parameter
         };
       });
+
+      console.log('[SHOW ONLY] After update - All parameters:', Object.keys(newState).map(k => ({
+        name: k,
+        visible: newState[k]?.visible
+      })));
+
       return newState;
     });
   };
@@ -2576,14 +2618,24 @@ export function PinChartDisplay({
             <div className="space-y-1 h-[210px] overflow-y-auto">
               {(() => {
                 // Apply filters to parameters - now supports multiple selections
-                // Use allDisplayParameters to include both base and MA parameters
-                let filteredParameters = allDisplayParameters;
+                // Use ALL numeric parameters + MA parameters, regardless of visibility
+                // Visibility only controls plot rendering, not parameter list display
+                let filteredParameters = [...numericParameters, ...movingAverageParameters];
+
+                console.log('[PARAM LIST RENDER] Starting with ALL parameters (numeric + MA):', filteredParameters.length, filteredParameters);
+                console.log('[PARAM LIST RENDER] visibleParameters:', visibleParameters.length, visibleParameters);
+                console.log('[PARAM LIST RENDER] minimalView:', minimalView);
+                console.log('[PARAM LIST RENDER] sourceFilter:', sourceFilter);
+                console.log('[PARAM LIST RENDER] dateFilter:', dateFilter);
+                console.log('[PARAM LIST RENDER] unitFilter:', unitFilter);
+                console.log('[PARAM LIST RENDER] stationFilter:', stationFilter);
 
                 // Apply source filter (Porpoise, Dolphin, Sonar)
                 if (sourceFilter.length > 0) {
                   filteredParameters = filteredParameters.filter(param =>
                     sourceFilter.some(source => param.toLowerCase().includes(source.toLowerCase()))
                   );
+                  console.log('[PARAM LIST RENDER] After source filter:', filteredParameters.length);
                 }
 
                 // Apply date filter (e.g., [2406_2407])
@@ -2591,6 +2643,7 @@ export function PinChartDisplay({
                   filteredParameters = filteredParameters.filter(param =>
                     dateFilter.some(date => param.includes(`[${date}]`))
                   );
+                  console.log('[PARAM LIST RENDER] After date filter:', filteredParameters.length);
                 }
 
                 // Apply unit filter (DPM, Clicks)
@@ -2598,6 +2651,7 @@ export function PinChartDisplay({
                   filteredParameters = filteredParameters.filter(param =>
                     unitFilter.some(unit => param.includes(`(${unit})`))
                   );
+                  console.log('[PARAM LIST RENDER] After unit filter:', filteredParameters.length);
                 }
 
                 // Apply station filter (e.g., [C_S], [C_W], [F_L])
@@ -2605,6 +2659,7 @@ export function PinChartDisplay({
                   filteredParameters = filteredParameters.filter(param =>
                     stationFilter.some(station => param.includes(`[${station}]`))
                   );
+                  console.log('[PARAM LIST RENDER] After station filter:', filteredParameters.length);
                 }
 
                 // In minimal view, filter to show only visible parameters and sort alphabetically
@@ -2613,6 +2668,9 @@ export function PinChartDisplay({
                       .filter(param => parameterStates[param]?.visible)
                       .sort((a, b) => a.localeCompare(b))
                   : filteredParameters;
+
+                console.log('[PARAM LIST RENDER] After minimal view filter, parametersToShow:', parametersToShow.length, parametersToShow);
+                console.log('[PARAM LIST RENDER] parameterStates visibility:', Object.keys(parameterStates).map(k => ({ name: k, visible: parameterStates[k]?.visible })));
 
                 return parametersToShow.map((parameter, index) => {
                 const state = parameterStates[parameter];
