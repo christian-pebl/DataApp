@@ -1734,9 +1734,10 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     const isSecondPlotStd = secondPlot.fileName?.includes('_std') || false;
     const bothAreStd = isFirstPlotStd && isSecondPlotStd;
 
-    // Create filename with _std suffix if both sources are _std files
+    // Create filename with _diff_std.csv suffix if both sources are _std files
+    // This matches the styling rule in StylingRulesDialog.tsx
     const subtractedFileName = bothAreStd
-      ? `Subtracted_std: ${resultParamName}`
+      ? `Subtracted: ${resultParamName}_diff_std.csv`
       : `Subtracted: ${resultParamName}`;
 
     console.log('➖ Subtracted plot filename logic:', {
@@ -2072,12 +2073,21 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
               }
             } else {
               // Files already loaded, add plot directly
-              addPlot('device', fileOption.files, {
-                fileType: fileOption.fileType,
-                customTitle: fileOption.fileName,
-                pinId: fileOption.pinId,
-                fileId: file.id // Store the database file ID for restoration
-              });
+              if (fileOption.files.length > 0) {
+                addPlot('device', fileOption.files, {
+                  fileType: fileOption.fileType,
+                  customTitle: fileOption.fileName,
+                  pinId: fileOption.pinId,
+                  fileId: file.id // Store the database file ID for restoration
+                });
+              } else {
+                console.error('❌ No files to add and no download function provided');
+                toast({
+                  variant: "destructive",
+                  title: "Cannot Add Plot",
+                  description: "No file data available. Please try reloading the page."
+                });
+              }
             }
           }}
         />

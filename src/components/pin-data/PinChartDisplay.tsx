@@ -19,8 +19,9 @@ import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
 import { fileStorageService } from '@/lib/supabase/file-storage-service';
-import { DEFAULT_STYLE_RULES, type StyleRule } from './StylingRulesDialog';
+import { DEFAULT_STYLE_RULES, STYLE_RULES_VERSION, type StyleRule } from './StylingRulesDialog';
 import { ParameterFilterPanel } from './ParameterFilterPanel';
+import { PinChartDisplaySpotSample } from './PinChartDisplaySpotSample';
 
 // Lazy load StylingRulesDialog - only loads when user clicks styling button
 const StylingRulesDialog = dynamic(
@@ -53,6 +54,9 @@ interface PinChartDisplayProps {
   rawFiles?: File[];
   // Pin ID for saving corrected files to database
   pinId?: string;
+  // Spot-sample data props (for CROP, CHEM, WQ, EDNA files)
+  detectedSampleIdColumn?: string | null;
+  headers?: string[];
 }
 
 // Color palette matching the marine data theme
@@ -293,21 +297,23 @@ export function PinChartDisplay({
   currentDateFormat,
   onDateFormatChange,
   rawFiles,
-  pinId
+  pinId,
+  detectedSampleIdColumn,
+  headers
 }: PinChartDisplayProps) {
   // Toggle state for switching between chart and table view
   const [showTable, setShowTable] = useState(false);
 
-  // Minimal view state - shows only selected parameters without borders
-  const [minimalView, setMinimalView] = useState(false);
+  // Compact view state - shows only selected parameters without borders
+  const [compactView, setCompactView] = useState(false);
 
-  // Minimal view parameter name filtering
+  // Compact view parameter name filtering
   const [hideUnits, setHideUnits] = useState(false);
   const [hideDates, setHideDates] = useState(false);
   const [hideStations, setHideStations] = useState(false);
   const [hideParameterName, setHideParameterName] = useState(false);
 
-  // Custom parameter names for direct editing in minimal view
+  // Custom parameter names for direct editing in compact view
   const [customParameterNames, setCustomParameterNames] = useState<Record<string, string>>({});
 
   // Axis mode state - default to multi axis
@@ -350,6 +356,9 @@ export function PinChartDisplay({
   // X-axis year display toggle
   const [showYearInXAxis, setShowYearInXAxis] = useState(false);
 
+  // Custom Y-axis label
+  const [customYAxisLabel, setCustomYAxisLabel] = useState<string>('');
+
   // Date format preview dialog state
   const [showDateFormatDialog, setShowDateFormatDialog] = useState(false);
   const [pendingDateFormat, setPendingDateFormat] = useState<'DD/MM/YYYY' | 'MM/DD/YYYY' | null>(null);
@@ -373,7 +382,18 @@ export function PinChartDisplay({
     // Load saved style rules from localStorage
     if (typeof window !== 'undefined') {
       try {
+        const savedVersion = localStorage.getItem('pinChartStyleRulesVersion');
         const saved = localStorage.getItem('pinChartStyleRules');
+
+        // Check if version matches - if not, clear localStorage and use new defaults
+        const currentVersion = STYLE_RULES_VERSION;
+        if (savedVersion !== String(currentVersion)) {
+          console.log('🔄 Style rules version mismatch. Clearing localStorage and using new defaults.');
+          localStorage.removeItem('pinChartStyleRules');
+          localStorage.setItem('pinChartStyleRulesVersion', String(currentVersion));
+          return DEFAULT_STYLE_RULES;
+        }
+
         if (saved) {
           const savedRules = JSON.parse(saved) as StyleRule[];
           // Merge saved customizations with defaults (in case new rules were added)
@@ -397,6 +417,16 @@ export function PinChartDisplay({
     const matchingRule = styleRules.find(rule =>
       rule.enabled && fileName.endsWith(rule.suffix)
     );
+
+    console.log('🎨 appliedStyleRule recalculated:', {
+      fileName,
+      matchingRule: matchingRule ? {
+        suffix: matchingRule.suffix,
+        styleName: matchingRule.styleName,
+        yAxisTitle: matchingRule.properties.yAxisTitle,
+        xAxisTitle: matchingRule.properties.xAxisTitle
+      } : null
+    });
 
     return matchingRule || null;
   }, [fileName, styleRules]);
@@ -851,8 +881,8 @@ export function PinChartDisplay({
       });
     });
 
-    // Use nice round numbers for 24hr_style, otherwise add 5% padding
-    if (appliedStyleRule?.styleName === '24hr_style') {
+    // Use nice round numbers for 24hr_style, std_style, and stddiff_style, otherwise add 5% padding
+    if (appliedStyleRule?.styleName === '24hr_style' || appliedStyleRule?.styleName === 'std_style' || appliedStyleRule?.styleName === 'stddiff_style') {
       const { domain } = calculateNiceYAxisDomain(min, max);
       return domain;
     } else {
@@ -861,9 +891,9 @@ export function PinChartDisplay({
     }
   }, [displayData, visibleParameters, appliedStyleRule]);
 
-  // Calculate tick interval for 24hr_style
+  // Calculate tick interval for 24hr_style, std_style, and stddiff_style
   const yAxisTickInterval = useMemo(() => {
-    if (appliedStyleRule?.styleName === '24hr_style' && displayData.length > 0 && visibleParameters.length > 0) {
+    if ((appliedStyleRule?.styleName === '24hr_style' || appliedStyleRule?.styleName === 'std_style' || appliedStyleRule?.styleName === 'stddiff_style') && displayData.length > 0 && visibleParameters.length > 0) {
       let min = Infinity;
       let max = -Infinity;
 
@@ -970,10 +1000,11 @@ export function PinChartDisplay({
         rule.suffix === suffix ? { ...rule, enabled } : rule
       );
 
-      // Save to localStorage
+      // Save to localStorage with version
       if (typeof window !== 'undefined') {
         try {
           localStorage.setItem('pinChartStyleRules', JSON.stringify(updated));
+          localStorage.setItem('pinChartStyleRulesVersion', String(STYLE_RULES_VERSION));
           console.log('✅ Style rules saved to localStorage');
         } catch (error) {
           console.error('❌ Failed to save style rules to localStorage:', error);
@@ -985,15 +1016,19 @@ export function PinChartDisplay({
   };
 
   const handleStyleRuleUpdate = (suffix: string, properties: Partial<import('./StylingRulesDialog').StyleProperties>) => {
+    console.log('🔧 handleStyleRuleUpdate called:', { suffix, properties });
     setStyleRules(prev => {
       const updated = prev.map(rule =>
         rule.suffix === suffix ? { ...rule, properties: { ...rule.properties, ...properties } } : rule
       );
 
-      // Save to localStorage
+      console.log('📋 Updated style rules:', updated.find(r => r.suffix === suffix));
+
+      // Save to localStorage with version
       if (typeof window !== 'undefined') {
         try {
           localStorage.setItem('pinChartStyleRules', JSON.stringify(updated));
+          localStorage.setItem('pinChartStyleRulesVersion', String(STYLE_RULES_VERSION));
           console.log('✅ Style rules saved to localStorage');
         } catch (error) {
           console.error('❌ Failed to save style rules to localStorage:', error);
@@ -1863,7 +1898,7 @@ export function PinChartDisplay({
     return baseLabel;
   };
 
-  // Format parameter name based on minimal view settings
+  // Format parameter name based on compact view settings
   const formatParameterName = (parameter: string): string => {
     // Check if there's a custom name set for this parameter
     if (customParameterNames[parameter]) {
@@ -1932,10 +1967,30 @@ export function PinChartDisplay({
     );
   }
 
+  // Detect discrete/spot-sample files (CROP, CHEM, WQ, EDNA)
+  const isDiscreteFile = useMemo(() => {
+    if (!fileName) return false;
+    return /(crop|chemsw|chemwq|edna)/i.test(fileName);
+  }, [fileName]);
+
+  // If discrete file detected and we have the necessary data, use spot-sample component
+  if (isDiscreteFile && detectedSampleIdColumn && headers) {
+    console.log('[PIN-CHART-DISPLAY] Discrete file detected, using spot-sample component');
+    return (
+      <PinChartDisplaySpotSample
+        data={data}
+        timeColumn={timeColumn}
+        detectedSampleIdColumn={detectedSampleIdColumn}
+        headers={headers}
+        fileName={fileName}
+      />
+    );
+  }
+
   return (
     <div className="space-y-3">
       {/* Toggle Switches - at the top */}
-      <div className="flex items-center justify-between pr-12">
+      <div className="flex items-center pr-12">
         {/* File name */}
         {fileName && (
           <div className="text-xs text-muted-foreground font-medium">
@@ -1943,8 +1998,8 @@ export function PinChartDisplay({
           </div>
         )}
 
-        {/* View Toggles */}
-        <div className="flex items-center gap-4">
+        {/* View Toggles - always right-aligned */}
+        <div className="flex items-center gap-4 ml-auto">
           {/* Chart/Table Toggle */}
           <div className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
@@ -1958,14 +2013,14 @@ export function PinChartDisplay({
             <TableIcon className="h-4 w-4 text-muted-foreground" />
           </div>
 
-          {/* Minimal View Toggle - only show in chart mode */}
+          {/* Compact View Toggle - only show in chart mode */}
           {!showTable && (
             <>
               <div className="flex items-center gap-2 pl-4 border-l">
-                <span className="text-xs text-muted-foreground">Minimal view</span>
+                <span className="text-xs text-muted-foreground">Compact</span>
                 <Switch
-                  checked={minimalView}
-                  onCheckedChange={setMinimalView}
+                  checked={compactView}
+                  onCheckedChange={setCompactView}
                   className="h-5 w-9"
                 />
               </div>
@@ -2014,6 +2069,23 @@ export function PinChartDisplay({
                     <p className="text-[0.65rem] text-muted-foreground">
                       {showYearInXAxis ? 'Format: DD/MM/YY' : 'Format: DD/MM'}
                     </p>
+
+                    {/* Custom Y-Axis Label */}
+                    <div className="pt-2 border-t space-y-2">
+                      <Label htmlFor="custom-y-label" className="text-xs font-medium">
+                        Custom Left Y-Axis Label
+                      </Label>
+                      <Input
+                        id="custom-y-label"
+                        value={customYAxisLabel}
+                        onChange={(e) => setCustomYAxisLabel(e.target.value)}
+                        placeholder="e.g., Difference (DPM)"
+                        className="h-8 text-xs"
+                      />
+                      <p className="text-[0.65rem] text-muted-foreground">
+                        Leave empty to use default label
+                      </p>
+                    </div>
 
                     {/* Styling Rules Button */}
                     <div className="pt-2 border-t">
@@ -2167,7 +2239,7 @@ export function PinChartDisplay({
           <div className="flex-1 space-y-3">
       {visibleParameters.length > 0 && (
         <div
-          className={cn("w-full bg-card p-2", !minimalView && "border rounded-md")}
+          className={cn("w-full bg-card p-2", !compactView && "border rounded-md")}
           style={{ height: `${dynamicChartHeight}px` }}
         >
           {/* Single Axis Mode */}
@@ -2222,8 +2294,8 @@ export function PinChartDisplay({
                     return ticks;
                   })() : undefined}
                   tickFormatter={(value) => formatYAxisTick(value, dataRange, dataMax)}
-                  label={(showYAxisLabels || appliedStyleRule?.properties.yAxisTitle) ? {
-                    value: appliedStyleRule?.properties.yAxisTitle || (visibleParameters.length === 1
+                  label={(showYAxisLabels || appliedStyleRule?.properties.yAxisTitle || customYAxisLabel) ? {
+                    value: customYAxisLabel || appliedStyleRule?.properties.yAxisTitle || (visibleParameters.length === 1
                       ? formatParameterWithSource(visibleParameters[0])
                       : 'Value'),
                     angle: -90,
@@ -2568,8 +2640,8 @@ export function PinChartDisplay({
 
           {/* Parameter Controls - On the right side */}
           <div className={cn("space-y-2 transition-all duration-300", isParameterPanelExpanded ? "w-72" : "w-40")}>
-            {/* Header with expand button and label - hidden in minimal view */}
-            {!minimalView && (
+            {/* Header with expand button and label - hidden in compact view */}
+            {!compactView && (
               <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
@@ -2595,7 +2667,7 @@ export function PinChartDisplay({
             )}
 
             {/* Parameter Filters - shown when panel is expanded and filters are available */}
-            {isParameterPanelExpanded && !minimalView && (
+            {isParameterPanelExpanded && !compactView && (
               <ParameterFilterPanel
                 parameters={numericParameters}
                 sourceFilter={sourceFilter}
@@ -2624,7 +2696,7 @@ export function PinChartDisplay({
 
                 console.log('[PARAM LIST RENDER] Starting with ALL parameters (numeric + MA):', filteredParameters.length, filteredParameters);
                 console.log('[PARAM LIST RENDER] visibleParameters:', visibleParameters.length, visibleParameters);
-                console.log('[PARAM LIST RENDER] minimalView:', minimalView);
+                console.log('[PARAM LIST RENDER] compactView:', compactView);
                 console.log('[PARAM LIST RENDER] sourceFilter:', sourceFilter);
                 console.log('[PARAM LIST RENDER] dateFilter:', dateFilter);
                 console.log('[PARAM LIST RENDER] unitFilter:', unitFilter);
@@ -2662,14 +2734,14 @@ export function PinChartDisplay({
                   console.log('[PARAM LIST RENDER] After station filter:', filteredParameters.length);
                 }
 
-                // In minimal view, filter to show only visible parameters and sort alphabetically
-                const parametersToShow = minimalView
+                // In compact view, filter to show only visible parameters and sort alphabetically
+                const parametersToShow = compactView
                   ? filteredParameters
                       .filter(param => parameterStates[param]?.visible)
                       .sort((a, b) => a.localeCompare(b))
                   : filteredParameters;
 
-                console.log('[PARAM LIST RENDER] After minimal view filter, parametersToShow:', parametersToShow.length, parametersToShow);
+                console.log('[PARAM LIST RENDER] After compact view filter, parametersToShow:', parametersToShow.length, parametersToShow);
                 console.log('[PARAM LIST RENDER] parameterStates visibility:', Object.keys(parameterStates).map(k => ({ name: k, visible: parameterStates[k]?.visible })));
 
                 return parametersToShow.map((parameter, index) => {
@@ -2697,12 +2769,12 @@ export function PinChartDisplay({
                 return (
                   <div key={parameter} className={cn(
                     "flex items-center justify-between rounded bg-card/50",
-                    minimalView ? "p-0.5" : "p-1.5 border",
-                    isMA && !minimalView && "ml-4" // Indent MA parameters
+                    compactView ? "p-0.5" : "p-1.5 border",
+                    isMA && !compactView && "ml-4" // Indent MA parameters
                   )}>
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      {/* Checkbox - hidden in minimal view */}
-                      {!minimalView && (
+                      {/* Checkbox - hidden in compact view */}
+                      {!compactView && (
                         <Checkbox
                           id={`param-${parameter}`}
                           checked={state.visible}
@@ -2711,8 +2783,8 @@ export function PinChartDisplay({
                         />
                       )}
 
-                      {/* Solo button - small circular button, hidden in minimal view */}
-                      {!minimalView && (
+                      {/* Solo button - small circular button, hidden in compact view */}
+                      {!compactView && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -2730,8 +2802,8 @@ export function PinChartDisplay({
                         </Button>
                       )}
 
-                      {/* Colored circle in minimal view - shown to the left of parameter name */}
-                      {minimalView && (
+                      {/* Colored circle in compact view - shown to the left of parameter name */}
+                      {compactView && (
                         <Popover>
                           <PopoverTrigger asChild>
                             <div
@@ -2962,13 +3034,13 @@ export function PinChartDisplay({
                           htmlFor={`param-${parameter}`}
                           className={cn(
                             "text-[11px] font-normal cursor-pointer",
-                            !minimalView && !isParameterPanelExpanded && "truncate",
+                            !compactView && !isParameterPanelExpanded && "truncate",
                             isMA && "italic text-muted-foreground" // Style MA parameters differently
                           )}
                         >
                           {isMA
-                            ? (minimalView ? formatParameterName(displayName) : displayName) // Apply minimal view formatting to MA parameters too
-                            : (minimalView ? formatParameterName(parameter) : getParameterLabelWithUnit(parameter))
+                            ? (compactView ? formatParameterName(displayName) : displayName) // Apply compact view formatting to MA parameters too
+                            : (compactView ? formatParameterName(parameter) : getParameterLabelWithUnit(parameter))
                           }
                         </Label>
 
@@ -2991,8 +3063,8 @@ export function PinChartDisplay({
 
                     {/* Right side controls */}
                     <div className="flex items-center gap-1.5">
-                      {/* Show axis indicator in multi-axis mode - hidden in minimal view */}
-                      {!minimalView && axisMode === 'multi' && state.visible && axisPosition && (
+                      {/* Show axis indicator in multi-axis mode - hidden in compact view */}
+                      {!compactView && axisMode === 'multi' && state.visible && axisPosition && (
                         <span
                           className="text-[0.6rem] font-semibold px-1 rounded"
                           style={{ color: colorValue, backgroundColor: `${colorValue}1a` }}
@@ -3001,8 +3073,8 @@ export function PinChartDisplay({
                         </span>
                       )}
 
-                      {/* Colored circle with color picker - hidden in minimal view (shown next to parameter name instead) */}
-                      {!minimalView && (
+                      {/* Colored circle with color picker - hidden in compact view (shown next to parameter name instead) */}
+                      {!compactView && (
                       <Popover>
                         <PopoverTrigger asChild>
                           <div
@@ -3362,8 +3434,8 @@ export function PinChartDisplay({
                               </div>
                             </div>
 
-                            {/* Display Options Section - only show in minimal view */}
-                            {minimalView && (
+                            {/* Display Options Section - only show in compact view */}
+                            {compactView && (
                               <div className="space-y-2 border-t pt-3">
                                 <div className="flex items-center gap-2">
                                   <Eye className="h-3.5 w-3.5 text-muted-foreground" />
@@ -3466,8 +3538,8 @@ export function PinChartDisplay({
                       </Popover>
                       )}
 
-                      {/* Settings cog for MA parameters in minimal view - right-aligned */}
-                      {isMA && minimalView && (
+                      {/* Settings cog for MA parameters in compact view - right-aligned */}
+                      {isMA && compactView && (
                         <Popover>
                           <PopoverTrigger asChild>
                             <Button
@@ -3805,6 +3877,7 @@ export function PinChartDisplay({
         styleRules={styleRules}
         onStyleRuleToggle={handleStyleRuleToggle}
         onStyleRuleUpdate={handleStyleRuleUpdate}
+        currentFileName={fileName}
       />
     </div>
   );

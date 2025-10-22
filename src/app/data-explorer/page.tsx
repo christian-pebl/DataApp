@@ -593,6 +593,105 @@ export default function DataExplorerPage() {
     };
   }, []);
 
+  // Download file handler for PinMarineDeviceData
+  const handleDownloadFileForPlot = useCallback(async (pinId: string, fileName: string): Promise<File | null> => {
+    try {
+      // Find the file in our files list
+      const fileToDownload = filesForTimeline.find(
+        f => f.pinId === pinId && f.fileName === fileName
+      );
+
+      if (!fileToDownload) {
+        console.error('File not found:', { pinId, fileName });
+        toast({
+          variant: "destructive",
+          title: "File Not Found",
+          description: `Could not find ${fileName} in the file list`
+        });
+        return null;
+      }
+
+      // Check if this is a merged file
+      const isMergedFile = (fileToDownload as any).fileSource === 'merged';
+      let blob: Blob;
+      let downloadedFileName: string;
+
+      if (isMergedFile) {
+        console.log('Downloading merged file for plot:', fileToDownload.id);
+        const { createClient } = await import('@/lib/supabase/client');
+        const supabase = createClient();
+
+        // Get merged file metadata
+        const { data: mergedFileData, error: getError } = await supabase
+          .from('merged_files')
+          .select('file_path, file_name')
+          .eq('id', fileToDownload.id)
+          .single();
+
+        if (getError || !mergedFileData || !mergedFileData.file_path) {
+          console.error('Error fetching merged file:', getError);
+          toast({
+            variant: "destructive",
+            title: "Download Failed",
+            description: "Could not fetch merged file metadata"
+          });
+          return null;
+        }
+
+        // Download merged file from storage
+        const { data: downloadData, error: downloadError } = await supabase.storage
+          .from('pin-files')
+          .download(mergedFileData.file_path);
+
+        if (downloadError || !downloadData) {
+          console.error('Error downloading merged file:', downloadError);
+          toast({
+            variant: "destructive",
+            title: "Download Failed",
+            description: "Could not download merged file from storage"
+          });
+          return null;
+        }
+
+        blob = downloadData;
+        downloadedFileName = mergedFileData.file_name;
+      } else {
+        // For regular files, use the downloadFileAction
+        console.log('Downloading regular file for plot:', fileToDownload.id);
+        const result = await downloadFileAction(fileToDownload.id);
+
+        if (!result.success || !result.data) {
+          console.error('Download failed:', result.error);
+          toast({
+            variant: "destructive",
+            title: "Download Failed",
+            description: result.error || "Could not download file"
+          });
+          return null;
+        }
+
+        blob = result.data.blob;
+        downloadedFileName = result.data.fileName;
+      }
+
+      // Convert blob to File object
+      const file = new File([blob], downloadedFileName, {
+        type: fileToDownload.fileType || 'text/csv'
+      });
+
+      console.log('✅ File downloaded successfully for plot:', downloadedFileName);
+      return file;
+    } catch (error) {
+      console.error('Error in handleDownloadFileForPlot:', error);
+      toast({
+        variant: "destructive",
+        title: "Download Error",
+        description: error instanceof Error ? error.message : "Failed to download file"
+      });
+      return null;
+    }
+  }, [filesForTimeline, toast]);
+
   const plotConfigIcons: Record<CombinedParameterKey, LucideIcon | undefined> = useMemo(() => {
     const icons: Partial<Record<CombinedParameterKey, LucideIcon>> = {};
     ALL_PARAMETERS.forEach(key => {
@@ -1339,6 +1438,7 @@ export default function DataExplorerPage() {
                 projectId={activeProjectId}
                 allProjectFilesForTimeline={filesForTimeline}
                 getFileDateRange={getFileDateRange}
+                onDownloadFile={handleDownloadFileForPlot}
               />
             ) : (
               <div className="flex items-center justify-center h-full">

@@ -1,10 +1,13 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Database, FileText, MapPin, Download } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Database, FileText, MapPin, Download, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PinFile {
@@ -22,7 +25,7 @@ interface FileOption {
   pinId: string;
   pinName: string;
   pinLocation?: { lat: number; lng: number };
-  fileType: 'GP' | 'FPOD' | 'Subcam';
+  fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'MERGED';
   files: File[];
   fileName: string;
   metadata?: PinFile; // Include metadata for downloading
@@ -31,12 +34,46 @@ interface FileOption {
 interface FileSelectorProps {
   availableFiles: FileOption[];
   onSelectFile: (option: FileOption) => void;
+  onSelectMultipleFiles?: (options: FileOption[]) => void;
   onCancel: () => void;
   excludeFileNames?: string[]; // Files already in use
 }
 
-export function FileSelector({ availableFiles, onSelectFile, onCancel, excludeFileNames = [] }: FileSelectorProps) {
+// Validation error types
+interface ValidationError {
+  type: 'suffix' | 'headers' | 'columns' | 'xaxis';
+  message: string;
+}
+
+// Helper function to validate file compatibility
+const validateFileCompatibility = (selectedFiles: FileOption[]): ValidationError | null => {
+  if (selectedFiles.length < 2) return null;
+
+  const firstFile = selectedFiles[0];
+
+  // Check 1: Same suffix (file extension)
+  const firstSuffix = firstFile.fileName.split('.').pop()?.toLowerCase();
+  for (const file of selectedFiles) {
+    const fileSuffix = file.fileName.split('.').pop()?.toLowerCase();
+    if (fileSuffix !== firstSuffix) {
+      return {
+        type: 'suffix',
+        message: `Files must have the same extension. Found: .${firstSuffix} and .${fileSuffix}`
+      };
+    }
+  }
+
+  // Additional validation would require parsing the actual file contents
+  // For now, we'll do basic validation and leave detailed validation for when files are parsed
+
+  return null; // Files are compatible
+};
+
+export function FileSelector({ availableFiles, onSelectFile, onSelectMultipleFiles, onCancel, excludeFileNames = [] }: FileSelectorProps) {
   const [mounted, setMounted] = React.useState(false);
+  const [multiFileMode, setMultiFileMode] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [validationError, setValidationError] = useState<ValidationError | null>(null);
 
   React.useEffect(() => {
     console.log('FileSelector mounting...', { availableFiles, excludeFileNames });
@@ -46,6 +83,52 @@ export function FileSelector({ availableFiles, onSelectFile, onCancel, excludeFi
       setMounted(false);
     };
   }, []);
+
+  // Reset selection when mode changes
+  React.useEffect(() => {
+    if (!multiFileMode) {
+      setSelectedFiles(new Set());
+      setValidationError(null);
+    }
+  }, [multiFileMode]);
+
+  // Toggle file selection
+  const toggleFileSelection = (fileName: string) => {
+    setSelectedFiles(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fileName)) {
+        newSet.delete(fileName);
+      } else {
+        newSet.add(fileName);
+      }
+
+      // Validate after selection changes
+      if (newSet.size >= 2) {
+        const selectedFileOptions = availableFiles.filter(f => newSet.has(f.fileName));
+        const error = validateFileCompatibility(selectedFileOptions);
+        setValidationError(error);
+      } else {
+        setValidationError(null);
+      }
+
+      return newSet;
+    });
+  };
+
+  // Handle multi-file open
+  const handleOpenMultiFile = () => {
+    if (!onSelectMultipleFiles || selectedFiles.size < 2) return;
+
+    const selectedFileOptions = availableFiles.filter(f => selectedFiles.has(f.fileName));
+    const error = validateFileCompatibility(selectedFileOptions);
+
+    if (error) {
+      setValidationError(error);
+      return;
+    }
+
+    onSelectMultipleFiles(selectedFileOptions);
+  };
 
   // Group files by pin
   const groupedByPin = availableFiles.reduce((acc, option) => {
@@ -102,10 +185,35 @@ export function FileSelector({ availableFiles, onSelectFile, onCancel, excludeFi
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999] pointer-events-auto" onClick={onCancel}>
       <div className="bg-background p-4 rounded-lg shadow-lg max-w-2xl w-full max-h-[70vh] flex flex-col pointer-events-auto" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4">
-          <h3 className="text-lg font-semibold mb-1">Select Data File</h3>
-          <p className="text-sm text-muted-foreground mb-2">
-            Choose a file to add as a new plot
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h3 className="text-lg font-semibold mb-1">Select Data File</h3>
+              <p className="text-sm text-muted-foreground">
+                {multiFileMode ? 'Select multiple files to merge into one plot' : 'Choose a file to add as a new plot'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="multi-file-toggle" className="text-sm font-medium cursor-pointer">
+                Multi-file
+              </Label>
+              <Switch
+                id="multi-file-toggle"
+                checked={multiFileMode}
+                onCheckedChange={setMultiFileMode}
+              />
+            </div>
+          </div>
+
+          {/* Validation Error Display */}
+          {validationError && (
+            <div className="bg-destructive/10 border border-destructive/30 rounded-md p-2 text-xs text-destructive flex items-start gap-2 mb-2">
+              <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <div>
+                <strong>Validation Error:</strong> {validationError.message}
+              </div>
+            </div>
+          )}
+
           {availableOptions.some(o => o.files.length === 0) && (
             <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-md p-2 text-xs text-blue-800 dark:text-blue-200 flex items-start gap-2">
               <Download className="h-4 w-4 mt-0.5 flex-shrink-0" />
@@ -149,7 +257,61 @@ export function FileSelector({ availableFiles, onSelectFile, onCancel, excludeFi
                       const isCurrentlyShowing = excludeFileNames.includes(fileOption.fileName);
                       const hasFileLoaded = fileOption.files.length > 0;
                       const needsDownload = !hasFileLoaded && fileOption.metadata;
+                      const isSelected = selectedFiles.has(fileOption.fileName);
 
+                      if (multiFileMode) {
+                        // Multi-file mode: show checkbox
+                        return (
+                          <div
+                            key={idx}
+                            className={cn(
+                              "w-full flex items-center gap-3 p-3 rounded-md border transition-all",
+                              isCurrentlyShowing
+                                ? "bg-muted/50 opacity-60 cursor-not-allowed"
+                                : isSelected
+                                  ? "border-primary bg-primary/5"
+                                  : "border-transparent hover:bg-accent/50"
+                            )}
+                          >
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => !isCurrentlyShowing && toggleFileSelection(fileOption.fileName)}
+                              disabled={isCurrentlyShowing}
+                              className="flex-shrink-0"
+                            />
+                            {needsDownload ? (
+                              <Download className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                            ) : (
+                              <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className={cn("text-sm font-medium truncate", isCurrentlyShowing && "line-through")}>
+                                {fileOption.fileName}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {fileOption.fileType} • {hasFileLoaded ? `${fileOption.files.length} file${fileOption.files.length !== 1 ? 's' : ''}` : 'Download & plot'}
+                                {isCurrentlyShowing && " • Currently showing"}
+                              </p>
+                            </div>
+                            <span className={cn(
+                              "text-xs font-semibold px-2 py-1 rounded flex-shrink-0",
+                              fileOption.fileType === 'GP' && "bg-blue-500/10 text-blue-600",
+                              fileOption.fileType === 'FPOD' && "bg-green-500/10 text-green-600",
+                              fileOption.fileType === 'Subcam' && "bg-purple-500/10 text-purple-600",
+                              fileOption.fileType === 'CROP' && "bg-emerald-500/10 text-emerald-600",
+                              fileOption.fileType === 'CHEM' && "bg-orange-500/10 text-orange-600",
+                              fileOption.fileType === 'CHEMSW' && "bg-amber-500/10 text-amber-600",
+                              fileOption.fileType === 'CHEMWQ' && "bg-yellow-500/10 text-yellow-600",
+                              fileOption.fileType === 'WQ' && "bg-cyan-500/10 text-cyan-600",
+                              fileOption.fileType === 'MERGED' && "bg-pink-500/10 text-pink-600"
+                            )}>
+                              {fileOption.fileType}
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      // Single file mode: original button behavior
                       return (
                         <button
                           key={idx}
@@ -187,7 +349,13 @@ export function FileSelector({ availableFiles, onSelectFile, onCancel, excludeFi
                             "text-xs font-semibold px-2 py-1 rounded",
                             fileOption.fileType === 'GP' && "bg-blue-500/10 text-blue-600",
                             fileOption.fileType === 'FPOD' && "bg-green-500/10 text-green-600",
-                            fileOption.fileType === 'Subcam' && "bg-purple-500/10 text-purple-600"
+                            fileOption.fileType === 'Subcam' && "bg-purple-500/10 text-purple-600",
+                            fileOption.fileType === 'CROP' && "bg-emerald-500/10 text-emerald-600",
+                            fileOption.fileType === 'CHEM' && "bg-orange-500/10 text-orange-600",
+                            fileOption.fileType === 'CHEMSW' && "bg-amber-500/10 text-amber-600",
+                            fileOption.fileType === 'CHEMWQ' && "bg-yellow-500/10 text-yellow-600",
+                            fileOption.fileType === 'WQ' && "bg-cyan-500/10 text-cyan-600",
+                            fileOption.fileType === 'MERGED' && "bg-pink-500/10 text-pink-600"
                           )}>
                             {fileOption.fileType}
                           </span>
@@ -201,10 +369,27 @@ export function FileSelector({ availableFiles, onSelectFile, onCancel, excludeFi
           </div>
         </ScrollArea>
 
-        <div className="flex justify-end gap-2 mt-4 pt-4 border-t">
-          <Button variant="outline" size="sm" onClick={onCancel}>
-            Cancel
-          </Button>
+        <div className="flex justify-between items-center gap-2 mt-4 pt-4 border-t">
+          {multiFileMode && (
+            <div className="text-sm text-muted-foreground">
+              {selectedFiles.size} file{selectedFiles.size !== 1 ? 's' : ''} selected
+            </div>
+          )}
+          {!multiFileMode && <div />}
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onCancel}>
+              Cancel
+            </Button>
+            {multiFileMode && (
+              <Button
+                size="sm"
+                onClick={handleOpenMultiFile}
+                disabled={selectedFiles.size < 2 || validationError !== null || !onSelectMultipleFiles}
+              >
+                Open Multi-file
+              </Button>
+            )}
+          </div>
         </div>
       </div>
         </div>

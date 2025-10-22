@@ -44,13 +44,13 @@ export const DEFAULT_MERGE_RULES: MergeRule[] = [
   },
   {
     suffix: "_std.csv",
-    ruleName: "std_stack",
-    description: "Standard interval data - Stack parameters on common time axis",
+    ruleName: "std_merge",
+    description: "Standard interval data - Station-aware merge with gap filling",
     enabled: true,
     properties: {
-      mergeMode: "stack-parameters",
-      timeRoundingInterval: "10min",
-      description: "Stacks all parameters from standard interval files on matching timestamps"
+      mergeMode: "std-merge",
+      timeRoundingInterval: "1hr",
+      description: "Merges files intelligently: same station = sequential merge with gap filling (zeros), different stations = stack parameters with [Station] identifiers"
     }
   },
   {
@@ -102,6 +102,7 @@ export function MergeRulesDialog({
   // Re-validate and compute merge preview when mode changes
   useEffect(() => {
     const newValidation = validateFilesCompatibility(parsedFiles, selectedMode);
+    console.log('🔍 Validation result:', newValidation);
     setValidation(newValidation);
 
     // Compute merged preview (generate preview even with warnings, only skip on errors)
@@ -497,14 +498,20 @@ export function MergeRulesDialog({
         </ScrollArea>
 
         <DialogFooter className="flex-shrink-0 flex-row justify-end gap-2 pt-4 border-t">
-          <Button variant="outline" onClick={onCancel}>
+          <Button variant="outline" onClick={() => {
+            console.log('❌ Cancel clicked');
+            onCancel();
+          }}>
             Cancel
           </Button>
           <Button
-            onClick={() => onConfirm(selectedMode)}
+            onClick={() => {
+              console.log('🔵 Confirm & Merge button clicked!', { selectedMode, validationIsValid: validation.isValid, validation });
+              onConfirm(selectedMode);
+            }}
             disabled={!validation.isValid}
           >
-            Confirm & Merge
+            Confirm & Merge {!validation.isValid && '(Disabled)'}
           </Button>
         </DialogFooter>
       </DialogContent>

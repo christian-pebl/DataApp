@@ -75,12 +75,53 @@ class MergedFilesService {
       // Get file size
       const fileSize = blob.size;
 
-      // Insert metadata into database
+      // Check for duplicate filename and auto-generate unique name if needed
+      let finalFileName = params.fileName;
+      let attemptCount = 1;
+
+      while (attemptCount <= 10) {
+        const { data: existingMergedFile, error: checkError } = await supabase
+          .from('merged_files')
+          .select('id, file_name')
+          .eq('pin_id', params.pinId)
+          .eq('file_name', finalFileName)
+          .maybeSingle();
+
+        if (checkError) {
+          console.error('Error checking for duplicate merged files:', checkError);
+          // Continue anyway - better to have potential duplicate than fail
+          break;
+        }
+
+        if (!existingMergedFile) {
+          // No duplicate found - use this filename
+          break;
+        }
+
+        // Duplicate found - generate new filename with counter
+        const fileBaseName = params.fileName.replace(/\.csv$/, '');
+        const timestamp = new Date().getTime();
+        finalFileName = `${fileBaseName}_${timestamp}.csv`;
+        attemptCount++;
+
+        console.log(`Duplicate filename detected, trying: ${finalFileName}`);
+      }
+
+      if (attemptCount > 10) {
+        // Failed to generate unique name after 10 attempts
+        await supabase.storage.from('pin-files').remove([filePath]);
+        return {
+          success: false,
+          error: `Failed to generate unique filename after multiple attempts. Please try again.`
+        };
+      }
+
+      // Insert metadata into database (use finalFileName which may have been modified to be unique)
       const { data: dbData, error: dbError } = await supabase
         .from('merged_files')
         .insert({
           pin_id: params.pinId,
-          file_name: params.fileName,
+          file_name: finalFileName,
           file_path: filePath,
           file_size: fileSize,
           file_type: 'text/csv',

@@ -14,6 +14,7 @@ export interface UserFileDetails {
   projectId: string | null
   startDate: Date | null
   endDate: Date | null
+  fileSource?: 'regular' | 'merged' // Add fileSource to identify merged files
 }
 
 export async function getAllUserFilesAction(): Promise<{
@@ -102,7 +103,7 @@ export async function getAllUserFilesAction(): Promise<{
     // Create a map of pin IDs to labels
     const pinsMap = Object.fromEntries(userPins.map(p => [p.id, p.label]));
 
-    // Transform the data
+    // Transform regular files
     const files: UserFileDetails[] = (filesData || []).map((item: any) => {
       let deviceType = 'Unknown';
       if (item.file_type === 'text/csv' || item.file_name?.toLowerCase().includes('csv')) {
@@ -126,15 +127,47 @@ export async function getAllUserFilesAction(): Promise<{
         pinId: item.pin_id,
         projectId: item.project_id,
         startDate: item.start_date ? new Date(item.start_date) : null,
-        endDate: item.end_date ? new Date(item.end_date) : null
+        endDate: item.end_date ? new Date(item.end_date) : null,
+        fileSource: 'regular' as const
       };
     });
 
-    console.log(`[Data Explorer Actions] Successfully fetched ${files.length} files`);
+    // Fetch merged files for all projects the user has access to
+    const { data: mergedFilesData, error: mergedError } = await supabase
+      .from('merged_files')
+      .select('id, file_name, project_id, created_at, start_date, end_date')
+      .in('project_id', projectIds.length > 0 ? projectIds : ['none'])
+      .order('file_name', { ascending: true });
+
+    if (mergedError) {
+      console.error('[Data Explorer Actions] Error fetching merged files:', mergedError);
+      // Continue without merged files - not a critical error
+    }
+
+    // Transform merged files
+    const mergedFiles: UserFileDetails[] = (mergedFilesData || []).map((item: any) => ({
+      id: item.id,
+      fileName: item.file_name,
+      projectName: item.project_id ? (projectsMap[item.project_id] || null) : null,
+      objectLabel: 'Merged Files',
+      deviceType: 'Merged Data',
+      uploadedAt: new Date(item.created_at),
+      status: 'active' as const,
+      pinId: 'merged', // Special pinId for merged files
+      projectId: item.project_id,
+      startDate: item.start_date ? new Date(item.start_date) : null,
+      endDate: item.end_date ? new Date(item.end_date) : null,
+      fileSource: 'merged' as const
+    }));
+
+    // Combine regular files and merged files
+    const allFiles = [...files, ...mergedFiles];
+
+    console.log(`[Data Explorer Actions] Successfully fetched ${files.length} regular files and ${mergedFiles.length} merged files`);
 
     return {
       success: true,
-      data: files
+      data: allFiles
     };
   } catch (error) {
     console.error('[Data Explorer Actions] Error fetching user files:', error);
@@ -258,7 +291,9 @@ export async function renameFileAction(fileId: string, newFileName: string): Pro
 export async function updateFileDatesAction(
   fileId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  isDiscrete?: boolean,
+  uniqueDates?: string[]
 ): Promise<{
   success: boolean
   error?: string
@@ -323,12 +358,21 @@ export async function updateFileDatesAction(
 
     // Update the file dates in the database
     console.log('[Data Explorer Actions] Updating file dates in database...');
+
+    const updateData: any = {
+      start_date: startDate,
+      end_date: endDate
+    };
+
+    // Add discrete file metadata if provided
+    if (isDiscrete !== undefined) {
+      updateData.is_discrete = isDiscrete;
+      updateData.unique_dates = uniqueDates || null;
+    }
+
     const { error: updateError } = await supabase
       .from('pin_files')
-      .update({
-        start_date: startDate,
-        end_date: endDate
-      })
+      .update(updateData)
       .eq('id', fileId);
 
     if (updateError) {

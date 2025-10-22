@@ -454,13 +454,17 @@ function MapDrawingPageContent() {
   const [pinFileMetadata, setPinFileMetadata] = useState<Record<string, PinFile[]>>({});
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
 
+  // Merged files state (must be declared before availableFilesForPlots)
+  const [mergedFiles, setMergedFiles] = useState<(MergedFile & { fileSource: 'merged', pinLabel: string })[]>([]);
+  const [isLoadingMergedFiles, setIsLoadingMergedFiles] = useState(false);
+
   // Transform pinFileMetadata into availableFiles format for PinMarineDeviceData
   const availableFilesForPlots = React.useMemo(() => {
     const fileOptions: Array<{
       pinId: string;
       pinName: string;
       pinLocation?: { lat: number; lng: number };
-      fileType: 'GP' | 'FPOD' | 'Subcam';
+      fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'MERGED';
       files: File[];
       fileName: string;
       metadata?: PinFile; // Include metadata for downloading
@@ -472,7 +476,9 @@ function MapDrawingPageContent() {
 
     for (const [pinId, metadata] of Object.entries(pinFileMetadata)) {
       const pin = pins.find(p => p.id === pinId);
-      if (!pin) continue;
+
+      // Don't skip files if pin isn't found - show ALL project files
+      // This allows file selector to match the timeline view
 
       totalPins++;
       totalFiles += metadata.length;
@@ -483,7 +489,7 @@ function MapDrawingPageContent() {
         // Example: ALGA_GP_F_L_PELAGIC_2504-2506_LOG_AVG.csv
         // Old format: DATATYPE_ProjectName_Station_YYMM-YYMM
         // Example: GP-Pel_Alga-Control-S_2410-2411_LOG_AVG.CSV
-        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'WQ' = 'GP';
+        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'MERGED' = 'GP';
 
         const parts = fileMeta.fileName.split('_');
         const position0 = parts[0]?.toLowerCase() || '';
@@ -492,8 +498,13 @@ function MapDrawingPageContent() {
 
         // Check first two positions for data type (case-insensitive)
         // Also check for _chem and _wq suffixes
+        // Check for specific CHEMSW and CHEMWQ before general CHEM/WQ
         if (position0.includes('crop') || position1.includes('crop')) {
           fileType = 'CROP';
+        } else if (position0.includes('chemsw') || position1.includes('chemsw')) {
+          fileType = 'CHEMSW';
+        } else if (position0.includes('chemwq') || position1.includes('chemwq')) {
+          fileType = 'CHEMWQ';
         } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
           fileType = 'CHEM';
         } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
@@ -513,8 +524,8 @@ function MapDrawingPageContent() {
         // Add to list with metadata for on-demand downloading
         fileOptions.push({
           pinId,
-          pinName: pin.label || 'Unnamed Pin',
-          pinLocation: pin.location,
+          pinName: pin?.label || `Pin ${pinId.substring(0, 8)}...`, // Fallback if pin not drawn
+          pinLocation: pin?.location, // May be undefined
           fileType,
           files: matchingFile ? [matchingFile] : [], // Empty array if not loaded yet
           fileName: fileMeta.fileName,
@@ -523,9 +534,71 @@ function MapDrawingPageContent() {
       }
     }
 
-    perfLogger.end('buildFileOptions', `${fileOptions.length} options from ${totalFiles} files across ${totalPins} pins`);
+    // Add merged files to the list
+    for (const mergedFile of mergedFiles) {
+      fileOptions.push({
+        pinId: 'merged', // Special ID for merged files
+        pinName: 'Merged Files',
+        pinLocation: undefined,
+        fileType: 'MERGED',
+        files: [], // Merged files need to be downloaded
+        fileName: mergedFile.fileName,
+        metadata: {
+          id: mergedFile.id,
+          pinId: 'merged',
+          fileName: mergedFile.fileName,
+          filePath: mergedFile.filePath,
+          fileSize: 0, // Size not available
+          fileType: 'MERGED',
+          uploadedAt: mergedFile.createdAt,
+          projectId: mergedFile.projectId,
+          startDate: mergedFile.startDate,
+          endDate: mergedFile.endDate
+        }
+      });
+    }
+
+    perfLogger.end('buildFileOptions', `${fileOptions.length} options from ${totalFiles} files across ${totalPins} pins + ${mergedFiles.length} merged files`);
     return fileOptions;
-  }, [pinFileMetadata, pins, pinFiles]);
+  }, [pinFileMetadata, pins, pinFiles, mergedFiles]);
+
+  // Transform pinFileMetadata into DataTimeline format (includes pin labels)
+  const allProjectFilesForTimeline = React.useMemo(() => {
+    const result: (PinFile & { pinLabel: string })[] = [];
+
+    for (const [pinId, files] of Object.entries(pinFileMetadata)) {
+      const pin = pins.find(p => p.id === pinId);
+      const pinLabel = pin?.label || `Pin ${pinId.substring(0, 8)}...`;
+
+      files.forEach(file => {
+        result.push({
+          ...file,
+          pinLabel
+        });
+      });
+    }
+
+    // Add merged files with special label
+    mergedFiles.forEach(mergedFile => {
+      result.push({
+        id: mergedFile.id,
+        pinId: 'merged',
+        fileName: mergedFile.fileName,
+        filePath: mergedFile.filePath,
+        fileSize: 0,
+        fileType: 'MERGED',
+        uploadedAt: mergedFile.createdAt,
+        projectId: mergedFile.projectId,
+        startDate: mergedFile.startDate,
+        endDate: mergedFile.endDate,
+        pinLabel: 'Merged Files',
+        isDiscrete: false
+      } as PinFile & { pinLabel: string });
+    });
+
+    return result;
+  }, [pinFileMetadata, pins, mergedFiles]);
+
   const [showExploreDropdown, setShowExploreDropdown] = useState(false);
   const [selectedPinForExplore, setSelectedPinForExplore] = useState<string | null>(null);
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<{ id: string; name: string } | null>(null);
@@ -554,10 +627,6 @@ function MapDrawingPageContent() {
   const [selectedSuffixes, setSelectedSuffixes] = useState<string[]>([]);
   const [selectedDateRanges, setSelectedDateRanges] = useState<string[]>([]);
   const [selectedFileSources, setSelectedFileSources] = useState<string[]>(['upload', 'merged']); // Both selected by default
-
-  // Merged files state
-  const [mergedFiles, setMergedFiles] = useState<(MergedFile & { fileSource: 'merged', pinLabel: string })[]>([]);
-  const [isLoadingMergedFiles, setIsLoadingMergedFiles] = useState(false);
 
   // Extract date range from filename (format: YYMM_YYMM)
   const extractDateRange = (fileName: string): string | null => {
@@ -756,7 +825,51 @@ function MapDrawingPageContent() {
 
     checkLocationPermission();
   }, []);
-  
+
+  // Auto-open marine device modal when redirected from data-explorer with saved plot
+  useEffect(() => {
+    const checkForSavedPlotLoad = () => {
+      try {
+        console.log('🔍 [MAP-DRAWING] Checking for pending saved plot load...');
+
+        const storedData = sessionStorage.getItem('pebl-load-plot-view');
+        if (!storedData) {
+          console.log('ℹ️ [MAP-DRAWING] No saved plot in sessionStorage');
+          return;
+        }
+
+        const parsedData = JSON.parse(storedData);
+        const { viewId, viewName, timestamp } = parsedData;
+
+        console.log('✅ [MAP-DRAWING] Found saved plot to load:', {
+          viewId,
+          viewName,
+          timestamp,
+          timeSinceSet: Date.now() - timestamp,
+          currentProjectId: currentProjectContext || activeProjectId
+        });
+
+        // Open the modal with dummy data - PinMarineDeviceData will handle the actual loading
+        console.log('📂 [MAP-DRAWING] Opening marine device modal for auto-load...');
+        setSelectedFileType('GP'); // Default type, will be overridden by loaded view
+        setSelectedFiles([]); // Empty files, will be downloaded by PinMarineDeviceData
+        setShowMarineDeviceModal(true);
+
+        console.log('✅ [MAP-DRAWING] Modal state set to open. PinMarineDeviceData should now mount and detect sessionStorage.');
+
+        // Note: We don't clear sessionStorage here - PinMarineDeviceData will do that
+        // after it successfully loads the view
+
+      } catch (error) {
+        console.error('❌ [MAP-DRAWING] Error checking for saved plot load:', error);
+        // Clear invalid data
+        sessionStorage.removeItem('pebl-load-plot-view');
+      }
+    };
+
+    checkForSavedPlotLoad();
+  }, [currentProjectContext, activeProjectId]);
+
   const [itemToEdit, setItemToEdit] = useState<Pin | Line | Area | null>(null);
   const [editingGeometry, setEditingGeometry] = useState<Line | Area | null>(null);
   
@@ -848,35 +961,41 @@ function MapDrawingPageContent() {
     }
   };
 
-  // Load pin files from Supabase when pins change
+  // Load ALL pin files from Supabase for the current project
+  // This ensures the file selector shows ALL files, not just files from currently drawn pins
   useEffect(() => {
     const loadPinFiles = async () => {
-      if (pins.length === 0) return;
+      const projectId = currentProjectContext || activeProjectId;
+      if (!projectId) return;
 
       perfLogger.start('loadPinFiles');
       const fileMetadata: Record<string, PinFile[]> = {};
-      let totalFiles = 0;
 
-      // Load files for each pin
-      for (const pin of pins) {
-        try {
-          const files = await fileStorageService.getPinFiles(pin.id);
+      try {
+        // Load ALL files for the entire project (not just drawn pins)
+        const allProjectFiles = await fileStorageService.getProjectFiles(projectId);
 
-          if (files.length > 0) {
-            fileMetadata[pin.id] = files;
-            totalFiles += files.length;
+        // Group files by pinId
+        for (const file of allProjectFiles) {
+          if (!fileMetadata[file.pinId]) {
+            fileMetadata[file.pinId] = [];
           }
-        } catch (error) {
-          perfLogger.error(`Failed to load files for pin ${pin.id}`, error);
+          fileMetadata[file.pinId].push(file);
         }
-      }
 
-      perfLogger.end('loadPinFiles', `${totalFiles} files from ${Object.keys(fileMetadata).length}/${pins.length} pins`);
-      setPinFileMetadata(fileMetadata);
+        const totalFiles = allProjectFiles.length;
+        const pinCount = Object.keys(fileMetadata).length;
+
+        perfLogger.end('loadPinFiles', `${totalFiles} files from ${pinCount} pins (project-wide)`);
+        setPinFileMetadata(fileMetadata);
+
+      } catch (error) {
+        perfLogger.error('Failed to load project files', error);
+      }
     };
 
     loadPinFiles();
-  }, [pins]);
+  }, [currentProjectContext, activeProjectId]); // Re-load when project changes
 
 
 
@@ -1029,46 +1148,51 @@ function MapDrawingPageContent() {
     }
   }, [pinMeteoData, pinMeteoBrushEndIndex]);
 
+  // Fetch merged files - extracted as reusable function
+  const fetchMergedFiles = useCallback(async () => {
+    const projectId = currentProjectContext || activeProjectId;
+    if (!projectId) {
+      setMergedFiles([]);
+      return;
+    }
+
+    setIsLoadingMergedFiles(true);
+    try {
+      const result = await getMergedFilesByProjectAction(projectId);
+      if (result.success && result.data) {
+        // Convert MergedFile to PinFile-like format with pinLabel
+        const mergedFilesWithLabel = result.data.map(mf => ({
+          ...mf,
+          fileSource: 'merged' as const,
+          pinLabel: 'Merged', // Merged files don't have a specific pin, use generic label
+          id: mf.id,
+          fileName: mf.fileName,
+          filePath: mf.filePath,
+          fileSize: mf.fileSize,
+          fileType: mf.fileType,
+          uploadedAt: mf.createdAt
+        }));
+        setMergedFiles(mergedFilesWithLabel);
+      } else {
+        console.error('Failed to fetch merged files:', result.error);
+        setMergedFiles([]);
+      }
+    } catch (error) {
+      console.error('Error fetching merged files:', error);
+      setMergedFiles([]);
+    } finally {
+      setIsLoadingMergedFiles(false);
+    }
+  }, [currentProjectContext, activeProjectId]);
+
   // Fetch merged files when dialog opens or project changes
   useEffect(() => {
-    const fetchMergedFiles = async () => {
-      const projectId = currentProjectContext || activeProjectId;
-      if (!projectId || !showProjectDataDialog) {
-        setMergedFiles([]);
-        return;
-      }
-
-      setIsLoadingMergedFiles(true);
-      try {
-        const result = await getMergedFilesByProjectAction(projectId);
-        if (result.success && result.data) {
-          // Convert MergedFile to PinFile-like format with pinLabel
-          const mergedFilesWithLabel = result.data.map(mf => ({
-            ...mf,
-            fileSource: 'merged' as const,
-            pinLabel: 'Merged', // Merged files don't have a specific pin, use generic label
-            id: mf.id,
-            fileName: mf.fileName,
-            filePath: mf.filePath,
-            fileSize: mf.fileSize,
-            fileType: mf.fileType,
-            uploadedAt: mf.createdAt
-          }));
-          setMergedFiles(mergedFilesWithLabel);
-        } else {
-          console.error('Failed to fetch merged files:', result.error);
-          setMergedFiles([]);
-        }
-      } catch (error) {
-        console.error('Error fetching merged files:', error);
-        setMergedFiles([]);
-      } finally {
-        setIsLoadingMergedFiles(false);
-      }
-    };
-
-    fetchMergedFiles();
-  }, [showProjectDataDialog, currentProjectContext, activeProjectId]);
+    if (showProjectDataDialog) {
+      fetchMergedFiles();
+    } else {
+      setMergedFiles([]);
+    }
+  }, [showProjectDataDialog, fetchMergedFiles]);
 
   // Stable callback that calls the current handler
   const handleMapMove = useCallback((center: LatLng, zoom: number) => {
@@ -1838,6 +1962,7 @@ function MapDrawingPageContent() {
   }, [activeProjectId, pins, pinFileMetadata]);
 
   // CSV Date Analysis Functions
+  // Now uses the intelligent csvParser.ts for consistent date parsing across the app
   const analyzeCSVDateRange = useCallback(async (file: PinFile): Promise<{
     totalDays: number | null;
     startDate: string | null;
@@ -1856,7 +1981,7 @@ function MapDrawingPageContent() {
 
       // Use the correct property name for file path
       const storagePath = file.filePath || (file as any).storagePath || (file as any).storage_path;
-      
+
       if (!storagePath) {
         return {
           totalDays: null,
@@ -1889,95 +2014,121 @@ function MapDrawingPageContent() {
 
       console.log('✅ File downloaded successfully:', file.fileName);
 
-      // Convert blob to text
-      const text = await fileData.text();
-      const lines = text.split('\n').filter(line => line.trim());
-      
-      if (lines.length < 2) {
+      // Detect if this is a discrete sampling file (CROP, CHEM, CHEMSW, CHEMWQ, WQ, EDNA)
+      const fileName = file.fileName.toLowerCase();
+      const isDiscreteFile = fileName.includes('crop') || fileName.includes('chem') ||
+                             fileName.includes('chemsw') || fileName.includes('chemwq') ||
+                             fileName.includes('wq') || fileName.includes('edna');
+
+      console.log('🔍 File type detection:', {
+        fileName: file.fileName,
+        isDiscreteFile,
+        detectionReason: fileName.includes('crop') ? 'CROP' :
+                        fileName.includes('chemsw') ? 'CHEMSW' :
+                        fileName.includes('chemwq') ? 'CHEMWQ' :
+                        fileName.includes('chem') ? 'CHEM' :
+                        fileName.includes('wq') ? 'WQ' :
+                        fileName.includes('edna') ? 'EDNA' : 'continuous'
+      });
+
+      // Convert Blob to File object for csvParser
+      const fileObject = new File([fileData], file.fileName, { type: 'text/csv' });
+
+      // Use the intelligent csvParser with DD/MM/YYYY override for discrete files
+      const { parseCSVFile } = await import('@/components/pin-data/csvParser');
+      const dateFormatOverride = isDiscreteFile ? 'DD/MM/YYYY' : undefined;
+
+      console.log('📅 Using csvParser with dateFormat:', dateFormatOverride || 'auto-detect');
+
+      const parseResult = await parseCSVFile(fileObject, 'GP', dateFormatOverride);
+
+      if (parseResult.errors.length > 0) {
+        console.warn('⚠️ CSV parsing warnings:', parseResult.errors);
+      }
+
+      if (parseResult.data.length === 0) {
         return {
           totalDays: null,
           startDate: null,
           endDate: null,
-          error: 'File has no data rows'
+          error: 'No valid dates could be parsed'
         };
       }
 
-      // Parse CSV header
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      
-      // Find date/time columns (case-insensitive)
-      const dateTimeColumns = headers.map((header, index) => ({ 
-        header: header.toLowerCase(), 
-        originalHeader: header,
-        index 
-      }))
-        .filter(({ header }) => 
-          header.includes('timestamp') ||
-          header.includes('datetime') ||
-          header.includes('time') || 
-          header.includes('date') || 
-          header.includes('day') || 
-          header.includes('year') ||
-          header.includes('month')
-        )
-        .sort((a, b) => {
-          // Prioritize timestamp and datetime columns for ISO format
-          const aPriority = a.header.includes('timestamp') ? 0 : 
-                           a.header.includes('datetime') ? 1 : 
-                           a.header.includes('time') ? 2 : 3;
-          const bPriority = b.header.includes('timestamp') ? 0 : 
-                           b.header.includes('datetime') ? 1 : 
-                           b.header.includes('time') ? 2 : 3;
-          return aPriority - bPriority;
+      console.log('📊 Parsed data from csvParser:', {
+        fileName: file.fileName,
+        totalValidRows: parseResult.data.length,
+        firstFewTimes: parseResult.data.slice(0, 5).map(d => d.time),
+        lastFewTimes: parseResult.data.slice(-5).map(d => d.time)
+      });
+
+      // Convert time strings to Date objects
+      const dates: Date[] = parseResult.data
+        .map(row => {
+          try {
+            return new Date(row.time);
+          } catch {
+            return null;
+          }
+        })
+        .filter((d): d is Date => d !== null && !isNaN(d.getTime()));
+
+      // SANITY CHECK: Extract expected date range from filename
+      // E.g., "ALGA_CROP_F_L_2503-2506" means March 2025 (2503) to June 2025 (2506)
+      const filenameMatch = file.fileName.match(/(\d{2})(\d{2})-(\d{2})(\d{2})/);
+      if (filenameMatch && isDiscreteFile) {
+        const [, startYY, startMM, endYY, endMM] = filenameMatch;
+        const expectedStartMonth = parseInt(startMM);
+        const expectedEndMonth = parseInt(endMM);
+        const expectedStartYear = 2000 + parseInt(startYY);
+        const expectedEndYear = 2000 + parseInt(endYY);
+
+        console.log('🔍 SANITY CHECK - Expected date range from filename:', {
+          fileName: file.fileName,
+          expectedRange: `${startMM}/${expectedStartYear} - ${endMM}/${expectedEndYear}`,
+          expectedStartMonth,
+          expectedEndMonth,
+          expectedStartYear,
+          expectedEndYear
         });
 
-      if (dateTimeColumns.length === 0) {
-        return {
-          totalDays: null,
-          startDate: null,
-          endDate: null,
-          error: 'No date/time columns found'
-        };
-      }
+        // Validate each parsed date against expected range
+        const invalidDates: Date[] = [];
+        dates.forEach(date => {
+          const dateYear = date.getFullYear();
+          const dateMonth = date.getMonth() + 1; // 1-based month
 
-      // STEP 1: Collect sample date values for format detection
-      const sampleSize = Math.min(20, lines.length - 1);
-      const sampleDateValues: string[] = [];
+          // Check if date is outside expected range
+          const beforeStart = dateYear < expectedStartYear ||
+                             (dateYear === expectedStartYear && dateMonth < expectedStartMonth);
+          const afterEnd = dateYear > expectedEndYear ||
+                          (dateYear === expectedEndYear && dateMonth > expectedEndMonth);
 
-      for (let i = 1; i <= sampleSize && i < lines.length; i++) {
-        const row = lines[i].split(',');
-        for (const { index } of dateTimeColumns) {
-          if (index < row.length) {
-            const value = row[index].trim();
-            if (value) {
-              sampleDateValues.push(value);
-              break; // Got a value for this row, move to next row
-            }
+          if (beforeStart || afterEnd) {
+            invalidDates.push(date);
           }
-        }
-      }
+        });
 
-      // STEP 2: Detect date format from sample values
-      const detectedFormat = detectDateFormat(sampleDateValues);
+        if (invalidDates.length > 0) {
+          console.error('❌ SANITY CHECK FAILED - Dates outside expected range:', {
+            fileName: file.fileName,
+            expectedRange: `${expectedStartMonth}/${expectedStartYear} - ${expectedEndMonth}/${expectedEndYear}`,
+            invalidDates: invalidDates.map(d => ({
+              parsed: d.toISOString(),
+              month: d.getMonth() + 1,
+              year: d.getFullYear()
+            })),
+            allParsedDates: dates.map(d => ({
+              date: d.toISOString(),
+              month: d.getMonth() + 1,
+              year: d.getFullYear()
+            }))
+          });
 
-      // STEP 3: Parse date values from all data rows using detected format
-      const dates: Date[] = [];
-
-      for (let i = 1; i < lines.length; i++) {
-        const row = lines[i].split(',');
-
-        // Try each date column to find valid dates
-        for (const { index } of dateTimeColumns) {
-          if (index < row.length) {
-            const value = row[index].trim();
-            if (value) {
-              const parsedDate = parseCSVDate(value, detectedFormat);
-              if (parsedDate && !isNaN(parsedDate.getTime())) {
-                dates.push(parsedDate);
-                break; // Found a valid date for this row, move to next row
-              }
-            }
-          }
+          console.warn('⚠️ This indicates the date format was parsed incorrectly!');
+          console.warn('⚠️ Check that DD/MM/YYYY format is being used (not MM/DD/YYYY)');
+        } else {
+          console.log('✅ SANITY CHECK PASSED - All dates within expected range');
         }
       }
 
@@ -1995,6 +2146,13 @@ function MapDrawingPageContent() {
       const startDate = dates[0];
       const endDate = dates[dates.length - 1];
 
+      console.log('📈 Date range calculated:', {
+        fileName: file.fileName,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        totalDatesParsed: dates.length
+      });
+
       // Format dates in DD/MM/YYYY format for CSV files
       const formatDateForCSV = (date: Date): string => {
         const day = String(date.getDate()).padStart(2, '0');
@@ -2003,14 +2161,25 @@ function MapDrawingPageContent() {
         return `${day}/${month}/${year}`;
       };
 
-      // Detect if this is a CROP file (discrete sampling days)
-      const isCrop = file.fileName.toLowerCase().includes('crop');
+      // Use the discrete file detection from earlier (already determined above)
+      const isDiscrete = isDiscreteFile;
 
-      // For CROP files, count unique days; for others, calculate continuous range
+      console.log('🔍 File type detection:', {
+        fileName: file.fileName,
+        isDiscrete,
+        detectionReason: fileName.includes('crop') ? 'CROP' :
+                        fileName.includes('chemsw') ? 'CHEMSW' :
+                        fileName.includes('chemwq') ? 'CHEMWQ' :
+                        fileName.includes('chem') ? 'CHEM' :
+                        fileName.includes('wq') ? 'WQ' :
+                        fileName.includes('edna') ? 'EDNA' : 'continuous'
+      });
+
+      // For discrete files, count unique days; for others, calculate continuous range
       let totalDays: number;
       let uniqueDates: string[] | undefined;
 
-      if (isCrop) {
+      if (isDiscrete) {
         // Get unique dates (date-only, ignoring time)
         const uniqueDateSet = new Set<string>();
         dates.forEach(date => {
@@ -2026,6 +2195,13 @@ function MapDrawingPageContent() {
           return dateA.getTime() - dateB.getTime();
         });
         totalDays = uniqueDates.length; // Number of unique sampling days
+
+        console.log('📅 DISCRETE file - Unique sampling days:', {
+          fileName: file.fileName,
+          totalUniqueDays: totalDays,
+          uniqueDates: uniqueDates,
+          allDatesCount: dates.length
+        });
       } else {
         // Continuous data: calculate range
         totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -2058,13 +2234,23 @@ function MapDrawingPageContent() {
         });
       }
 
-      return {
+      const result = {
         totalDays,
         startDate: formattedStartDate,
         endDate: formattedEndDate,
         uniqueDates,
-        isCrop,
+        isCrop: isDiscrete, // Renamed for compatibility
       };
+
+      console.log('✅ FINAL RESULT for', file.fileName, ':', {
+        startDate: result.startDate,
+        endDate: result.endDate,
+        totalDays: result.totalDays,
+        isDiscrete: result.isCrop,
+        uniqueDatesCount: result.uniqueDates?.length || 0
+      });
+
+      return result;
 
     } catch (error) {
       console.error('❌ CSV analysis error:', {
@@ -2089,201 +2275,9 @@ function MapDrawingPageContent() {
   }, []);
 
   // Parse various date formats commonly found in CSV files
-  /**
-   * Detect date format (DD/MM/YYYY vs MM/DD/YYYY) by analyzing date values
-   * Matches the logic from csvParser.ts for consistency
-   */
-  const detectDateFormat = (dateValues: string[]): 'DD/MM/YYYY' | 'MM/DD/YYYY' => {
-    if (dateValues.length === 0) {
-      return 'DD/MM/YYYY'; // Default to European format
-    }
-
-    let hasFirstComponentOver12 = false;
-    let hasSecondComponentOver12 = false;
-    const firstComponents: number[] = [];
-    const secondComponents: number[] = [];
-
-    // Analyze each date value
-    for (const dateStr of dateValues) {
-      // Extract just the date part if it has time component
-      const datePart = dateStr.split(' ')[0];
-      if (!datePart.includes('/')) continue;
-
-      const parts = datePart.split('/');
-      if (parts.length >= 3) {
-        const first = parseInt(parts[0], 10);
-        const second = parseInt(parts[1], 10);
-
-        if (!isNaN(first) && !isNaN(second)) {
-          firstComponents.push(first);
-          secondComponents.push(second);
-
-          if (first > 12) hasFirstComponentOver12 = true;
-          if (second > 12) hasSecondComponentOver12 = true;
-        }
-      }
-    }
-
-    // Rule 1: If first component > 12, must be DD/MM/YYYY
-    if (hasFirstComponentOver12 && !hasSecondComponentOver12) {
-      return 'DD/MM/YYYY';
-    }
-
-    // Rule 2: If second component > 12, must be MM/DD/YYYY
-    if (hasSecondComponentOver12 && !hasFirstComponentOver12) {
-      return 'MM/DD/YYYY';
-    }
-
-    // Rule 3: Both ambiguous (all values ≤12), look for sequential patterns
-    if (!hasFirstComponentOver12 && !hasSecondComponentOver12 && firstComponents.length > 3) {
-      // Check if first components show day-like progression (1-30 range with variety)
-      const firstRange = Math.max(...firstComponents) - Math.min(...firstComponents);
-      const firstUnique = new Set(firstComponents).size;
-
-      // Check if second components show day-like progression
-      const secondRange = Math.max(...secondComponents) - Math.min(...secondComponents);
-      const secondUnique = new Set(secondComponents).size;
-
-      // If first component has wider range and more variety, likely to be days
-      if (firstRange > secondRange && firstUnique > secondUnique) {
-        return 'DD/MM/YYYY';
-      }
-
-      // If second component has wider range and more variety, likely to be days
-      if (secondRange > firstRange && secondUnique > firstUnique) {
-        return 'MM/DD/YYYY';
-      }
-    }
-
-    // Default to European format (DD/MM/YYYY) if still ambiguous
-    return 'DD/MM/YYYY';
-  };
-
-  /**
-   * Parse CSV date with adaptive format detection
-   * Now matches the logic from csvParser.ts processTimeValue
-   */
-  const parseCSVDate = (value: string, dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY'): Date | null => {
-    if (!value || value.trim() === '') return null;
-
-    const cleanValue = value.trim();
-
-    // Try different date parsing strategies
-    const parsers = [
-      // ISO format with Z suffix (2024-06-08T12:00:00.000Z)
-      () => {
-        // First try direct ISO parsing which should handle the Z suffix
-        const date = new Date(cleanValue);
-        return isNaN(date.getTime()) ? null : date;
-      },
-
-      // ISO format without Z (2023-06-15T10:30:00, 2023-06-15)
-      () => {
-        if (cleanValue.includes('T') && !cleanValue.includes('Z')) {
-          const date = new Date(cleanValue + 'Z'); // Add Z to treat as UTC
-          return isNaN(date.getTime()) ? null : date;
-        }
-        return null;
-      },
-
-      // Unix timestamp (seconds)
-      () => {
-        const num = parseFloat(cleanValue);
-        if (!isNaN(num) && num > 1000000000 && num < 2000000000) {
-          return new Date(num * 1000);
-        }
-        return null;
-      },
-
-      // Unix timestamp (milliseconds)
-      () => {
-        const num = parseFloat(cleanValue);
-        if (!isNaN(num) && num > 1000000000000) {
-          return new Date(num);
-        }
-        return null;
-      },
-
-      // Excel date format (days since 1900-01-01)
-      () => {
-        const num = parseFloat(cleanValue);
-        if (!isNaN(num) && num > 1 && num < 100000) {
-          // Excel date: days since 1900-01-01 (accounting for Excel's leap year bug)
-          const excelEpoch = new Date('1899-12-30'); // Excel's epoch is off by 1 day
-          return new Date(excelEpoch.getTime() + (num * 86400000));
-        }
-        return null;
-      },
-
-      // Common date formats with ADAPTIVE parsing based on detected format
-      () => {
-        // Pattern 1: DD/MM/YYYY or MM/DD/YYYY (with slashes or dashes)
-        const datePattern = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/;
-        const dateMatch = cleanValue.match(datePattern);
-        if (dateMatch) {
-          const [, d1, d2, year] = dateMatch;
-          let day: string, month: string;
-
-          // Use detected date format to interpret d1 and d2
-          if (dateFormat === 'DD/MM/YYYY') {
-            // Format is DD/MM/YYYY: d1 = day, d2 = month
-            day = d1;
-            month = d2;
-          } else {
-            // Format is MM/DD/YYYY: d1 = month, d2 = day
-            month = d1;
-            day = d2;
-          }
-
-          const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-
-          // Validate date
-          if (!isNaN(date.getTime()) && date.getFullYear() > 1990 && date.getFullYear() < 2100) {
-            // Additional validation: ensure month and day are valid
-            const monthNum = parseInt(month);
-            const dayNum = parseInt(day);
-
-            if (monthNum < 1 || monthNum > 12) return null;
-            if (dayNum < 1 || dayNum > 31) return null;
-
-            // Verify that parsing didn't auto-correct the date
-            if (date.getFullYear() !== parseInt(year)) return null;
-            if (date.getMonth() + 1 !== monthNum) return null;
-            if (date.getDate() !== dayNum) return null;
-
-            return date;
-          }
-        }
-
-        // Pattern 2: YYYY/MM/DD or YYYY-MM-DD (ISO-like format) - year first is unambiguous
-        const yyyymmddPattern = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/;
-        const yyyyMatch = cleanValue.match(yyyymmddPattern);
-        if (yyyyMatch) {
-          const [, year, month, day] = yyyyMatch;
-          const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-          if (!isNaN(date.getTime()) && date.getFullYear() > 1990 && date.getFullYear() < 2100) {
-            return date;
-          }
-        }
-
-        return null;
-      }
-    ];
-
-    // Try each parser
-    for (const parser of parsers) {
-      try {
-        const result = parser();
-        if (result && !isNaN(result.getTime()) && result.getFullYear() > 1990 && result.getFullYear() < 2100) {
-          return result;
-        }
-      } catch (e) {
-        // Continue to next parser
-      }
-    }
-
-    return null;
-  };
+  // NOTE: Old detectDateFormat() and parseCSVDate() functions removed
+  // Now using the intelligent csvParser.ts for consistent date parsing across the app
+  // See CLAUDE.md Task 3 for unified date parser strategy
 
   // Cache for file date analysis to avoid re-analyzing the same files
   // Clear cache on mount to ensure fresh analysis after date parsing fixes
@@ -3210,6 +3204,80 @@ function MapDrawingPageContent() {
     return categories;
   };
 
+  // Get or create "Area-wide Data" pin for project-level files (e.g., CHEMWQ with _ALL_ station)
+  const getOrCreateAreawidePin = async (projectId: string): Promise<string | null> => {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        console.error('User not authenticated');
+        return null;
+      }
+
+      // Check if area-wide pin already exists
+      const areawidePinLabel = '📊 Area-wide Data';
+      const existingPin = pins.find(pin =>
+        pin.projectId === projectId && pin.label === areawidePinLabel
+      );
+
+      if (existingPin) {
+        console.log('✅ Using existing area-wide pin:', existingPin.id);
+        return existingPin.id;
+      }
+
+      // Create new area-wide pin
+      console.log('📌 Creating area-wide pin for project:', projectId);
+      const { data: newPin, error } = await supabase
+        .from('pins')
+        .insert({
+          user_id: user.id,
+          project_id: projectId,
+          label: areawidePinLabel,
+          lat: 0,  // No specific location
+          lng: 0,
+          color: '#8b5cf6',  // Purple color to distinguish from location pins
+        })
+        .select()
+        .single();
+
+      if (error || !newPin) {
+        console.error('❌ Failed to create area-wide pin:', {
+          error,
+          errorMessage: error?.message,
+          errorCode: error?.code,
+          errorDetails: error?.details,
+          errorHint: error?.hint,
+          projectId,
+          userId: user.id
+        });
+        toast({
+          variant: "destructive",
+          title: "Failed to create area-wide pin",
+          description: error?.message || 'Unknown error'
+        });
+        return null;
+      }
+
+      console.log('✅ Created area-wide pin:', newPin.id);
+
+      // Add to pins state
+      setPins(prev => [...prev, {
+        id: newPin.id,
+        lat: 0,
+        lon: 0,
+        label: areawidePinLabel,
+        color: '#8b5cf6',
+        projectId: projectId,
+      }]);
+
+      return newPin.id;
+    } catch (error) {
+      console.error('Error in getOrCreateAreawidePin:', error);
+      return null;
+    }
+  };
+
   // Initiate file upload - select files first, then show pin selector
   const handleInitiateFileUpload = () => {
     const input = document.createElement('input');
@@ -3232,6 +3300,27 @@ function MapDrawingPageContent() {
 
       if (csvFiles.length > 0) {
         setPendingUploadFiles(csvFiles);
+
+        // Auto-detect _ALL_ files (files not assigned to specific pin)
+        const hasAllFiles = csvFiles.some(file => {
+          const parts = file.name.split('_');
+          const position2 = parts[2]?.toUpperCase() || '';
+          return position2 === 'ALL';
+        });
+
+        // For _ALL_ files, auto-create/use area-wide pin
+        if (hasAllFiles && activeProjectId) {
+          console.log('🌐 Detected _ALL_ file(s) - auto-selecting area-wide pin');
+          const areawidePin = await getOrCreateAreawidePin(activeProjectId);
+          if (areawidePin) {
+            setSelectedUploadPinId(areawidePin);
+            toast({
+              title: "Area-wide File Detected",
+              description: "File will be uploaded to '📊 Area-wide Data' pin",
+            });
+          }
+        }
+
         setShowUploadPinSelector(true);
       }
     };
@@ -3483,7 +3572,59 @@ function MapDrawingPageContent() {
     try {
       console.log(`📥 Downloading file for plot: ${fileName} (pin: ${pinId})`);
 
-      // Get file metadata
+      // Handle merged files separately
+      if (pinId === 'merged') {
+        console.log(`🔀 Looking up merged file: ${fileName}`);
+        const mergedFileMetadata = mergedFiles.find(
+          f => f.fileName === fileName
+        );
+
+        if (!mergedFileMetadata) {
+          console.error('❌ Merged file metadata not found:', { fileName });
+          toast({
+            variant: "destructive",
+            title: "Download Failed",
+            description: "Merged file metadata not found"
+          });
+          return null;
+        }
+
+        // Download merged file from storage
+        console.log(`📦 Downloading merged file from storage: ${mergedFileMetadata.filePath}`);
+        const blob = await fileStorageService.downloadPinFile(mergedFileMetadata.filePath);
+
+        if (!blob) {
+          console.error('❌ Failed to download merged file from storage');
+          toast({
+            variant: "destructive",
+            title: "Download Failed",
+            description: `Could not download ${fileName}`
+          });
+          return null;
+        }
+
+        // Convert to File object
+        const file = new File([blob], fileName, {
+          type: mergedFileMetadata.fileType || 'text/csv'
+        });
+
+        console.log(`✅ Merged file downloaded successfully: ${fileName} (${(file.size / 1024).toFixed(2)} KB)`);
+
+        // Cache it in pinFiles state
+        setPinFiles(prev => ({
+          ...prev,
+          [pinId]: [...(prev[pinId] || []), file]
+        }));
+
+        toast({
+          title: "Merged File Downloaded",
+          description: `${fileName} is ready for plotting`
+        });
+
+        return file;
+      }
+
+      // Get file metadata for regular (uploaded) files
       const fileMetadata = pinFileMetadata[pinId]?.find(
         f => f.fileName === fileName
       );
@@ -3540,7 +3681,7 @@ function MapDrawingPageContent() {
       });
       return null;
     }
-  }, [pinFileMetadata, toast]);
+  }, [pinFileMetadata, mergedFiles, toast]);
 
   // Handle file type selection
   const handleFileTypeSelection = async (fileType: 'GP' | 'FPOD' | 'Subcam') => {
@@ -6244,6 +6385,9 @@ function MapDrawingPageContent() {
                     objectLocation={objectGpsCoords}
                     objectName={objectName}
                     multiFileMergeMode={multiFileMergeMode}
+                    allProjectFilesForTimeline={allProjectFilesForTimeline}
+                    getFileDateRange={getFileDateRange}
+                    projectId={currentProjectContext || activeProjectId}
                   />
                 );
               })()
@@ -6349,7 +6493,7 @@ function MapDrawingPageContent() {
                   // Determine file type from filename
                   // New format: PROJECTNAME_DATATYPE_STATION_DIRECTION_[PELAGIC]_YYMM-YYMM
                   // Old format: DATATYPE_ProjectName_Station_YYMM-YYMM
-                  let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'WQ' = 'GP';
+                  let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' = 'GP';
 
                   const parts = file.fileName.split('_');
                   const position0 = parts[0]?.toLowerCase() || '';
@@ -6358,6 +6502,10 @@ function MapDrawingPageContent() {
 
                   if (position0.includes('crop') || position1.includes('crop')) {
                     fileType = 'CROP';
+                  } else if (position0.includes('chemsw') || position1.includes('chemsw')) {
+                    fileType = 'CHEMSW';
+                  } else if (position0.includes('chemwq') || position1.includes('chemwq')) {
+                    fileType = 'CHEMWQ';
                   } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
                     fileType = 'CHEM';
                   } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
@@ -6963,7 +7111,7 @@ function MapDrawingPageContent() {
 
                         // Determine file type from first file
                         const firstFile = selectedFiles[0];
-                        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'WQ' = 'GP';
+                        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' = 'GP';
 
                         const parts = firstFile.fileName.split('_');
                         const position0 = parts[0]?.toLowerCase() || '';
@@ -6972,6 +7120,10 @@ function MapDrawingPageContent() {
 
                         if (position0.includes('crop') || position1.includes('crop')) {
                           fileType = 'CROP';
+                        } else if (position0.includes('chemsw') || position1.includes('chemsw')) {
+                          fileType = 'CHEMSW';
+                        } else if (position0.includes('chemwq') || position1.includes('chemwq')) {
+                          fileType = 'CHEMWQ';
                         } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
                           fileType = 'CHEM';
                         } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
@@ -7055,7 +7207,7 @@ function MapDrawingPageContent() {
                         const file = new File([result.data], mergedFile.fileName, { type: 'text/csv' });
 
                         // Determine file type
-                        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'WQ' = 'GP';
+                        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' = 'GP';
                         const parts = mergedFile.fileName.split('_');
                         const position0 = parts[0]?.toLowerCase() || '';
                         const position1 = parts[1]?.toLowerCase() || '';
@@ -7063,6 +7215,10 @@ function MapDrawingPageContent() {
 
                         if (position0.includes('crop') || position1.includes('crop')) {
                           fileType = 'CROP';
+                        } else if (position0.includes('chemsw') || position1.includes('chemsw')) {
+                          fileType = 'CHEMSW';
+                        } else if (position0.includes('chemwq') || position1.includes('chemwq')) {
+                          fileType = 'CHEMWQ';
                         } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
                           fileType = 'CHEM';
                         } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
@@ -7143,13 +7299,25 @@ function MapDrawingPageContent() {
                   <SelectValue placeholder="Select a pin..." />
                 </SelectTrigger>
                 <SelectContent className="z-[99999]">
+                  {/* Special option for files not assigned to a specific pin (e.g., _ALL_ files) */}
+                  {/* TODO: NO_PIN option is not fully implemented - requires backend support for pin-less files
+                  <SelectItem value="NO_PIN">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{
+                        background: 'conic-gradient(from 0deg, #ef4444 0deg 72deg, #f59e0b 72deg 144deg, #22c55e 144deg 216deg, #3b82f6 216deg 288deg, #a855f7 288deg 360deg)'
+                      }} />
+                      <span>Not assigned to pin (Project-wide)</span>
+                    </div>
+                  </SelectItem>
+                  */}
+
                   {(() => {
                     const projectPins = pins.filter(pin => pin.projectId === (currentProjectContext || activeProjectId));
 
                     if (projectPins.length === 0) {
                       return (
                         <div className="p-4 text-center text-sm text-muted-foreground">
-                          No pins found in this project. Create a pin first.
+                          No other pins found in this project.
                         </div>
                       );
                     }
@@ -7607,7 +7775,71 @@ function MapDrawingPageContent() {
                 // Find the minimum number of parts (in case files have different structures)
                 const minParts = Math.min(...nameParts.map(parts => parts.length));
 
-                // Build merged name part by part
+                // Check if this is a 24hr merge with same dates but different stations
+                // Expected format: PROJECTNAME_DATATYPE_STATION_DIRECTION_DATE1_DATE2_24hr
+                const is24hrMerge = nameParts.every(parts =>
+                  parts.length >= 7 && parts[parts.length - 1] === '24hr'
+                );
+
+                if (is24hrMerge) {
+                  // Extract station names (positions 2 and 3 combined, e.g., "C_S") and date ranges (positions 4-5)
+                  const stations = nameParts.map(parts => `${parts[2]}_${parts[3]}`);
+                  const dateRanges = nameParts.map(parts => `${parts[4]}_${parts[5]}`);
+
+                  // Check if all files have the same date range
+                  const sameDates = dateRanges.every(range => range === dateRanges[0]);
+
+                  // Check if files have different stations
+                  const differentStations = !stations.every(station => station === stations[0]);
+
+                  // Check if files have different date ranges
+                  const differentDates = !dateRanges.every(range => range === dateRanges[0]);
+
+                  if (differentDates && differentStations) {
+                    // MERGE_MERGE case: Different dates AND different stations
+                    // Build filename: PROJECTNAME_DATATYPE_merge_merge_24hr
+                    const mergedParts = [
+                      nameParts[0][0],  // Project name
+                      nameParts[0][1],  // Data type
+                      'merge',          // First merge (for dates)
+                      'merge',          // Second merge (for stations)
+                      '24hr'
+                    ];
+
+                    console.log('📝 24hr MERGE_MERGE with different dates AND stations:', {
+                      stations,
+                      dateRanges,
+                      mergedFileName: `${mergedParts.join('_')}.csv`
+                    });
+
+                    return `${mergedParts.join('_')}.csv`;
+                  } else if (sameDates && differentStations) {
+                    // Same dates, different stations only
+                    // Combine unique station names and put in brackets
+                    const uniqueStations = Array.from(new Set(stations)).sort().join('_');
+
+                    // Build filename: PROJECTNAME_DATATYPE_[STATIONS]_DATE1_DATE2_24hr
+                    // Note: [STATIONS] replaces both the station and direction fields
+                    const mergedParts = [
+                      nameParts[0][0],  // Project name
+                      nameParts[0][1],  // Data type
+                      `[${uniqueStations}]`,  // Station names in brackets (e.g., [C_S_C_W_F_L])
+                      nameParts[0][4],  // Date start
+                      nameParts[0][5],  // Date end
+                      '24hr'
+                    ];
+
+                    console.log('📝 24hr merge with same dates, different stations:', {
+                      stations,
+                      dateRanges,
+                      mergedFileName: `${mergedParts.join('_')}.csv`
+                    });
+
+                    return `${mergedParts.join('_')}.csv`;
+                  }
+                }
+
+                // Build merged name part by part (default behavior)
                 const mergedParts: string[] = [];
                 for (let i = 0; i < minParts; i++) {
                   const partsAtPosition = nameParts.map(parts => parts[i]);
@@ -7619,7 +7851,10 @@ function MapDrawingPageContent() {
                   if (allSame) {
                     mergedParts.push(firstPart);
                   } else {
-                    mergedParts.push('merge');
+                    // Only add 'merge' if it's not already in the merged parts
+                    if (!mergedParts.includes('merge')) {
+                      mergedParts.push('merge');
+                    }
                   }
                 }
 
@@ -7680,13 +7915,33 @@ function MapDrawingPageContent() {
                 description: `Successfully created ${mergedFileName}`
               });
 
+              // Reload files to show the newly created merged file
+              console.log('🔄 Reloading files after merge...');
+              const updatedFileMetadata: Record<string, PinFile[]> = {};
+
+              for (const pin of pins) {
+                try {
+                  const files = await fileStorageService.getPinFiles(pin.id);
+                  if (files.length > 0) {
+                    updatedFileMetadata[pin.id] = files;
+                  }
+                } catch (error) {
+                  console.error(`Error reloading files for pin ${pin.id}:`, error);
+                }
+              }
+
+              console.log('✅ Files reloaded, merged file should now be visible');
+              setPinFileMetadata(updatedFileMetadata);
+
+              // Reload merged files to show the newly created merged file
+              console.log('🔄 Reloading merged files list...');
+              await fetchMergedFiles();
+              console.log('✅ Merged files list updated');
+
               // Close dialog and reset state
               setShowMultiFileConfirmDialog(false);
               setMultiFileConfirmData(null);
               setMultiFileMergeMode(false); // Reset merge mode to show "+ Merge" button again
-
-              // Optionally switch to merged files view in timeline
-              // This will be handled by the DataTimeline component if user navigates there
             } catch (error) {
               console.error('Error creating merged file:', error);
               toast({

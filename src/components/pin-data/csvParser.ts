@@ -3,6 +3,8 @@
  * Handles different file formats and data structures
  */
 
+import { detectSampleIdColumn } from '@/lib/statistical-utils';
+
 export interface ParsedDataPoint {
   time: string;
   [key: string]: string | number | undefined | null;
@@ -23,6 +25,8 @@ export interface ParseResult {
     source: 'GP' | 'FPOD' | 'Subcam' | 'marine';
     sourceLabel?: string; // e.g., "OM", "GP", "FPOD"
   }>;
+  // Optional: Auto-detected sample ID column (for spot-sample data)
+  detectedSampleIdColumn?: string | null;
 }
 
 export type FileType = 'GP' | 'FPOD' | 'Subcam';
@@ -182,6 +186,12 @@ export async function parseCSVFile(
       result.summary.timeColumn = rawHeaders[timeColumnIndex];
     } else {
       result.errors.push(`No time column detected for ${fileType} data`);
+    }
+
+    // Detect sample ID column (for spot-sample data like CROP, CHEM, WQ, EDNA)
+    result.detectedSampleIdColumn = detectSampleIdColumn(rawHeaders);
+    if (result.detectedSampleIdColumn) {
+      console.log('[CSV PARSER] Detected sample ID column:', result.detectedSampleIdColumn);
     }
 
     // Use override if provided, otherwise detect date format by analyzing sample data
@@ -407,6 +417,8 @@ function processTimeValue(value: string, fileType: FileType, dateFormat: 'DD/MM/
 
     // Date only formats - add midnight time
     { regex: /^(\d{4})-(\d{2})-(\d{2})$/, handler: (v: string) => v + 'T00:00:00Z' },
+
+    // Date only with 4-digit year: DD/MM/YYYY or MM/DD/YYYY
     { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, handler: (v: string) => {
       const match = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
       if (!match) return '';
@@ -426,7 +438,35 @@ function processTimeValue(value: string, fileType: FileType, dateFormat: 'DD/MM/
         day = d2.padStart(2, '0');
         result = `${year}-${month}-${day}T00:00:00Z`;
       }
-      console.log(`[TIME CONVERSION DATE-ONLY] Input: "${v}" | Format: ${dateFormat} | d1=${d1}, d2=${d2} | Interpreted as: day=${day}, month=${month} | Output: ${result}`);
+      console.log(`[TIME CONVERSION DATE-ONLY 4Y] Input: "${v}" | Format: ${dateFormat} | d1=${d1}, d2=${d2} | Interpreted as: day=${day}, month=${month} | Output: ${result}`);
+      return result;
+    }},
+
+    // Date only with 2-digit year: DD/MM/YY or MM/DD/YY (e.g., "10/04/25")
+    { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/, handler: (v: string) => {
+      const match = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+      if (!match) return '';
+      const [, d1, d2, yy] = match;
+      let result: string;
+      let day: string, month: string;
+
+      // Convert 2-digit year to 4-digit year (e.g., 25 -> 2025)
+      const yearNum = parseInt(yy, 10);
+      const fullYear = yearNum < 100 ? 2000 + yearNum : yearNum;
+
+      // Use detected date format
+      if (dateFormat === 'DD/MM/YYYY') {
+        // Format is DD/MM/YY: d1 = day, d2 = month
+        day = d1.padStart(2, '0');
+        month = d2.padStart(2, '0');
+        result = `${fullYear}-${month}-${day}T00:00:00Z`;
+      } else {
+        // Format is MM/DD/YY: d1 = month, d2 = day
+        month = d1.padStart(2, '0');
+        day = d2.padStart(2, '0');
+        result = `${fullYear}-${month}-${day}T00:00:00Z`;
+      }
+      console.log(`[TIME CONVERSION DATE-ONLY 2Y] Input: "${v}" | Format: ${dateFormat} | YY=${yy} -> ${fullYear} | d1=${d1}, d2=${d2} | Interpreted as: day=${day}, month=${month} | Output: ${result}`);
       return result;
     }},
 
@@ -499,14 +539,45 @@ function processDataValue(value: string, header: string, fileType: FileType): st
     return null;
   }
 
-  // Try to convert to number if it looks like a number
-  const numValue = parseFloat(value);
-  if (!isNaN(numValue) && isFinite(numValue)) {
-    return numValue;
+  // IMPORTANT: Keep identifier columns as strings (don't convert to numbers)
+  // These are used as categorical identifiers in spot-sample plots and other contexts
+  // Even if they start with numbers (e.g., "1-NE-3"), they must remain strings
+  const headerLower = header.toLowerCase().replace(/[\s_-]/g, '');
+  const stringIdentifiers = [
+    'sample',
+    'sampleid',
+    'stationid',
+    'station',
+    'subsetid',
+    'subset',
+    'farmid',
+    'farm',
+    'imageid',
+    'image',
+    'site',
+    'siteid',
+    'location',
+    'locationid'
+  ];
+
+  if (stringIdentifiers.some(id => headerLower.includes(id))) {
+    return value.trim(); // Return as string, trimmed
   }
 
-  // Return as string for non-numeric values
-  return value;
+  // Try to convert to number ONLY if it's a pure numeric value
+  // This prevents "1-NE-3" from being converted to 1
+  const numValue = parseFloat(value);
+  if (!isNaN(numValue) && isFinite(numValue)) {
+    // Additional check: ensure the stringified number matches the original value
+    // This catches cases like "1-NE-3" where parseFloat returns 1
+    const trimmedValue = value.trim();
+    if (numValue.toString() === trimmedValue || parseFloat(trimmedValue).toString() === trimmedValue) {
+      return numValue;
+    }
+  }
+
+  // Return as string for non-numeric values or complex identifiers
+  return value.trim();
 }
 
 /**
@@ -522,7 +593,8 @@ export async function parseMultipleCSVFiles(
       data: [],
       headers: [],
       errors: ['No files provided'],
-      summary: { totalRows: 0, validRows: 0, columns: 0, timeColumn: null }
+      summary: { totalRows: 0, validRows: 0, columns: 0, timeColumn: null },
+      detectedSampleIdColumn: null
     };
   }
 
@@ -543,7 +615,8 @@ export async function parseMultipleCSVFiles(
       validRows: 0,
       columns: results[0]?.headers.length || 0,
       timeColumn: results[0]?.summary.timeColumn || null,
-    }
+    },
+    detectedSampleIdColumn: results[0]?.detectedSampleIdColumn || null
   };
 
   results.forEach((result, index) => {

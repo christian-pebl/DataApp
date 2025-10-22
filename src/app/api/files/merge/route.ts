@@ -517,6 +517,28 @@ async function mergeFiles(
 
     console.log(`[MERGE] Merged file uploaded to: ${filePath}`)
 
+    // Check for duplicate filename before creating database entry
+    const { data: existingFile, error: checkError } = await supabase
+      .from('pin_files')
+      .select('id, file_name')
+      .eq('pin_id', pinId)
+      .eq('file_name', outputFileName)
+      .maybeSingle()
+
+    if (checkError) {
+      console.error('[MERGE] Error checking for duplicates:', checkError)
+      // Continue anyway - better to have potential duplicate than fail
+    }
+
+    if (existingFile) {
+      // Duplicate found - clean up uploaded file and return error
+      await supabase.storage.from('pin-files').remove([filePath])
+      return {
+        success: false,
+        error: `A file named "${outputFileName}" already exists for this pin. Please choose a different name or delete the existing file first.`,
+      }
+    }
+
     // Create database entry for merged file
     const { data: newFile, error: dbError } = await supabase
       .from('pin_files')

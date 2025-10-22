@@ -79,6 +79,8 @@ export function PEBLLogo({
         priority={priority}
         className="object-contain"
         style={{
+          width: '100%',
+          height: '100%',
           filter: 'brightness(0) saturate(100%) invert(60%) sepia(8%) saturate(348%) hue-rotate(190deg) brightness(95%) contrast(87%)',
           // This filter converts the logo to a light grey color (#6B7280 - tailwind gray-500)
         }}
@@ -99,7 +101,7 @@ export function PEBLLogo({
 
 // Convenience components for specific use cases
 export function PEBLLogoNav() {
-  return <PEBLLogo variant="horizontal" size="md" href="/data-explorer" />
+  return <PEBLLogo variant="horizontal" size="md" href="/data-explorer" priority={true} />
 }
 
 export function PEBLLogoIcon({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' | 'xl' }) {

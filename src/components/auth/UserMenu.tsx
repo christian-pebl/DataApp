@@ -14,7 +14,7 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { SunMoon, Settings, LogOut, Ruler, Map, BarChart3, Loader2, Save, Lock, Check, X } from 'lucide-react'
+import { SunMoon, Settings, LogOut, Ruler, Map, BarChart3, Loader2, Save, Lock, Check, X, FolderOpen } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { useSettings } from '@/hooks/use-settings'
@@ -33,12 +33,15 @@ import { useSyncNotifications } from '@/components/ui/sync-notifications'
 import { SyncNotificationsContainer } from '@/components/ui/sync-notifications-container'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { LoadPlotViewDialog } from '@/components/pin-data/LoadPlotViewDialog'
+import type { SavedPlotView, PlotViewValidationResult } from '@/lib/supabase/plot-view-types'
 
 interface UserMenuProps {
   user: User
+  projectId?: string // Optional project ID for Load Saved Plots feature
 }
 
-export default function UserMenu({ user }: UserMenuProps) {
+export default function UserMenu({ user, projectId }: UserMenuProps) {
   const supabase = createClient()
   const router = useRouter()
   const pathname = usePathname()
@@ -55,6 +58,9 @@ export default function UserMenu({ user }: UserMenuProps) {
   const [isChangingPassword, setIsChangingPassword] = useState(false)
   const [passwordError, setPasswordError] = useState('')
   const [passwordSuccess, setPasswordSuccess] = useState(false)
+
+  // Load Plot View Dialog state
+  const [showLoadPlotViewDialog, setShowLoadPlotViewDialog] = useState(false)
 
   // Theme management
   useEffect(() => {
@@ -155,6 +161,26 @@ export default function UserMenu({ user }: UserMenuProps) {
       setIsChangingPassword(false)
     }
   }
+
+  const handleLoadPlotView = (view: SavedPlotView, validation: PlotViewValidationResult) => {
+    console.log('📂 Plot view loaded from UserMenu:', view.name, validation);
+
+    // Since this is from the global menu, we just show a success message
+    // The actual loading logic will be handled by the map-drawing page
+    // which should listen for plot view events or handle this through state management
+
+    toast({
+      title: "Plot View Selected",
+      description: `"${view.name}" loaded. Navigate to the pin to view the plots.`
+    });
+
+    // TODO: Implement actual plot view restoration
+    // This could involve:
+    // 1. Storing the selected view in localStorage or global state
+    // 2. Emitting an event that the map-drawing page listens to
+    // 3. Passing the view data through URL params
+    // For now, we just close the dialog as the feature is accessible from the plot component itself
+  };
 
   const handleSignOut = async () => {
     // Show backup notification
@@ -300,7 +326,18 @@ export default function UserMenu({ user }: UserMenuProps) {
             {pathname === '/map-drawing' && <div className="ml-auto w-2 h-2 bg-primary rounded-full" />}
           </DropdownMenuItem>
         </Link>
-        
+
+        {/* Load Saved Plots - only show when on map-drawing page with project */}
+        {pathname === '/map-drawing' && projectId && (
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onClick={() => setShowLoadPlotViewDialog(true)}
+          >
+            <FolderOpen className="mr-2 h-4 w-4" />
+            <span>Load Saved Plots</span>
+          </DropdownMenuItem>
+        )}
+
         <DropdownMenuSeparator />
         
         {/* Account Settings */}
@@ -460,6 +497,16 @@ export default function UserMenu({ user }: UserMenuProps) {
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Load Plot View Dialog */}
+    {projectId && (
+      <LoadPlotViewDialog
+        open={showLoadPlotViewDialog}
+        onOpenChange={setShowLoadPlotViewDialog}
+        projectId={projectId}
+        onLoad={handleLoadPlotView}
+      />
+    )}
     </>
   )
 }
