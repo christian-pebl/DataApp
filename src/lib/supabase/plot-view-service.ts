@@ -335,19 +335,26 @@ class PlotViewService {
           missingFiles: [],
           modifiedFiles: [],
           availablePlotIds: config.plots.map(p => p.id),
+          unavailablePlotIds: [],
           warnings: [],
-          errors: []
+          errors: [],
+          hasWarnings: false
         };
       }
 
-      // Query all files at once
-      const { data: filesData, error } = await this.supabase
+      // Query all files at once from both pin_files and merged_files
+      const { data: pinFilesData, error: pinFilesError } = await this.supabase
         .from('pin_files')
         .select('id, file_name, updated_at')
         .in('id', Array.from(fileIds));
 
-      if (error) {
-        console.error('❌ Error querying files:', error);
+      const { data: mergedFilesData, error: mergedFilesError } = await this.supabase
+        .from('merged_files')
+        .select('id, file_name, updated_at')
+        .in('id', Array.from(fileIds));
+
+      if (pinFilesError && mergedFilesError) {
+        console.error('❌ Error querying files:', { pinFilesError, mergedFilesError });
         perfLogger.end('validatePlotView', 'query-error');
         return {
           valid: false,
@@ -355,10 +362,21 @@ class PlotViewService {
           missingFiles: [],
           modifiedFiles: [],
           availablePlotIds: [],
+          unavailablePlotIds: config.plots.map(p => p.id),
           warnings: [],
-          errors: ['Failed to validate files']
+          errors: ['Failed to validate files'],
+          hasWarnings: false
         };
       }
+
+      // Combine results from both tables
+      const filesData = [
+        ...(pinFilesData || []),
+        ...(mergedFilesData || [])
+      ];
+
+      console.log(`📊 [VALIDATION] Found ${pinFilesData?.length || 0} pin files and ${mergedFilesData?.length || 0} merged files`);
+      console.log(`📊 [VALIDATION] Checking ${config.plots.length} plots in view config`);
 
       // Build availability map
       const availableFileIds = new Set(filesData.map(f => f.id));
@@ -367,9 +385,32 @@ class PlotViewService {
       const availablePlotIds: string[] = [];
 
       // Check each plot
-      config.plots.forEach(plot => {
-        if (plot.type === 'device' && plot.fileId) {
-          if (availableFileIds.has(plot.fileId)) {
+      config.plots.forEach((plot, idx) => {
+        console.log(`📊 [VALIDATION] Plot ${idx + 1}/${config.plots.length}:`, {
+          id: plot.id,
+          type: plot.type,
+          fileId: plot.fileId,
+          fileName: plot.fileName
+        });
+
+        if (plot.type === 'device') {
+          // If fileId is missing but fileName is present, try to find it
+          if (!plot.fileId && plot.fileName) {
+            console.log(`  🔍 [VALIDATION] fileId missing, searching by fileName: ${plot.fileName}`);
+            const fileByName = filesData.find(f => f.file_name === plot.fileName);
+            if (fileByName) {
+              console.log(`  ✅ [VALIDATION] File found by name, adding plot to available list`);
+              availablePlotIds.push(plot.id);
+            } else {
+              console.log(`  ❌ [VALIDATION] File NOT found by name`);
+              missingFiles.push({
+                fileId: plot.fileId || 'unknown',
+                fileName: plot.fileName || 'Unknown',
+                available: false
+              });
+            }
+          } else if (plot.fileId && availableFileIds.has(plot.fileId)) {
+            console.log(`  ✅ [VALIDATION] File found by ID, adding plot to available list`);
             availablePlotIds.push(plot.id);
 
             // Check if file was modified after view was saved
@@ -390,6 +431,7 @@ class PlotViewService {
             }
           } else {
             // File is missing
+            console.log(`  ❌ [VALIDATION] File NOT found, marking as missing`);
             missingFiles.push({
               fileId: plot.fileId,
               fileName: plot.fileName || 'Unknown',
@@ -398,7 +440,10 @@ class PlotViewService {
           }
         } else if (plot.type === 'marine-meteo') {
           // Marine/meteo plots don't have files
+          console.log(`  ✅ [VALIDATION] Marine/meteo plot, no file check needed`);
           availablePlotIds.push(plot.id);
+        } else {
+          console.log(`  ⚠️ [VALIDATION] Plot type '${plot.type}' with no fileId - skipping`);
         }
       });
 
@@ -414,7 +459,20 @@ class PlotViewService {
         warnings.push(`${modifiedFiles.length} file(s) have been modified since this view was saved`);
       }
 
+      // Log summary of which plots are available vs unavailable
+      const unavailablePlotIds = config.plots
+        .filter(p => !availablePlotIds.includes(p.id))
+        .map(p => p.id);
+
       console.log(`✅ Validation complete: ${availablePlotIds.length}/${config.plots.length} plots available`);
+      console.log('📊 [VALIDATION SUMMARY]', {
+        totalPlots: config.plots.length,
+        availablePlots: availablePlotIds.length,
+        unavailablePlots: unavailablePlotIds.length,
+        availableIds: availablePlotIds,
+        unavailableIds: unavailablePlotIds
+      });
+
       perfLogger.end('validatePlotView', `${availablePlotIds.length}/${config.plots.length}`);
 
       return {
@@ -423,8 +481,10 @@ class PlotViewService {
         missingFiles,
         modifiedFiles,
         availablePlotIds,
+        unavailablePlotIds,
         warnings,
-        errors
+        errors,
+        hasWarnings: warnings.length > 0
       };
 
     } catch (error) {
@@ -436,8 +496,10 @@ class PlotViewService {
         missingFiles: [],
         modifiedFiles: [],
         availablePlotIds: [],
+        unavailablePlotIds: config?.plots?.map(p => p.id) || [],
         warnings: [],
-        errors: ['Validation failed due to an error']
+        errors: ['Validation failed due to an error'],
+        hasWarnings: false
       };
     }
   }

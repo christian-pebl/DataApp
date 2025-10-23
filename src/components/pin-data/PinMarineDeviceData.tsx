@@ -158,6 +158,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   // Save/Load Plot View state
   const [showSavePlotViewDialog, setShowSavePlotViewDialog] = useState(false);
   const [showLoadPlotViewDialog, setShowLoadPlotViewDialog] = useState(false);
+  const [serializedViewConfig, setSerializedViewConfig] = useState<SavedPlotViewConfig | null>(null);
 
   // Merge rule toggle handler
   const handleMergeRuleToggle = useCallback((suffix: string, enabled: boolean) => {
@@ -580,7 +581,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   }, []);
 
   // Serialize current plot state for saving
-  const serializePlotViewState = useCallback((): SavedPlotViewConfig => {
+  const serializePlotViewState = useCallback(async (): Promise<SavedPlotViewConfig> => {
     // Calculate date range display
     const calculateDateRangeDisplay = (): string => {
       const allDates: Date[] = [];
@@ -604,19 +605,54 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       return `${format(minDate, 'MMM d, yyyy')} - ${format(maxDate, 'MMM d, yyyy')}`;
     };
 
-    return {
-      version: '1.0.0',
-      timestamp: new Date().toISOString(),
-      timeAxisMode,
-      globalBrushRange,
-      plots: plots.map(plot => ({
+    // Look up missing fileIds from database
+    const { createClient } = await import('@/lib/supabase/client');
+    const supabase = createClient();
+
+    const plotsWithFileIds = await Promise.all(plots.map(async (plot) => {
+      let fileId = plot.fileId;
+
+      // If fileId is missing but we have a fileName, look it up
+      if (!fileId && plot.fileName && plot.type === 'device') {
+        console.log(`🔍 [SAVE] Looking up fileId for "${plot.fileName}"...`);
+
+        // Try pin_files first
+        const { data: pinFile } = await supabase
+          .from('pin_files')
+          .select('id')
+          .eq('file_name', plot.fileName)
+          .limit(1)
+          .single();
+
+        if (pinFile) {
+          fileId = pinFile.id;
+          console.log(`✅ [SAVE] Found fileId in pin_files: ${fileId}`);
+        } else {
+          // Try merged_files
+          const { data: mergedFile } = await supabase
+            .from('merged_files')
+            .select('id')
+            .eq('file_name', plot.fileName)
+            .limit(1)
+            .single();
+
+          if (mergedFile) {
+            fileId = mergedFile.id;
+            console.log(`✅ [SAVE] Found fileId in merged_files: ${fileId}`);
+          } else {
+            console.warn(`⚠️ [SAVE] Could not find fileId for "${plot.fileName}"`);
+          }
+        }
+      }
+
+      return {
         id: plot.id,
         title: plot.title,
         type: plot.type,
         fileType: plot.fileType,
         pinId: plot.pinId,
         fileName: plot.fileName,
-        fileId: plot.fileId, // Now using the actual stored fileId
+        fileId, // Use looked-up fileId if it was missing
         location: plot.location,
         locationName: plot.locationName,
         timeRange: plot.timeRange,
@@ -627,7 +663,15 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         // TODO: Capture full parameter settings (opacity, lineStyle, lineWidth, filters, MA)
         // For now this is undefined, but the structure is ready for future enhancement
         parameterSettings: undefined
-      })),
+      };
+    }));
+
+    return {
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+      timeAxisMode,
+      globalBrushRange,
+      plots: plotsWithFileIds,
       timeRoundingInterval,
       mergeRules,
       metadata: {
@@ -657,10 +701,29 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         mergeRulesCount: config.mergeRules.length
       });
 
+      console.log('📋 [RESTORE] RAW config.plots from saved view:', config.plots.length, 'plots');
+      config.plots.forEach((plot, idx) => {
+        console.log(`📋 [RESTORE] Saved Plot ${idx + 1}:`, {
+          id: plot.id,
+          title: plot.title,
+          fileName: plot.fileName,
+          type: plot.type,
+          fileId: plot.fileId
+        });
+      });
+
+      console.log('🔍 [RESTORE] Validation result:', {
+        availablePlotIds: validation.availablePlotIds,
+        unavailablePlotIds: validation.unavailablePlotIds,
+        hasWarnings: validation.hasWarnings
+      });
+
       // Filter plots to only include those with available files
-      const availablePlots = config.plots.filter(plot =>
-        validation.availablePlotIds.includes(plot.id)
-      );
+      const availablePlots = config.plots.filter(plot => {
+        const isAvailable = validation.availablePlotIds.includes(plot.id);
+        console.log(`🔍 [RESTORE] Checking plot "${plot.title}" (${plot.id}): ${isAvailable ? '✅ AVAILABLE' : '❌ FILTERED OUT'}`);
+        return isAvailable;
+      });
 
       console.log('🎨 [RESTORE] Plot availability:', {
         totalInView: config.plots.length,
@@ -699,19 +762,6 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       setTimeRoundingInterval(config.timeRoundingInterval);
       setMergeRules(config.mergeRules);
 
-      console.log('👁️ [RESTORE] Restoring visibility state...');
-      // Restore visibility state
-      const newVisibilityState: Record<string, { params: string[], colors: Record<string, string> }> = {};
-      availablePlots.forEach(plot => {
-        newVisibilityState[plot.id] = {
-          params: plot.visibleParameters,
-          colors: plot.parameterColors
-        };
-      });
-      setPlotVisibilityState(newVisibilityState);
-
-      console.log('👁️ [RESTORE] Visibility state:', newVisibilityState);
-
       // Restore plots - download files for device plots
       console.log('📥 [RESTORE] Starting plot restoration. Available plots:', availablePlots.length);
 
@@ -733,9 +783,11 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
 
       console.log('📦 [RESTORE] Starting file downloads for device plots...');
 
+      console.log('🚀 [RESTORE] Starting Promise.all with', availablePlots.length, 'plots');
+
       const restoredPlots: PlotConfig[] = await Promise.all(
         availablePlots.map(async (savedPlot, idx) => {
-          console.log(`📦 [RESTORE] Processing plot ${idx + 1}/${availablePlots.length}: "${savedPlot.title}"`);
+          console.log(`📦 [RESTORE] START processing plot ${idx + 1}/${availablePlots.length}: "${savedPlot.title}"`);
           console.log(`🔍 [RESTORE] savedPlot details:`, {
             type: savedPlot.type,
             fileId: savedPlot.fileId,
@@ -851,7 +903,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             mergedParams: savedPlot.mergedParams
           };
 
-          console.log(`✅ [RESTORE] Plot object created for "${savedPlot.title}":`, {
+          console.log(`✅ [RESTORE] DONE processing plot ${idx + 1}/${availablePlots.length}: "${savedPlot.title}"`, {
             id: restoredPlot.id,
             type: restoredPlot.type,
             filesCount: restoredPlot.files.length,
@@ -864,10 +916,19 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
 
       console.log('📋 [RESTORE] All plots processed, setting plots state...', {
         plotsCount: restoredPlots.length,
-        plotIds: restoredPlots.map(p => p.id)
+        plotIds: restoredPlots.map(p => p.id),
+        plotDetails: restoredPlots.map(p => ({
+          id: p.id,
+          type: p.type,
+          title: p.title,
+          hasFiles: p.files?.length > 0,
+          hasLocation: !!p.location
+        }))
       });
 
+      console.log('🔥 [RESTORE] CALLING setPlots with', restoredPlots.length, 'plots');
       setPlots(restoredPlots);
+      console.log('✅ [RESTORE] setPlots completed');
 
       // Restore plot visibility state (which parameters are visible in each plot)
       const restoredVisibilityState: Record<string, { params: string[], colors: Record<string, string>, settings?: Record<string, any> }> = {};
@@ -1085,13 +1146,38 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   }, []);
 
   // Handler for visibility changes from child plots
-  const handleVisibilityChange = useCallback((plotId: string) =>
-    (params: string[], colors: Record<string, string>) => {
-      setPlotVisibilityState(prev => ({
-        ...prev,
-        [plotId]: { params, colors }
-      }));
-    }, []);
+  // Using a stable callback pattern to avoid creating new functions on every render
+  const handleVisibilityChange = useCallback((plotId: string, params: string[], colors: Record<string, string>) => {
+    setPlotVisibilityState(prev => ({
+      ...prev,
+      [plotId]: { params, colors }
+    }));
+  }, []);
+
+  // Create a stable callback factory using useRef to avoid recreating on every render
+  const visibilityCallbacksRef = useRef<Record<string, (params: string[], colors: Record<string, string>) => void>>({});
+
+  // Ensure we have a callback for each plot, but don't recreate existing ones
+  plots.forEach(plot => {
+    if (!visibilityCallbacksRef.current[plot.id]) {
+      visibilityCallbacksRef.current[plot.id] = (params: string[], colors: Record<string, string>) => {
+        handleVisibilityChange(plot.id, params, colors);
+      };
+    }
+  });
+
+  // Debug: Log whenever plots array changes
+  useEffect(() => {
+    console.log('🔵 [PLOTS STATE CHANGE] plots.length:', plots.length);
+    console.log('🔵 [PLOTS STATE] Plot details:', plots.map((p, i) => ({
+      index: i,
+      id: p.id,
+      type: p.type,
+      title: p.title || p.fileName || p.locationName,
+      hasFiles: p.files?.length > 0,
+      hasLocation: !!p.location
+    })));
+  }, [plots]);
 
   // Check if plots are eligible for merging
   const canMergePlots = useMemo(() => {
@@ -1946,7 +2032,11 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setShowSavePlotViewDialog(true)}
+                      onClick={async () => {
+                        const config = await serializePlotViewState();
+                        setSerializedViewConfig(config);
+                        setShowSavePlotViewDialog(true);
+                      }}
                       disabled={plots.length === 0}
                       className="h-8"
                     >
@@ -1968,7 +2058,9 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             )}
 
             <div className="flex-1 overflow-y-auto space-y-3">
+              {console.log('🎨 [RENDER] Rendering plots, count:', plots.length)}
               {plots.map((plot, index) => {
+                console.log(`🎨 [RENDER] Plot ${index + 1}:`, { id: plot.id, type: plot.type, title: plot.title || plot.fileName || plot.locationName });
                 // Render device plot (including merged plots which are now device plots with pre-parsed data)
                 if (plot.type === 'device') {
                   return (
@@ -1986,7 +2078,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                       onDataParsed={handlePlotDataParsed}
                       onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
                       isLastPlot={index === plots.length - 1}
-                      onVisibilityChange={handleVisibilityChange(plot.id)}
+                      onVisibilityChange={visibilityCallbacksRef.current[plot.id]}
                       // Pass initial state for restoring saved views
                       initialVisibleParameters={plotVisibilityState[plot.id]?.params}
                       initialParameterColors={plotVisibilityState[plot.id]?.colors}
@@ -2011,7 +2103,11 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                     onDataParsed={handlePlotDataParsed}
                     onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
                     isLastPlot={index === plots.length - 1}
-                    onVisibilityChange={handleVisibilityChange(plot.id)}
+                    onVisibilityChange={visibilityCallbacksRef.current[plot.id]}
+                    // Pass initial state for restoring saved views
+                    initialVisibleParameters={plotVisibilityState[plot.id]?.params}
+                    initialParameterColors={plotVisibilityState[plot.id]?.colors}
+                    initialParameterSettings={plotVisibilityState[plot.id]?.settings}
                   />
                 );
               })}
@@ -2540,11 +2636,11 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       )}
 
       {/* Save Plot View Dialog */}
-      {projectId && (
+      {projectId && serializedViewConfig && (
         <SavePlotViewDialog
           open={showSavePlotViewDialog}
           onOpenChange={setShowSavePlotViewDialog}
-          viewConfig={serializePlotViewState()}
+          viewConfig={serializedViewConfig}
           projectId={projectId}
           onSaveSuccess={() => {
             // Optionally refresh the list when a view is saved

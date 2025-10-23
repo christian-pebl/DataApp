@@ -155,8 +155,10 @@ export interface PlotViewValidationResult {
   missingFiles: FileAvailability[];
   modifiedFiles: FileAvailability[];
   availablePlotIds: string[]; // IDs of plots that can be restored
+  unavailablePlotIds: string[]; // IDs of plots that cannot be restored
   warnings: string[];
   errors: string[];
+  hasWarnings: boolean;
 }
 
 /**
