@@ -44,11 +44,25 @@ interface PinPlotInstanceProps {
   onBrushChange?: (brushData: { startIndex?: number; endIndex?: number }) => void;
   isLastPlot?: boolean;
   // Visibility tracking for merge feature
-  onVisibilityChange?: (visibleParams: string[], paramColors: Record<string, string>) => void;
+  onVisibilityChange?: (
+    visibleParams: string[],
+    paramColors: Record<string, string>,
+    paramSettings?: Record<string, any>,
+    plotSettings?: {
+      axisMode?: 'single' | 'multi';
+      customYAxisLabel?: string;
+      compactView?: boolean;
+      customParameterNames?: Record<string, string>;
+    }
+  ) => void;
   // Initial state for restoring saved views
   initialVisibleParameters?: string[];
   initialParameterColors?: Record<string, string>;
   initialParameterSettings?: Record<string, any>;
+  initialAxisMode?: 'single' | 'multi';
+  initialCustomYAxisLabel?: string;
+  initialCompactView?: boolean;
+  initialCustomParameterNames?: Record<string, string>;
   // Pin ID for saving corrected files to database
   pinId?: string;
 }
@@ -72,6 +86,10 @@ export function PinPlotInstance({
   initialVisibleParameters,
   initialParameterColors,
   initialParameterSettings,
+  initialAxisMode,
+  initialCustomYAxisLabel,
+  initialCompactView,
+  initialCustomParameterNames,
   pinId
 }: PinPlotInstanceProps) {
   const { toast } = useToast();
@@ -204,6 +222,10 @@ export function PinPlotInstance({
               initialVisibleParameters={initialVisibleParameters}
               initialParameterColors={initialParameterColors}
               initialParameterSettings={initialParameterSettings}
+              initialAxisMode={initialAxisMode}
+              initialCustomYAxisLabel={initialCustomYAxisLabel}
+              initialCompactView={initialCompactView}
+              initialCustomParameterNames={initialCustomParameterNames}
               // Set defaults for merged plots (detected by preParsedData)
               defaultAxisMode={preParsedData ? 'multi' : 'single'}
               defaultParametersExpanded={preParsedData ? true : false}

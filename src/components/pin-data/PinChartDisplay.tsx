@@ -36,11 +36,25 @@ interface PinChartDisplayProps {
   onBrushChange?: (brushData: { startIndex?: number; endIndex?: number }) => void;
   isLastPlot?: boolean;
   // Visibility tracking for merge feature
-  onVisibilityChange?: (visibleParams: string[], paramColors: Record<string, string>) => void;
+  onVisibilityChange?: (
+    visibleParams: string[],
+    paramColors: Record<string, string>,
+    paramSettings?: Record<string, Partial<ParameterState>>,
+    plotSettings?: {
+      axisMode?: 'single' | 'multi';
+      customYAxisLabel?: string;
+      compactView?: boolean;
+      customParameterNames?: Record<string, string>;
+    }
+  ) => void;
   // Initial state for restoring saved views
   initialVisibleParameters?: string[];
   initialParameterColors?: Record<string, string>;
   initialParameterSettings?: Record<string, Partial<ParameterState>>;
+  initialAxisMode?: 'single' | 'multi';
+  initialCustomYAxisLabel?: string;
+  initialCompactView?: boolean;
+  initialCustomParameterNames?: Record<string, string>;
   // Default settings (for merged plots)
   defaultAxisMode?: 'single' | 'multi';
   defaultParametersExpanded?: boolean;
@@ -292,6 +306,10 @@ export function PinChartDisplay({
   initialVisibleParameters,
   initialParameterColors,
   initialParameterSettings,
+  initialAxisMode,
+  initialCustomYAxisLabel,
+  initialCompactView,
+  initialCustomParameterNames,
   defaultAxisMode = 'single',
   defaultParametersExpanded = false,
   currentDateFormat,
@@ -305,7 +323,7 @@ export function PinChartDisplay({
   const [showTable, setShowTable] = useState(false);
 
   // Compact view state - shows only selected parameters without borders
-  const [compactView, setCompactView] = useState(false);
+  const [compactView, setCompactView] = useState(initialCompactView ?? false);
 
   // Compact view parameter name filtering
   const [hideUnits, setHideUnits] = useState(false);
@@ -314,10 +332,10 @@ export function PinChartDisplay({
   const [hideParameterName, setHideParameterName] = useState(false);
 
   // Custom parameter names for direct editing in compact view
-  const [customParameterNames, setCustomParameterNames] = useState<Record<string, string>>({});
+  const [customParameterNames, setCustomParameterNames] = useState<Record<string, string>>(initialCustomParameterNames || {});
 
   // Axis mode state - default to multi axis
-  const [axisMode, setAxisMode] = useState<'single' | 'multi'>('multi');
+  const [axisMode, setAxisMode] = useState<'single' | 'multi'>(initialAxisMode || defaultAxisMode || 'multi');
 
   // MA update counter to force data recalculation
   const [maUpdateCounter, setMaUpdateCounter] = useState(0);
@@ -326,9 +344,9 @@ export function PinChartDisplay({
   const [dataWithMA, setDataWithMA] = useState<ParsedDataPoint[]>([]);
 
   // Log axis mode changes for MA debugging
-  React.useEffect(() => {
-    console.log('[MA DEBUG] Current axis mode:', axisMode);
-  }, [axisMode]);
+  // React.useEffect(() => {
+  //   console.log('[MA DEBUG] Current axis mode:', axisMode);
+  // }, [axisMode]);
 
   // Parameter panel expansion state
   const [isParameterPanelExpanded, setIsParameterPanelExpanded] = useState(defaultParametersExpanded);
@@ -357,7 +375,7 @@ export function PinChartDisplay({
   const [showYearInXAxis, setShowYearInXAxis] = useState(false);
 
   // Custom Y-axis label
-  const [customYAxisLabel, setCustomYAxisLabel] = useState<string>('');
+  const [customYAxisLabel, setCustomYAxisLabel] = useState<string>(initialCustomYAxisLabel || '');
 
   // Date format preview dialog state
   const [showDateFormatDialog, setShowDateFormatDialog] = useState(false);
@@ -418,26 +436,26 @@ export function PinChartDisplay({
       rule.enabled && fileName.endsWith(rule.suffix)
     );
 
-    console.log('🎨 appliedStyleRule recalculated:', {
-      fileName,
-      matchingRule: matchingRule ? {
-        suffix: matchingRule.suffix,
-        styleName: matchingRule.styleName,
-        yAxisTitle: matchingRule.properties.yAxisTitle,
-        xAxisTitle: matchingRule.properties.xAxisTitle
-      } : null
-    });
+    // console.log('🎨 appliedStyleRule recalculated:', {
+    //   fileName,
+    //   matchingRule: matchingRule ? {
+    //     suffix: matchingRule.suffix,
+    //     styleName: matchingRule.styleName,
+    //     yAxisTitle: matchingRule.properties.yAxisTitle,
+    //     xAxisTitle: matchingRule.properties.xAxisTitle
+    //   } : null
+    // });
 
     return matchingRule || null;
   }, [fileName, styleRules]);
 
   // Log when data changes
-  React.useEffect(() => {
-    if (data.length > 0) {
-      console.log('[CHART DISPLAY] Data updated! First 3 timestamps:', data.slice(0, 3).map(d => d.time));
-      console.log('[CHART DISPLAY] currentDateFormat:', currentDateFormat);
-    }
-  }, [data, currentDateFormat]);
+  // React.useEffect(() => {
+  //   if (data.length > 0) {
+  //     console.log('[CHART DISPLAY] Data updated! First 3 timestamps:', data.slice(0, 3).map(d => d.time));
+  //     console.log('[CHART DISPLAY] currentDateFormat:', currentDateFormat);
+  //   }
+  // }, [data, currentDateFormat]);
 
   // Apply styling rule defaults when rule changes
   React.useEffect(() => {
@@ -469,13 +487,13 @@ export function PinChartDisplay({
         });
       });
 
-    console.log('📊 PinChartDisplay received data:', {
-      dataLength: data.length,
-      numericParameters: params,
-      firstDataPoint: data[0],
-      lastDataPoint: data[data.length - 1],
-      fileName
-    });
+    // console.log('📊 PinChartDisplay received data:', {
+    //   dataLength: data.length,
+    //   numericParameters: params,
+    //   firstDataPoint: data[0],
+    //   lastDataPoint: data[data.length - 1],
+    //   fileName
+    // });
 
     return params;
   }, [data, timeColumn, fileName]);
@@ -489,13 +507,13 @@ export function PinChartDisplay({
     // Check if we have initial visibility settings from a saved view
     const hasInitialSettings = initialVisibleParameters && initialVisibleParameters.length > 0;
 
-    console.log('[PINCHART INIT] Initializing parameter states:', {
-      fileName,
-      numParams: numericParameters.length,
-      hasInitialSettings,
-      initialVisibleParams: initialVisibleParameters,
-      initialColors: initialParameterColors ? Object.keys(initialParameterColors) : []
-    });
+    // console.log('[PINCHART INIT] Initializing parameter states:', {
+    //   fileName,
+    //   numParams: numericParameters.length,
+    //   hasInitialSettings,
+    //   initialVisibleParams: initialVisibleParameters,
+    //   initialColors: initialParameterColors ? Object.keys(initialParameterColors) : []
+    // });
 
     numericParameters.forEach((param, index) => {
       // Convert CSS variable to hex immediately to ensure unique colors
@@ -523,11 +541,11 @@ export function PinChartDisplay({
         movingAverage: settings.movingAverage
       };
 
-      console.log(`[PINCHART INIT] Parameter "${param}":`, {
-        visible,
-        color,
-        hasSettings: !!settings
-      });
+      // console.log(`[PINCHART INIT] Parameter "${param}":`, {
+      //   visible,
+      //   color,
+      //   hasSettings: !!settings
+      // });
     });
     return initialState;
   });
@@ -616,37 +634,37 @@ export function PinChartDisplay({
     const visibleCount = visibleParameters.length;
     const hasExplicitHeight = appliedStyleRule?.properties.chartHeight !== undefined;
 
-    console.log('[CHART HEIGHT DEBUG]', {
-      fileName,
-      baseHeight,
-      visibleCount,
-      hasExplicitHeight,
-      appliedStyleRule: appliedStyleRule?.styleName
-    });
+    // console.log('[CHART HEIGHT DEBUG]', {
+    //   fileName,
+    //   baseHeight,
+    //   visibleCount,
+    //   hasExplicitHeight,
+    //   appliedStyleRule: appliedStyleRule?.styleName
+    // });
 
     // If a styling rule explicitly sets chartHeight, always use it (don't cap it)
     if (hasExplicitHeight) {
-      console.log('[CHART HEIGHT] Using explicit height from styling rule:', baseHeight);
+      // console.log('[CHART HEIGHT] Using explicit height from styling rule:', baseHeight);
       return baseHeight;
     }
 
     // For plots WITHOUT explicit height styling, reduce height to minimize white space
     if (visibleCount === 1) {
       const finalHeight = Math.min(baseHeight, 150);
-      console.log('[CHART HEIGHT] Dynamic height for 1 param:', finalHeight);
+      // console.log('[CHART HEIGHT] Dynamic height for 1 param:', finalHeight);
       return finalHeight;
     } else if (visibleCount === 2) {
       const finalHeight = Math.min(baseHeight, 170);
-      console.log('[CHART HEIGHT] Dynamic height for 2 params:', finalHeight);
+      // console.log('[CHART HEIGHT] Dynamic height for 2 params:', finalHeight);
       return finalHeight;
     } else if (visibleCount === 3) {
       const finalHeight = Math.min(baseHeight, 190);
-      console.log('[CHART HEIGHT] Dynamic height for 3 params:', finalHeight);
+      // console.log('[CHART HEIGHT] Dynamic height for 3 params:', finalHeight);
       return finalHeight;
     }
 
     // For 4+ parameters, use the full height
-    console.log('[CHART HEIGHT] Using full height for 4+ params:', baseHeight);
+    // console.log('[CHART HEIGHT] Using full height for 4+ params:', baseHeight);
     return baseHeight;
   }, [visibleParameters.length, appliedStyleRule?.properties.chartHeight, fileName, appliedStyleRule?.styleName]);
 
@@ -667,7 +685,7 @@ export function PinChartDisplay({
       }
     });
 
-    console.log('[MA DEBUG] movingAverageParameters:', maParams);
+    // console.log('[MA DEBUG] movingAverageParameters:', maParams);
     return maParams;
   }, [parameterStates]);
 
@@ -695,15 +713,42 @@ export function PinChartDisplay({
       return acc;
     }, {} as Record<string, string>);
 
+    // Extract full parameter settings (MA, opacity, line styles, etc.)
+    const settings = Object.keys(parameterStates).reduce((acc, param) => {
+      const state = parameterStates[param];
+      if (state) {
+        // Only include settings that are different from defaults
+        const paramSettings: Partial<ParameterState> = {};
+        if (state.opacity !== undefined && state.opacity !== 1) paramSettings.opacity = state.opacity;
+        if (state.lineStyle && state.lineStyle !== 'solid') paramSettings.lineStyle = state.lineStyle;
+        if (state.lineWidth !== undefined && state.lineWidth !== 2) paramSettings.lineWidth = state.lineWidth;
+        if (state.movingAverage) paramSettings.movingAverage = state.movingAverage;
+        if (state.timeFilter) paramSettings.timeFilter = state.timeFilter;
+
+        if (Object.keys(paramSettings).length > 0) {
+          acc[param] = paramSettings;
+        }
+      }
+      return acc;
+    }, {} as Record<string, Partial<ParameterState>>);
+
+    // Plot-level settings
+    const plotSettings = {
+      axisMode,
+      customYAxisLabel: customYAxisLabel || undefined,
+      compactView,
+      customParameterNames: Object.keys(customParameterNames).length > 0 ? customParameterNames : undefined
+    };
+
     // Create a stable key for comparison
-    const currentKey = JSON.stringify({ params: visibleParameters, colors });
+    const currentKey = JSON.stringify({ params: visibleParameters, colors, settings, plotSettings });
 
     // Only call callback if values actually changed
     if (currentKey !== prevVisibilityRef.current) {
       prevVisibilityRef.current = currentKey;
-      onVisibilityChange(visibleParameters, colors);
+      onVisibilityChange(visibleParameters, colors, settings, plotSettings);
     }
-  }, [visibleParameters, parameterStates, onVisibilityChange]);
+  }, [visibleParameters, parameterStates, axisMode, customYAxisLabel, compactView, customParameterNames, onVisibilityChange]);
 
   // Helper function to check if a time falls within an exclusion range
   const isTimeExcluded = (timeStr: string, excludeStart: string, excludeEnd: string): boolean => {
@@ -2768,20 +2813,20 @@ export function PinChartDisplay({
                 // Visibility only controls plot rendering, not parameter list display
                 let filteredParameters = [...numericParameters, ...movingAverageParameters];
 
-                console.log('[PARAM LIST RENDER] Starting with ALL parameters (numeric + MA):', filteredParameters.length, filteredParameters);
-                console.log('[PARAM LIST RENDER] visibleParameters:', visibleParameters.length, visibleParameters);
-                console.log('[PARAM LIST RENDER] compactView:', compactView);
-                console.log('[PARAM LIST RENDER] sourceFilter:', sourceFilter);
-                console.log('[PARAM LIST RENDER] dateFilter:', dateFilter);
-                console.log('[PARAM LIST RENDER] unitFilter:', unitFilter);
-                console.log('[PARAM LIST RENDER] stationFilter:', stationFilter);
+                // console.log('[PARAM LIST RENDER] Starting with ALL parameters (numeric + MA):', filteredParameters.length, filteredParameters);
+                // console.log('[PARAM LIST RENDER] visibleParameters:', visibleParameters.length, visibleParameters);
+                // console.log('[PARAM LIST RENDER] compactView:', compactView);
+                // console.log('[PARAM LIST RENDER] sourceFilter:', sourceFilter);
+                // console.log('[PARAM LIST RENDER] dateFilter:', dateFilter);
+                // console.log('[PARAM LIST RENDER] unitFilter:', unitFilter);
+                // console.log('[PARAM LIST RENDER] stationFilter:', stationFilter);
 
                 // Apply source filter (Porpoise, Dolphin, Sonar)
                 if (sourceFilter.length > 0) {
                   filteredParameters = filteredParameters.filter(param =>
                     sourceFilter.some(source => param.toLowerCase().includes(source.toLowerCase()))
                   );
-                  console.log('[PARAM LIST RENDER] After source filter:', filteredParameters.length);
+                  // console.log('[PARAM LIST RENDER] After source filter:', filteredParameters.length);
                 }
 
                 // Apply date filter (e.g., [2406_2407])
@@ -2789,7 +2834,7 @@ export function PinChartDisplay({
                   filteredParameters = filteredParameters.filter(param =>
                     dateFilter.some(date => param.includes(`[${date}]`))
                   );
-                  console.log('[PARAM LIST RENDER] After date filter:', filteredParameters.length);
+                  // console.log('[PARAM LIST RENDER] After date filter:', filteredParameters.length);
                 }
 
                 // Apply unit filter (DPM, Clicks)
@@ -2797,7 +2842,7 @@ export function PinChartDisplay({
                   filteredParameters = filteredParameters.filter(param =>
                     unitFilter.some(unit => param.includes(`(${unit})`))
                   );
-                  console.log('[PARAM LIST RENDER] After unit filter:', filteredParameters.length);
+                  // console.log('[PARAM LIST RENDER] After unit filter:', filteredParameters.length);
                 }
 
                 // Apply station filter (e.g., [C_S], [C_W], [F_L])
@@ -2805,7 +2850,7 @@ export function PinChartDisplay({
                   filteredParameters = filteredParameters.filter(param =>
                     stationFilter.some(station => param.includes(`[${station}]`))
                   );
-                  console.log('[PARAM LIST RENDER] After station filter:', filteredParameters.length);
+                  // console.log('[PARAM LIST RENDER] After station filter:', filteredParameters.length);
                 }
 
                 // In compact view, filter to show only visible parameters and sort alphabetically
@@ -2815,8 +2860,8 @@ export function PinChartDisplay({
                       .sort((a, b) => a.localeCompare(b))
                   : filteredParameters;
 
-                console.log('[PARAM LIST RENDER] After compact view filter, parametersToShow:', parametersToShow.length, parametersToShow);
-                console.log('[PARAM LIST RENDER] parameterStates visibility:', Object.keys(parameterStates).map(k => ({ name: k, visible: parameterStates[k]?.visible })));
+                // console.log('[PARAM LIST RENDER] After compact view filter, parametersToShow:', parametersToShow.length, parametersToShow);
+                // console.log('[PARAM LIST RENDER] parameterStates visibility:', Object.keys(parameterStates).map(k => ({ name: k, visible: parameterStates[k]?.visible })));
 
                 return parametersToShow.map((parameter, index) => {
                 const state = parameterStates[parameter];

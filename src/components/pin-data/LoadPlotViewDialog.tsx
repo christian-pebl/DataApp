@@ -78,7 +78,7 @@ export function LoadPlotViewDialog({
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, toast]);
+  }, [projectId]); // Removed toast from dependencies
 
   // Load views when dialog opens
   useEffect(() => {
@@ -129,13 +129,19 @@ export function LoadPlotViewDialog({
     }
   };
 
-  const handleDeleteClick = (view: SavedPlotView) => {
-    setViewToDelete(view);
-  };
+  const handleDeleteClick = useCallback((view: SavedPlotView, e?: React.MouseEvent) => {
+    console.log('🗑️ Delete button clicked for view:', view.name);
+    e?.preventDefault();
+    e?.stopPropagation();
 
-  const handleDeleteConfirm = async () => {
+    // Set the view to delete, which will open the AlertDialog
+    setViewToDelete(view);
+  }, []);
+
+  const handleDeleteConfirm = useCallback(async () => {
     if (!viewToDelete) return;
 
+    console.log('✅ Confirming delete for view:', viewToDelete.name);
     setDeletingViewId(viewToDelete.id);
 
     try {
@@ -168,7 +174,7 @@ export function LoadPlotViewDialog({
       setDeletingViewId(null);
       setViewToDelete(null);
     }
-  };
+  }, [viewToDelete, toast, loadViews]);
 
   return (
     <>
@@ -245,9 +251,19 @@ export function LoadPlotViewDialog({
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDeleteClick(view)}
+                            onClick={(e) => {
+                              console.log('🖱️ Button clicked! State:', {
+                                viewId: view.id,
+                                viewName: view.name,
+                                deletingViewId,
+                                isLoading,
+                                disabled: deletingViewId === view.id || isLoading
+                              });
+                              handleDeleteClick(view, e);
+                            }}
                             disabled={deletingViewId === view.id || isLoading}
                             className="h-8 text-destructive hover:text-destructive"
+                            title={`Delete ${view.name}`}
                           >
                             {deletingViewId === view.id ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -266,38 +282,61 @@ export function LoadPlotViewDialog({
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!viewToDelete} onOpenChange={(open) => !open && setViewToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-              Delete Plot View
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete <strong>"{viewToDelete?.name}"</strong>?
-              This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={!!deletingViewId}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              disabled={!!deletingViewId}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deletingViewId ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                'Delete'
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Delete Confirmation Dialog - Render separately to avoid conflicts */}
+      {viewToDelete && (
+        <AlertDialog
+          open={true}
+          onOpenChange={(isOpen) => {
+            console.log('🔔 AlertDialog onOpenChange:', isOpen);
+            if (!isOpen && !deletingViewId) {
+              console.log('🔔 Closing AlertDialog, clearing viewToDelete');
+              setViewToDelete(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+                Delete Plot View
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete <strong>"{viewToDelete.name}"</strong>?
+                This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                disabled={!!deletingViewId}
+                onClick={() => {
+                  console.log('🔔 Cancel clicked');
+                  setViewToDelete(null);
+                }}
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  console.log('🔔 Delete clicked');
+                  handleDeleteConfirm();
+                }}
+                disabled={!!deletingViewId}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deletingViewId ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete'
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </>
   );
 }

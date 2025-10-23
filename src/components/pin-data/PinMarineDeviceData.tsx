@@ -55,6 +55,18 @@ interface PlotConfig {
   isMerged?: boolean;
   mergedData?: ParseResult; // Pre-parsed merged data
   mergedParams?: MergedParameterConfig[];
+  // For computed plots (subtraction/merge operations)
+  computationType?: 'subtract' | 'merge';
+  sourcePlotIds?: string[]; // IDs of source plots used in computation
+  computationParams?: {
+    param1: string;
+    param2: string;
+    resultParam?: string;
+  };
+  computationConfig?: {
+    direction?: '1-2' | '2-1'; // For subtraction
+    missingDataMode?: 'skip' | 'zero'; // How to handle missing data
+  };
 }
 
 interface PinFile {
@@ -122,7 +134,17 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
 
   // Visibility tracking for merge feature
   const [plotVisibilityState, setPlotVisibilityState] = useState<
-    Record<string, { params: string[], colors: Record<string, string>, settings?: Record<string, any> }>
+    Record<string, {
+      params: string[],
+      colors: Record<string, string>,
+      settings?: Record<string, any>,
+      plotSettings?: {
+        axisMode?: 'single' | 'multi';
+        customYAxisLabel?: string;
+        compactView?: boolean;
+        customParameterNames?: Record<string, string>;
+      }
+    }>
   >({});
 
   // CSV preview for merge
@@ -609,6 +631,18 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     const { createClient } = await import('@/lib/supabase/client');
     const supabase = createClient();
 
+    // Log plotVisibilityState before saving
+    console.log('💾 [SAVE] plotVisibilityState:', JSON.stringify(plotVisibilityState, null, 2));
+    Object.keys(plotVisibilityState).forEach(plotId => {
+      const state = plotVisibilityState[plotId];
+      console.log(`💾 [SAVE] Plot ${plotId}:`, {
+        params: state.params,
+        colors: state.colors,
+        hasSettings: !!state.settings,
+        settings: state.settings
+      });
+    });
+
     const plotsWithFileIds = await Promise.all(plots.map(async (plot) => {
       let fileId = plot.fileId;
 
@@ -629,7 +663,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
           console.log(`✅ [SAVE] Found fileId in pin_files: ${fileId}`);
         } else {
           // Try merged_files
-          const { data: mergedFile } = await supabase
+          const { data: mergedFile} = await supabase
             .from('merged_files')
             .select('id')
             .eq('file_name', plot.fileName)
@@ -658,12 +692,31 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         timeRange: plot.timeRange,
         isMerged: plot.isMerged,
         mergedParams: plot.mergedParams,
+        // Computation metadata for save/restore
+        computationType: plot.computationType,
+        sourcePlotIds: plot.sourcePlotIds,
+        computationParams: plot.computationParams,
+        computationConfig: plot.computationConfig,
         visibleParameters: plotVisibilityState[plot.id]?.params || [],
         parameterColors: plotVisibilityState[plot.id]?.colors || {},
-        // TODO: Capture full parameter settings (opacity, lineStyle, lineWidth, filters, MA)
-        // For now this is undefined, but the structure is ready for future enhancement
-        parameterSettings: undefined
+        // Capture full parameter settings (opacity, lineStyle, lineWidth, filters, MA)
+        parameterSettings: plotVisibilityState[plot.id]?.settings || undefined,
+        // Capture plot-level settings (axisMode, customYAxisLabel, compactView, customParameterNames)
+        axisMode: plotVisibilityState[plot.id]?.plotSettings?.axisMode,
+        customYAxisLabel: plotVisibilityState[plot.id]?.plotSettings?.customYAxisLabel,
+        compactView: plotVisibilityState[plot.id]?.plotSettings?.compactView,
+        customParameterNames: plotVisibilityState[plot.id]?.plotSettings?.customParameterNames
       };
+
+      console.log(`💾 [SAVE] Serialized plot "${plotConfig.title}":`, {
+        id: plotConfig.id,
+        visibleParameters: plotConfig.visibleParameters,
+        colorCount: Object.keys(plotConfig.parameterColors).length,
+        hasSettings: !!plotConfig.parameterSettings,
+        parameterSettings: plotConfig.parameterSettings
+      });
+
+      return plotConfig;
     }));
 
     return {
@@ -675,8 +728,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       timeRoundingInterval,
       mergeRules,
       metadata: {
-        totalPlots: plots.length,
-        datasetNames: plots.map(p => p.fileName || p.locationName || p.title || 'Unknown'),
+        totalPlots: plotsWithFileIds.length,
+        datasetNames: plotsWithFileIds.map(p => p.fileName || p.locationName || p.title || 'Unknown'),
         dateRangeDisplay: calculateDateRangeDisplay()
       }
     };
@@ -799,8 +852,12 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
           });
           let downloadedFiles: File[] = [];
 
+          // Skip file download for computed plots - they will be recreated after restoration
+          if (savedPlot.computationType) {
+            console.log(`🧮 [RESTORE] Skipping file download for computed plot "${savedPlot.title}" - will be recreated from source plots`);
+          }
           // If it's a device plot with a file ID, download the file
-          if (savedPlot.type === 'device' && savedPlot.fileName) {
+          else if (savedPlot.type === 'device' && savedPlot.fileName) {
             try {
               let fileIdToUse = savedPlot.fileId;
 
@@ -900,7 +957,12 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             locationName: savedPlot.locationName,
             timeRange: savedPlot.timeRange,
             isMerged: savedPlot.isMerged,
-            mergedParams: savedPlot.mergedParams
+            mergedParams: savedPlot.mergedParams,
+            // Include computation metadata for computed plots
+            computationType: savedPlot.computationType,
+            sourcePlotIds: savedPlot.sourcePlotIds,
+            computationParams: savedPlot.computationParams,
+            computationConfig: savedPlot.computationConfig,
           };
 
           console.log(`✅ [RESTORE] DONE processing plot ${idx + 1}/${availablePlots.length}: "${savedPlot.title}"`, {
@@ -1147,21 +1209,57 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
 
   // Handler for visibility changes from child plots
   // Using a stable callback pattern to avoid creating new functions on every render
-  const handleVisibilityChange = useCallback((plotId: string, params: string[], colors: Record<string, string>) => {
+  const handleVisibilityChange = useCallback((
+    plotId: string,
+    params: string[],
+    colors: Record<string, string>,
+    paramSettings?: Record<string, any>,
+    plotSettings?: {
+      axisMode?: 'single' | 'multi';
+      customYAxisLabel?: string;
+      compactView?: boolean;
+      customParameterNames?: Record<string, string>;
+    }
+  ) => {
     setPlotVisibilityState(prev => ({
       ...prev,
-      [plotId]: { params, colors }
+      [plotId]: {
+        params,
+        colors,
+        settings: paramSettings,
+        plotSettings
+      }
     }));
   }, []);
 
   // Create a stable callback factory using useRef to avoid recreating on every render
-  const visibilityCallbacksRef = useRef<Record<string, (params: string[], colors: Record<string, string>) => void>>({});
+  const visibilityCallbacksRef = useRef<Record<string, (
+    params: string[],
+    colors: Record<string, string>,
+    paramSettings?: Record<string, any>,
+    plotSettings?: {
+      axisMode?: 'single' | 'multi';
+      customYAxisLabel?: string;
+      compactView?: boolean;
+      customParameterNames?: Record<string, string>;
+    }
+  ) => void>>({});
 
   // Ensure we have a callback for each plot, but don't recreate existing ones
   plots.forEach(plot => {
     if (!visibilityCallbacksRef.current[plot.id]) {
-      visibilityCallbacksRef.current[plot.id] = (params: string[], colors: Record<string, string>) => {
-        handleVisibilityChange(plot.id, params, colors);
+      visibilityCallbacksRef.current[plot.id] = (
+        params: string[],
+        colors: Record<string, string>,
+        paramSettings?: Record<string, any>,
+        plotSettings?: {
+          axisMode?: 'single' | 'multi';
+          customYAxisLabel?: string;
+          compactView?: boolean;
+          customParameterNames?: Record<string, string>;
+        }
+      ) => {
+        handleVisibilityChange(plot.id, params, colors, paramSettings, plotSettings);
       };
     }
   });
@@ -1178,6 +1276,159 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       hasLocation: !!p.location
     })));
   }, [plots]);
+
+  // Recreate computed plots when source data becomes available
+  useEffect(() => {
+    // Find computed plots that need recreation
+    const computedPlots = plots.filter(p => p.computationType && !p.mergedData);
+
+    if (computedPlots.length === 0) return;
+
+    console.log('🧮 [COMPUTED PLOTS] Found', computedPlots.length, 'computed plots needing recreation');
+
+    computedPlots.forEach(async (computedPlot) => {
+      // Check if this is a subtraction plot
+      if (computedPlot.computationType !== 'subtract') {
+        console.warn(`⚠️ [COMPUTED PLOTS] Unsupported computation type: ${computedPlot.computationType}`);
+        return;
+      }
+
+      const { sourcePlotIds, computationParams, computationConfig } = computedPlot;
+
+      if (!sourcePlotIds || sourcePlotIds.length !== 2 || !computationParams) {
+        console.error(`❌ [COMPUTED PLOTS] Invalid metadata for computed plot "${computedPlot.title}"`);
+        return;
+      }
+
+      // Check if source plots' data is available
+      const [sourcePlot1Id, sourcePlot2Id] = sourcePlotIds;
+      const sourcePlot1Data = plotsData[sourcePlot1Id];
+      const sourcePlot2Data = plotsData[sourcePlot2Id];
+
+      if (!sourcePlot1Data || !sourcePlot2Data) {
+        console.log(`⏳ [COMPUTED PLOTS] Waiting for source data for "${computedPlot.title}"`, {
+          plot1Ready: !!sourcePlot1Data,
+          plot2Ready: !!sourcePlot2Data
+        });
+        return;
+      }
+
+      console.log(`🧮 [COMPUTED PLOTS] Recreating subtraction plot "${computedPlot.title}"`);
+
+      // Recreate the subtraction computation
+      const { param1, param2 } = computationParams;
+      const { direction = '1-2', missingDataMode = 'skip' } = computationConfig || {};
+
+      // Helper to find data key
+      const findDataKey = (dataPoint: any, paramName: string): string | null => {
+        if (paramName in dataPoint) return paramName;
+        const normalizedParam = paramName.replace(/\s+/g, '').toLowerCase();
+        for (const key of Object.keys(dataPoint)) {
+          if (key.toLowerCase() === normalizedParam) return key;
+        }
+        const cleanedParam = paramName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        for (const key of Object.keys(dataPoint)) {
+          const cleanedKey = key.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          if (cleanedKey.includes(cleanedParam) || cleanedParam.includes(cleanedKey)) return key;
+        }
+        return null;
+      };
+
+      const actualParam1Key = findDataKey(sourcePlot1Data.data[0], param1) || param1;
+      const actualParam2Key = findDataKey(sourcePlot2Data.data[0], param2) || param2;
+
+      // Build time -> value maps
+      const leftMap = new Map<string, number>();
+      sourcePlot1Data.data.forEach(point => {
+        const value = point[actualParam1Key];
+        if (value !== null && value !== undefined && !isNaN(Number(value))) {
+          leftMap.set(point.time, Number(value));
+        }
+      });
+
+      const rightMap = new Map<string, number>();
+      sourcePlot2Data.data.forEach(point => {
+        const value = point[actualParam2Key];
+        if (value !== null && value !== undefined && !isNaN(Number(value))) {
+          rightMap.set(point.time, Number(value));
+        }
+      });
+
+      // Compute subtraction
+      const allTimestamps = Array.from(new Set([...leftMap.keys(), ...rightMap.keys()])).sort();
+      const subtractedData: any[] = [];
+
+      allTimestamps.forEach(time => {
+        const val1 = leftMap.get(time);
+        const val2 = rightMap.get(time);
+
+        let resultValue: number | null = null;
+
+        if (val1 !== undefined && val2 !== undefined) {
+          resultValue = direction === '1-2' ? val1 - val2 : val2 - val1;
+        } else if (missingDataMode === 'zero') {
+          const useVal1 = val1 ?? 0;
+          const useVal2 = val2 ?? 0;
+          resultValue = direction === '1-2' ? useVal1 - useVal2 : useVal2 - useVal1;
+        }
+        // else skip (resultValue stays null)
+
+        if (resultValue !== null) {
+          subtractedData.push({
+            time,
+            [computationParams.resultParam || 'Difference']: resultValue
+          });
+        }
+      });
+
+      // Create ParseResult
+      const subtractedParseResult: ParseResult = {
+        data: subtractedData,
+        headers: ['time', computationParams.resultParam || 'Difference'],
+        errors: [],
+        summary: {
+          totalRows: subtractedData.length,
+          validRows: subtractedData.length,
+          columns: 2,
+          timeColumn: 'time'
+        }
+      };
+
+      // Update the plot with the recreated data
+      setPlots(prevPlots => prevPlots.map(p => {
+        if (p.id === computedPlot.id) {
+          console.log(`✅ [COMPUTED PLOTS] Recreated subtraction plot "${computedPlot.title}" with ${subtractedData.length} points`);
+          return {
+            ...p,
+            mergedData: subtractedParseResult
+          };
+        }
+        return p;
+      }));
+
+      // Set visibility state for the computed plot - preserve existing state if available
+      setPlotVisibilityState(prev => {
+        const existingState = prev[computedPlot.id];
+
+        // If there's already visibility state (from restoration), preserve it
+        if (existingState) {
+          console.log(`🎨 [COMPUTED PLOTS] Preserving existing visibility state for "${computedPlot.title}"`, existingState);
+          return prev; // Don't overwrite!
+        }
+
+        // Otherwise, set default state for new computed plots
+        console.log(`🎨 [COMPUTED PLOTS] Setting default visibility state for new computed plot "${computedPlot.title}"`);
+        return {
+          ...prev,
+          [computedPlot.id]: {
+            params: [computationParams.resultParam || 'Difference'],
+            colors: { [computationParams.resultParam || 'Difference']: '#8884d8' },
+            settings: {}
+          }
+        };
+      });
+    });
+  }, [plots, plotsData]);
 
   // Check if plots are eligible for merging
   const canMergePlots = useMemo(() => {
@@ -1871,6 +2122,18 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       fileName: subtractedFileName,
       isMerged: true,
       mergedData: subtractPreviewData,
+      // Store computation metadata for save/restore
+      computationType: 'subtract',
+      sourcePlotIds: [firstPlot.id, secondPlot.id],
+      computationParams: {
+        param1,
+        param2,
+        resultParam: resultParamName,
+      },
+      computationConfig: {
+        direction: subtractDirection,
+        missingDataMode: subtractMissingDataMode,
+      },
     };
 
     // Keep first 2 plots and add subtracted plot below them
@@ -1887,7 +2150,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       title: "Subtraction Complete",
       description: `Created plot: ${resultParamName}`
     });
-  }, [subtractPreviewData, plots, plotVisibilityState, toast]);
+  }, [subtractPreviewData, plots, plotVisibilityState, subtractDirection, subtractMissingDataMode, toast]);
 
   // Handler for adding marine/meteo plot
   const handleAddMarineMeteoPlot = useCallback(() => {
@@ -2083,6 +2346,10 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                       initialVisibleParameters={plotVisibilityState[plot.id]?.params}
                       initialParameterColors={plotVisibilityState[plot.id]?.colors}
                       initialParameterSettings={plotVisibilityState[plot.id]?.settings}
+                      initialAxisMode={plotVisibilityState[plot.id]?.plotSettings?.axisMode}
+                      initialCustomYAxisLabel={plotVisibilityState[plot.id]?.plotSettings?.customYAxisLabel}
+                      initialCompactView={plotVisibilityState[plot.id]?.plotSettings?.compactView}
+                      initialCustomParameterNames={plotVisibilityState[plot.id]?.plotSettings?.customParameterNames}
                       pinId={plot.pinId}
                     />
                   );
