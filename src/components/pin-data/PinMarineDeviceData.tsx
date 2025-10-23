@@ -1006,18 +1006,36 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       }> = {};
       availablePlots.forEach(savedPlot => {
         if (savedPlot.visibleParameters && savedPlot.visibleParameters.length > 0) {
+          // Construct plotSettings from flat fields (stored at root level in database)
+          const plotSettings: {
+            axisMode?: 'single' | 'multi';
+            customYAxisLabel?: string;
+            compactView?: boolean;
+            customParameterNames?: Record<string, string>;
+          } = {};
+
+          if (savedPlot.axisMode !== undefined) plotSettings.axisMode = savedPlot.axisMode;
+          if (savedPlot.customYAxisLabel !== undefined) plotSettings.customYAxisLabel = savedPlot.customYAxisLabel;
+          if (savedPlot.compactView !== undefined) plotSettings.compactView = savedPlot.compactView;
+          if (savedPlot.customParameterNames !== undefined) plotSettings.customParameterNames = savedPlot.customParameterNames;
+
           restoredVisibilityState[savedPlot.id] = {
             params: savedPlot.visibleParameters,
             colors: savedPlot.parameterColors || {},
             settings: savedPlot.parameterSettings,
-            plotSettings: savedPlot.plotSettings  // ✅ RESTORE PLOT-LEVEL SETTINGS
+            plotSettings: Object.keys(plotSettings).length > 0 ? plotSettings : undefined
           };
           console.log(`🎨 [RESTORE] Restored visibility for plot "${savedPlot.title}":`, {
             visibleParams: savedPlot.visibleParameters.length,
             colors: Object.keys(savedPlot.parameterColors || {}).length,
             hasSettings: !!savedPlot.parameterSettings,
-            hasPlotSettings: !!savedPlot.plotSettings,
-            plotSettings: savedPlot.plotSettings
+            hasPlotSettings: Object.keys(plotSettings).length > 0,
+            plotSettings: plotSettings,
+            rawFields: {
+              axisMode: savedPlot.axisMode,
+              compactView: savedPlot.compactView,
+              customYAxisLabel: savedPlot.customYAxisLabel
+            }
           });
         }
       });

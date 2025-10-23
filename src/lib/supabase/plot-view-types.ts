@@ -82,13 +82,11 @@ export interface SavedPlotConfig {
     };
   }>;
 
-  // Plot-level settings (axis mode, Y-axis label, compact view, custom parameter names)
-  plotSettings?: {
-    axisMode?: 'single' | 'multi';
-    customYAxisLabel?: string;
-    compactView?: boolean;
-    customParameterNames?: Record<string, string>;
-  };
+  // Plot-level settings (stored as flat fields at root level)
+  axisMode?: 'single' | 'multi';
+  customYAxisLabel?: string;
+  compactView?: boolean;
+  customParameterNames?: Record<string, string>;
 }
 
 /**
