@@ -65,7 +65,7 @@ import type { DateRange } from "react-day-picker";
 import type { CombinedDataPoint, LogStep as ApiLogStep, CombinedParameterKey } from '../om-marine-explorer/shared';
 import { ALL_PARAMETERS, PARAMETER_CONFIG } from '../om-marine-explorer/shared';
 import { fetchCombinedDataAction } from '../om-marine-explorer/actions';
-import { MarinePlotsGrid } from '@/components/marine/MarinePlotsGrid';
+import MarinePlotsGrid from '@/components/charts/LazyMarinePlotsGrid';
 import { DataTimeline } from '@/components/pin-data/DataTimeline';
 import { DEFAULT_MERGE_RULES, type MergeRule } from '@/components/pin-data/MergeRulesDialog';
 import { DatePickerWithRange } from '@/components/ui/date-picker-with-range';
@@ -418,6 +418,7 @@ function MapDrawingPageContent() {
   const [showProjectMenuInfo, setShowProjectMenuInfo] = useState<string | null>(null);
   const [mapScale, setMapScale] = useState<{ distance: number; unit: string; pixels: number } | null>(null);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
+  const [objectTypeFilter, setObjectTypeFilter] = useState<'all' | 'pin' | 'line' | 'area'>('all');
   const [sidebarWidth, setSidebarWidth] = useState(320); // Default width in pixels
   const [originalSidebarWidth, setOriginalSidebarWidth] = useState(320); // Store original width
   const [isResizing, setIsResizing] = useState(false);
@@ -452,7 +453,9 @@ function MapDrawingPageContent() {
   const [isUpdatingPrivacy, setIsUpdatingPrivacy] = useState(false);
   const [pinFiles, setPinFiles] = useState<Record<string, File[]>>({});
   const [pinFileMetadata, setPinFileMetadata] = useState<Record<string, PinFile[]>>({});
+  const [areaFileMetadata, setAreaFileMetadata] = useState<Record<string, PinFile[]>>({});
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const [projectDataFilter, setProjectDataFilter] = useState<'all' | 'pins' | 'areas'>('all');
 
   // Merged files state (must be declared before availableFilesForPlots)
   const [mergedFiles, setMergedFiles] = useState<(MergedFile & { fileSource: 'merged', pinLabel: string })[]>([]);
@@ -592,8 +595,9 @@ function MapDrawingPageContent() {
         startDate: mergedFile.startDate,
         endDate: mergedFile.endDate,
         pinLabel: 'Merged Files',
-        isDiscrete: false
-      } as PinFile & { pinLabel: string });
+        isDiscrete: false,
+        fileSource: 'merged' // Mark as merged file for identification
+      } as PinFile & { pinLabel: string; fileSource: 'merged' });
     });
 
     return result;
@@ -614,6 +618,8 @@ function MapDrawingPageContent() {
   const [newProjectDescription, setNewProjectDescription] = useState('');
   const [showUploadPinSelector, setShowUploadPinSelector] = useState(false);
   const [selectedUploadPinId, setSelectedUploadPinId] = useState<string>('');
+  const [selectedUploadAreaId, setSelectedUploadAreaId] = useState<string>(''); // NEW: For area uploads
+  const [uploadTargetType, setUploadTargetType] = useState<'pin' | 'area'>('pin'); // NEW: Toggle between pin and area
   const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
   const [duplicateFiles, setDuplicateFiles] = useState<{fileName: string, existingFile: PinFile}[]>([]);
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
@@ -969,25 +975,35 @@ function MapDrawingPageContent() {
       if (!projectId) return;
 
       perfLogger.start('loadPinFiles');
-      const fileMetadata: Record<string, PinFile[]> = {};
+      const pinMetadata: Record<string, PinFile[]> = {};
+      const areaMetadata: Record<string, PinFile[]> = {};
 
       try {
         // Load ALL files for the entire project (not just drawn pins)
         const allProjectFiles = await fileStorageService.getProjectFiles(projectId);
 
-        // Group files by pinId
+        // Group files by pinId or areaId
         for (const file of allProjectFiles) {
-          if (!fileMetadata[file.pinId]) {
-            fileMetadata[file.pinId] = [];
+          if (file.pinId) {
+            if (!pinMetadata[file.pinId]) {
+              pinMetadata[file.pinId] = [];
+            }
+            pinMetadata[file.pinId].push(file);
+          } else if (file.areaId) {
+            if (!areaMetadata[file.areaId]) {
+              areaMetadata[file.areaId] = [];
+            }
+            areaMetadata[file.areaId].push(file);
           }
-          fileMetadata[file.pinId].push(file);
         }
 
         const totalFiles = allProjectFiles.length;
-        const pinCount = Object.keys(fileMetadata).length;
+        const pinCount = Object.keys(pinMetadata).length;
+        const areaCount = Object.keys(areaMetadata).length;
 
-        perfLogger.end('loadPinFiles', `${totalFiles} files from ${pinCount} pins (project-wide)`);
-        setPinFileMetadata(fileMetadata);
+        perfLogger.end('loadPinFiles', `${totalFiles} files from ${pinCount} pins + ${areaCount} areas (project-wide)`);
+        setPinFileMetadata(pinMetadata);
+        setAreaFileMetadata(areaMetadata);
 
       } catch (error) {
         perfLogger.error('Failed to load project files', error);
@@ -1013,25 +1029,28 @@ function MapDrawingPageContent() {
   }, [toast]);
 
   // Map move handler for line and area drawing - use ref to avoid stale closures
-  const mapMoveHandlerRef = useRef<(center: LatLng, zoom: number) => void>();
-  
+  const mapMoveHandlerRef = useRef<(center: LatLng, zoom: number, isMoving: boolean) => void>();
+
   // Update the handler ref whenever dependencies change
-  mapMoveHandlerRef.current = (center: LatLng, zoom: number) => {
-    // Update view in useMapView hook
-    setView({ center, zoom });
-    
-    // Update crosshair position for line drawing
-    if (isDrawingLine && lineStartPoint) {
+  mapMoveHandlerRef.current = (center: LatLng, zoom: number, isMoving: boolean = false) => {
+    // Only update crosshair during continuous movement (isMoving=true) if actively drawing
+    const shouldUpdateDuringMove = isMoving && (isDrawingLine || isDrawingArea);
+
+    // Update view - but only on moveend (not during continuous dragging) to avoid excessive re-renders
+    if (!isMoving) {
+      setView({ center, zoom });
+      updateMapScale(center, zoom);
+    }
+
+    // Update crosshair position for line drawing (this needs to update during movement)
+    if (isDrawingLine && lineStartPoint && shouldUpdateDuringMove) {
       setCurrentMousePosition(center);
     }
-    
-    // Update crosshair position for area drawing
-    if (isDrawingArea && areaStartPoint) {
+
+    // Update crosshair position for area drawing (this needs to update during movement)
+    if (isDrawingArea && areaStartPoint && shouldUpdateDuringMove) {
       setCurrentAreaEndPoint(center);
     }
-    
-    // Update scale bar
-    updateMapScale(center, zoom);
   };
 
   // Calculate scale bar
@@ -1195,8 +1214,8 @@ function MapDrawingPageContent() {
   }, [showProjectDataDialog, fetchMergedFiles]);
 
   // Stable callback that calls the current handler
-  const handleMapMove = useCallback((center: LatLng, zoom: number) => {
-    mapMoveHandlerRef.current?.(center, zoom);
+  const handleMapMove = useCallback((center: LatLng, zoom: number, isMoving: boolean = false) => {
+    mapMoveHandlerRef.current?.(center, zoom, isMoving);
   }, []);
 
   const handleMapClick = useCallback((e: LeafletMouseEvent) => {
@@ -1949,17 +1968,25 @@ function MapDrawingPageContent() {
   const getProjectFiles = useCallback((projectId?: string) => {
     const targetProjectId = projectId || activeProjectId;
     if (!targetProjectId) return [];
-    
+
     const projectPins = pins.filter(pin => pin.projectId === targetProjectId);
+    const projectAreas = areas.filter(area => area.projectId === targetProjectId);
     const allFiles: PinFile[] = [];
-    
+
+    // Add pin files
     projectPins.forEach(pin => {
       const pinFilesMetadata = pinFileMetadata[pin.id] || [];
       allFiles.push(...pinFilesMetadata);
     });
-    
+
+    // Add area files
+    projectAreas.forEach(area => {
+      const areaFilesMetadata = areaFileMetadata[area.id] || [];
+      allFiles.push(...areaFilesMetadata);
+    });
+
     return allFiles;
-  }, [activeProjectId, pins, pinFileMetadata]);
+  }, [activeProjectId, pins, areas, pinFileMetadata, areaFileMetadata]);
 
   // CSV Date Analysis Functions
   // Now uses the intelligent csvParser.ts for consistent date parsing across the app
@@ -3328,8 +3355,8 @@ function MapDrawingPageContent() {
     input.click();
   };
 
-  // Handle file upload for pins - now receives files and pinId
-  const handleFileUpload = async (pinId: string, filesToUpload?: File[], skipDuplicateCheck: boolean = false) => {
+  // Handle file upload for pins or areas - now receives target (pin or area) and files
+  const handleFileUpload = async (targetId: string, targetType: 'pin' | 'area' = 'pin', filesToUpload?: File[], skipDuplicateCheck: boolean = false) => {
     const csvFiles = filesToUpload || pendingUploadFiles;
 
     if (csvFiles.length === 0) {
@@ -3357,8 +3384,10 @@ function MapDrawingPageContent() {
       console.log('🔍 Checking for duplicate files...');
 
       // Fetch existing files from database to ensure we have latest data
-      const existingFiles = await fileStorageService.getPinFiles(pinId);
-      console.log(`📂 Found ${existingFiles.length} existing files for pin ${pinId}`);
+      const existingFiles = targetType === 'pin'
+        ? await fileStorageService.getPinFiles(targetId)
+        : await fileStorageService.getAreaFiles(targetId);
+      console.log(`📂 Found ${existingFiles.length} existing files for ${targetType} ${targetId}`);
 
       const duplicates: {fileName: string, existingFile: PinFile}[] = [];
 
@@ -3392,7 +3421,8 @@ function MapDrawingPageContent() {
 
       for (const file of csvFiles) {
         try {
-          const result = await fileStorageService.uploadPinFile(pinId, file, activeProjectId);
+          const target = { type: targetType, id: targetId } as import('@/lib/supabase/file-storage-service').UploadTarget;
+          const result = await fileStorageService.uploadFile(target, file, activeProjectId);
 
           if (result) {
             uploadResults.push(result);
@@ -3410,35 +3440,40 @@ function MapDrawingPageContent() {
 
       if (uploadResults.length > 0) {
         // Update local file metadata state
-        setPinFileMetadata(prev => ({
-          ...prev,
-          [pinId]: [...(prev[pinId] || []), ...uploadResults]
-        }));
+        if (targetType === 'pin') {
+          setPinFileMetadata(prev => ({
+            ...prev,
+            [targetId]: [...(prev[targetId] || []), ...uploadResults]
+          }));
+        }
+        // Note: For areas, we could add similar state management if needed
       }
 
       // Show success/failure toast
       if (failedUploads.length === 0) {
         toast({
           title: "Files Uploaded Successfully",
-          description: `${uploadResults.length} CSV file${uploadResults.length > 1 ? 's' : ''} uploaded to Supabase.`
+          description: `${uploadResults.length} CSV file${uploadResults.length > 1 ? 's' : ''} uploaded to ${targetType === 'pin' ? 'pin' : 'area'}.`
             });
-            
-            // Keep the explore dropdown open to show the newly uploaded files
-            setShowExploreDropdown(true);
-            setSelectedPinForExplore(pinId);
+
+            // Keep the explore dropdown open to show the newly uploaded files (pins only)
+            if (targetType === 'pin') {
+              setShowExploreDropdown(true);
+              setSelectedPinForExplore(targetId);
+            }
           } else {
             toast({
               variant: failedUploads.length === csvFiles.length ? "destructive" : "default",
               title: failedUploads.length === csvFiles.length ? "Upload Failed" : "Partial Upload Success",
-              description: failedUploads.length === csvFiles.length 
+              description: failedUploads.length === csvFiles.length
                 ? `Failed to upload ${failedUploads.length} files`
                 : `${uploadResults.length} uploaded, ${failedUploads.length} failed: ${failedUploads.join(', ')}`
             });
-            
-            // If at least some files uploaded successfully, keep dropdown open
-            if (uploadResults.length > 0) {
+
+            // If at least some files uploaded successfully, keep dropdown open (pins only)
+            if (uploadResults.length > 0 && targetType === 'pin') {
               setShowExploreDropdown(true);
-              setSelectedPinForExplore(pinId);
+              setSelectedPinForExplore(targetId);
             }
       }
 
@@ -3453,12 +3488,14 @@ function MapDrawingPageContent() {
       setIsUploadingFiles(false);
       setPendingUploadFiles([]);
       setSelectedUploadPinId('');
+      setSelectedUploadAreaId('');
     }
   };
 
   // Handle replacing duplicate files
   const handleReplaceDuplicates = async () => {
-    if (!selectedUploadPinId) return;
+    const targetId = uploadTargetType === 'pin' ? selectedUploadPinId : selectedUploadAreaId;
+    if (!targetId) return;
 
     setShowDuplicateWarning(false);
 
@@ -3468,11 +3505,13 @@ function MapDrawingPageContent() {
         await fileStorageService.deleteFile(dup.existingFile.id);
         console.log(`Deleted duplicate file: ${dup.fileName}`);
 
-        // Also update local state to remove the deleted file
-        setPinFileMetadata(prev => ({
-          ...prev,
-          [selectedUploadPinId]: (prev[selectedUploadPinId] || []).filter(f => f.id !== dup.existingFile.id)
-        }));
+        // Also update local state to remove the deleted file (only for pins)
+        if (uploadTargetType === 'pin') {
+          setPinFileMetadata(prev => ({
+            ...prev,
+            [targetId]: (prev[targetId] || []).filter(f => f.id !== dup.existingFile.id)
+          }));
+        }
       } catch (error) {
         console.error(`Failed to delete duplicate file ${dup.fileName}:`, error);
       }
@@ -3482,7 +3521,7 @@ function MapDrawingPageContent() {
     setDuplicateFiles([]);
 
     // Now proceed with the upload, skipping duplicate check
-    await handleFileUpload(selectedUploadPinId, pendingUploadFiles, true);
+    await handleFileUpload(targetId, uploadTargetType, pendingUploadFiles, true);
   };
 
   // Handle cancelling duplicate upload
@@ -3778,35 +3817,38 @@ function MapDrawingPageContent() {
       {/* Map Container - Account for top navigation height (h-14 = 3.5rem) */}
       <main className="relative overflow-hidden bg-background text-foreground" style={{ height: 'calc(100vh - 3.5rem)' }}>
         <div className="h-full w-full relative" style={{ minHeight: '500px', cursor: drawingMode === 'none' ? 'default' : 'crosshair' }}>
-          
-          
-          <LeafletMap
-            mapRef={mapRef}
-            center={[view.center.lat, view.center.lng]}
-            zoom={view.zoom}
-            pins={pins}
-            lines={lines}
-            areas={areas}
-            projects={projects}
-            tags={tags}
-            settings={settings}
-            currentLocation={null}
-            onLocationFound={() => {}}
-            onLocationError={() => {}}
-            onMove={handleMapMove}
-            isDrawingLine={isDrawingLine}
-            lineStartPoint={lineStartPoint}
-            currentMousePosition={currentMousePosition}
-            isDrawingArea={isDrawingArea}
-            onMapClick={handleMapClick}
-            onMapMouseMove={handleMapMouseMove}
-            pendingAreaPath={pendingAreaPath}
-            areaStartPoint={areaStartPoint}
-            currentAreaEndPoint={currentAreaEndPoint}
-            pendingPin={pendingPin}
-            onPinSave={handlePinSave}
-            onPinCancel={handlePinCancel}
-            pendingLine={pendingLine}
+
+          {/* Show skeleton during initial load */}
+          {isPageLoading && isInitialLoad ? (
+            <MapSkeleton />
+          ) : (
+            <LeafletMap
+              mapRef={mapRef}
+              center={[view.center.lat, view.center.lng]}
+              zoom={view.zoom}
+              pins={pins}
+              lines={lines}
+              areas={areas}
+              projects={projects}
+              tags={tags}
+              settings={settings}
+              currentLocation={null}
+              onLocationFound={() => {}}
+              onLocationError={() => {}}
+              onMove={handleMapMove}
+              isDrawingLine={isDrawingLine}
+              lineStartPoint={lineStartPoint}
+              currentMousePosition={currentMousePosition}
+              isDrawingArea={isDrawingArea}
+              onMapClick={handleMapClick}
+              onMapMouseMove={handleMapMouseMove}
+              pendingAreaPath={pendingAreaPath}
+              areaStartPoint={areaStartPoint}
+              currentAreaEndPoint={currentAreaEndPoint}
+              pendingPin={pendingPin}
+              onPinSave={handlePinSave}
+              onPinCancel={handlePinCancel}
+              pendingLine={pendingLine}
             onLineSave={handleLineSave}
             onLineCancel={handleLineCancel}
             pendingArea={pendingArea}
@@ -3843,6 +3885,7 @@ function MapDrawingPageContent() {
             tempAreaPath={tempAreaPath}
             onAreaCornerDrag={handleAreaCornerDrag}
           />
+          )}
 
           {/* Center Crosshairs */}
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none z-[500]">
@@ -4511,7 +4554,9 @@ function MapDrawingPageContent() {
                                 size="sm"
                                 onClick={() => {
                                   // Don't close the dropdown, just trigger file upload
-                                  handleFileUpload(itemToEdit.id);
+                                  // Determine if this is a pin or area based on properties
+                                  const targetType = ('fillVisible' in itemToEdit && 'path' in itemToEdit) ? 'area' : 'pin';
+                                  handleFileUpload(itemToEdit.id, targetType);
                                 }}
                                 disabled={isUploadingFiles}
                                 className="w-full justify-start gap-2 h-8 text-xs"
@@ -4569,8 +4614,15 @@ function MapDrawingPageContent() {
                                     </Button>
                                   </div>
 
+                                  {/* Loading skeleton while fetching data */}
+                                  {isLoadingPinMeteoData && (
+                                    <div className="mt-3">
+                                      <MarinePlotsSkeleton />
+                                    </div>
+                                  )}
+
                                   {/* Meteo Data Display - MarinePlotsGrid Style with Double Width and Expandable Panel */}
-                                  {pinMeteoData && pinMeteoData.length > 0 && (
+                                  {!isLoadingPinMeteoData && pinMeteoData && pinMeteoData.length > 0 && (
                                     <div className="w-full">
                                       {/* Header */}
                                       <div className="mb-2 flex items-center justify-between">
@@ -5336,10 +5388,11 @@ function MapDrawingPageContent() {
               className={`fixed left-0 bg-background border-r shadow-xl z-[1600] transform transition-transform duration-300 ease-in-out ${
                 showMainMenu ? 'translate-x-0' : '-translate-x-full'
               }`}
-              style={{ 
+              style={{
                 width: `${sidebarWidth}px`,
-                top: '80px', // Start below the header bar 
-                height: 'calc(100vh - 80px)' // Adjust height accordingly
+                top: '80px', // Start below the header bar
+                height: 'calc(100vh - 80px)', // Adjust height accordingly
+                transition: 'width 0.3s ease-out' // Smooth width transitions
               }}
               data-menu-dropdown
             >
@@ -5624,14 +5677,100 @@ function MapDrawingPageContent() {
                                 </Button>
                               </div>
                             </div>
-                            
+
                           </div>
-                          
-                          
+
+
                           {/* Active Project Objects Dropdown */}
                           {showProjectInfo === activeProjectId && (
                             <div className="px-3 pb-3">
-                              
+
+                              {/* Filter Buttons Row */}
+                              {totalObjects > 0 && (
+                                <div className="flex gap-1 mb-2">
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant={objectTypeFilter === 'all' ? 'default' : 'outline'}
+                                          size="sm"
+                                          className="h-6 text-xs px-2 flex-1"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setObjectTypeFilter('all');
+                                          }}
+                                        >
+                                          All
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="bottom">
+                                        <p>Show all objects</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant={objectTypeFilter === 'pin' ? 'default' : 'outline'}
+                                          size="sm"
+                                          className="h-6 w-6 p-0"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setObjectTypeFilter('pin');
+                                          }}
+                                        >
+                                          <MapPin className="h-3 w-3 text-blue-500" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="bottom">
+                                        <p>Show pins only</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant={objectTypeFilter === 'line' ? 'default' : 'outline'}
+                                          size="sm"
+                                          className="h-6 w-6 p-0"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setObjectTypeFilter('line');
+                                          }}
+                                        >
+                                          <Minus className="h-3 w-3 text-green-500" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="bottom">
+                                        <p>Show lines only</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant={objectTypeFilter === 'area' ? 'default' : 'outline'}
+                                          size="sm"
+                                          className="h-6 w-6 p-0"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setObjectTypeFilter('area');
+                                          }}
+                                        >
+                                          <Square className="h-3 w-3 text-red-500" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="bottom">
+                                        <p>Show areas only</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </div>
+                              )}
+
                               {totalObjects === 0 ? (
                                 <div className="text-xs text-muted-foreground text-center py-4">
                                   No objects in this project
@@ -5643,7 +5782,10 @@ function MapDrawingPageContent() {
                                     ...projectPins.map(pin => ({ ...pin, type: 'pin' as const })),
                                     ...projectLines.map(line => ({ ...line, type: 'line' as const })),
                                     ...projectAreas.map(area => ({ ...area, type: 'area' as const }))
-                                  ].map(object => (
+                                  ].filter(object => {
+                                    if (objectTypeFilter === 'all') return true;
+                                    return object.type === objectTypeFilter;
+                                  }).map(object => (
                                     <div
                                       key={object.id}
                                       className={`w-full flex items-center gap-2 p-2 rounded text-xs transition-all ${
@@ -6421,6 +6563,7 @@ function MapDrawingPageContent() {
           setShowUploadPinSelector(false);
           setSelectedUploadPinId('');
           setPendingUploadFiles([]);
+          setProjectDataFilter('all');
         }
         setShowProjectDataDialog(open);
       }}>
@@ -6462,10 +6605,50 @@ function MapDrawingPageContent() {
               </div>
             </div>
           </DialogHeader>
-          
+
+          {/* Filter Buttons */}
+          <div className="flex-shrink-0 px-6 py-3 border-b">
+            <div className="flex gap-2">
+              <Button
+                variant={projectDataFilter === 'all' ? 'default' : 'outline'}
+                size="sm"
+                className="h-7 text-xs px-3"
+                onClick={() => setProjectDataFilter('all')}
+              >
+                All Files
+              </Button>
+              <Button
+                variant={projectDataFilter === 'pins' ? 'default' : 'outline'}
+                size="sm"
+                className="h-7 text-xs px-3 flex items-center gap-1.5"
+                onClick={() => setProjectDataFilter('pins')}
+              >
+                <MapPin className="h-3 w-3 text-blue-500" />
+                Pin Files
+              </Button>
+              <Button
+                variant={projectDataFilter === 'areas' ? 'default' : 'outline'}
+                size="sm"
+                className="h-7 text-xs px-3 flex items-center gap-1.5"
+                onClick={() => setProjectDataFilter('areas')}
+              >
+                <Square className="h-3 w-3 text-red-500" />
+                Area Files
+              </Button>
+            </div>
+          </div>
+
           <div className="flex-1 overflow-y-auto">
             {(() => {
-              const projectFiles = getProjectFiles(currentProjectContext || activeProjectId);
+              let projectFiles = getProjectFiles(currentProjectContext || activeProjectId);
+
+              // Apply filter
+              if (projectDataFilter === 'pins') {
+                projectFiles = projectFiles.filter(file => file.pinId);
+              } else if (projectDataFilter === 'areas') {
+                projectFiles = projectFiles.filter(file => file.areaId);
+              }
+
               const groupedFiles = groupFilesByType(projectFiles);
 
               // Add fileSource property to uploaded files
@@ -6963,8 +7146,12 @@ function MapDrawingPageContent() {
                     </div>
                   </div>
 
-                  <DataTimeline
-                    files={filteredFiles}
+                  {/* Show skeleton while loading initial data */}
+                  {isLoadingMergedFiles || (isPageLoading && isInitialLoad) ? (
+                    <DataTimelineSkeleton />
+                  ) : (
+                    <DataTimeline
+                      files={filteredFiles}
                     getFileDateRange={getFileDateRange}
                     onFileClick={handleTimelineFileClick}
                     onRenameFile={async (file, newName) => {
@@ -7252,6 +7439,7 @@ function MapDrawingPageContent() {
                     multiFileMergeMode={multiFileMergeMode}
                     onMultiFileMergeModeChange={setMultiFileMergeMode}
                   />
+                  )}
                 </div>
               );
             })()}
@@ -7265,16 +7453,18 @@ function MapDrawingPageContent() {
           setShowUploadPinSelector(false);
           setPendingUploadFiles([]);
           setSelectedUploadPinId('');
+          setSelectedUploadAreaId('');
+          setUploadTargetType('pin');
         }
       }}>
         <DialogContent className="sm:max-w-md z-[9999]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="h-5 w-5" />
-              Assign Files to Pin
+              Assign Files
             </DialogTitle>
             <DialogDescription>
-              {pendingUploadFiles.length} file{pendingUploadFiles.length > 1 ? 's' : ''} selected. Choose which pin to assign them to.
+              {pendingUploadFiles.length} file{pendingUploadFiles.length > 1 ? 's' : ''} selected. Choose where to upload them.
             </DialogDescription>
           </DialogHeader>
 
@@ -7291,51 +7481,97 @@ function MapDrawingPageContent() {
               </div>
             </div>
 
-            {/* Pin selector */}
+            {/* Target type selector (Pin vs Area) */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Assign to Pin:</label>
-              <Select value={selectedUploadPinId} onValueChange={setSelectedUploadPinId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a pin..." />
-                </SelectTrigger>
-                <SelectContent className="z-[99999]">
-                  {/* Special option for files not assigned to a specific pin (e.g., _ALL_ files) */}
-                  {/* TODO: NO_PIN option is not fully implemented - requires backend support for pin-less files
-                  <SelectItem value="NO_PIN">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{
-                        background: 'conic-gradient(from 0deg, #ef4444 0deg 72deg, #f59e0b 72deg 144deg, #22c55e 144deg 216deg, #3b82f6 216deg 288deg, #a855f7 288deg 360deg)'
-                      }} />
-                      <span>Not assigned to pin (Project-wide)</span>
-                    </div>
-                  </SelectItem>
-                  */}
+              <label className="text-sm font-medium">Upload to:</label>
+              <RadioGroup value={uploadTargetType} onValueChange={(value: 'pin' | 'area') => {
+                setUploadTargetType(value);
+                setSelectedUploadPinId('');
+                setSelectedUploadAreaId('');
+              }}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="pin" id="target-pin" />
+                  <Label htmlFor="target-pin" className="flex items-center gap-2 cursor-pointer">
+                    <MapPin className="h-4 w-4 text-blue-500" />
+                    Pin (Single Location)
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="area" id="target-area" />
+                  <Label htmlFor="target-area" className="flex items-center gap-2 cursor-pointer">
+                    <Square className="h-4 w-4 text-purple-500" />
+                    Area (Region/Multi-Site)
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
 
-                  {(() => {
-                    const projectPins = pins.filter(pin => pin.projectId === (currentProjectContext || activeProjectId));
+            {/* Pin/Area selector */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                {uploadTargetType === 'pin' ? 'Assign to Pin:' : 'Assign to Area:'}
+              </label>
+              {uploadTargetType === 'pin' ? (
+                <Select value={selectedUploadPinId} onValueChange={setSelectedUploadPinId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a pin..." />
+                  </SelectTrigger>
+                  <SelectContent className="z-[99999]">
+                    {(() => {
+                      const projectPins = pins.filter(pin => pin.projectId === (currentProjectContext || activeProjectId));
 
-                    if (projectPins.length === 0) {
-                      return (
-                        <div className="p-4 text-center text-sm text-muted-foreground">
-                          No other pins found in this project.
-                        </div>
-                      );
-                    }
+                      if (projectPins.length === 0) {
+                        return (
+                          <div className="p-4 text-center text-sm text-muted-foreground">
+                            No pins found in this project.
+                          </div>
+                        );
+                      }
 
-                    return projectPins.map(pin => (
-                      <SelectItem key={pin.id} value={pin.id}>
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: pin.color }}
-                          />
-                          <span>{pin.label || 'Unnamed Pin'}</span>
-                        </div>
-                      </SelectItem>
-                    ));
-                  })()}
-                </SelectContent>
-              </Select>
+                      return projectPins.map(pin => (
+                        <SelectItem key={pin.id} value={pin.id}>
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-3 w-3 text-blue-500" />
+                            <div
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: pin.color }}
+                            />
+                            <span>{pin.label || 'Unnamed Pin'}</span>
+                          </div>
+                        </SelectItem>
+                      ));
+                    })()}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Select value={selectedUploadAreaId} onValueChange={setSelectedUploadAreaId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select an area..." />
+                  </SelectTrigger>
+                  <SelectContent className="z-[99999]">
+                    {(() => {
+                      const projectAreas = areas.filter(area => area.projectId === (currentProjectContext || activeProjectId));
+
+                      if (projectAreas.length === 0) {
+                        return (
+                          <div className="p-4 text-center text-sm text-muted-foreground">
+                            No areas found in this project.
+                          </div>
+                        );
+                      }
+
+                      return projectAreas.map(area => (
+                        <SelectItem key={area.id} value={area.id}>
+                          <div className="flex items-center gap-2">
+                            <Square className="h-3 w-3 text-purple-500" />
+                            <span>{area.label || 'Unnamed Area'}</span>
+                          </div>
+                        </SelectItem>
+                      ));
+                    })()}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             {/* Action buttons */}
@@ -7347,6 +7583,8 @@ function MapDrawingPageContent() {
                   setShowUploadPinSelector(false);
                   setPendingUploadFiles([]);
                   setSelectedUploadPinId('');
+                  setSelectedUploadAreaId('');
+                  setUploadTargetType('pin');
                 }}
               >
                 Cancel
@@ -7354,18 +7592,19 @@ function MapDrawingPageContent() {
               <Button
                 size="sm"
                 onClick={() => {
-                  if (selectedUploadPinId) {
+                  const targetId = uploadTargetType === 'pin' ? selectedUploadPinId : selectedUploadAreaId;
+                  if (targetId) {
                     setShowUploadPinSelector(false);
-                    handleFileUpload(selectedUploadPinId);
+                    handleFileUpload(targetId, uploadTargetType);
                   } else {
                     toast({
                       variant: "destructive",
-                      title: "No Pin Selected",
-                      description: "Please select a pin to upload files to."
+                      title: `No ${uploadTargetType === 'pin' ? 'Pin' : 'Area'} Selected`,
+                      description: `Please select ${uploadTargetType === 'pin' ? 'a pin' : 'an area'} to upload files to.`
                     });
                   }
                 }}
-                disabled={!selectedUploadPinId || isUploadingFiles}
+                disabled={(!selectedUploadPinId && !selectedUploadAreaId) || isUploadingFiles}
               >
                 {isUploadingFiles ? (
                   <>

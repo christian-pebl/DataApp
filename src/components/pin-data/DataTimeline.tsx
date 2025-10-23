@@ -176,6 +176,7 @@ const formatCompactDate = (dateString: string | null): string => {
 // Helper function to check if file is a merged file
 const isMergedFile = (file: PinFile & { pinLabel: string }): boolean => {
   return (file as any).fileSource === 'merged' ||
+         file.pinId === 'merged' || // Check for special merged pinId
          file.fileName.includes('_merge_') ||
          file.fileName.includes('merge_std');
 };
@@ -300,13 +301,14 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
   // Bulk fetch missing dates
   const handleFetchMissingDates = async () => {
     const filesWithoutDates = filesWithDates.filter(
-      ({ dateRange }) => !dateRange.startDate || !dateRange.endDate
+      ({ dateRange, file }) =>
+        (!dateRange.startDate || !dateRange.endDate) && !isMergedFile(file)
     );
 
     if (filesWithoutDates.length === 0) {
       toast({
         title: "All dates present",
-        description: "All files already have start and end dates"
+        description: "All files already have start and end dates (merged files skipped)"
       });
       return;
     }
@@ -365,6 +367,16 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
 
           if (!updateResult.success) {
             console.error(`[DataTimeline] Failed to update ${file.fileName}:`, updateResult.error);
+
+            // Show a specific toast for pin-related errors
+            if (updateResult.error?.includes('Pin not found')) {
+              toast({
+                variant: "destructive",
+                title: "Skipped orphaned file",
+                description: `${file.fileName} has no associated pin`
+              });
+            }
+
             errorCount++;
             continue;
           }
@@ -435,14 +447,18 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
     }
   };
 
-  // Check if any files are missing dates
+  // Check if any files are missing dates (exclude merged files)
   const hasMissingDates = useMemo(() => {
-    return filesWithDates.some(({ dateRange }) => !dateRange.startDate || !dateRange.endDate);
+    return filesWithDates.some(({ dateRange, file }) =>
+      (!dateRange.startDate || !dateRange.endDate) && !isMergedFile(file)
+    );
   }, [filesWithDates]);
 
-  // Count files missing dates
+  // Count files missing dates (exclude merged files)
   const missingDatesCount = useMemo(() => {
-    return filesWithDates.filter(({ dateRange }) => !dateRange.startDate || !dateRange.endDate).length;
+    return filesWithDates.filter(({ dateRange, file }) =>
+      (!dateRange.startDate || !dateRange.endDate) && !isMergedFile(file)
+    ).length;
   }, [filesWithDates]);
 
   // Toggle sort order handler
