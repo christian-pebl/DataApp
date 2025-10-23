@@ -48,9 +48,26 @@ export interface SavedPlotConfig {
   isMerged?: boolean;
   mergedParams?: MergedParameterConfig[];
 
-  // Visibility state (which parameters are checked)
+  // Parameter display settings (which parameters are checked and their styling)
   visibleParameters: string[];
   parameterColors: Record<string, string>;
+  // Complete parameter state (opacity, lineStyle, lineWidth, filters, MA, etc.)
+  parameterSettings?: Record<string, {
+    opacity?: number;
+    lineStyle?: 'solid' | 'dashed';
+    lineWidth?: number;
+    isSolo?: boolean;
+    timeFilter?: {
+      enabled: boolean;
+      excludeStart: string;
+      excludeEnd: string;
+    };
+    movingAverage?: {
+      enabled: boolean;
+      windowDays: number;
+      showLine: boolean;
+    };
+  }>;
 }
 
 /**

@@ -122,7 +122,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
 
   // Visibility tracking for merge feature
   const [plotVisibilityState, setPlotVisibilityState] = useState<
-    Record<string, { params: string[], colors: Record<string, string> }>
+    Record<string, { params: string[], colors: Record<string, string>, settings?: Record<string, any> }>
   >({});
 
   // CSV preview for merge
@@ -623,7 +623,10 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         isMerged: plot.isMerged,
         mergedParams: plot.mergedParams,
         visibleParameters: plotVisibilityState[plot.id]?.params || [],
-        parameterColors: plotVisibilityState[plot.id]?.colors || {}
+        parameterColors: plotVisibilityState[plot.id]?.colors || {},
+        // TODO: Capture full parameter settings (opacity, lineStyle, lineWidth, filters, MA)
+        // For now this is undefined, but the structure is ready for future enhancement
+        parameterSettings: undefined
       })),
       timeRoundingInterval,
       mergeRules,
@@ -866,11 +869,34 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
 
       setPlots(restoredPlots);
 
+      // Restore plot visibility state (which parameters are visible in each plot)
+      const restoredVisibilityState: Record<string, { params: string[], colors: Record<string, string>, settings?: Record<string, any> }> = {};
+      availablePlots.forEach(savedPlot => {
+        if (savedPlot.visibleParameters && savedPlot.visibleParameters.length > 0) {
+          restoredVisibilityState[savedPlot.id] = {
+            params: savedPlot.visibleParameters,
+            colors: savedPlot.parameterColors || {},
+            settings: savedPlot.parameterSettings
+          };
+          console.log(`🎨 [RESTORE] Restored visibility for plot "${savedPlot.title}":`, {
+            visibleParams: savedPlot.visibleParameters.length,
+            colors: Object.keys(savedPlot.parameterColors || {}).length,
+            hasSettings: !!savedPlot.parameterSettings
+          });
+        }
+      });
+
+      if (Object.keys(restoredVisibilityState).length > 0) {
+        setPlotVisibilityState(restoredVisibilityState);
+        console.log('✅ [RESTORE] Plot visibility state restored for', Object.keys(restoredVisibilityState).length, 'plots');
+      }
+
       console.log('✅✅✅ [RESTORE] Plot view restored successfully! ✅✅✅');
       console.log('📊 [RESTORE] Final state:', {
         plots: restoredPlots.length,
         timeAxisMode: config.timeAxisMode,
-        globalBrushRange: config.globalBrushRange
+        globalBrushRange: config.globalBrushRange,
+        visibilityStateRestored: Object.keys(restoredVisibilityState).length
       });
 
       toast({
@@ -1961,6 +1987,10 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                       onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
                       isLastPlot={index === plots.length - 1}
                       onVisibilityChange={handleVisibilityChange(plot.id)}
+                      // Pass initial state for restoring saved views
+                      initialVisibleParameters={plotVisibilityState[plot.id]?.params}
+                      initialParameterColors={plotVisibilityState[plot.id]?.colors}
+                      initialParameterSettings={plotVisibilityState[plot.id]?.settings}
                       pinId={plot.pinId}
                     />
                   );

@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { X, Settings2, BarChart, Loader2, AlertCircle, CheckCircle2, Info, ChevronDown, ChevronUp, FileIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { parseMultipleCSVFiles, type ParseResult, type ParsedDataPoint } from "./csvParser";
-import { PinChartDisplay } from "./PinChartDisplay";
+import PinChartDisplay from "@/components/charts/LazyPinChartDisplay";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +45,10 @@ interface PinPlotInstanceProps {
   isLastPlot?: boolean;
   // Visibility tracking for merge feature
   onVisibilityChange?: (visibleParams: string[], paramColors: Record<string, string>) => void;
+  // Initial state for restoring saved views
+  initialVisibleParameters?: string[];
+  initialParameterColors?: Record<string, string>;
+  initialParameterSettings?: Record<string, any>;
   // Pin ID for saving corrected files to database
   pinId?: string;
 }
@@ -65,6 +69,9 @@ export function PinPlotInstance({
   onBrushChange,
   isLastPlot,
   onVisibilityChange,
+  initialVisibleParameters,
+  initialParameterColors,
+  initialParameterSettings,
   pinId
 }: PinPlotInstanceProps) {
   const { toast } = useToast();
@@ -193,6 +200,10 @@ export function PinPlotInstance({
               onBrushChange={onBrushChange}
               isLastPlot={isLastPlot}
               onVisibilityChange={onVisibilityChange}
+              // Initial state for restoring saved views
+              initialVisibleParameters={initialVisibleParameters}
+              initialParameterColors={initialParameterColors}
+              initialParameterSettings={initialParameterSettings}
               // Set defaults for merged plots (detected by preParsedData)
               defaultAxisMode={preParsedData ? 'multi' : 'single'}
               defaultParametersExpanded={preParsedData ? true : false}

@@ -2,9 +2,15 @@ import { createClient } from './client'
 import { v4 as uuidv4 } from 'uuid'
 import { perfLogger } from '../perf-logger'
 
+// Upload target: either a pin or an area
+export type UploadTarget =
+  | { type: 'pin'; id: string }
+  | { type: 'area'; id: string };
+
 export interface PinFile {
   id: string
-  pinId: string
+  pinId?: string  // Now optional (for area files)
+  areaId?: string  // NEW: Area reference
   fileName: string
   filePath: string
   fileSize: number
@@ -22,46 +28,69 @@ class FileStorageService {
 
   /**
    * Upload a file to Supabase Storage and save metadata to database
+   * @param target - Upload target (pin or area)
+   * @param file - File to upload
+   * @param projectId - Project ID
    */
-  async uploadPinFile(
-    pinId: string, 
-    file: File, 
+  async uploadFile(
+    target: UploadTarget,
+    file: File,
     projectId: string = 'default'
   ): Promise<PinFile | null> {
     try {
       // Get current user and verify authentication
       console.log('🔐 Checking authentication for file upload...');
       const { data: { user }, error: authError } = await this.supabase.auth.getUser()
-      
+
       if (authError || !user) {
-        console.error('❌ Authentication required to upload pin files:', authError)
+        console.error('❌ Authentication required to upload files:', authError)
         return null
       }
       console.log(`✅ Authenticated as user: ${user.id}`);
 
-      // Verify that the user owns the pin they're trying to upload to
-      console.log(`🔍 Verifying ownership of pin ${pinId}...`);
-      const { data: pinData, error: pinError } = await this.supabase
-        .from('pins')
-        .select('id, user_id')
-        .eq('id', pinId)
-        .eq('user_id', user.id)
-        .single()
+      // Verify ownership based on target type
+      if (target.type === 'pin') {
+        console.log(`🔍 Verifying ownership of pin ${target.id}...`);
+        const { data: pinData, error: pinError } = await this.supabase
+          .from('pins')
+          .select('id, user_id')
+          .eq('id', target.id)
+          .eq('user_id', user.id)
+          .single()
 
-      if (pinError || !pinData) {
-        console.log('⚠️ Pin not accessible for upload:', {
-          pinId,
-          userId: user.id,
-          error: pinError?.message || 'Pin not found or upload access denied'
-        })
-        return null
+        if (pinError || !pinData) {
+          console.log('⚠️ Pin not accessible for upload:', {
+            pinId: target.id,
+            userId: user.id,
+            error: pinError?.message || 'Pin not found or upload access denied'
+          })
+          return null
+        }
+        console.log('✅ Pin ownership verified');
+      } else {
+        console.log(`🔍 Verifying ownership of area ${target.id}...`);
+        const { data: areaData, error: areaError } = await this.supabase
+          .from('areas')
+          .select('id, user_id')
+          .eq('id', target.id)
+          .eq('user_id', user.id)
+          .single()
+
+        if (areaError || !areaData) {
+          console.log('⚠️ Area not accessible for upload:', {
+            areaId: target.id,
+            userId: user.id,
+            error: areaError?.message || 'Area not found or upload access denied'
+          })
+          return null
+        }
+        console.log('✅ Area ownership verified');
       }
-      console.log('✅ Pin ownership verified');
 
-      // Generate unique file path
+      // Generate unique file path based on target type
       const fileId = uuidv4()
       const fileExtension = file.name.split('.').pop()
-      const filePath = `pins/${pinId}/${fileId}.${fileExtension}`
+      const filePath = `${target.type}s/${target.id}/${fileId}.${fileExtension}`
 
       // Upload file to Supabase Storage
       console.log(`📤 Uploading file to storage: ${filePath}`);
@@ -103,26 +132,29 @@ class FileStorageService {
       console.log('✅ File uploaded to storage successfully');
 
       // Save file metadata to database (using snake_case column names)
-      const pinFileData = {
-        pin_id: pinId,
+      const fileData = {
         file_name: file.name,
         file_path: filePath,
         file_size: file.size,
         file_type: file.type || 'text/csv',
-        project_id: projectId
+        project_id: projectId,
+        ...(target.type === 'pin'
+          ? { pin_id: target.id, area_id: null }
+          : { pin_id: null, area_id: target.id }
+        )
       }
 
-      console.log('💾 Inserting pin file metadata to database:', pinFileData);
+      console.log('💾 Inserting file metadata to database:', fileData);
 
       const { data, error: dbError } = await this.supabase
         .from('pin_files')
-        .insert(pinFileData)
+        .insert(fileData)
         .select()
         .single()
 
       if (dbError) {
         console.error('❌ Database error:', dbError)
-        console.error('Table: pin_files, Data:', pinFileData);
+        console.error('Table: pin_files, Data:', fileData);
         // Clean up uploaded file if database save fails
         console.log('🧹 Cleaning up uploaded file due to database error...');
         await this.supabase.storage
@@ -137,6 +169,7 @@ class FileStorageService {
       return {
         id: data.id,
         pinId: data.pin_id,
+        areaId: data.area_id,
         fileName: data.file_name,
         filePath: data.file_path,
         fileSize: data.file_size,
@@ -149,6 +182,29 @@ class FileStorageService {
       console.error('Upload file error:', error)
       return null
     }
+  }
+
+  /**
+   * Upload a file to a pin (backwards compatibility wrapper)
+   * @deprecated Use uploadFile with target parameter instead
+   */
+  async uploadPinFile(
+    pinId: string,
+    file: File,
+    projectId: string = 'default'
+  ): Promise<PinFile | null> {
+    return this.uploadFile({ type: 'pin', id: pinId }, file, projectId);
+  }
+
+  /**
+   * Upload a file to an area
+   */
+  async uploadAreaFile(
+    areaId: string,
+    file: File,
+    projectId: string = 'default'
+  ): Promise<PinFile | null> {
+    return this.uploadFile({ type: 'area', id: areaId }, file, projectId);
   }
 
   /**
@@ -197,6 +253,7 @@ class FileStorageService {
       return (data || []).map(item => ({
         id: item.id,
         pinId: item.pin_id,
+        areaId: item.area_id,
         fileName: item.file_name,
         filePath: item.file_path,
         fileSize: item.file_size,
@@ -210,6 +267,70 @@ class FileStorageService {
       }))
     } catch (error) {
       perfLogger.error(`Get pin files exception for ${pinId.slice(0, 8)}`, error);
+      return []
+    }
+  }
+
+  /**
+   * Get all files for a specific area (with user authentication check)
+   */
+  async getAreaFiles(areaId: string): Promise<PinFile[]> {
+    perfLogger.start(`getAreaFiles-${areaId.slice(0, 8)}`);
+
+    try {
+      // Get current user to ensure they have access to this area
+      const { data: { user }, error: authError } = await this.supabase.auth.getUser()
+
+      if (authError || !user) {
+        perfLogger.warn(`Auth required for area ${areaId.slice(0, 8)}`);
+        return []
+      }
+
+      // First verify that the user owns the area
+      const { data: areaData, error: areaError } = await this.supabase
+        .from('areas')
+        .select('id, user_id')
+        .eq('id', areaId)
+        .eq('user_id', user.id)
+        .single()
+
+      if (areaError || !areaData) {
+        perfLogger.warn(`Area ${areaId.slice(0, 8)} not accessible`);
+        return []
+      }
+
+      // Now get the files - RLS policies will handle additional filtering
+      const { data, error } = await this.supabase
+        .from('pin_files')
+        .select('*')
+        .eq('area_id', areaId)
+        .order('uploaded_at', { ascending: false })
+
+      if (error) {
+        perfLogger.error(`Get area files error for ${areaId.slice(0, 8)}`, error);
+        return []
+      }
+
+      perfLogger.end(`getAreaFiles-${areaId.slice(0, 8)}`, `${data?.length || 0} files`);
+
+      // Transform snake_case to camelCase for return
+      return (data || []).map(item => ({
+        id: item.id,
+        pinId: item.pin_id,
+        areaId: item.area_id,
+        fileName: item.file_name,
+        filePath: item.file_path,
+        fileSize: item.file_size,
+        fileType: item.file_type,
+        projectId: item.project_id,
+        uploadedAt: new Date(item.uploaded_at),
+        startDate: item.start_date ? new Date(item.start_date) : undefined,
+        endDate: item.end_date ? new Date(item.end_date) : undefined,
+        isDiscrete: item.is_discrete || false,
+        uniqueDates: item.unique_dates || undefined
+      }))
+    } catch (error) {
+      perfLogger.error(`Get area files exception for ${areaId.slice(0, 8)}`, error);
       return []
     }
   }
@@ -238,21 +359,41 @@ class FileStorageService {
   /**
    * Download a file from Supabase Storage by file ID
    * First queries the database to get the file path, then downloads
+   * Checks both pin_files and merged_files tables
    */
   async downloadFileById(fileId: string): Promise<{ success: boolean; data?: { blob: Blob; fileName: string }; error?: string }> {
     try {
       console.log('📥 Downloading file by ID:', fileId);
 
-      // Get file metadata from database
-      const { data: fileData, error: dbError } = await this.supabase
+      let fileData: { file_path: string; file_name: string } | null = null;
+
+      // First, try to get file metadata from pin_files
+      const { data: pinFileData, error: pinFileError } = await this.supabase
         .from('pin_files')
         .select('file_path, file_name')
         .eq('id', fileId)
         .single();
 
-      if (dbError || !fileData) {
-        console.error('❌ Failed to get file metadata:', dbError);
-        return { success: false, error: 'File not found in database' };
+      if (pinFileData) {
+        fileData = pinFileData;
+        console.log('📄 File found in pin_files table');
+      } else {
+        console.log('📄 File not in pin_files, checking merged_files table...');
+
+        // If not found in pin_files, try merged_files
+        const { data: mergedFileData, error: mergedFileError } = await this.supabase
+          .from('merged_files')
+          .select('file_path, file_name')
+          .eq('id', fileId)
+          .single();
+
+        if (mergedFileData) {
+          fileData = mergedFileData;
+          console.log('📄 File found in merged_files table');
+        } else {
+          console.error('❌ File not found in either pin_files or merged_files:', { pinFileError, mergedFileError });
+          return { success: false, error: 'File not found in database' };
+        }
       }
 
       console.log('📄 File metadata:', { filePath: fileData.file_path, fileName: fileData.file_name });
@@ -561,6 +702,7 @@ class FileStorageService {
       return (data || []).map(item => ({
         id: item.id,
         pinId: item.pin_id,
+        areaId: item.area_id,
         fileName: item.file_name,
         filePath: item.file_path,
         fileSize: item.file_size,

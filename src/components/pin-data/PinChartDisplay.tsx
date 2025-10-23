@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import dynamic from 'next/dynamic';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, ReferenceLine } from 'recharts';
 import { format, parseISO, isValid } from 'date-fns';
 import { HexColorPicker } from 'react-colorful';
@@ -19,15 +18,9 @@ import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
 import { fileStorageService } from '@/lib/supabase/file-storage-service';
-import { DEFAULT_STYLE_RULES, STYLE_RULES_VERSION, type StyleRule } from './StylingRulesDialog';
+import { DEFAULT_STYLE_RULES, STYLE_RULES_VERSION, type StyleRule, StylingRulesDialog } from './StylingRulesDialog';
 import { ParameterFilterPanel } from './ParameterFilterPanel';
 import { PinChartDisplaySpotSample } from './PinChartDisplaySpotSample';
-
-// Lazy load StylingRulesDialog - only loads when user clicks styling button
-const StylingRulesDialog = dynamic(
-  () => import('./StylingRulesDialog').then(mod => ({ default: mod.StylingRulesDialog })),
-  { ssr: false, loading: () => <div className="animate-pulse p-4">Loading styling options...</div> }
-);
 
 interface PinChartDisplayProps {
   data: ParsedDataPoint[];
@@ -44,6 +37,10 @@ interface PinChartDisplayProps {
   isLastPlot?: boolean;
   // Visibility tracking for merge feature
   onVisibilityChange?: (visibleParams: string[], paramColors: Record<string, string>) => void;
+  // Initial state for restoring saved views
+  initialVisibleParameters?: string[];
+  initialParameterColors?: Record<string, string>;
+  initialParameterSettings?: Record<string, Partial<ParameterState>>;
   // Default settings (for merged plots)
   defaultAxisMode?: 'single' | 'multi';
   defaultParametersExpanded?: boolean;
@@ -292,6 +289,9 @@ export function PinChartDisplay({
   onBrushChange,
   isLastPlot = true,
   onVisibilityChange,
+  initialVisibleParameters,
+  initialParameterColors,
+  initialParameterSettings,
   defaultAxisMode = 'single',
   defaultParametersExpanded = false,
   currentDateFormat,
@@ -483,19 +483,51 @@ export function PinChartDisplay({
   // Initialize parameter visibility state
   const [parameterStates, setParameterStates] = useState<Record<string, ParameterState>>(() => {
     const initialState: Record<string, ParameterState> = {};
-    // Show only first 4 parameters by default
+    // Show only first 4 parameters by default (unless initial values provided)
     const defaultVisibleCount = 4;
+
+    // Check if we have initial visibility settings from a saved view
+    const hasInitialSettings = initialVisibleParameters && initialVisibleParameters.length > 0;
+
+    console.log('[PINCHART INIT] Initializing parameter states:', {
+      fileName,
+      numParams: numericParameters.length,
+      hasInitialSettings,
+      initialVisibleParams: initialVisibleParameters,
+      initialColors: initialParameterColors ? Object.keys(initialParameterColors) : []
+    });
+
     numericParameters.forEach((param, index) => {
       // Convert CSS variable to hex immediately to ensure unique colors
       const cssVar = CHART_COLORS[index % CHART_COLORS.length];
       const hexColor = cssVarToHex(cssVar);
+
+      // Determine visibility: use initial if provided, otherwise default to first N
+      const visible = hasInitialSettings
+        ? initialVisibleParameters.includes(param)
+        : index < defaultVisibleCount;
+
+      // Get color: use initial if provided, otherwise generate default
+      const color = (initialParameterColors && initialParameterColors[param]) || hexColor;
+
+      // Get other settings if provided
+      const settings = initialParameterSettings?.[param] || {};
+
       initialState[param] = {
-        visible: index < defaultVisibleCount,
-        color: hexColor, // Store as hex, not CSS variable
-        opacity: appliedStyleRule?.properties.defaultOpacity ?? 1.0,
-        lineStyle: appliedStyleRule?.properties.defaultLineStyle ?? 'solid',
-        lineWidth: appliedStyleRule?.properties.defaultLineWidth ?? 1
+        visible,
+        color,
+        opacity: settings.opacity ?? appliedStyleRule?.properties.defaultOpacity ?? 1.0,
+        lineStyle: settings.lineStyle ?? appliedStyleRule?.properties.defaultLineStyle ?? 'solid',
+        lineWidth: settings.lineWidth ?? appliedStyleRule?.properties.defaultLineWidth ?? 1,
+        timeFilter: settings.timeFilter,
+        movingAverage: settings.movingAverage
       };
+
+      console.log(`[PINCHART INIT] Parameter "${param}":`, {
+        visible,
+        color,
+        hasSettings: !!settings
+      });
     });
     return initialState;
   });
@@ -1018,9 +1050,39 @@ export function PinChartDisplay({
   const handleStyleRuleUpdate = (suffix: string, properties: Partial<import('./StylingRulesDialog').StyleProperties>) => {
     console.log('🔧 handleStyleRuleUpdate called:', { suffix, properties });
     setStyleRules(prev => {
-      const updated = prev.map(rule =>
-        rule.suffix === suffix ? { ...rule, properties: { ...rule.properties, ...properties } } : rule
-      );
+      const updated = prev.map(rule => {
+        if (rule.suffix !== suffix) return rule;
+
+        // Deep merge spotSample and secondaryYAxis properties if they exist
+        const updatedProperties = { ...rule.properties };
+
+        if (properties.spotSample && rule.properties.spotSample) {
+          updatedProperties.spotSample = {
+            ...rule.properties.spotSample,
+            ...properties.spotSample
+          };
+        } else if (properties.spotSample) {
+          updatedProperties.spotSample = properties.spotSample;
+        }
+
+        if (properties.secondaryYAxis && rule.properties.secondaryYAxis) {
+          updatedProperties.secondaryYAxis = {
+            ...rule.properties.secondaryYAxis,
+            ...properties.secondaryYAxis
+          };
+        } else if (properties.secondaryYAxis) {
+          updatedProperties.secondaryYAxis = properties.secondaryYAxis;
+        }
+
+        // Merge other top-level properties
+        Object.keys(properties).forEach(key => {
+          if (key !== 'spotSample' && key !== 'secondaryYAxis') {
+            updatedProperties[key as keyof import('./StylingRulesDialog').StyleProperties] = properties[key as keyof import('./StylingRulesDialog').StyleProperties] as any;
+          }
+        });
+
+        return { ...rule, properties: updatedProperties };
+      });
 
       console.log('📋 Updated style rules:', updated.find(r => r.suffix === suffix));
 
@@ -2089,15 +2151,27 @@ export function PinChartDisplay({
 
                     {/* Styling Rules Button */}
                     <div className="pt-2 border-t">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full h-8 text-xs justify-start gap-2"
-                        onClick={() => setShowStylingRules(true)}
+                      <StylingRulesDialog
+                        open={showStylingRules}
+                        onOpenChange={setShowStylingRules}
+                        styleRules={styleRules}
+                        onStyleRuleToggle={handleStyleRuleToggle}
+                        onStyleRuleUpdate={handleStyleRuleUpdate}
+                        currentFileName={fileName}
                       >
-                        <Palette className="h-3.5 w-3.5" />
-                        Styling Rules
-                      </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full h-8 text-xs justify-start gap-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowStylingRules(true);
+                          }}
+                        >
+                          <Settings className="h-3.5 w-3.5" />
+                          Plot Styling
+                        </Button>
+                      </StylingRulesDialog>
                     </div>
                   </div>
                 </PopoverContent>
@@ -3869,16 +3943,6 @@ export function PinChartDisplay({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Styling Rules Dialog */}
-      <StylingRulesDialog
-        open={showStylingRules}
-        onOpenChange={setShowStylingRules}
-        styleRules={styleRules}
-        onStyleRuleToggle={handleStyleRuleToggle}
-        onStyleRuleUpdate={handleStyleRuleUpdate}
-        currentFileName={fileName}
-      />
     </div>
   );
 }
