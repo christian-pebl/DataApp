@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -11,7 +9,8 @@ import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
-import { Palette, Pencil, Info } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Palette, Info, Settings } from "lucide-react";
 
 // Define the styling properties for each rule
 export interface StyleProperties {
@@ -242,6 +241,7 @@ interface StylingRulesDialogProps {
   onStyleRuleToggle: (suffix: string, enabled: boolean) => void;
   currentFileName?: string; // Current file name to auto-expand matching rule
   onStyleRuleUpdate?: (suffix: string, properties: Partial<StyleProperties>) => void;
+  children: React.ReactNode; // Trigger element
 }
 
 export function StylingRulesDialog({
@@ -250,1274 +250,447 @@ export function StylingRulesDialog({
   styleRules,
   onStyleRuleToggle,
   currentFileName,
-  onStyleRuleUpdate
+  onStyleRuleUpdate,
+  children
 }: StylingRulesDialogProps) {
-  const [editingRule, setEditingRule] = useState<string | null>(null);
-  const [originalValues, setOriginalValues] = useState<{
-    leftWidth: number;
-    rightWidth: number;
-    gap: number;
-    rightMargin: number;
-    xAxisTitlePosition: number;
-    xAxisTitleMargin: number;
-    chartBottomMargin: number;
-    chartHeight: number;
-    xAxisTitleFontSize: number;
-    xAxisTitle: string;
-    yAxisTitle: string;
-    secondaryYAxisTitle: string;
-  } | null>(null);
+  // Find the currently active rule (matching filename and enabled)
+  const activeRule = currentFileName
+    ? styleRules.find(rule => rule.enabled && currentFileName.toLowerCase().endsWith(rule.suffix.toLowerCase()))
+    : null;
 
-  // Draggable dialog state - Position on right side by default
-  const [position, setPosition] = useState({ x: 0, y: 20 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const dialogRef = React.useRef<HTMLDivElement>(null);
+  // Selected rule for editing (defaults to active rule, or first rule if no active)
+  const [selectedRuleSuffix, setSelectedRuleSuffix] = useState<string>(
+    activeRule?.suffix || styleRules[0]?.suffix || ""
+  );
 
-  // Calculate right-aligned position on mount
+  // Track whether advanced controls are shown
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Update selected rule when dialog opens or filename changes
   React.useEffect(() => {
-    if (open && dialogRef.current) {
-      const dialogWidth = dialogRef.current.offsetWidth || 672; // 672px = max-w-2xl default
-      const windowWidth = window.innerWidth;
-      const rightMargin = 20; // 20px from right edge
-      const rightAlignedX = (windowWidth - dialogWidth) / 2 - rightMargin;
-      setPosition({ x: rightAlignedX, y: 20 });
+    if (open && activeRule) {
+      setSelectedRuleSuffix(activeRule.suffix);
     }
-  }, [open]);
+  }, [open, activeRule]);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.dialog-header-drag')) {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
-    }
+  const selectedRule = styleRules.find(r => r.suffix === selectedRuleSuffix);
+
+  if (!selectedRule) return <>{children}</>;
+
+  // Handler functions for property updates
+  const handlePropertyChange = (property: string, value: any) => {
+    if (!onStyleRuleUpdate) return;
+    onStyleRuleUpdate(selectedRule.suffix, { [property]: value });
   };
 
-  React.useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        setPosition({
-          x: e.clientX - dragStart.x,
-          y: e.clientY - dragStart.y
-        });
+  const handleSecondaryYAxisChange = (property: string, value: any) => {
+    if (!onStyleRuleUpdate || !selectedRule.properties.secondaryYAxis) return;
+    onStyleRuleUpdate(selectedRule.suffix, {
+      secondaryYAxis: {
+        ...selectedRule.properties.secondaryYAxis,
+        [property]: value
       }
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, dragStart]);
-
-  // Auto-expand matching rule when dialog opens with a current file
-  React.useEffect(() => {
-    if (open && currentFileName) {
-      // Find matching rule by checking if filename ends with any rule suffix
-      const matchingRule = styleRules.find(rule => 
-        currentFileName.toLowerCase().endsWith(rule.suffix.toLowerCase())
-      );
-      
-      if (matchingRule) {
-        // Automatically expand the matching rule
-        handleEditClick(matchingRule);
-      }
-    } else if (!open) {
-      // Reset when dialog closes
-      setEditingRule(null);
-      setOriginalValues(null);
-    }
-  }, [open, currentFileName]);
-
-
-  const handleEditClick = (rule: StyleRule) => {
-    // Store original values for potential revert
-    setOriginalValues({
-      leftWidth: rule.properties.yAxisWidth || 80,
-      rightWidth: rule.properties.secondaryYAxis?.width || 80,
-      gap: rule.properties.plotToParametersGap || 12,
-      rightMargin: rule.properties.chartRightMargin || 80,
-      xAxisTitlePosition: rule.properties.xAxisTitlePosition || 20,
-      xAxisTitleMargin: rule.properties.xAxisTitleMargin ?? -5,
-      chartBottomMargin: rule.properties.chartBottomMargin ?? 10,
-      chartHeight: rule.properties.chartHeight || 208,
-      xAxisTitleFontSize: rule.properties.xAxisTitleFontSize || 10,
-      xAxisTitle: rule.properties.xAxisTitle || "Time",
-      yAxisTitle: rule.properties.yAxisTitle || "Detection Positive Minutes (DPM)",
-      secondaryYAxisTitle: rule.properties.secondaryYAxis?.title || "Detection Rate (% of hour)"
     });
-    setEditingRule(rule.suffix);
   };
 
-  const handleLeftWidthChange = (suffix: string, value: number) => {
-    if (onStyleRuleUpdate) {
-      onStyleRuleUpdate(suffix, {
-        yAxisWidth: value
-      });
-    }
+  const handleSpotSamplePropertyChange = (property: string, value: any) => {
+    if (!onStyleRuleUpdate) return;
+    onStyleRuleUpdate(selectedRule.suffix, {
+      spotSample: {
+        ...selectedRule.properties.spotSample,
+        [property]: value
+      }
+    });
   };
-
-  const handleRightWidthChange = (suffix: string, value: number) => {
-    if (onStyleRuleUpdate) {
-      const rule = styleRules.find(r => r.suffix === suffix);
-      onStyleRuleUpdate(suffix, {
-        secondaryYAxis: {
-          ...rule?.properties.secondaryYAxis,
-          width: value,
-          enabled: rule?.properties.secondaryYAxis?.enabled || false,
-          title: rule?.properties.secondaryYAxis?.title || "",
-          divideBy: rule?.properties.secondaryYAxis?.divideBy || 60
-        }
-      });
-    }
-  };
-
-  const handleGapChange = (suffix: string, value: number) => {
-    if (onStyleRuleUpdate) {
-      onStyleRuleUpdate(suffix, {
-        plotToParametersGap: value
-      });
-    }
-  };
-
-  const handleRightMarginChange = (suffix: string, value: number) => {
-    if (onStyleRuleUpdate) {
-      onStyleRuleUpdate(suffix, {
-        chartRightMargin: value
-      });
-    }
-  };
-
-  const handleXAxisTitlePositionChange = (suffix: string, value: number) => {
-    if (onStyleRuleUpdate) {
-      onStyleRuleUpdate(suffix, {
-        xAxisTitlePosition: value
-      });
-    }
-  };
-
-  const handleXAxisTitleMarginChange = (suffix: string, value: number) => {
-    if (onStyleRuleUpdate) {
-      onStyleRuleUpdate(suffix, {
-        xAxisTitleMargin: value
-      });
-    }
-  };
-
-  const handleChartBottomMarginChange = (suffix: string, value: number) => {
-    if (onStyleRuleUpdate) {
-      onStyleRuleUpdate(suffix, {
-        chartBottomMargin: value
-      });
-    }
-  };
-
-  const handleChartHeightChange = (suffix: string, value: number) => {
-    if (onStyleRuleUpdate) {
-      onStyleRuleUpdate(suffix, {
-        chartHeight: value
-      });
-    }
-  };
-
-  const handleXAxisTitleFontSizeChange = (suffix: string, value: number) => {
-    if (onStyleRuleUpdate) {
-      onStyleRuleUpdate(suffix, {
-        xAxisTitleFontSize: value
-      });
-    }
-  };
-
-  const handleXAxisTitleChange = (suffix: string, value: string) => {
-    if (onStyleRuleUpdate) {
-      onStyleRuleUpdate(suffix, {
-        xAxisTitle: value
-      });
-    }
-  };
-
-  const handleYAxisTitleChange = (suffix: string, value: string) => {
-    if (onStyleRuleUpdate) {
-      onStyleRuleUpdate(suffix, {
-        yAxisTitle: value
-      });
-    }
-  };
-
-  const handleSecondaryYAxisTitleChange = (suffix: string, value: string) => {
-    if (onStyleRuleUpdate) {
-      const rule = styleRules.find(r => r.suffix === suffix);
-      onStyleRuleUpdate(suffix, {
-        secondaryYAxis: {
-          ...rule?.properties.secondaryYAxis,
-          title: value,
-          enabled: rule?.properties.secondaryYAxis?.enabled || false,
-          divideBy: rule?.properties.secondaryYAxis?.divideBy || 60,
-          width: rule?.properties.secondaryYAxis?.width || 80
-        }
-      });
-    }
-  };
-
-  // Spot-sample property handlers
-  const handleSpotSamplePropertyChange = (suffix: string, property: string, value: number) => {
-    if (onStyleRuleUpdate) {
-      const rule = styleRules.find(r => r.suffix === suffix);
-      onStyleRuleUpdate(suffix, {
-        spotSample: {
-          ...rule?.properties.spotSample,
-          [property]: value
-        }
-      });
-    }
-  };
-
-  const handleSaveChanges = () => {
-    // Changes are already applied, just close
-    setEditingRule(null);
-    setOriginalValues(null);
-  };
-
-  const handleCancelChanges = (suffix: string) => {
-    // Revert to original values
-    if (originalValues && onStyleRuleUpdate) {
-      const rule = styleRules.find(r => r.suffix === suffix);
-      onStyleRuleUpdate(suffix, {
-        yAxisWidth: originalValues.leftWidth,
-        yAxisTitle: originalValues.yAxisTitle,
-        xAxisTitle: originalValues.xAxisTitle,
-        plotToParametersGap: originalValues.gap,
-        chartRightMargin: originalValues.rightMargin,
-        xAxisTitlePosition: originalValues.xAxisTitlePosition,
-        xAxisTitleMargin: originalValues.xAxisTitleMargin,
-        chartBottomMargin: originalValues.chartBottomMargin,
-        chartHeight: originalValues.chartHeight,
-        xAxisTitleFontSize: originalValues.xAxisTitleFontSize,
-        secondaryYAxis: {
-          ...rule?.properties.secondaryYAxis,
-          width: originalValues.rightWidth,
-          title: originalValues.secondaryYAxisTitle,
-          enabled: rule?.properties.secondaryYAxis?.enabled || false,
-          divideBy: rule?.properties.secondaryYAxis?.divideBy || 60
-        }
-      });
-    }
-    setEditingRule(null);
-    setOriginalValues(null);
-  };
-
-  // Reset position when dialog opens
-  React.useEffect(() => {
-    if (open) {
-      setPosition({ x: 0, y: 20 });
-    }
-  }, [open]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        ref={dialogRef}
-        className="max-w-2xl max-h-[65vh] overflow-y-auto"
-        style={{
-          transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))`
+    <Popover open={open} onOpenChange={onOpenChange} modal={true}>
+      <PopoverTrigger asChild>
+        {children}
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-80 max-h-[500px] overflow-y-auto p-3"
+        align="start"
+        side="bottom"
+        sideOffset={5}
+        onInteractOutside={(e) => {
+          // Allow interaction with parent popover
+          const target = e.target as HTMLElement;
+          if (target.closest('[role="dialog"]') || target.closest('[data-radix-popover-content]')) {
+            e.preventDefault();
+          }
         }}
-        onMouseDown={handleMouseDown}
       >
-        <DialogHeader className="dialog-header-drag cursor-move select-none">
-          <div className="flex items-center gap-2">
-            <Palette className="h-5 w-5 text-primary" />
-            <DialogTitle>Styling Rules</DialogTitle>
-            <span className="text-xs text-muted-foreground ml-auto">(drag to move)</span>
-          </div>
-        </DialogHeader>
-
-        <div className="mt-4">
-          {styleRules.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <p className="text-sm">No styling rules configured yet.</p>
-              <p className="text-xs mt-2">Styling rules will appear here once defined.</p>
+        <TooltipProvider delayDuration={200}>
+          <div className="space-y-3">
+            {/* Header with icon */}
+            <div className="flex items-center gap-2 border-b pb-2">
+              <Settings className="h-4 w-4 text-primary" />
+              <h4 className="text-sm font-semibold">Plot Styling</h4>
             </div>
-          ) : editingRule && currentFileName ? null : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[140px]">File Suffix</TableHead>
-                  <TableHead className="w-[140px]">Style Name</TableHead>
-                  <TableHead className="w-[80px] text-center">Enabled</TableHead>
-                  <TableHead>Configuration</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {styleRules.map((rule) => (
-                  <TableRow key={rule.suffix}>
-                    <TableCell className="align-top">
-                      <Badge variant="outline" className="font-mono text-xs">
-                        {rule.suffix}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <Badge variant="secondary" className="font-mono text-xs whitespace-normal">
-                        {rule.styleName}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center align-top">
-                      <Switch
-                        checked={rule.enabled}
-                        onCheckedChange={(enabled) => onStyleRuleToggle(rule.suffix, enabled)}
-                        aria-label={`Toggle ${rule.styleName}`}
+
+            {/* Rule selector dropdown */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Select Style Rule</Label>
+              <Select value={selectedRuleSuffix} onValueChange={setSelectedRuleSuffix}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {styleRules.map((rule) => (
+                    <SelectItem key={rule.suffix} value={rule.suffix} className="text-xs">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={rule.enabled ? "default" : "outline"} className="text-[10px] px-1">
+                          {rule.suffix}
+                        </Badge>
+                        <span className="text-muted-foreground text-[10px]">
+                          {rule.styleName}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Enable/Disable toggle */}
+            <div className="flex items-center justify-between p-2 bg-muted/30 rounded border">
+              <Label className="text-xs cursor-pointer" htmlFor="rule-enabled">
+                Enable for {selectedRule.suffix}
+              </Label>
+              <Switch
+                id="rule-enabled"
+                checked={selectedRule.enabled}
+                onCheckedChange={(enabled) => onStyleRuleToggle(selectedRule.suffix, enabled)}
+              />
+            </div>
+
+            {/* Configuration based on rule type */}
+            {selectedRule.properties.spotSample ? (
+              /* Spot-Sample Controls */
+              <div className="space-y-3">
+                <h5 className="text-xs font-semibold">Spot-Sample Chart Controls</h5>
+
+                {/* Whisker Spacing - THE FIX! */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-xs">Gap Between Whiskers</Label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs text-xs">
+                          <p>Distance between whisker centers - reduces total plot width</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedRule.properties.spotSample?.whiskerSpacing ?? 80}px
+                    </span>
+                  </div>
+                  <Slider
+                    value={[selectedRule.properties.spotSample?.whiskerSpacing ?? 80]}
+                    onValueChange={(values) => handleSpotSamplePropertyChange('whiskerSpacing', values[0])}
+                    min={50}
+                    max={200}
+                    step={10}
+                    className="w-full"
+                  />
+                </div>
+
+                {/* Whisker Box Width */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Whisker Box Width</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedRule.properties.spotSample?.whiskerBoxWidth ?? 40}px
+                    </span>
+                  </div>
+                  <Slider
+                    value={[selectedRule.properties.spotSample?.whiskerBoxWidth ?? 40]}
+                    onValueChange={(values) => handleSpotSamplePropertyChange('whiskerBoxWidth', values[0])}
+                    min={20}
+                    max={100}
+                    step={5}
+                    className="w-full"
+                  />
+                </div>
+
+                {/* Chart Height */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Chart Height</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedRule.properties.spotSample?.chartHeight ?? 350}px
+                    </span>
+                  </div>
+                  <Slider
+                    value={[selectedRule.properties.spotSample?.chartHeight ?? 350]}
+                    onValueChange={(values) => handleSpotSamplePropertyChange('chartHeight', values[0])}
+                    min={200}
+                    max={600}
+                    step={25}
+                    className="w-full"
+                  />
+                </div>
+
+                {/* Chart Width */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Chart Width</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedRule.properties.spotSample?.chartWidth ? `${selectedRule.properties.spotSample.chartWidth}px` : 'Auto'}
+                    </span>
+                  </div>
+                  <Slider
+                    value={[selectedRule.properties.spotSample?.chartWidth ?? 400]}
+                    onValueChange={(values) => handleSpotSamplePropertyChange('chartWidth', values[0])}
+                    min={200}
+                    max={1200}
+                    step={50}
+                    className="w-full"
+                  />
+                </div>
+
+                {/* More controls button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                >
+                  <Info className="h-3 w-3 mr-1" />
+                  {showAdvanced ? 'Hide Advanced Controls' : 'More Advanced Controls'}
+                </Button>
+
+                {/* Advanced controls - shown when expanded */}
+                {showAdvanced && (
+                  <div className="space-y-3 pt-3 border-t">
+                    <h6 className="text-xs font-semibold text-muted-foreground">Advanced Styling</h6>
+
+                    {/* Whisker Line Width */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Whisker Line Width</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.spotSample?.whiskerLineWidth ?? 2}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.spotSample?.whiskerLineWidth ?? 2]}
+                        onValueChange={(values) => handleSpotSamplePropertyChange('whiskerLineWidth', values[0])}
+                        min={1}
+                        max={5}
+                        step={0.5}
+                        className="w-full"
                       />
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-end gap-2">
-                          <div className="flex items-center gap-1 shrink-0">
-                            {/* Info Button - Shows Configuration Details */}
-                            <TooltipProvider delayDuration={200}>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Popover>
-                                    <PopoverTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 w-7 p-0"
-                                        title="View configuration details"
-                                      >
-                                        <Info className="h-3.5 w-3.5 text-muted-foreground" />
-                                      </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-80 p-3" align="end" side="left">
-                                      <div className="space-y-2">
-                                        <h4 className="text-sm font-semibold mb-2">Configuration Details</h4>
-                                        <p className="text-xs text-muted-foreground mb-2 pb-2 border-b">{rule.description}</p>
-                                        <div className="text-xs text-muted-foreground space-y-1">
-                                          {rule.properties.xAxisRange && (
-                                            <div className="flex items-start gap-1.5">
-                                              <span className="text-primary mt-0.5">•</span>
-                                              <span><strong>X-axis range:</strong> {rule.properties.xAxisRange.min} to {rule.properties.xAxisRange.max}</span>
-                                            </div>
-                                          )}
-                                          {rule.properties.xAxisTitle && (
-                                            <div className="flex items-start gap-1.5">
-                                              <span className="text-primary mt-0.5">•</span>
-                                              <span><strong>X-axis title:</strong> "{rule.properties.xAxisTitle}"</span>
-                                            </div>
-                                          )}
-                                          {rule.properties.defaultAxisMode && (
-                                            <div className="flex items-start gap-1.5">
-                                              <span className="text-primary mt-0.5">•</span>
-                                              <span><strong>Default mode:</strong> {rule.properties.defaultAxisMode} axis</span>
-                                            </div>
-                                          )}
-                                          {rule.properties.yAxisTitle && (
-                                            <div className="flex items-start gap-1.5">
-                                              <span className="text-primary mt-0.5">•</span>
-                                              <span><strong>Y-axis title:</strong> "{rule.properties.yAxisTitle}"</span>
-                                            </div>
-                                          )}
-                                          {rule.properties.secondaryYAxis?.enabled && (
-                                            <div className="flex items-start gap-1.5">
-                                              <span className="text-primary mt-0.5">•</span>
-                                              <span><strong>Secondary Y-axis:</strong> "{rule.properties.secondaryYAxis.title}" (calculated as: value ÷ {rule.properties.secondaryYAxis.divideBy} × 100)</span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </PopoverContent>
-                                  </Popover>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  <p>View configuration details</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
+                    </div>
 
-                            {/* Edit Axes Button */}
-                            {onStyleRuleUpdate && (
-                              <Popover open={editingRule === rule.suffix} onOpenChange={(open) => !open && setEditingRule(null)}>
-                                <PopoverTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0"
-                                    onClick={() => handleEditClick(rule)}
-                                    title="Edit layout and spacing"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-80 max-h-[450px] overflow-y-auto p-4" align="end" side="left" sideOffset={10}>
-                                <TooltipProvider delayDuration={200}>
-                                  <div className="space-y-3">
-                                    {/* Show appropriate header based on rule type */}
-                                    <div>
-                                      <h4 className="text-sm font-semibold">
-                                        {rule.properties.spotSample
-                                          ? "Spot-Sample Chart Controls"
-                                          : "Axis Titles & Layout"}
-                                      </h4>
-                                      {rule.properties.spotSample && (
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                          Customize column spacing, margins, and error bar styling
-                                        </p>
-                                      )}
-                                    </div>
+                    {/* Whisker Box Border Width */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Box Border Width</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.spotSample?.whiskerBoxBorderWidth ?? 2}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.spotSample?.whiskerBoxBorderWidth ?? 2]}
+                        onValueChange={(values) => handleSpotSamplePropertyChange('whiskerBoxBorderWidth', values[0])}
+                        min={1}
+                        max={5}
+                        step={0.5}
+                        className="w-full"
+                      />
+                    </div>
 
-                                    {/* Time-Series Plot Controls (only show if NOT spot-sample) */}
-                                    {!rule.properties.spotSample && (
-                                      <>
-                                    {/* Axis Title Text Inputs */}
-                                    <div className="space-y-2 border-b pb-3">
-                                      {/* X-Axis Title Input */}
-                                      <div className="space-y-1">
-                                        <Label htmlFor={`x-axis-title-${rule.suffix}`} className="text-xs font-medium">
-                                          X-Axis Title
-                                        </Label>
-                                        <Input
-                                          id={`x-axis-title-${rule.suffix}`}
-                                          value={rule.properties.xAxisTitle || "Time"}
-                                          onChange={(e) => handleXAxisTitleChange(rule.suffix, e.target.value)}
-                                          className="h-8 text-xs"
-                                          placeholder="Enter X-axis title"
-                                        />
-                                      </div>
+                    {/* Whisker Cap Width */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Cap Width (% of box)</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.spotSample?.whiskerCapWidth ?? 20}%
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.spotSample?.whiskerCapWidth ?? 20]}
+                        onValueChange={(values) => handleSpotSamplePropertyChange('whiskerCapWidth', values[0])}
+                        min={10}
+                        max={50}
+                        step={5}
+                        className="w-full"
+                      />
+                    </div>
 
-                                      {/* Left Y-Axis Title Input */}
-                                      <div className="space-y-1">
-                                        <Label htmlFor={`y-axis-title-${rule.suffix}`} className="text-xs font-medium">
-                                          Left Y-Axis Title
-                                        </Label>
-                                        <Input
-                                          id={`y-axis-title-${rule.suffix}`}
-                                          value={rule.properties.yAxisTitle || "Detection Positive Minutes (DPM)"}
-                                          onChange={(e) => handleYAxisTitleChange(rule.suffix, e.target.value)}
-                                          className="h-8 text-xs"
-                                          placeholder="Enter left Y-axis title"
-                                        />
-                                      </div>
+                    {/* X-Axis Label Rotation */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">X-Axis Label Rotation</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.spotSample?.xAxisLabelRotation ?? -45}°
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.spotSample?.xAxisLabelRotation ?? -45]}
+                        onValueChange={(values) => handleSpotSamplePropertyChange('xAxisLabelRotation', values[0])}
+                        min={-90}
+                        max={0}
+                        step={15}
+                        className="w-full"
+                      />
+                    </div>
 
-                                      {/* Right Y-Axis Title Input (if secondary axis enabled) */}
-                                      {rule.properties.secondaryYAxis?.enabled && (
-                                        <div className="space-y-1">
-                                          <Label htmlFor={`secondary-y-axis-title-${rule.suffix}`} className="text-xs font-medium">
-                                            Right Y-Axis Title
-                                          </Label>
-                                          <Input
-                                            id={`secondary-y-axis-title-${rule.suffix}`}
-                                            value={rule.properties.secondaryYAxis?.title || "Detection Rate (% of hour)"}
-                                            onChange={(e) => handleSecondaryYAxisTitleChange(rule.suffix, e.target.value)}
-                                            className="h-8 text-xs"
-                                            placeholder="Enter right Y-axis title"
-                                          />
-                                        </div>
-                                      )}
-                                    </div>
+                    {/* X-Axis Label Font Size */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">X-Axis Label Font Size</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.spotSample?.xAxisLabelFontSize ?? 11}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.spotSample?.xAxisLabelFontSize ?? 11]}
+                        onValueChange={(values) => handleSpotSamplePropertyChange('xAxisLabelFontSize', values[0])}
+                        min={8}
+                        max={16}
+                        step={1}
+                        className="w-full"
+                      />
+                    </div>
 
-                                    {/* Left Y-Axis Width Slider */}
-                                    <div className="space-y-1.5">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5">
-                                          <Label htmlFor={`left-axis-${rule.suffix}`} className="text-xs font-medium">
-                                            Left Y-Axis Width
-                                          </Label>
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                            </TooltipTrigger>
-                                            <TooltipContent side="right" className="max-w-xs text-xs">
-                                              <p>Width of the left Y-axis area including labels and title</p>
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </div>
-                                        <span className="text-xs text-muted-foreground">{rule.properties.yAxisWidth || 80}px</span>
-                                      </div>
-                                      <Slider
-                                        id={`left-axis-${rule.suffix}`}
-                                        value={[rule.properties.yAxisWidth || 80]}
-                                        onValueChange={(values) => handleLeftWidthChange(rule.suffix, values[0])}
-                                        min={40}
-                                        max={150}
-                                        step={5}
-                                        className="w-full"
-                                      />
-                                    </div>
+                    {/* Chart Margins */}
+                    <div className="space-y-2 pt-2 border-t">
+                      <Label className="text-xs font-semibold">Chart Margins</Label>
 
-                                    {/* Right Y-Axis Width Slider (if secondary axis enabled) */}
-                                    {rule.properties.secondaryYAxis?.enabled && (
-                                      <div className="space-y-1.5">
-                                        <div className="flex items-center justify-between">
-                                          <div className="flex items-center gap-1.5">
-                                            <Label htmlFor={`right-axis-${rule.suffix}`} className="text-xs font-medium">
-                                              Right Y-Axis Width
-                                            </Label>
-                                            <Tooltip>
-                                              <TooltipTrigger asChild>
-                                                <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                              </TooltipTrigger>
-                                              <TooltipContent side="right" className="max-w-xs text-xs">
-                                                <p>Width of the right Y-axis area including labels and title</p>
-                                              </TooltipContent>
-                                            </Tooltip>
-                                          </div>
-                                          <span className="text-xs text-muted-foreground">{rule.properties.secondaryYAxis?.width || 80}px</span>
-                                        </div>
-                                        <Slider
-                                          id={`right-axis-${rule.suffix}`}
-                                          value={[rule.properties.secondaryYAxis?.width || 80]}
-                                          onValueChange={(values) => handleRightWidthChange(rule.suffix, values[0])}
-                                          min={40}
-                                          max={150}
-                                          step={5}
-                                          className="w-full"
-                                        />
-                                      </div>
-                                    )}
-
-                                    {/* Chart Right Margin Slider */}
-                                    {rule.properties.secondaryYAxis?.enabled && (
-                                      <div className="space-y-1.5">
-                                        <div className="flex items-center justify-between">
-                                          <div className="flex items-center gap-1.5">
-                                            <Label htmlFor={`right-margin-${rule.suffix}`} className="text-xs font-medium">
-                                              Chart Right Margin
-                                            </Label>
-                                            <Tooltip>
-                                              <TooltipTrigger asChild>
-                                                <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                              </TooltipTrigger>
-                                              <TooltipContent side="right" className="max-w-xs text-xs">
-                                                <p>Space between the plot border and the right Y-axis</p>
-                                              </TooltipContent>
-                                            </Tooltip>
-                                          </div>
-                                          <span className="text-xs text-muted-foreground">{rule.properties.chartRightMargin || 80}px</span>
-                                        </div>
-                                        <Slider
-                                          id={`right-margin-${rule.suffix}`}
-                                          value={[rule.properties.chartRightMargin || 80]}
-                                          onValueChange={(values) => handleRightMarginChange(rule.suffix, values[0])}
-                                          min={0}
-                                          max={150}
-                                          step={5}
-                                          className="w-full"
-                                        />
-                                      </div>
-                                    )}
-
-                                    {/* Plot to Parameters Gap Slider */}
-                                    <div className="space-y-1.5">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5">
-                                          <Label htmlFor={`gap-${rule.suffix}`} className="text-xs font-medium">
-                                            Plot to Parameters Gap
-                                          </Label>
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                            </TooltipTrigger>
-                                            <TooltipContent side="right" className="max-w-xs text-xs">
-                                              <p>Horizontal spacing between chart container and parameters pane</p>
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </div>
-                                        <span className="text-xs text-muted-foreground">{rule.properties.plotToParametersGap || 12}px</span>
-                                      </div>
-                                      <Slider
-                                        id={`gap-${rule.suffix}`}
-                                        value={[rule.properties.plotToParametersGap || 12]}
-                                        onValueChange={(values) => handleGapChange(rule.suffix, values[0])}
-                                        min={0}
-                                        max={48}
-                                        step={4}
-                                        className="w-full"
-                                      />
-                                    </div>
-
-                                    {/* X-Axis Title Position Slider */}
-                                    <div className="space-y-1.5">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5">
-                                          <Label htmlFor={`x-title-pos-${rule.suffix}`} className="text-xs font-medium">
-                                            X-Axis Title Position
-                                          </Label>
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                            </TooltipTrigger>
-                                            <TooltipContent side="right" className="max-w-xs text-xs">
-                                              <p>Total height allocated for the X-axis title area below the chart</p>
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </div>
-                                        <span className="text-xs text-muted-foreground">{rule.properties.xAxisTitlePosition || 20}px</span>
-                                      </div>
-                                      <Slider
-                                        id={`x-title-pos-${rule.suffix}`}
-                                        value={[rule.properties.xAxisTitlePosition || 20]}
-                                        onValueChange={(values) => handleXAxisTitlePositionChange(rule.suffix, values[0])}
-                                        min={20}
-                                        max={100}
-                                        step={5}
-                                        className="w-full"
-                                      />
-                                    </div>
-
-                                    {/* X-Axis Title Margin Slider */}
-                                    <div className="space-y-1.5">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5">
-                                          <Label htmlFor={`x-title-margin-${rule.suffix}`} className="text-xs font-medium">
-                                            X-Axis Title Offset
-                                          </Label>
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                            </TooltipTrigger>
-                                            <TooltipContent side="right" className="max-w-xs text-xs">
-                                              <p>Fine-tune distance between X-axis ticks and title text</p>
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </div>
-                                        <span className="text-xs text-muted-foreground">{rule.properties.xAxisTitleMargin ?? -5}px</span>
-                                      </div>
-                                      <Slider
-                                        id={`x-title-margin-${rule.suffix}`}
-                                        value={[rule.properties.xAxisTitleMargin ?? -5]}
-                                        onValueChange={(values) => handleXAxisTitleMarginChange(rule.suffix, values[0])}
-                                        min={-20}
-                                        max={30}
-                                        step={2}
-                                        className="w-full"
-                                      />
-                                    </div>
-
-                                    {/* Chart Bottom Margin Slider - CRITICAL FOR X-AXIS TITLE VISIBILITY */}
-                                    <div className="space-y-1.5 border-t pt-3">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5">
-                                          <Label htmlFor={`chart-bottom-margin-${rule.suffix}`} className="text-xs font-medium text-primary">
-                                            Chart Bottom Margin ⚠️
-                                          </Label>
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Info className="h-3 w-3 text-primary cursor-help" />
-                                            </TooltipTrigger>
-                                            <TooltipContent side="right" className="max-w-xs text-xs">
-                                              <p><strong>CRITICAL:</strong> Negative values will hide the X-axis title! Try increasing to 20-50 to see the title appear.</p>
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </div>
-                                        <span className="text-xs font-semibold text-primary">{rule.properties.chartBottomMargin ?? 10}px</span>
-                                      </div>
-                                      <Slider
-                                        id={`chart-bottom-margin-${rule.suffix}`}
-                                        value={[rule.properties.chartBottomMargin ?? 10]}
-                                        onValueChange={(values) => handleChartBottomMarginChange(rule.suffix, values[0])}
-                                        min={-20}
-                                        max={80}
-                                        step={5}
-                                        className="w-full"
-                                      />
-                                    </div>
-
-                                    {/* Chart Height Slider */}
-                                    <div className="space-y-1.5">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5">
-                                          <Label htmlFor={`chart-height-${rule.suffix}`} className="text-xs font-medium">
-                                            Chart Container Height
-                                          </Label>
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                            </TooltipTrigger>
-                                            <TooltipContent side="right" className="max-w-xs text-xs">
-                                              <p>Total height of chart container. Increase if title is still cut off.</p>
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </div>
-                                        <span className="text-xs text-muted-foreground">{rule.properties.chartHeight || 208}px</span>
-                                      </div>
-                                      <Slider
-                                        id={`chart-height-${rule.suffix}`}
-                                        value={[rule.properties.chartHeight || 208]}
-                                        onValueChange={(values) => handleChartHeightChange(rule.suffix, values[0])}
-                                        min={150}
-                                        max={400}
-                                        step={10}
-                                        className="w-full"
-                                      />
-                                    </div>
-
-                                    {/* X-Axis Title Font Size Slider */}
-                                    <div className="space-y-1.5">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5">
-                                          <Label htmlFor={`x-title-font-${rule.suffix}`} className="text-xs font-medium">
-                                            X-Axis Title Font Size
-                                          </Label>
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                            </TooltipTrigger>
-                                            <TooltipContent side="right" className="max-w-xs text-xs">
-                                              <p>Font size for the X-axis title text</p>
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </div>
-                                        <span className="text-xs text-muted-foreground">{rule.properties.xAxisTitleFontSize || 10}px</span>
-                                      </div>
-                                      <Slider
-                                        id={`x-title-font-${rule.suffix}`}
-                                        value={[rule.properties.xAxisTitleFontSize || 10]}
-                                        onValueChange={(values) => handleXAxisTitleFontSizeChange(rule.suffix, values[0])}
-                                        min={8}
-                                        max={24}
-                                        step={1}
-                                        className="w-full"
-                                      />
-                                    </div>
-                                    </>
-                                    )}
-
-                                    {/* Spot-Sample (Discrete Sampling) Controls */}
-                                    {rule.properties.spotSample && (
-                                      <div className="space-y-3">
-
-                                        {/* COLUMN CHART CONTROLS */}
-                                        <div className="space-y-3 border-b pb-3">
-                                          <h5 className="text-xs font-semibold text-blue-600">📊 Column Chart Controls</h5>
-
-                                          {/* Bar Gap */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-1.5">
-                                                <Label htmlFor={`bar-gap-${rule.suffix}`} className="text-xs font-medium">
-                                                  Bar Gap
-                                                </Label>
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                                  </TooltipTrigger>
-                                                  <TooltipContent side="right" className="max-w-xs text-xs">
-                                                    <p>Gap between bars in the same category (in pixels)</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </div>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.barGap ?? 4}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`bar-gap-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.barGap ?? 4]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'barGap', values[0])}
-                                              min={0}
-                                              max={20}
-                                              step={1}
-                                              className="w-full"
-                                            />
-                                          </div>
-
-                                          {/* Bar Category Gap */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-1.5">
-                                                <Label htmlFor={`bar-category-gap-${rule.suffix}`} className="text-xs font-medium">
-                                                  Category Gap
-                                                </Label>
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                                  </TooltipTrigger>
-                                                  <TooltipContent side="right" className="max-w-xs text-xs">
-                                                    <p>Gap between different categories (% of space)</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </div>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.barCategoryGap ?? 10}%</span>
-                                            </div>
-                                            <Slider
-                                              id={`bar-category-gap-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.barCategoryGap ?? 10]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'barCategoryGap', values[0])}
-                                              min={0}
-                                              max={50}
-                                              step={5}
-                                              className="w-full"
-                                            />
-                                          </div>
-
-                                          {/* Column Border Width */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-1.5">
-                                                <Label htmlFor={`column-border-width-${rule.suffix}`} className="text-xs font-medium">
-                                                  Column Border Thickness
-                                                </Label>
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                                  </TooltipTrigger>
-                                                  <TooltipContent side="right" className="max-w-xs text-xs">
-                                                    <p>Border thickness around column bars (0 = no border)</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </div>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.columnBorderWidth ?? 0}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`column-border-width-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.columnBorderWidth ?? 0]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'columnBorderWidth', values[0])}
-                                              min={0}
-                                              max={5}
-                                              step={0.5}
-                                              className="w-full"
-                                            />
-                                          </div>
-                                        </div>
-
-                                        {/* WHISKER PLOT CONTROLS */}
-                                        <div className="space-y-3 border-b pb-3">
-                                          <h5 className="text-xs font-semibold text-purple-600">📈 Whisker Plot Controls</h5>
-
-                                          {/* Whisker Box Width */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-1.5">
-                                                <Label htmlFor={`whisker-box-width-${rule.suffix}`} className="text-xs font-medium">
-                                                  Whisker Box Width
-                                                </Label>
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                                  </TooltipTrigger>
-                                                  <TooltipContent side="right" className="max-w-xs text-xs">
-                                                    <p>Overall width of the whisker box (in pixels)</p>
-                                                    <p className="mt-1">Controls the entire whisker element width</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </div>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.whiskerBoxWidth ?? 40}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`whisker-box-width-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.whiskerBoxWidth ?? 40]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'whiskerBoxWidth', values[0])}
-                                              min={20}
-                                              max={100}
-                                              step={5}
-                                              className="w-full"
-                                            />
-                                          </div>
-
-                                          {/* Whisker Spacing */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-1.5">
-                                                <Label htmlFor={`whisker-spacing-${rule.suffix}`} className="text-xs font-medium">
-                                                  Gap Between Whiskers
-                                                </Label>
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                                  </TooltipTrigger>
-                                                  <TooltipContent side="right" className="max-w-xs text-xs">
-                                                    <p>Distance between whisker plot centers (in pixels)</p>
-                                                    <p className="mt-1">Lower = whiskers closer together, Higher = more spread out</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </div>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.whiskerSpacing ?? 80}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`whisker-spacing-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.whiskerSpacing ?? 80]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'whiskerSpacing', values[0])}
-                                              min={50}
-                                              max={200}
-                                              step={10}
-                                              className="w-full"
-                                            />
-                                          </div>
-
-                                          {/* Whisker Line Width */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-1.5">
-                                                <Label htmlFor={`whisker-line-width-${rule.suffix}`} className="text-xs font-medium">
-                                                  Whisker Line Thickness
-                                                </Label>
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                                  </TooltipTrigger>
-                                                  <TooltipContent side="right" className="max-w-xs text-xs">
-                                                    <p>Thickness of the whisker lines (min/max markers)</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </div>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.whiskerLineWidth ?? 2}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`whisker-line-width-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.whiskerLineWidth ?? 2]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'whiskerLineWidth', values[0])}
-                                              min={1}
-                                              max={5}
-                                              step={0.5}
-                                              className="w-full"
-                                            />
-                                          </div>
-
-                                          {/* Whisker Box Border Width */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-1.5">
-                                                <Label htmlFor={`whisker-box-border-${rule.suffix}`} className="text-xs font-medium">
-                                                  Box Border Thickness
-                                                </Label>
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                                  </TooltipTrigger>
-                                                  <TooltipContent side="right" className="max-w-xs text-xs">
-                                                    <p>Thickness of the box border and median line</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </div>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.whiskerBoxBorderWidth ?? 2}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`whisker-box-border-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.whiskerBoxBorderWidth ?? 2]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'whiskerBoxBorderWidth', values[0])}
-                                              min={1}
-                                              max={5}
-                                              step={0.5}
-                                              className="w-full"
-                                            />
-                                          </div>
-
-                                          {/* Whisker Cap Width */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-1.5">
-                                                <Label htmlFor={`whisker-cap-width-${rule.suffix}`} className="text-xs font-medium">
-                                                  Whisker Cap Width
-                                                </Label>
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                                  </TooltipTrigger>
-                                                  <TooltipContent side="right" className="max-w-xs text-xs">
-                                                    <p>Width of the horizontal caps at min/max (% of box width)</p>
-                                                    <p className="mt-1">20% = narrow caps, 50% = wide caps</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </div>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.whiskerCapWidth ?? 20}%</span>
-                                            </div>
-                                            <Slider
-                                              id={`whisker-cap-width-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.whiskerCapWidth ?? 20]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'whiskerCapWidth', values[0])}
-                                              min={10}
-                                              max={50}
-                                              step={5}
-                                              className="w-full"
-                                            />
-                                          </div>
-                                        </div>
-
-                                        {/* CHART MARGINS */}
-                                        <div className="space-y-3 border-b pb-3">
-                                          <h5 className="text-xs font-semibold">Chart Margins</h5>
-
-                                          {/* Top Margin */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <Label htmlFor={`chart-margin-top-${rule.suffix}`} className="text-xs font-medium">
-                                                Top Margin
-                                              </Label>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.chartMarginTop ?? 20}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`chart-margin-top-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.chartMarginTop ?? 20]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'chartMarginTop', values[0])}
-                                              min={0}
-                                              max={60}
-                                              step={5}
-                                              className="w-full"
-                                            />
-                                          </div>
-
-                                          {/* Right Margin */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <Label htmlFor={`chart-margin-right-${rule.suffix}`} className="text-xs font-medium">
-                                                Right Margin
-                                              </Label>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.chartMarginRight ?? 30}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`chart-margin-right-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.chartMarginRight ?? 30]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'chartMarginRight', values[0])}
-                                              min={0}
-                                              max={100}
-                                              step={5}
-                                              className="w-full"
-                                            />
-                                          </div>
-
-                                          {/* Left Margin */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <Label htmlFor={`chart-margin-left-${rule.suffix}`} className="text-xs font-medium">
-                                                Left Margin
-                                              </Label>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.chartMarginLeft ?? 40}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`chart-margin-left-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.chartMarginLeft ?? 40]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'chartMarginLeft', values[0])}
-                                              min={0}
-                                              max={100}
-                                              step={5}
-                                              className="w-full"
-                                            />
-                                          </div>
-
-                                          {/* Bottom Margin */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <Label htmlFor={`chart-margin-bottom-${rule.suffix}`} className="text-xs font-medium">
-                                                Bottom Margin
-                                              </Label>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.chartMarginBottom ?? 80}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`chart-margin-bottom-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.chartMarginBottom ?? 80]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'chartMarginBottom', values[0])}
-                                              min={40}
-                                              max={150}
-                                              step={10}
-                                              className="w-full"
-                                            />
-                                          </div>
-                                        </div>
-
-                                        {/* ERROR BAR STYLING */}
-                                        <div className="space-y-3 border-b pb-3">
-                                          <h5 className="text-xs font-semibold">Error Bar Styling</h5>
-
-                                          {/* Error Bar Width */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <Label htmlFor={`error-bar-width-${rule.suffix}`} className="text-xs font-medium">
-                                                Error Bar Cap Width
-                                              </Label>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.errorBarWidth ?? 4}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`error-bar-width-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.errorBarWidth ?? 4]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'errorBarWidth', values[0])}
-                                              min={2}
-                                              max={10}
-                                              step={1}
-                                              className="w-full"
-                                            />
-                                          </div>
-
-                                          {/* Error Bar Stroke Width */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <Label htmlFor={`error-bar-stroke-${rule.suffix}`} className="text-xs font-medium">
-                                                Error Bar Line Thickness
-                                              </Label>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.errorBarStrokeWidth ?? 2}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`error-bar-stroke-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.errorBarStrokeWidth ?? 2]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'errorBarStrokeWidth', values[0])}
-                                              min={1}
-                                              max={5}
-                                              step={0.5}
-                                              className="w-full"
-                                            />
-                                          </div>
-                                        </div>
-
-                                        {/* AXIS LABEL STYLING */}
-                                        <div className="space-y-3 border-b pb-3">
-                                          <h5 className="text-xs font-semibold">Axis Label Styling</h5>
-
-                                          {/* X-Axis Label Rotation */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <Label htmlFor={`x-axis-rotation-${rule.suffix}`} className="text-xs font-medium">
-                                                X-Axis Label Rotation
-                                              </Label>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.xAxisLabelRotation ?? -45}°</span>
-                                            </div>
-                                            <Slider
-                                              id={`x-axis-rotation-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.xAxisLabelRotation ?? -45]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'xAxisLabelRotation', values[0])}
-                                              min={-90}
-                                              max={0}
-                                              step={5}
-                                              className="w-full"
-                                            />
-                                          </div>
-
-                                          {/* X-Axis Label Font Size */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <Label htmlFor={`x-axis-font-${rule.suffix}`} className="text-xs font-medium">
-                                                X-Axis Label Font Size
-                                              </Label>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.xAxisLabelFontSize ?? 11}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`x-axis-font-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.xAxisLabelFontSize ?? 11]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'xAxisLabelFontSize', values[0])}
-                                              min={8}
-                                              max={16}
-                                              step={1}
-                                              className="w-full"
-                                            />
-                                          </div>
-
-
-                                          {/* X-Axis Label Second Line Offset */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-1.5">
-                                                <Label htmlFor={`x-axis-offset-${rule.suffix}`} className="text-xs font-medium">
-                                                  X-Axis 2nd Line Alignment
-                                                </Label>
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                                  </TooltipTrigger>
-                                                  <TooltipContent side="right" className="max-w-xs text-xs">
-                                                    <p>Horizontal offset for second line of X-axis label (e.g., [Farm-L 1-NE-3])</p>
-                                                    <p className="mt-1">Positive values shift right (align with first line), negative shifts left</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </div>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.xAxisLabelSecondLineOffset ?? 0}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`x-axis-offset-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.xAxisLabelSecondLineOffset ?? 0]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'xAxisLabelSecondLineOffset', values[0])}
-                                              min={-20}
-                                              max={20}
-                                              step={1}
-                                              className="w-full"
-                                            />
-                                          </div>
-                                          {/* Y-Axis Label Font Size */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <Label htmlFor={`y-axis-font-${rule.suffix}`} className="text-xs font-medium">
-                                                Y-Axis Label Font Size
-                                              </Label>
-                                              <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.yAxisLabelFontSize ?? 12}px</span>
-                                            </div>
-                                            <Slider
-                                              id={`y-axis-font-${rule.suffix}`}
-                                              value={[rule.properties.spotSample?.yAxisLabelFontSize ?? 12]}
-                                              onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'yAxisLabelFontSize', values[0])}
-                                              min={8}
-                                              max={16}
-                                              step={1}
-                                              className="w-full"
-                                            />
-                                          </div>
-                                        </div>
-
-                                        {/* CHART HEIGHT */}
-                                        <div className="space-y-1.5">
-                                          <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-1.5">
-                                              <Label htmlFor={`spot-chart-height-${rule.suffix}`} className="text-xs font-medium">
-                                                Chart Height
-                                              </Label>
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                                </TooltipTrigger>
-                                                <TooltipContent side="right" className="max-w-xs text-xs">
-                                                  <p>Height of each parameter chart</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </div>
-                                            <span className="text-xs text-muted-foreground">{rule.properties.spotSample?.chartHeight ?? 350}px</span>
-                                          </div>
-                                          <Slider
-                                            id={`spot-chart-height-${rule.suffix}`}
-                                            value={[rule.properties.spotSample?.chartHeight ?? 350]}
-                                            onValueChange={(values) => handleSpotSamplePropertyChange(rule.suffix, 'chartHeight', values[0])}
-                                            min={200}
-                                            max={600}
-                                            step={25}
-                                            className="w-full"
-                                          />
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {/* Action Buttons */}
-                                    <div className="flex gap-2 pt-2 border-t">
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="flex-1"
-                                        onClick={() => handleCancelChanges(rule.suffix)}
-                                      >
-                                        Cancel
-                                      </Button>
-                                      <Button
-                                        variant="default"
-                                        size="sm"
-                                        className="flex-1"
-                                        onClick={handleSaveChanges}
-                                      >
-                                        Confirm
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </TooltipProvider>
-                              </PopoverContent>
-                            </Popover>
-                          )}
-                          </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-muted-foreground">Top: {selectedRule.properties.spotSample?.chartMarginTop ?? 20}px</Label>
+                          <Slider
+                            value={[selectedRule.properties.spotSample?.chartMarginTop ?? 20]}
+                            onValueChange={(values) => handleSpotSamplePropertyChange('chartMarginTop', values[0])}
+                            min={0}
+                            max={50}
+                            step={5}
+                            className="w-full"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-muted-foreground">Bottom: {selectedRule.properties.spotSample?.chartMarginBottom ?? 140}px</Label>
+                          <Slider
+                            value={[selectedRule.properties.spotSample?.chartMarginBottom ?? 140]}
+                            onValueChange={(values) => handleSpotSamplePropertyChange('chartMarginBottom', values[0])}
+                            min={40}
+                            max={150}
+                            step={10}
+                            className="w-full"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-muted-foreground">Left: {selectedRule.properties.spotSample?.chartMarginLeft ?? 60}px</Label>
+                          <Slider
+                            value={[selectedRule.properties.spotSample?.chartMarginLeft ?? 60]}
+                            onValueChange={(values) => handleSpotSamplePropertyChange('chartMarginLeft', values[0])}
+                            min={20}
+                            max={80}
+                            step={5}
+                            className="w-full"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-muted-foreground">Right: {selectedRule.properties.spotSample?.chartMarginRight ?? 30}px</Label>
+                          <Slider
+                            value={[selectedRule.properties.spotSample?.chartMarginRight ?? 30]}
+                            onValueChange={(values) => handleSpotSamplePropertyChange('chartMarginRight', values[0])}
+                            min={10}
+                            max={60}
+                            step={5}
+                            className="w-full"
+                          />
                         </div>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Time-Series Plot Controls */
+              <div className="space-y-3">
+                <h5 className="text-xs font-semibold">Time-Series Chart Controls</h5>
+
+                {/* X-Axis Title */}
+                <div className="space-y-1">
+                  <Label className="text-xs">X-Axis Title</Label>
+                  <Input
+                    value={selectedRule.properties.xAxisTitle || "Time"}
+                    onChange={(e) => handlePropertyChange('xAxisTitle', e.target.value)}
+                    className="h-7 text-xs"
+                  />
+                </div>
+
+                {/* Y-Axis Title */}
+                <div className="space-y-1">
+                  <Label className="text-xs">Y-Axis Title</Label>
+                  <Input
+                    value={selectedRule.properties.yAxisTitle || ""}
+                    onChange={(e) => handlePropertyChange('yAxisTitle', e.target.value)}
+                    className="h-7 text-xs"
+                  />
+                </div>
+
+                {/* Chart Height */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Chart Height</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedRule.properties.chartHeight || 208}px
+                    </span>
+                  </div>
+                  <Slider
+                    value={[selectedRule.properties.chartHeight || 208]}
+                    onValueChange={(values) => handlePropertyChange('chartHeight', values[0])}
+                    min={150}
+                    max={400}
+                    step={10}
+                    className="w-full"
+                  />
+                </div>
+
+                {/* Y-Axis Width */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Y-Axis Width</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedRule.properties.yAxisWidth || 80}px
+                    </span>
+                  </div>
+                  <Slider
+                    value={[selectedRule.properties.yAxisWidth || 80]}
+                    onValueChange={(values) => handlePropertyChange('yAxisWidth', values[0])}
+                    min={40}
+                    max={150}
+                    step={5}
+                    className="w-full"
+                  />
+                </div>
+
+                {/* More controls button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => {
+                    // Open expanded controls if needed
+                  }}
+                >
+                  <Info className="h-3 w-3 mr-1" />
+                  More Advanced Controls
+                </Button>
+              </div>
+            )}
+          </div>
+        </TooltipProvider>
+      </PopoverContent>
+    </Popover>
   );
 }
