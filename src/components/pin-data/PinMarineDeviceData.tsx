@@ -993,18 +993,31 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       console.log('✅ [RESTORE] setPlots completed');
 
       // Restore plot visibility state (which parameters are visible in each plot)
-      const restoredVisibilityState: Record<string, { params: string[], colors: Record<string, string>, settings?: Record<string, any> }> = {};
+      const restoredVisibilityState: Record<string, {
+        params: string[],
+        colors: Record<string, string>,
+        settings?: Record<string, any>,
+        plotSettings?: {
+          axisMode?: 'single' | 'multi';
+          customYAxisLabel?: string;
+          compactView?: boolean;
+          customParameterNames?: Record<string, string>;
+        }
+      }> = {};
       availablePlots.forEach(savedPlot => {
         if (savedPlot.visibleParameters && savedPlot.visibleParameters.length > 0) {
           restoredVisibilityState[savedPlot.id] = {
             params: savedPlot.visibleParameters,
             colors: savedPlot.parameterColors || {},
-            settings: savedPlot.parameterSettings
+            settings: savedPlot.parameterSettings,
+            plotSettings: savedPlot.plotSettings  // ✅ RESTORE PLOT-LEVEL SETTINGS
           };
           console.log(`🎨 [RESTORE] Restored visibility for plot "${savedPlot.title}":`, {
             visibleParams: savedPlot.visibleParameters.length,
             colors: Object.keys(savedPlot.parameterColors || {}).length,
-            hasSettings: !!savedPlot.parameterSettings
+            hasSettings: !!savedPlot.parameterSettings,
+            hasPlotSettings: !!savedPlot.plotSettings,
+            plotSettings: savedPlot.plotSettings
           });
         }
       });

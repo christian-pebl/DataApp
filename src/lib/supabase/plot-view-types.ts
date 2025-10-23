@@ -48,6 +48,19 @@ export interface SavedPlotConfig {
   isMerged?: boolean;
   mergedParams?: MergedParameterConfig[];
 
+  // Computed plot metadata (for subtraction/merge operations)
+  computationType?: 'subtract' | 'merge';
+  sourcePlotIds?: string[]; // IDs of source plots used in computation
+  computationParams?: {
+    param1: string;
+    param2: string;
+    resultParam?: string;
+  };
+  computationConfig?: {
+    direction?: '1-2' | '2-1'; // For subtraction
+    missingDataMode?: 'skip' | 'zero'; // How to handle missing data
+  };
+
   // Parameter display settings (which parameters are checked and their styling)
   visibleParameters: string[];
   parameterColors: Record<string, string>;
@@ -68,6 +81,14 @@ export interface SavedPlotConfig {
       showLine: boolean;
     };
   }>;
+
+  // Plot-level settings (axis mode, Y-axis label, compact view, custom parameter names)
+  plotSettings?: {
+    axisMode?: 'single' | 'multi';
+    customYAxisLabel?: string;
+    compactView?: boolean;
+    customParameterNames?: Record<string, string>;
+  };
 }
 
 /**

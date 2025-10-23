@@ -319,6 +319,19 @@ export function PinChartDisplay({
   detectedSampleIdColumn,
   headers
 }: PinChartDisplayProps) {
+  // Log initial settings for debugging restoration
+  React.useEffect(() => {
+    if (initialCompactView !== undefined || initialCustomYAxisLabel !== undefined || initialAxisMode !== undefined) {
+      console.log('🔍 [PIN CHART DISPLAY] Received initial settings:', {
+        initialCompactView,
+        initialCustomYAxisLabel,
+        initialAxisMode,
+        initialCustomParameterNames,
+        initialParameterSettings: initialParameterSettings ? Object.keys(initialParameterSettings) : []
+      });
+    }
+  }, []);
+
   // Toggle state for switching between chart and table view
   const [showTable, setShowTable] = useState(false);
 
@@ -584,17 +597,23 @@ export function PinChartDisplay({
         if (state?.movingAverage?.enabled && state?.movingAverage?.showLine !== false) {
           // Create or update MA parameter state
           if (!newState[maKey]) {
+            // Check if there are saved settings for this MA parameter
+            const savedMASettings = initialParameterSettings?.[maKey] || {};
+
             console.log('[MA DEBUG] Creating MA parameter state:', {
               baseParam: param,
               maKey,
               baseColor: state.color,
-              maColor: lightenColor(state.color, 0.3)
+              maColor: lightenColor(state.color, 0.3),
+              savedSettings: savedMASettings
             });
+
             newState[maKey] = {
               visible: true, // MA parameters are always visible when enabled
               color: lightenColor(state.color, 0.3), // Lighter shade of base color
-              opacity: 0.8, // Slightly transparent
-              lineStyle: 'dashed' // Dashed line style for MA
+              opacity: savedMASettings.opacity ?? 0.8, // Use saved opacity if available
+              lineStyle: savedMASettings.lineStyle ?? 'dashed', // Use saved line style if available
+              lineWidth: savedMASettings.lineWidth // Use saved line width if available
             };
           } else {
             // Update existing MA parameter to ensure visibility matches showLine
@@ -1313,12 +1332,20 @@ export function PinChartDisplay({
       if (enabled && (showLine !== false)) {
         // Create or update MA parameter state
         if (!updated[maKey]) {
-          console.log('[MA DEBUG] Creating MA parameter state in updateMovingAverage:', maKey);
+          // Check if there are saved settings for this MA parameter
+          const savedMASettings = initialParameterSettings?.[maKey] || {};
+
+          console.log('[MA DEBUG] Creating MA parameter state in updateMovingAverage:', {
+            maKey,
+            savedSettings: savedMASettings
+          });
+
           updated[maKey] = {
             visible: true,
             color: lightenColor(prev[parameter].color, 0.3),
-            opacity: 0.8,
-            lineStyle: 'dashed'
+            opacity: savedMASettings.opacity ?? 0.8,
+            lineStyle: savedMASettings.lineStyle ?? 'dashed',
+            lineWidth: savedMASettings.lineWidth
           };
         } else {
           updated[maKey] = {
