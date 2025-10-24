@@ -22,6 +22,9 @@ interface SpotSampleStyles {
   xAxisLabelFontSize?: number;
   xAxisLabelSecondLineOffset?: number;
   yAxisLabelFontSize?: number;
+  yAxisTitleFontSize?: number;
+  yAxisTitleFontWeight?: number | string;
+  yAxisTitleAlign?: 'left' | 'center' | 'right';
   chartHeight?: number;
   chartWidth?: number; // Fixed chart width override
 }
@@ -61,6 +64,9 @@ export function WhiskerPlot({
     xAxisLabelFontSize: spotSampleStyles?.xAxisLabelFontSize ?? 11,
     xAxisLabelSecondLineOffset: spotSampleStyles?.xAxisLabelSecondLineOffset ?? 0,
     yAxisLabelFontSize: spotSampleStyles?.yAxisLabelFontSize ?? 12,
+    yAxisTitleFontSize: spotSampleStyles?.yAxisTitleFontSize ?? 14,
+    yAxisTitleFontWeight: spotSampleStyles?.yAxisTitleFontWeight ?? 'normal',
+    yAxisTitleAlign: spotSampleStyles?.yAxisTitleAlign ?? 'center',
     chartHeight: spotSampleStyles?.chartHeight ?? 350,
     chartWidth: spotSampleStyles?.chartWidth,
     whiskerBoxWidth: spotSampleStyles?.whiskerBoxWidth ?? 40,
@@ -89,9 +95,9 @@ export function WhiskerPlot({
   }
 
   // Helper function to calculate nice round tick values
-  const calculateNiceTicks = (maxValue: number, minTicks = 4): number[] => {
-    // Add 5% padding to ensure whisker caps aren't cut off
-    const targetMax = maxValue * 1.05;
+  const calculateNiceTicks = (maxValue: number, minTicks = 6): number[] => {
+    // Add minimal padding (2%) to ensure whisker caps aren't cut off
+    const targetMax = maxValue * 1.02;
 
     // Calculate rough step size for desired number of ticks
     const roughStep = targetMax / (minTicks - 1);
@@ -99,7 +105,7 @@ export function WhiskerPlot({
     // Find the magnitude (power of 10)
     const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
 
-    // Normalize the step to 1, 2, 5, or 10 times the magnitude
+    // Normalize the step to 1, 2, 4, 5, or 10 times the magnitude for more granular options
     const normalizedStep = roughStep / magnitude;
     let niceStep: number;
 
@@ -107,21 +113,27 @@ export function WhiskerPlot({
       niceStep = 1 * magnitude;
     } else if (normalizedStep <= 2) {
       niceStep = 2 * magnitude;
+    } else if (normalizedStep <= 4) {
+      niceStep = 4 * magnitude;
     } else if (normalizedStep <= 5) {
       niceStep = 5 * magnitude;
     } else {
       niceStep = 10 * magnitude;
     }
 
-    // Generate ticks starting from 0, ensuring we go beyond targetMax
+    // Generate ticks starting from 0
     const ticks: number[] = [0];
     let tick = niceStep;
-    while (tick < targetMax) {
+    while (tick <= targetMax) {
       ticks.push(tick);
       tick += niceStep;
     }
-    // Add one more tick to ensure we have space above the data
-    ticks.push(tick);
+
+    // Only add one more tick if we're significantly below targetMax
+    // This prevents huge gaps while ensuring data fits
+    if (ticks[ticks.length - 1] < targetMax) {
+      ticks.push(tick);
+    }
 
     // Ensure we have at least minTicks
     while (ticks.length < minTicks) {
@@ -136,7 +148,7 @@ export function WhiskerPlot({
   const allValues = parameterData.flatMap(d => [d.stats.min, d.stats.max]).filter(v => !isNaN(v) && isFinite(v));
   const dataMax = allValues.length > 0 ? Math.max(...allValues) : 1;
   const yMin = 0; // Always start at 0
-  const yTicks = calculateNiceTicks(dataMax, 4); // At least 4 ticks (0 + 3 more)
+  const yTicks = calculateNiceTicks(dataMax, 8); // At least 8 ticks for granular intervals
   const yMax = yTicks[yTicks.length - 1]; // Use the last tick as max
   const yRange = yMax - yMin;
 
@@ -273,9 +285,9 @@ export function WhiskerPlot({
             y={-45}
             transform={`rotate(-90, ${-plotHeight / 2}, -45)`}
             textAnchor="middle"
-            fontSize={14}
+            fontSize={styles.yAxisTitleFontSize}
             fill="#000"
-            fontWeight="400"
+            fontWeight={styles.yAxisTitleFontWeight}
           >
             {parameter}
           </text>

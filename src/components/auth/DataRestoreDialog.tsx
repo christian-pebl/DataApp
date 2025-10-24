@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { dataSyncService } from '@/lib/supabase/data-sync-service'
 import { useSyncNotifications } from '@/components/ui/sync-notifications'
 import { SyncNotificationsContainer } from '@/components/ui/sync-notifications-container'
@@ -12,9 +12,11 @@ interface DataRestoreNotificationsProps {
 
 export function DataRestoreNotifications({ isActive, onComplete }: DataRestoreNotificationsProps) {
   const { notifications, showNotification, updateNotification, removeNotification } = useSyncNotifications()
+  const hasRestoredRef = useRef(false)
 
   useEffect(() => {
-    if (isActive) {
+    if (isActive && !hasRestoredRef.current) {
+      hasRestoredRef.current = true
       restoreUserData()
     }
   }, [isActive])

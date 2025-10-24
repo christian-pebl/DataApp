@@ -40,7 +40,7 @@ export async function getAllUserFilesAction(): Promise<{
 
     console.log('[Data Explorer Actions] User authenticated:', user.id);
 
-    // First, get all pins owned by the user
+    // Get all pins owned by the user
     const { data: userPins, error: pinsError } = await supabase
       .from('pins')
       .select('id, label')
@@ -54,32 +54,64 @@ export async function getAllUserFilesAction(): Promise<{
       };
     }
 
-    console.log(`[Data Explorer Actions] Found ${userPins?.length || 0} pins for user`);
+    // Get all areas owned by the user
+    const { data: userAreas, error: areasError } = await supabase
+      .from('areas')
+      .select('id, name')
+      .eq('user_id', user.id);
 
-    if (!userPins || userPins.length === 0) {
-      console.log('[Data Explorer Actions] No pins found, returning empty array');
+    if (areasError) {
+      console.error('[Data Explorer Actions] Error fetching areas:', areasError);
+      return {
+        success: false,
+        error: areasError.message
+      };
+    }
+
+    console.log(`[Data Explorer Actions] Found ${userPins?.length || 0} pins and ${userAreas?.length || 0} areas for user`);
+
+    if ((!userPins || userPins.length === 0) && (!userAreas || userAreas.length === 0)) {
+      console.log('[Data Explorer Actions] No pins or areas found, returning empty array');
       return {
         success: true,
         data: []
       };
     }
 
-    const pinIds = userPins.map(p => p.id);
+    const pinIds = (userPins || []).map(p => p.id);
+    const areaIds = (userAreas || []).map(a => a.id);
     console.log('[Data Explorer Actions] Pin IDs:', pinIds);
+    console.log('[Data Explorer Actions] Area IDs:', areaIds);
 
-    // Now get all files for these pins, ordered alphabetically by file name
-    const { data: filesData, error: filesError } = await supabase
-      .from('pin_files')
-      .select('id, file_name, file_type, pin_id, project_id, uploaded_at, start_date, end_date')
-      .in('pin_id', pinIds)
-      .order('file_name', { ascending: true });
+    // Fetch files for pins
+    let filesData: any[] = [];
+    if (pinIds.length > 0) {
+      const { data, error: filesError } = await supabase
+        .from('pin_files')
+        .select('id, file_name, file_type, pin_id, area_id, project_id, uploaded_at, start_date, end_date')
+        .in('pin_id', pinIds)
+        .order('file_name', { ascending: true });
 
-    if (filesError) {
-      console.error('[Data Explorer Actions] Error fetching files:', filesError);
-      return {
-        success: false,
-        error: filesError.message
-      };
+      if (filesError) {
+        console.error('[Data Explorer Actions] Error fetching pin files:', filesError);
+      } else if (data) {
+        filesData.push(...data);
+      }
+    }
+
+    // Fetch files for areas
+    if (areaIds.length > 0) {
+      const { data, error: areaFilesError } = await supabase
+        .from('pin_files')
+        .select('id, file_name, file_type, pin_id, area_id, project_id, uploaded_at, start_date, end_date')
+        .in('area_id', areaIds)
+        .order('file_name', { ascending: true });
+
+      if (areaFilesError) {
+        console.error('[Data Explorer Actions] Error fetching area files:', areaFilesError);
+      } else if (data) {
+        filesData.push(...data);
+      }
     }
 
     console.log(`[Data Explorer Actions] Found ${filesData?.length || 0} files`);
@@ -100,8 +132,9 @@ export async function getAllUserFilesAction(): Promise<{
       }
     }
 
-    // Create a map of pin IDs to labels
-    const pinsMap = Object.fromEntries(userPins.map(p => [p.id, p.label]));
+    // Create maps of pin IDs to labels and area IDs to names
+    const pinsMap = Object.fromEntries((userPins || []).map(p => [p.id, p.label]));
+    const areasMap = Object.fromEntries((userAreas || []).map(a => [a.id, a.name]));
 
     // Transform regular files
     const files: UserFileDetails[] = (filesData || []).map((item: any) => {
@@ -116,15 +149,19 @@ export async function getAllUserFilesAction(): Promise<{
 
       const status: 'active' | 'processing' = 'active';
 
+      // Determine objectLabel and objectId based on whether file is attached to pin or area
+      const objectLabel = item.pin_id ? pinsMap[item.pin_id] : item.area_id ? areasMap[item.area_id] : null;
+      const objectId = item.pin_id || item.area_id || null;
+
       return {
         id: item.id,
         fileName: item.file_name,
         projectName: item.project_id ? (projectsMap[item.project_id] || null) : null,
-        objectLabel: pinsMap[item.pin_id] || null,
+        objectLabel: objectLabel || null,
         deviceType,
         uploadedAt: new Date(item.uploaded_at),
         status,
-        pinId: item.pin_id,
+        pinId: objectId, // This is actually pin_id OR area_id
         projectId: item.project_id,
         startDate: item.start_date ? new Date(item.start_date) : null,
         endDate: item.end_date ? new Date(item.end_date) : null,
@@ -221,7 +258,7 @@ export async function renameFileAction(fileId: string, newFileName: string): Pro
     // Get file metadata to verify ownership
     const { data: fileData, error: getError } = await supabase
       .from('pin_files')
-      .select('pin_id, file_name')
+      .select('pin_id, area_id, file_name')
       .eq('id', fileId)
       .single();
 
@@ -233,28 +270,61 @@ export async function renameFileAction(fileId: string, newFileName: string): Pro
       };
     }
 
-    console.log('[Data Explorer Actions] Current file name:', fileData.file_name);
+    console.log('[Data Explorer Actions] Current file name:', fileData.file_name, { hasPinId: !!fileData.pin_id, hasAreaId: !!fileData.area_id });
 
-    // Verify user owns the pin associated with this file
-    const { data: pinData, error: pinError } = await supabase
-      .from('pins')
-      .select('user_id')
-      .eq('id', fileData.pin_id)
-      .single();
+    // Verify user owns the pin or area associated with this file
+    if (fileData.pin_id) {
+      // File is attached to a pin
+      const { data: pinData, error: pinError } = await supabase
+        .from('pins')
+        .select('user_id')
+        .eq('id', fileData.pin_id)
+        .single();
 
-    if (pinError || !pinData) {
-      console.error('[Data Explorer Actions] Error fetching pin:', pinError);
+      if (pinError || !pinData) {
+        console.error('[Data Explorer Actions] Error fetching pin:', pinError);
+        return {
+          success: false,
+          error: 'Pin not found'
+        };
+      }
+
+      if (pinData.user_id !== user.id) {
+        console.error('[Data Explorer Actions] User does not own this file');
+        return {
+          success: false,
+          error: 'You do not have permission to rename this file'
+        };
+      }
+    } else if (fileData.area_id) {
+      // File is attached to an area
+      const { data: areaData, error: areaError } = await supabase
+        .from('areas')
+        .select('user_id')
+        .eq('id', fileData.area_id)
+        .single();
+
+      if (areaError || !areaData) {
+        console.error('[Data Explorer Actions] Error fetching area:', areaError);
+        return {
+          success: false,
+          error: 'Area not found'
+        };
+      }
+
+      if (areaData.user_id !== user.id) {
+        console.error('[Data Explorer Actions] User does not own this file');
+        return {
+          success: false,
+          error: 'You do not have permission to rename this file'
+        };
+      }
+    } else {
+      // File has neither pin_id nor area_id
+      console.error('[Data Explorer Actions] File has no associated pin or area');
       return {
         success: false,
-        error: 'Pin not found'
-      };
-    }
-
-    if (pinData.user_id !== user.id) {
-      console.error('[Data Explorer Actions] User does not own this file');
-      return {
-        success: false,
-        error: 'You do not have permission to rename this file'
+        error: 'File has no associated location'
       };
     }
 
@@ -316,10 +386,10 @@ export async function updateFileDatesAction(
 
     console.log('[Data Explorer Actions] User authenticated:', user.id);
 
-    // Get file metadata to verify ownership
+    // Get file metadata to verify ownership (check both pin_id and area_id)
     const { data: fileData, error: getError } = await supabase
       .from('pin_files')
-      .select('pin_id, file_name')
+      .select('pin_id, area_id, file_name')
       .eq('id', fileId)
       .single();
 
@@ -331,28 +401,64 @@ export async function updateFileDatesAction(
       };
     }
 
-    console.log('[Data Explorer Actions] Updating dates for file:', fileData.file_name);
+    console.log('[Data Explorer Actions] Updating dates for file:', fileData.file_name, {
+      hasPinId: !!fileData.pin_id,
+      hasAreaId: !!fileData.area_id
+    });
 
-    // Verify user owns the pin associated with this file
-    const { data: pinData, error: pinError } = await supabase
-      .from('pins')
-      .select('user_id')
-      .eq('id', fileData.pin_id)
-      .single();
+    // Verify user owns the pin or area associated with this file
+    if (fileData.pin_id) {
+      // File is associated with a pin
+      const { data: pinData, error: pinError } = await supabase
+        .from('pins')
+        .select('user_id')
+        .eq('id', fileData.pin_id)
+        .single();
 
-    if (pinError || !pinData) {
-      console.error('[Data Explorer Actions] Error fetching pin:', pinError);
+      if (pinError || !pinData) {
+        console.error('[Data Explorer Actions] Error fetching pin:', pinError);
+        return {
+          success: false,
+          error: 'Pin not found'
+        };
+      }
+
+      if (pinData.user_id !== user.id) {
+        console.error('[Data Explorer Actions] User does not own this pin file');
+        return {
+          success: false,
+          error: 'You do not have permission to update this file'
+        };
+      }
+    } else if (fileData.area_id) {
+      // File is associated with an area
+      const { data: areaData, error: areaError } = await supabase
+        .from('areas')
+        .select('user_id')
+        .eq('id', fileData.area_id)
+        .single();
+
+      if (areaError || !areaData) {
+        console.error('[Data Explorer Actions] Error fetching area:', areaError);
+        return {
+          success: false,
+          error: 'Area not found'
+        };
+      }
+
+      if (areaData.user_id !== user.id) {
+        console.error('[Data Explorer Actions] User does not own this area file');
+        return {
+          success: false,
+          error: 'You do not have permission to update this file'
+        };
+      }
+    } else {
+      // File has neither pin_id nor area_id (orphaned)
+      console.error('[Data Explorer Actions] File has no associated pin or area');
       return {
         success: false,
-        error: 'Pin not found'
-      };
-    }
-
-    if (pinData.user_id !== user.id) {
-      console.error('[Data Explorer Actions] User does not own this file');
-      return {
-        success: false,
-        error: 'You do not have permission to update this file'
+        error: 'File has no associated pin or area'
       };
     }
 
@@ -423,7 +529,7 @@ export async function deleteFileAction(fileId: string): Promise<{
     // Get file metadata to verify ownership
     const { data: fileData, error: getError } = await supabase
       .from('pin_files')
-      .select('pin_id, file_path, file_name')
+      .select('pin_id, area_id, file_path, file_name')
       .eq('id', fileId)
       .single();
 
@@ -435,28 +541,61 @@ export async function deleteFileAction(fileId: string): Promise<{
       };
     }
 
-    console.log('[Data Explorer Actions] File to delete:', fileData.file_name);
+    console.log('[Data Explorer Actions] File to delete:', fileData.file_name, { hasPinId: !!fileData.pin_id, hasAreaId: !!fileData.area_id });
 
-    // Verify user owns the pin associated with this file
-    const { data: pinData, error: pinError } = await supabase
-      .from('pins')
-      .select('user_id')
-      .eq('id', fileData.pin_id)
-      .single();
+    // Verify user owns the pin or area associated with this file
+    if (fileData.pin_id) {
+      // File is attached to a pin
+      const { data: pinData, error: pinError } = await supabase
+        .from('pins')
+        .select('user_id')
+        .eq('id', fileData.pin_id)
+        .single();
 
-    if (pinError || !pinData) {
-      console.error('[Data Explorer Actions] Error fetching pin:', pinError);
+      if (pinError || !pinData) {
+        console.error('[Data Explorer Actions] Error fetching pin:', pinError);
+        return {
+          success: false,
+          error: 'Pin not found'
+        };
+      }
+
+      if (pinData.user_id !== user.id) {
+        console.error('[Data Explorer Actions] User does not own this file');
+        return {
+          success: false,
+          error: 'You do not have permission to delete this file'
+        };
+      }
+    } else if (fileData.area_id) {
+      // File is attached to an area
+      const { data: areaData, error: areaError } = await supabase
+        .from('areas')
+        .select('user_id')
+        .eq('id', fileData.area_id)
+        .single();
+
+      if (areaError || !areaData) {
+        console.error('[Data Explorer Actions] Error fetching area:', areaError);
+        return {
+          success: false,
+          error: 'Area not found'
+        };
+      }
+
+      if (areaData.user_id !== user.id) {
+        console.error('[Data Explorer Actions] User does not own this file');
+        return {
+          success: false,
+          error: 'You do not have permission to delete this file'
+        };
+      }
+    } else {
+      // File has neither pin_id nor area_id
+      console.error('[Data Explorer Actions] File has no associated pin or area');
       return {
         success: false,
-        error: 'Pin not found'
-      };
-    }
-
-    if (pinData.user_id !== user.id) {
-      console.error('[Data Explorer Actions] User does not own this file');
-      return {
-        success: false,
-        error: 'You do not have permission to delete this file'
+        error: 'File has no associated location'
       };
     }
 
@@ -528,7 +667,7 @@ export async function downloadFileAction(fileId: string): Promise<{
     // Get file metadata to verify ownership
     const { data: fileData, error: getError } = await supabase
       .from('pin_files')
-      .select('pin_id, file_path, file_name')
+      .select('pin_id, area_id, file_path, file_name')
       .eq('id', fileId)
       .single();
 
@@ -540,28 +679,61 @@ export async function downloadFileAction(fileId: string): Promise<{
       };
     }
 
-    console.log('[Data Explorer Actions] File to download:', fileData.file_name);
+    console.log('[Data Explorer Actions] File to download:', fileData.file_name, { hasPinId: !!fileData.pin_id, hasAreaId: !!fileData.area_id });
 
-    // Verify user owns the pin associated with this file
-    const { data: pinData, error: pinError } = await supabase
-      .from('pins')
-      .select('user_id')
-      .eq('id', fileData.pin_id)
-      .single();
+    // Verify user owns the pin or area associated with this file
+    if (fileData.pin_id) {
+      // File is attached to a pin
+      const { data: pinData, error: pinError } = await supabase
+        .from('pins')
+        .select('user_id')
+        .eq('id', fileData.pin_id)
+        .single();
 
-    if (pinError || !pinData) {
-      console.error('[Data Explorer Actions] Error fetching pin:', pinError);
+      if (pinError || !pinData) {
+        console.error('[Data Explorer Actions] Error fetching pin:', pinError);
+        return {
+          success: false,
+          error: 'Pin not found'
+        };
+      }
+
+      if (pinData.user_id !== user.id) {
+        console.error('[Data Explorer Actions] User does not own this file');
+        return {
+          success: false,
+          error: 'You do not have permission to download this file'
+        };
+      }
+    } else if (fileData.area_id) {
+      // File is attached to an area
+      const { data: areaData, error: areaError } = await supabase
+        .from('areas')
+        .select('user_id')
+        .eq('id', fileData.area_id)
+        .single();
+
+      if (areaError || !areaData) {
+        console.error('[Data Explorer Actions] Error fetching area:', areaError);
+        return {
+          success: false,
+          error: 'Area not found'
+        };
+      }
+
+      if (areaData.user_id !== user.id) {
+        console.error('[Data Explorer Actions] User does not own this file');
+        return {
+          success: false,
+          error: 'You do not have permission to download this file'
+        };
+      }
+    } else {
+      // File has neither pin_id nor area_id
+      console.error('[Data Explorer Actions] File has no associated pin or area');
       return {
         success: false,
-        error: 'Pin not found'
-      };
-    }
-
-    if (pinData.user_id !== user.id) {
-      console.error('[Data Explorer Actions] User does not own this file');
-      return {
-        success: false,
-        error: 'You do not have permission to download this file'
+        error: 'File has no associated location'
       };
     }
 

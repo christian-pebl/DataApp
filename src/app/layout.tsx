@@ -37,6 +37,7 @@ export const metadata: Metadata = {
     type: 'website',
     images: ['/logos/PEBL Logo-1.svg'],
   },
+  manifest: "/manifest.json",
 };
 
 export default async function RootLayout({

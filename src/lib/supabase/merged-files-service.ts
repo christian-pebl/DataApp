@@ -14,11 +14,11 @@ export interface MergedFile {
   sourceFileIds: string[];
   sourceFilesMetadata: Record<string, any>;
   missingSourceFiles: string[];
-  startDate: Date | null;
-  endDate: Date | null;
+  startDate: string | null;  // Changed from Date to string for server action serialization
+  endDate: string | null;    // Changed from Date to string for server action serialization
   projectId: string;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;         // Changed from Date to string for server action serialization
+  updatedAt: string;         // Changed from Date to string for server action serialization
 }
 
 export interface CreateMergedFileParams {
@@ -156,11 +156,11 @@ class MergedFilesService {
         sourceFileIds: dbData.source_file_ids || [],
         sourceFilesMetadata: dbData.source_files_metadata || {},
         missingSourceFiles: dbData.missing_source_files || [],
-        startDate: dbData.start_date ? new Date(dbData.start_date) : null,
-        endDate: dbData.end_date ? new Date(dbData.end_date) : null,
+        startDate: dbData.start_date || null,
+        endDate: dbData.end_date || null,
         projectId: dbData.project_id,
-        createdAt: new Date(dbData.created_at),
-        updatedAt: new Date(dbData.updated_at)
+        createdAt: dbData.created_at,
+        updatedAt: dbData.updated_at
       };
 
       return { success: true, data: mergedFile };
@@ -245,11 +245,11 @@ class MergedFilesService {
         sourceFileIds: updatedData.source_file_ids || [],
         sourceFilesMetadata: updatedData.source_files_metadata || {},
         missingSourceFiles: updatedData.missing_source_files || [],
-        startDate: updatedData.start_date ? new Date(updatedData.start_date) : null,
-        endDate: updatedData.end_date ? new Date(updatedData.end_date) : null,
+        startDate: updatedData.start_date || null,
+        endDate: updatedData.end_date || null,
         projectId: updatedData.project_id,
-        createdAt: new Date(updatedData.created_at),
-        updatedAt: new Date(updatedData.updated_at)
+        createdAt: updatedData.created_at,
+        updatedAt: updatedData.updated_at
       };
 
       return { success: true, data: mergedFile };
@@ -289,11 +289,11 @@ class MergedFilesService {
         sourceFileIds: item.source_file_ids || [],
         sourceFilesMetadata: item.source_files_metadata || {},
         missingSourceFiles: item.missing_source_files || [],
-        startDate: item.start_date ? new Date(item.start_date) : null,
-        endDate: item.end_date ? new Date(item.end_date) : null,
+        startDate: item.start_date || null,
+        endDate: item.end_date || null,
         projectId: item.project_id,
-        createdAt: new Date(item.created_at),
-        updatedAt: new Date(item.updated_at)
+        createdAt: item.created_at,
+        updatedAt: item.updated_at
       }));
 
       return { success: true, data: mergedFiles };
@@ -333,11 +333,11 @@ class MergedFilesService {
         sourceFileIds: item.source_file_ids || [],
         sourceFilesMetadata: item.source_files_metadata || {},
         missingSourceFiles: item.missing_source_files || [],
-        startDate: item.start_date ? new Date(item.start_date) : null,
-        endDate: item.end_date ? new Date(item.end_date) : null,
+        startDate: item.start_date || null,
+        endDate: item.end_date || null,
         projectId: item.project_id,
-        createdAt: new Date(item.created_at),
-        updatedAt: new Date(item.updated_at)
+        createdAt: item.created_at,
+        updatedAt: item.updated_at
       }));
 
       return { success: true, data: mergedFiles };

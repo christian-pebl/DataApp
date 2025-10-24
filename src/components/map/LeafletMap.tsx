@@ -31,7 +31,7 @@ interface LeafletMapProps {
     currentLocation: LatLng | null;
     onLocationFound: (latlng: LatLng) => void;
     onLocationError: (error: any) => void;
-    onMove: (center: LatLng, zoom: number) => void;
+    onMove: (center: LatLng, zoom: number, isMoving?: boolean) => void;
     isDrawingLine: boolean;
     lineStartPoint: LatLng | null;
     currentMousePosition?: LatLng | null;
@@ -217,6 +217,7 @@ const LeafletMap = ({
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const pinLayerRef = useRef<LayerGroup | null>(null);
     const lineLayerRef = useRef<LayerGroup | null>(null);
+    const hasInitializedRef = useRef(false);
 
     // Return early if Leaflet is not available (SSR)
     if (!L) {
@@ -242,16 +243,20 @@ const LeafletMap = ({
 
     // Initialize map
     useEffect(() => {
-        if (mapContainerRef.current && !mapRef.current) {
-            console.log('Initializing Leaflet map...');
-            
-            try {
-                const map = L.map(mapContainerRef.current, {
-                    center: center,
-                    zoom: zoom,
-                    zoomControl: false // Disable default zoom controls
-                });
-                mapRef.current = map;
+        // Prevent multiple initializations
+        if (hasInitializedRef.current || mapRef.current) return
+        if (!mapContainerRef.current) return
+
+        hasInitializedRef.current = true
+        console.log('Initializing Leaflet map...');
+
+        try {
+            const map = L.map(mapContainerRef.current, {
+                center: center,
+                zoom: zoom,
+                zoomControl: false // Disable default zoom controls
+            });
+            mapRef.current = map;
 
                 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
                     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -271,16 +276,39 @@ const LeafletMap = ({
                     map.on('mousemove', onMapMouseMove);
                 }
                 if (onMove) {
-                    // Use both moveend and move events for smoother line drawing
+                    // Use requestAnimationFrame for smooth, throttled updates during dragging
+                    let rafId: number | null = null;
+                    let isThrottling = false;
+
                     map.on('move', () => {
-                        const center = map.getCenter();
-                        const zoom = map.getZoom();
-                        onMove(center, zoom);
+                        // Skip if already scheduled
+                        if (isThrottling) return;
+
+                        isThrottling = true;
+
+                        // Use requestAnimationFrame for smooth 60fps updates
+                        rafId = requestAnimationFrame(() => {
+                            const center = map.getCenter();
+                            const zoom = map.getZoom();
+                            // Pass isMoving=true for continuous movement
+                            onMove(center, zoom, true);
+                            isThrottling = false;
+                            rafId = null;
+                        });
                     });
+
                     map.on('moveend', () => {
+                        // Cancel any pending animation frame
+                        if (rafId !== null) {
+                            cancelAnimationFrame(rafId);
+                            rafId = null;
+                        }
+                        isThrottling = false;
+
+                        // Fire immediately on moveend with isMoving=false
                         const center = map.getCenter();
                         const zoom = map.getZoom();
-                        onMove(center, zoom);
+                        onMove(center, zoom, false);
                     });
                 }
                 
@@ -292,16 +320,17 @@ const LeafletMap = ({
                         mapRef.current.invalidateSize();
                     }
                 }, 100);
-                
-            } catch (error) {
-                console.error('Error initializing Leaflet map:', error);
-            }
+
+        } catch (error) {
+            console.error('Error initializing Leaflet map:', error);
+            hasInitializedRef.current = false // Reset on error
         }
 
         return () => {
             if (mapRef.current) {
                 mapRef.current.remove();
                 mapRef.current = null;
+                hasInitializedRef.current = false
             }
         };
     }, []); // Only run once

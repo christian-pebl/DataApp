@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { X, Loader2, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { PinChartDisplay } from "./PinChartDisplay";
+import PinChartDisplay from "@/components/charts/LazyPinChartDisplay";
 import type { ParsedDataPoint } from "./csvParser";
 import { fetchCombinedDataAction } from "@/app/om-marine-explorer/actions";
 import type { CombinedDataPoint } from "@/app/om-marine-explorer/shared";
@@ -25,6 +25,10 @@ interface PinMarineMeteoPlotProps {
   isLastPlot?: boolean;
   // Visibility tracking for merge feature
   onVisibilityChange?: (visibleParams: string[], paramColors: Record<string, string>) => void;
+  // Initial state for restoring saved views
+  initialVisibleParameters?: string[];
+  initialParameterColors?: Record<string, string>;
+  initialParameterSettings?: Record<string, any>;
 }
 
 export function PinMarineMeteoPlot({
@@ -39,7 +43,10 @@ export function PinMarineMeteoPlot({
   onDataParsed,
   onBrushChange,
   isLastPlot,
-  onVisibilityChange
+  onVisibilityChange,
+  initialVisibleParameters,
+  initialParameterColors,
+  initialParameterSettings
 }: PinMarineMeteoPlotProps) {
   const { toast } = useToast();
 
@@ -216,6 +223,10 @@ export function PinMarineMeteoPlot({
               onBrushChange={onBrushChange}
               isLastPlot={isLastPlot}
               onVisibilityChange={onVisibilityChange}
+              // Initial state for restoring saved views
+              initialVisibleParameters={initialVisibleParameters}
+              initialParameterColors={initialParameterColors}
+              initialParameterSettings={initialParameterSettings}
             />
           </div>
         ) : (

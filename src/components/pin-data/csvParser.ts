@@ -27,6 +27,8 @@ export interface ParseResult {
   }>;
   // Optional: Auto-detected sample ID column (for spot-sample data)
   detectedSampleIdColumn?: string | null;
+  // Diagnostic logs for debugging (shown in error UI)
+  diagnosticLogs?: string[];
 }
 
 export type FileType = 'GP' | 'FPOD' | 'Subcam';
@@ -35,31 +37,55 @@ export type FileType = 'GP' | 'FPOD' | 'Subcam';
  * Detect date format (DD/MM/YYYY vs MM/DD/YYYY) by analyzing date values
  * Examines first several rows to determine which format is being used
  */
-function detectDateFormat(lines: string[], timeColumnIndex: number): 'DD/MM/YYYY' | 'MM/DD/YYYY' {
-  const sampleSize = Math.min(20, lines.length - 1); // Check up to 20 data rows
+function detectDateFormat(lines: string[], timeColumnIndex: number, startRow: number = 1): 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD' {
+  const sampleSize = Math.min(20, lines.length - startRow); // Check up to 20 data rows
   const dateValues: string[] = [];
+  const isoDateValues: string[] = [];
 
   console.log('═══════════════════════════════════════════════════════');
   console.log('[DATE DETECTION] Starting date format detection...');
   console.log('[DATE DETECTION] Time column index:', timeColumnIndex);
+  console.log('[DATE DETECTION] Start row:', startRow);
   console.log('[DATE DETECTION] Sample size:', sampleSize);
   console.log('═══════════════════════════════════════════════════════');
 
-  // Extract date values from sample rows
-  for (let i = 1; i <= sampleSize && i < lines.length; i++) {
+  // Extract date values from sample rows (starting from the first data row)
+  for (let i = startRow; i < startRow + sampleSize && i < lines.length; i++) {
     const values = parseCSVLine(lines[i]);
     if (values[timeColumnIndex]) {
       const timeValue = values[timeColumnIndex].trim();
       // Extract just the date part if it has time component
       const datePart = timeValue.split(' ')[0];
-      if (datePart.includes('/')) {
+
+      // Check for ISO format (YYYY-MM-DD with dashes)
+      if (datePart.includes('-')) {
+        const parts = datePart.split('-');
+        // ISO format has year first (4 digits) followed by month and day
+        if (parts.length === 3 && parts[0].length === 4) {
+          isoDateValues.push(datePart);
+        }
+      }
+      // Check for slash-separated dates (DD/MM/YYYY or MM/DD/YYYY)
+      else if (datePart.includes('/')) {
         dateValues.push(datePart);
       }
     }
   }
 
-  console.log('[DATE DETECTION] Sample dates extracted:', dateValues.slice(0, 5));
+  console.log('[DATE DETECTION] Slash-separated dates found:', dateValues.length);
+  console.log('[DATE DETECTION] Sample slash dates:', dateValues.slice(0, 5));
+  console.log('[DATE DETECTION] ISO format dates found:', isoDateValues.length);
+  console.log('[DATE DETECTION] Sample ISO dates:', isoDateValues.slice(0, 5));
 
+  // Priority 1: If we found ISO format dates, use that
+  if (isoDateValues.length > 0) {
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('[DATE DETECTION] ✓ Detected format: YYYY-MM-DD (ISO format)');
+    console.log('═══════════════════════════════════════════════════════');
+    return 'YYYY-MM-DD';
+  }
+
+  // Priority 2: Process slash-separated dates
   if (dateValues.length === 0) {
     console.log('[DATE DETECTION] No date values found, defaulting to DD/MM/YYYY');
     return 'DD/MM/YYYY'; // Default to European format
@@ -146,6 +172,59 @@ function detectDateFormat(lines: string[], timeColumnIndex: number): 'DD/MM/YYYY
 }
 
 /**
+ * Detect the correct header row for eDNA _Meta files
+ * These files have a special structure with metadata rows before the actual headers
+ */
+function detectEdnaMetaHeaderRow(lines: string[], fileName: string): { rowIndex: number; logs: string[] } {
+  const logs: string[] = [];
+
+  // Check if this is an eDNA _Meta file
+  if (!fileName.toLowerCase().includes('edna') ||
+      !(fileName.toLowerCase().includes('_meta') || fileName.toLowerCase().includes('_metadata'))) {
+    logs.push('📄 Not an eDNA _Meta file, using first row as header');
+    return { rowIndex: 0, logs }; // Not an eDNA _Meta file, use first row
+  }
+
+  logs.push('🔍 eDNA _Meta file detected, scanning for actual header row...');
+
+  // Expected eDNA concentration parameter names to look for
+  const expectedParams = [
+    'edna concentration',
+    'dna concentration',
+    '18sssu marker concentration',
+    'coilb marker concentration',
+    'marker concentration'
+  ];
+
+  // Scan first 10 rows to find the row containing these parameter names
+  const scanLimit = Math.min(10, lines.length);
+  logs.push(`📊 Scanning first ${scanLimit} rows for concentration parameter names...`);
+
+  for (let i = 0; i < scanLimit; i++) {
+    const lineText = lines[i].toLowerCase();
+
+    // Check if this line contains at least 2 of the expected parameter names
+    const matchCount = expectedParams.filter(param => lineText.includes(param)).length;
+
+    if (matchCount > 0) {
+      logs.push(`  Row ${i}: Found ${matchCount} parameter match(es)`);
+    }
+
+    if (matchCount >= 2) {
+      logs.push(`✅ Found eDNA header row at line ${i}`);
+      logs.push(`📋 Header preview: ${lines[i].substring(0, 150)}...`);
+      console.log(`[CSV PARSER] ✅ Found eDNA header row at line ${i}`);
+      console.log(`[CSV PARSER] Header row preview: ${lines[i].substring(0, 200)}...`);
+      return { rowIndex: i, logs };
+    }
+  }
+
+  logs.push('⚠️ Could not find eDNA concentration parameters, using first row as header');
+  console.log('[CSV PARSER] ⚠️ Could not find eDNA concentration parameters, using first row as header');
+  return { rowIndex: 0, logs };
+}
+
+/**
  * Enhanced CSV parsing with robust error handling
  */
 export async function parseCSVFile(
@@ -153,6 +232,8 @@ export async function parseCSVFile(
   fileType: FileType,
   dateFormatOverride?: 'DD/MM/YYYY' | 'MM/DD/YYYY'
 ): Promise<ParseResult> {
+  const diagnosticLogs: string[] = [];
+
   const result: ParseResult = {
     data: [],
     headers: [],
@@ -162,7 +243,8 @@ export async function parseCSVFile(
       validRows: 0,
       columns: 0,
       timeColumn: null,
-    }
+    },
+    diagnosticLogs: diagnosticLogs
   };
 
   try {
@@ -171,35 +253,58 @@ export async function parseCSVFile(
 
     if (lines.length === 0) {
       result.errors.push('File is empty');
+      diagnosticLogs.push('❌ File is empty');
       return result;
     }
 
+    diagnosticLogs.push(`📁 File: ${file.name}`);
+    diagnosticLogs.push(`📊 Total lines in file: ${lines.length}`);
+
+    // Detect the correct header row (important for eDNA _Meta files)
+    const headerDetection = detectEdnaMetaHeaderRow(lines, file.name);
+    diagnosticLogs.push(...headerDetection.logs);
+    const headerRowIndex = headerDetection.rowIndex;
+
     // Parse headers with cleaning
-    const rawHeaders = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+    const rawHeaders = lines[headerRowIndex].split(',').map(h => h.trim().replace(/"/g, ''));
     result.headers = rawHeaders;
     result.summary.columns = rawHeaders.length;
-    result.summary.totalRows = lines.length - 1;
+    result.summary.totalRows = lines.length - headerRowIndex - 1;
+
+    diagnosticLogs.push(`✅ Using row ${headerRowIndex} as header row`);
+    diagnosticLogs.push(`📋 Detected ${rawHeaders.length} columns: ${rawHeaders.slice(0, 5).join(', ')}${rawHeaders.length > 5 ? '...' : ''}`);
+
+    console.log(`[CSV PARSER] Using row ${headerRowIndex} as header row`);
+    console.log(`[CSV PARSER] Headers detected:`, rawHeaders.slice(0, 10));
 
     // Detect time column with multiple strategies
     const timeColumnIndex = detectTimeColumn(rawHeaders, fileType);
     if (timeColumnIndex >= 0) {
       result.summary.timeColumn = rawHeaders[timeColumnIndex];
+      diagnosticLogs.push(`🕒 Time column detected: "${rawHeaders[timeColumnIndex]}" (index ${timeColumnIndex})`);
     } else {
       result.errors.push(`No time column detected for ${fileType} data`);
+      diagnosticLogs.push(`⚠️ No time column detected for ${fileType} data`);
     }
 
     // Detect sample ID column (for spot-sample data like CROP, CHEM, WQ, EDNA)
     result.detectedSampleIdColumn = detectSampleIdColumn(rawHeaders);
     if (result.detectedSampleIdColumn) {
+      diagnosticLogs.push(`🏷️ Sample ID column detected: "${result.detectedSampleIdColumn}"`);
       console.log('[CSV PARSER] Detected sample ID column:', result.detectedSampleIdColumn);
     }
 
+    // Parse data rows (start from the row after the header row)
+    const dataStartRow = headerRowIndex + 1;
+    diagnosticLogs.push(`📍 Data starts at row ${dataStartRow} (after header at row ${headerRowIndex})`);
+    console.log(`[CSV PARSER] Data starts at row ${dataStartRow}`);
+
     // Use override if provided, otherwise detect date format by analyzing sample data
-    const dateFormat = dateFormatOverride || detectDateFormat(lines, timeColumnIndex);
+    const dateFormat = dateFormatOverride || detectDateFormat(lines, timeColumnIndex, dataStartRow);
+    diagnosticLogs.push(`📅 Date format: ${dateFormat} ${dateFormatOverride ? '(override)' : '(auto-detected)'}`);
     console.log('[CSV PARSER] Using date format:', dateFormat, dateFormatOverride ? '(override)' : '(detected)');
 
-    // Parse data rows
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = dataStartRow; i < lines.length; i++) {
       try {
         const rowData = parseDataRow(lines[i], rawHeaders, timeColumnIndex, fileType, dateFormat);
         if (rowData) {
@@ -211,6 +316,15 @@ export async function parseCSVFile(
       }
     }
 
+    diagnosticLogs.push(`✅ Parsing complete: ${result.summary.validRows} valid rows out of ${result.summary.totalRows} total rows`);
+
+    if (result.summary.validRows === 0 && result.summary.totalRows > 0) {
+      diagnosticLogs.push(`❌ No valid data rows were parsed! This may indicate:`);
+      diagnosticLogs.push(`   • Data types don't match expected format`);
+      diagnosticLogs.push(`   • Date values can't be parsed`);
+      diagnosticLogs.push(`   • Wrong header row was selected`);
+    }
+
     // Validate and sort by time if possible
     if (result.data.length > 0 && result.summary.timeColumn) {
       try {
@@ -219,13 +333,17 @@ export async function parseCSVFile(
           const timeB = new Date(b.time).getTime();
           return timeA - timeB;
         });
+        diagnosticLogs.push(`🔄 Data sorted by time column`);
       } catch (sortError) {
         result.errors.push('Warning: Could not sort data by time');
+        diagnosticLogs.push(`⚠️ Could not sort data by time`);
       }
     }
 
   } catch (fileError) {
-    result.errors.push(`File reading error: ${fileError instanceof Error ? fileError.message : 'Unknown error'}`);
+    const errorMsg = `File reading error: ${fileError instanceof Error ? fileError.message : 'Unknown error'}`;
+    result.errors.push(errorMsg);
+    diagnosticLogs.push(`❌ ${errorMsg}`);
   }
 
   return result;
@@ -271,7 +389,7 @@ function parseDataRow(
   headers: string[],
   timeColumnIndex: number,
   fileType: FileType,
-  dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY'
+  dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD'
 ): ParsedDataPoint | null {
   // Handle CSV with potential quoted values and commas within quotes
   const values = parseCSVLine(line);
@@ -340,7 +458,7 @@ function parseCSVLine(line: string): string[] {
  * Process time values with format detection and conversion
  * Handles various formats and ensures ISO 8601 output
  */
-function processTimeValue(value: string, fileType: FileType, dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY'): string {
+function processTimeValue(value: string, fileType: FileType, dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD'): string {
   if (!value || value === '') return '';
 
   // Clean up the value

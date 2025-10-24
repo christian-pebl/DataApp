@@ -390,10 +390,30 @@ class PlotViewService {
           id: plot.id,
           type: plot.type,
           fileId: plot.fileId,
-          fileName: plot.fileName
+          fileName: plot.fileName,
+          computationType: plot.computationType
         });
 
-        if (plot.type === 'device') {
+        // Computed plots are always available if their source plots are
+        if (plot.computationType) {
+          console.log(`  🧮 [VALIDATION] Computed plot (${plot.computationType}), checking source plots...`);
+          const sourcePlotIds = plot.sourcePlotIds || [];
+          const allSourcesAvailable = sourcePlotIds.every(sourceId =>
+            config.plots.find(p => p.id === sourceId && !p.computationType)
+          );
+
+          if (allSourcesAvailable) {
+            console.log(`  ✅ [VALIDATION] All source plots exist, marking computed plot as available`);
+            availablePlotIds.push(plot.id);
+          } else {
+            console.log(`  ❌ [VALIDATION] Some source plots missing, marking computed plot as unavailable`);
+            missingFiles.push({
+              fileId: plot.id,
+              fileName: plot.fileName || plot.title || 'Computed Plot',
+              available: false
+            });
+          }
+        } else if (plot.type === 'device') {
           // If fileId is missing but fileName is present, try to find it
           if (!plot.fileId && plot.fileName) {
             console.log(`  🔍 [VALIDATION] fileId missing, searching by fileName: ${plot.fileName}`);

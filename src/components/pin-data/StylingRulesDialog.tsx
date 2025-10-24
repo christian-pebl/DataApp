@@ -381,6 +381,36 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
       }
     }
   },
+  // eDNA Credibility files - stacked bar chart showing detection credibility scores
+  {
+    suffix: "_cred.csv",
+    styleName: "edna_cred_style",
+    description: "eDNA Credibility Scores - stacked column chart showing species counts by credibility level (Low/Moderate/High) and GBIF validation status. Chart shows total unique species detected.",
+    enabled: true,
+    properties: {
+      spotSample: {
+        chartHeight: 400,
+        chartTitle: "Detection Credibility Score",
+        yAxisLabel: "Species Count",
+        gbifTrueColor: "#4CAF50", // Green for GBIF verified
+        gbifFalseColor: "#FF9800" // Orange for GBIF unverified
+      }
+    }
+  },
+  // eDNA Taxonomy files - stacked bar chart showing phylum-level community composition
+  {
+    suffix: "_taxo.csv",
+    styleName: "edna_taxonomy_style",
+    description: "eDNA Taxonomy Composition - stacked bar chart showing phylum-level community composition across sampling sites. X-axis: sample locations, Y-axis: relative abundance (%), stacked by phylum with distinct colors.",
+    enabled: true,
+    properties: {
+      spotSample: {
+        chartHeight: 600,
+        chartTitle: "eDNA Phylum Composition",
+        yAxisLabel: "Relative Abundance (%)"
+      }
+    }
+  },
   // Add more rules as needed
 ];
 

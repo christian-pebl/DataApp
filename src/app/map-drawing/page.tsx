@@ -82,6 +82,9 @@ import {
 import { usePageLoadingState } from '@/hooks/usePageLoadingState';
 import { TopProgressBar } from '@/components/loading/TopProgressBar';
 import { MapSkeleton, MarinePlotsSkeleton, DataTimelineSkeleton } from '@/components/loading/PageSkeletons';
+import { DateInputDialog } from '@/components/pin-data/DateInputDialog';
+import { hasTimeColumn, createFileWithDateColumn } from '@/lib/csv-date-injector';
+import { extractEdnaDate, isEdnaMetaFile } from '@/lib/edna-utils';
 
 // Lazy load heavy dialog components
 const ShareDialogSimplified = dynamic(
@@ -457,8 +460,13 @@ function MapDrawingPageContent() {
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [projectDataFilter, setProjectDataFilter] = useState<'all' | 'pins' | 'areas'>('all');
 
+  // Date input dialog state (for files without time columns)
+  const [showDateInputDialog, setShowDateInputDialog] = useState(false);
+  const [pendingDateFile, setPendingDateFile] = useState<{file: File; targetId: string; targetType: 'pin' | 'area'} | null>(null);
+
   // Merged files state (must be declared before availableFilesForPlots)
-  const [mergedFiles, setMergedFiles] = useState<(MergedFile & { fileSource: 'merged', pinLabel: string })[]>([]);
+  // Store as PinFile format for compatibility with timeline and other components
+  const [mergedFiles, setMergedFiles] = useState<(PinFile & { fileSource: 'merged', pinLabel: string })[]>([]);
   const [isLoadingMergedFiles, setIsLoadingMergedFiles] = useState(false);
 
   // Transform pinFileMetadata into availableFiles format for PinMarineDeviceData
@@ -467,7 +475,7 @@ function MapDrawingPageContent() {
       pinId: string;
       pinName: string;
       pinLocation?: { lat: number; lng: number };
-      fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'MERGED';
+      fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'EDNA' | 'MERGED';
       files: File[];
       fileName: string;
       metadata?: PinFile; // Include metadata for downloading
@@ -492,7 +500,7 @@ function MapDrawingPageContent() {
         // Example: ALGA_GP_F_L_PELAGIC_2504-2506_LOG_AVG.csv
         // Old format: DATATYPE_ProjectName_Station_YYMM-YYMM
         // Example: GP-Pel_Alga-Control-S_2410-2411_LOG_AVG.CSV
-        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'MERGED' = 'GP';
+        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'EDNA' | 'MERGED' = 'GP';
 
         const parts = fileMeta.fileName.split('_');
         const position0 = parts[0]?.toLowerCase() || '';
@@ -512,6 +520,8 @@ function MapDrawingPageContent() {
           fileType = 'CHEM';
         } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
           fileType = 'WQ';
+        } else if (position0.includes('edna') || position1.includes('edna')) {
+          fileType = 'EDNA';
         } else if (position0.includes('fpod') || position1.includes('fpod')) {
           fileType = 'FPOD';
         } else if (position0.includes('subcam') || position1.includes('subcam')) {
@@ -553,10 +563,10 @@ function MapDrawingPageContent() {
           filePath: mergedFile.filePath,
           fileSize: 0, // Size not available
           fileType: 'MERGED',
-          uploadedAt: mergedFile.createdAt,
+          uploadedAt: new Date(mergedFile.createdAt),
           projectId: mergedFile.projectId,
-          startDate: mergedFile.startDate,
-          endDate: mergedFile.endDate
+          startDate: mergedFile.startDate ? new Date(mergedFile.startDate) : undefined,
+          endDate: mergedFile.endDate ? new Date(mergedFile.endDate) : undefined
         }
       });
     }
@@ -590,10 +600,10 @@ function MapDrawingPageContent() {
         filePath: mergedFile.filePath,
         fileSize: 0,
         fileType: 'MERGED',
-        uploadedAt: mergedFile.createdAt,
+        uploadedAt: new Date(mergedFile.createdAt),
         projectId: mergedFile.projectId,
-        startDate: mergedFile.startDate,
-        endDate: mergedFile.endDate,
+        startDate: mergedFile.startDate ? new Date(mergedFile.startDate) : undefined,
+        endDate: mergedFile.endDate ? new Date(mergedFile.endDate) : undefined,
         pinLabel: 'Merged Files',
         isDiscrete: false,
         fileSource: 'merged' // Mark as merged file for identification
@@ -1179,17 +1189,20 @@ function MapDrawingPageContent() {
     try {
       const result = await getMergedFilesByProjectAction(projectId);
       if (result.success && result.data) {
-        // Convert MergedFile to PinFile-like format with pinLabel
+        // Convert MergedFile to PinFile format for compatibility
         const mergedFilesWithLabel = result.data.map(mf => ({
-          ...mf,
-          fileSource: 'merged' as const,
-          pinLabel: 'Merged', // Merged files don't have a specific pin, use generic label
           id: mf.id,
+          pinId: mf.pinId,
           fileName: mf.fileName,
           filePath: mf.filePath,
           fileSize: mf.fileSize,
           fileType: mf.fileType,
-          uploadedAt: mf.createdAt
+          uploadedAt: new Date(mf.createdAt),
+          projectId: mf.projectId,
+          startDate: mf.startDate ? new Date(mf.startDate) : undefined,
+          endDate: mf.endDate ? new Date(mf.endDate) : undefined,
+          fileSource: 'merged' as const,
+          pinLabel: 'Merged' // Merged files don't have a specific pin, use generic label
         }));
         setMergedFiles(mergedFilesWithLabel);
       } else {
@@ -1203,6 +1216,46 @@ function MapDrawingPageContent() {
       setIsLoadingMergedFiles(false);
     }
   }, [currentProjectContext, activeProjectId]);
+
+  // Reload all project files - comprehensive refresh function
+  const reloadProjectFiles = useCallback(async () => {
+    console.log('🔄 Reloading all project files...');
+
+    // Reload files for all pins
+    const fileMetadata: Record<string, PinFile[]> = {};
+    for (const pin of pins) {
+      try {
+        const files = await fileStorageService.getPinFiles(pin.id);
+        if (files.length > 0) {
+          fileMetadata[pin.id] = files;
+        }
+      } catch (error) {
+        console.error(`Error reloading files for pin ${pin.id}:`, error);
+      }
+    }
+
+    // Reload files for all areas
+    const areaFileMetadataTemp: Record<string, PinFile[]> = {};
+    for (const area of areas) {
+      try {
+        const files = await fileStorageService.getAreaFiles(area.id);
+        if (files.length > 0) {
+          areaFileMetadataTemp[area.id] = files;
+        }
+      } catch (error) {
+        console.error(`Error reloading files for area ${area.id}:`, error);
+      }
+    }
+
+    // Update state
+    setPinFileMetadata(fileMetadata);
+    setAreaFileMetadata(areaFileMetadataTemp);
+
+    // Also refresh merged files
+    await fetchMergedFiles();
+
+    console.log('✅ All project files reloaded');
+  }, [pins, areas, fetchMergedFiles]);
 
   // Fetch merged files when dialog opens or project changes
   useEffect(() => {
@@ -2020,16 +2073,45 @@ function MapDrawingPageContent() {
 
       console.log('📁 Using storage path:', storagePath);
 
-      // Download file content from Supabase Storage
-      const { data: fileData, error: downloadError } = await supabase.storage
+      // Download file content from Supabase Storage with timeout
+      console.log('⏱️  Starting file download with 30s timeout...');
+      const downloadPromise = supabase.storage
         .from('pin-files')
         .download(storagePath);
+
+      // Create timeout promise
+      const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((_, reject) => {
+        setTimeout(() => reject(new Error('Download timeout after 30 seconds')), 30000);
+      });
+
+      let fileData: Blob;
+      let downloadError: any;
+
+      try {
+        const result = await Promise.race([downloadPromise, timeoutPromise]);
+        fileData = result.data as Blob;
+        downloadError = result.error;
+      } catch (error) {
+        console.error('❌ File download timeout or error:', {
+          fileName: file.fileName,
+          storagePath: storagePath,
+          error: error
+        });
+        return {
+          totalDays: null,
+          startDate: null,
+          endDate: null,
+          error: `Download timeout: ${error instanceof Error ? error.message : 'Unknown error'}`
+        };
+      }
 
       if (downloadError) {
         console.error('❌ File download error:', {
           fileName: file.fileName,
           storagePath: storagePath,
-          error: downloadError
+          error: downloadError,
+          errorMessage: downloadError.message,
+          errorDetails: JSON.stringify(downloadError)
         });
         return {
           totalDays: null,
@@ -2039,7 +2121,20 @@ function MapDrawingPageContent() {
         };
       }
 
-      console.log('✅ File downloaded successfully:', file.fileName);
+      if (!fileData) {
+        console.error('❌ File data is null despite no error:', {
+          fileName: file.fileName,
+          storagePath: storagePath
+        });
+        return {
+          totalDays: null,
+          startDate: null,
+          endDate: null,
+          error: 'Download returned null data'
+        };
+      }
+
+      console.log('✅ File downloaded successfully:', file.fileName, 'Size:', fileData.size, 'bytes');
 
       // Detect if this is a discrete sampling file (CROP, CHEM, CHEMSW, CHEMWQ, WQ, EDNA)
       const fileName = file.fileName.toLowerCase();
@@ -2061,9 +2156,9 @@ function MapDrawingPageContent() {
       // Convert Blob to File object for csvParser
       const fileObject = new File([fileData], file.fileName, { type: 'text/csv' });
 
-      // Use the intelligent csvParser with DD/MM/YYYY override for discrete files
+      // Use the intelligent csvParser with auto-detection (supports DD/MM/YYYY, MM/DD/YYYY, and YYYY-MM-DD formats)
       const { parseCSVFile } = await import('@/components/pin-data/csvParser');
-      const dateFormatOverride = isDiscreteFile ? 'DD/MM/YYYY' : undefined;
+      const dateFormatOverride = undefined; // Let csvParser auto-detect the format
 
       console.log('📅 Using csvParser with dateFormat:', dateFormatOverride || 'auto-detect');
 
@@ -3355,6 +3450,43 @@ function MapDrawingPageContent() {
     input.click();
   };
 
+  // Handle date confirmation for files without time columns
+  const handleDateConfirm = async (date: string) => {
+    if (!pendingDateFile) return;
+
+    try {
+      console.log('[DATE-INPUT] User confirmed date:', date, 'for file:', pendingDateFile.file.name);
+
+      // Inject date into file
+      const modifiedFile = await createFileWithDateColumn(pendingDateFile.file, date);
+
+      console.log('[DATE-INPUT] Modified file created:', modifiedFile.name, 'Size:', modifiedFile.size);
+
+      // Replace the file in pendingUploadFiles
+      const updatedFiles = pendingUploadFiles.map(f =>
+        f.name === pendingDateFile.file.name ? modifiedFile : f
+      );
+
+      // Close dialog
+      setShowDateInputDialog(false);
+      const fileToProcess = pendingDateFile;
+      setPendingDateFile(null);
+
+      // Continue with upload (skip duplicate check since we already did it)
+      console.log('[DATE-INPUT] Continuing upload with modified file');
+      await handleFileUpload(fileToProcess.targetId, fileToProcess.targetType, updatedFiles, true);
+    } catch (error) {
+      console.error('[DATE-INPUT] Error processing date input:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to add date column to file'
+      });
+      setShowDateInputDialog(false);
+      setPendingDateFile(null);
+    }
+  };
+
   // Handle file upload for pins or areas - now receives target (pin or area) and files
   const handleFileUpload = async (targetId: string, targetType: 'pin' | 'area' = 'pin', filesToUpload?: File[], skipDuplicateCheck: boolean = false) => {
     const csvFiles = filesToUpload || pendingUploadFiles;
@@ -3410,6 +3542,28 @@ function MapDrawingPageContent() {
       }
     }
 
+    // Check if any files need a date column (skip if we're already handling date input)
+    if (!skipDuplicateCheck) {
+      console.log('🔍 Checking files for time columns...');
+
+      for (const file of csvFiles) {
+        const hasTime = await hasTimeColumn(file);
+
+        if (!hasTime) {
+          console.log(`⚠️  File "${file.name}" has no time column, requesting date input`);
+
+          // Show date input dialog for this file
+          setPendingDateFile({ file, targetId, targetType });
+          setShowDateInputDialog(true);
+          return; // Pause upload until user provides date
+        } else {
+          console.log(`✅ File "${file.name}" has time column`);
+        }
+      }
+
+      console.log('✅ All files have time columns, proceeding with upload');
+    }
+
     setIsUploadingFiles(true);
 
     try {
@@ -3439,14 +3593,9 @@ function MapDrawingPageContent() {
       perfLogger.end('uploadFiles', `${uploadResults.length}/${csvFiles.length} files uploaded successfully`);
 
       if (uploadResults.length > 0) {
-        // Update local file metadata state
-        if (targetType === 'pin') {
-          setPinFileMetadata(prev => ({
-            ...prev,
-            [targetId]: [...(prev[targetId] || []), ...uploadResults]
-          }));
-        }
-        // Note: For areas, we could add similar state management if needed
+        // Reload all project files to ensure timeline is completely up to date
+        console.log('🔄 Triggering full project files reload after upload...');
+        await reloadProjectFiles();
       }
 
       // Show success/failure toast
@@ -6676,7 +6825,7 @@ function MapDrawingPageContent() {
                   // Determine file type from filename
                   // New format: PROJECTNAME_DATATYPE_STATION_DIRECTION_[PELAGIC]_YYMM-YYMM
                   // Old format: DATATYPE_ProjectName_Station_YYMM-YYMM
-                  let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' = 'GP';
+                  let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'EDNA' = 'GP';
 
                   const parts = file.fileName.split('_');
                   const position0 = parts[0]?.toLowerCase() || '';
@@ -6693,6 +6842,8 @@ function MapDrawingPageContent() {
                     fileType = 'CHEM';
                   } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
                     fileType = 'WQ';
+                  } else if (position0.includes('edna') || position1.includes('edna')) {
+                    fileType = 'EDNA';
                   } else if (position0.includes('fpod') || position1.includes('fpod')) {
                     fileType = 'FPOD';
                   } else if (position0.includes('subcam') || position1.includes('subcam')) {
@@ -7216,8 +7367,10 @@ function MapDrawingPageContent() {
 
                           if (result.success) {
                             console.log('Merged file deleted successfully');
-                            // Remove from merged files state
-                            setMergedFiles(prev => prev.filter(f => f.id !== file.id));
+
+                            // Reload all project files to ensure timeline updates immediately
+                            console.log('🔄 Triggering full project files reload after merged file delete...');
+                            await reloadProjectFiles();
 
                             toast({
                               title: "Merged File Deleted",
@@ -7237,19 +7390,11 @@ function MapDrawingPageContent() {
                           console.log('Delete result from service:', success);
 
                           if (success) {
-                            console.log('Delete successful, updating UI...');
-                            // Find which pin this file belongs to and update that pin's metadata
-                            const pinId = Object.keys(pinFileMetadata).find(pinId =>
-                              pinFileMetadata[pinId]?.some(f => f.id === file.id)
-                            );
+                            console.log('Delete successful, reloading files...');
 
-                            if (pinId) {
-                              // Update the state immediately to remove the file from UI
-                              setPinFileMetadata(prev => ({
-                                ...prev,
-                                [pinId]: prev[pinId]?.filter(f => f.id !== file.id) || []
-                              }));
-                            }
+                            // Reload all project files to ensure timeline updates immediately
+                            console.log('🔄 Triggering full project files reload after delete...');
+                            await reloadProjectFiles();
 
                             toast({
                               title: "File Deleted",
@@ -7697,6 +7842,23 @@ function MapDrawingPageContent() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Date Input Dialog - for files without time columns */}
+      <DateInputDialog
+        open={showDateInputDialog}
+        onOpenChange={setShowDateInputDialog}
+        fileName={pendingDateFile?.file.name || ''}
+        suggestedDate={
+          pendingDateFile && isEdnaMetaFile(pendingDateFile.file.name)
+            ? extractEdnaDate(pendingDateFile.file.name)
+            : null
+        }
+        onDateConfirm={handleDateConfirm}
+        onCancel={() => {
+          setShowDateInputDialog(false);
+          setPendingDateFile(null);
+        }}
+      />
 
       {/* Project Settings Dialog */}
       <Dialog open={showProjectSettingsDialog} onOpenChange={(open) => {

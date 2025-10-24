@@ -10,8 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChartDisplay, type YAxisConfig } from "@/components/dataflow/ChartDisplay";
-import { HeatmapDisplay } from "@/components/dataflow/HeatmapDisplay";
+import ChartDisplay, { type YAxisConfig } from "@/components/charts/LazyChartDisplay";
+import HeatmapDisplay from "@/components/charts/LazyHeatmapDisplay";
 import {
   DropdownMenu,
   DropdownMenuContent,

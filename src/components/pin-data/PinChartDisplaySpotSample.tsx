@@ -14,10 +14,12 @@ import { groupBySampleAndDate, type SpotSampleGroup } from '@/lib/statistical-ut
 import { ColumnChartWithErrorBars } from './ColumnChartWithErrorBars';
 import { WhiskerPlot } from './WhiskerPlot';
 import { StackedCredibilityChart } from './StackedCredibilityChart';
+import { StackedTaxonomyChart } from './StackedTaxonomyChart';
 import { format, parseISO } from 'date-fns';
 import { DEFAULT_STYLE_RULES, STYLE_RULES_VERSION, type StyleRule, type StyleProperties, StylingRulesDialog } from './StylingRulesDialog';
 import { isEdnaMetaFile, extractProjectPrefix, abbreviateStationLabel } from '@/lib/edna-utils';
 import { isCredFile, processCredibilityFile } from '@/lib/edna-cred-processor';
+import { isTaxonomyFile, processTaxonomyFile } from '@/lib/edna-taxonomy-processor';
 
 interface PinChartDisplaySpotSampleProps {
   data: ParsedDataPoint[];
@@ -198,6 +200,43 @@ export function PinChartDisplaySpotSample({
 
     return aggregated;
   }, [isCredibilityFile, data, headers, fileName]);
+
+  // Detect and process _taxo files
+  const isTaxonomyFileDetected = useMemo(() => {
+    const result = fileName ? isTaxonomyFile(fileName) : false;
+    console.log('[SPOT-SAMPLE] 🔍 Taxonomy file detection:', {
+      fileName,
+      isTaxonomyFile: result
+    });
+    return result;
+  }, [fileName]);
+
+  const taxonomyData = useMemo(() => {
+    if (!isTaxonomyFileDetected) {
+      console.log('[SPOT-SAMPLE] ⏭️  Not a taxonomy file, skipping _taxo processing');
+      return null;
+    }
+
+    console.log('[SPOT-SAMPLE] 📊 Processing _taxo file:', fileName);
+    console.log('[SPOT-SAMPLE]   - Data rows:', data.length);
+    console.log('[SPOT-SAMPLE]   - Headers:', headers);
+    console.log('[SPOT-SAMPLE]   - Sample first row:', data[0]);
+
+    const { aggregated, skippedCount } = processTaxonomyFile(data, headers);
+
+    console.log('[SPOT-SAMPLE] ✅ _taxo processing complete:', {
+      aggregated,
+      skippedCount,
+      totalSamples: aggregated.samples.length,
+      totalPhyla: aggregated.allPhyla.length
+    });
+
+    if (skippedCount > 0) {
+      console.warn(`[SPOT-SAMPLE] ⚠️  Skipped ${skippedCount} invalid rows in _taxo file`);
+    }
+
+    return aggregated;
+  }, [isTaxonomyFileDetected, data, headers, fileName]);
 
   // Styling dialog handlers
   const handleStyleRuleToggle = (suffix: string, enabled: boolean) => {
@@ -665,6 +704,130 @@ export function PinChartDisplaySpotSample({
               gbifTrueColor={spotSampleStyles?.gbifTrueColor as string | undefined}
               gbifFalseColor={spotSampleStyles?.gbifFalseColor as string | undefined}
               height={spotSampleStyles?.chartHeight || 400}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Special handling for _taxo files - bypass normal spot-sample requirements
+  if (isTaxonomyFileDetected && taxonomyData) {
+    console.log('[SPOT-SAMPLE] 🎨 Rendering _taxo chart:', fileName);
+    console.log('[SPOT-SAMPLE]   - Taxonomy data:', taxonomyData);
+    console.log('[SPOT-SAMPLE]   - Total samples:', taxonomyData.samples.length);
+    console.log('[SPOT-SAMPLE]   - Total phyla:', taxonomyData.allPhyla.length);
+    console.log('[SPOT-SAMPLE]   - Spot sample styles:', spotSampleStyles);
+
+    return (
+      <div className="space-y-3">
+        {/* Control Bar */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Chart/Table Toggle */}
+          <div className="flex items-center gap-1 border rounded-lg p-1">
+            <Button
+              variant={!showTable ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setShowTable(false)}
+              className="h-8"
+            >
+              <BarChart3 className="h-4 w-4 mr-1" />
+              Chart
+            </Button>
+            <Button
+              variant={showTable ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setShowTable(true)}
+              className="h-8"
+            >
+              <TableIcon className="h-4 w-4 mr-1" />
+              Table
+            </Button>
+          </div>
+
+          {/* Styling Button */}
+          <StylingRulesDialog
+            open={showStylingDialog}
+            onOpenChange={setShowStylingDialog}
+            styleRules={styleRules}
+            onStyleRuleToggle={handleStyleRuleToggle}
+            onStyleRuleUpdate={handleStyleRuleUpdate}
+            currentFileName={fileName}
+            currentChartType="taxonomy"
+            columnColorMode={columnColorMode}
+            onColumnColorModeChange={setColumnColorMode}
+            singleColumnColor={singleColumnColor}
+            onSingleColumnColorChange={setSingleColumnColor}
+            availableSampleIds={availableSampleIds}
+            sampleIdColors={sampleIdColors}
+            onSampleColorChange={handleSampleColorChange}
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 ml-auto"
+              title="Configure chart styling"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          </StylingRulesDialog>
+
+          {/* Info Badge */}
+          <div className="text-xs text-muted-foreground">
+            {taxonomyData.allPhyla.length} phyla across {taxonomyData.samples.length} samples
+          </div>
+        </div>
+
+        {/* Chart or Table View */}
+        {showTable ? (
+          <div className="border rounded-lg overflow-hidden">
+            <div className="max-h-[600px] overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="sticky top-0 bg-background">Phylum</TableHead>
+                    {taxonomyData.samples.map(sample => (
+                      <TableHead key={sample} className="sticky top-0 bg-background text-right">
+                        {sample}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {taxonomyData.allPhyla.map(phylum => (
+                    <TableRow key={phylum}>
+                      <TableCell className="font-medium">{phylum}</TableCell>
+                      {taxonomyData.samples.map(sample => {
+                        const count = taxonomyData.phylumCounts[phylum][sample];
+                        const percentage = taxonomyData.phylumPercentages[phylum][sample];
+                        return (
+                          <TableCell key={sample} className="text-right">
+                            {count} ({percentage.toFixed(1)}%)
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  ))}
+                  <TableRow className="font-semibold bg-muted">
+                    <TableCell>Total Taxa</TableCell>
+                    {taxonomyData.samples.map(sample => (
+                      <TableCell key={sample} className="text-right">
+                        {taxonomyData.totalTaxaPerSample[sample]}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        ) : (
+          <div className="border rounded-lg p-4">
+            <StackedTaxonomyChart
+              data={taxonomyData}
+              fileName={fileName || 'taxonomy_data.csv'}
+              customTitle={spotSampleStyles?.chartTitle as string | undefined}
+              customYAxisLabel={spotSampleStyles?.yAxisLabel as string | undefined}
+              height={spotSampleStyles?.chartHeight || 600}
             />
           </div>
         )}

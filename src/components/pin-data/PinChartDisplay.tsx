@@ -68,6 +68,7 @@ interface PinChartDisplayProps {
   // Spot-sample data props (for CROP, CHEM, WQ, EDNA files)
   detectedSampleIdColumn?: string | null;
   headers?: string[];
+  diagnosticLogs?: string[];
 }
 
 // Color palette matching the marine data theme
@@ -317,7 +318,8 @@ export function PinChartDisplay({
   rawFiles,
   pinId,
   detectedSampleIdColumn,
-  headers
+  headers,
+  diagnosticLogs
 }: PinChartDisplayProps) {
   // Log initial settings for debugging restoration
   React.useEffect(() => {
@@ -2101,15 +2103,30 @@ export function PinChartDisplay({
     );
   }
 
-  // Detect discrete/spot-sample files (CROP, CHEM, WQ, EDNA)
+  // Detect discrete/spot-sample files (CROP, CHEM, WQ, EDNA, _Cred)
   const isDiscreteFile = useMemo(() => {
     if (!fileName) return false;
-    return /(crop|chemsw|chemwq|edna)/i.test(fileName);
+    const result = /(crop|chemsw|chemwq|edna|_cred)/i.test(fileName);
+    console.log('[PIN-CHART-DISPLAY] File pattern check:', fileName, '-> isDiscreteFile:', result);
+    return result;
+  }, [fileName]);
+
+  // Check if this is a _Cred file (doesn't need Sample ID column)
+  const isCredFile = useMemo(() => {
+    if (!fileName) return false;
+    const result = /_cred\.csv$/i.test(fileName);
+    console.log('[PIN-CHART-DISPLAY] _Cred file check:', fileName, '-> isCredFile:', result);
+    return result;
   }, [fileName]);
 
   // If discrete file detected and we have the necessary data, use spot-sample component
-  if (isDiscreteFile && detectedSampleIdColumn && headers) {
-    console.log('[PIN-CHART-DISPLAY] Discrete file detected, using spot-sample component');
+  // _Cred files don't need detectedSampleIdColumn
+  if (isDiscreteFile && headers && (detectedSampleIdColumn || isCredFile)) {
+    console.log('[PIN-CHART-DISPLAY] ✓ Routing to spot-sample component');
+    console.log('[PIN-CHART-DISPLAY]   - isDiscreteFile:', isDiscreteFile);
+    console.log('[PIN-CHART-DISPLAY]   - isCredFile:', isCredFile);
+    console.log('[PIN-CHART-DISPLAY]   - detectedSampleIdColumn:', detectedSampleIdColumn);
+    console.log('[PIN-CHART-DISPLAY]   - headers count:', headers?.length);
     return (
       <PinChartDisplaySpotSample
         data={data}
@@ -2117,9 +2134,16 @@ export function PinChartDisplay({
         detectedSampleIdColumn={detectedSampleIdColumn}
         headers={headers}
         fileName={fileName}
+        diagnosticLogs={diagnosticLogs}
       />
     );
   }
+
+  console.log('[PIN-CHART-DISPLAY] ❌ Not routing to spot-sample - using timeseries instead');
+  console.log('[PIN-CHART-DISPLAY]   - isDiscreteFile:', isDiscreteFile);
+  console.log('[PIN-CHART-DISPLAY]   - isCredFile:', isCredFile);
+  console.log('[PIN-CHART-DISPLAY]   - detectedSampleIdColumn:', detectedSampleIdColumn);
+  console.log('[PIN-CHART-DISPLAY]   - headers:', headers ? 'exists' : 'missing');
 
   return (
     <div className="space-y-3">

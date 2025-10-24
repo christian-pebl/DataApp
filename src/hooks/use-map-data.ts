@@ -30,7 +30,8 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
 
   // Check if user is authenticated
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  
+  const [hasInitiallyLoaded, setHasInitiallyLoaded] = useState(false)
+
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -38,13 +39,8 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
         // Use getSession instead of getUser to avoid auth errors when not logged in
         const { data: { session }, error } = await supabase.auth.getSession()
         if (error) {
-          // Only log if it's not the expected "Auth session missing" error
-          if (error.message !== 'Auth session missing!') {
-            console.log('Auth check error:', error)
-          }
           setIsAuthenticated(false)
         } else {
-          console.log('Auth check result:', !!session?.user)
           setIsAuthenticated(!!session?.user)
         }
       } catch (error) {
@@ -53,14 +49,13 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
       }
     }
     checkAuth()
-    
+
     // Listen for auth changes
     const supabase = createClient()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Auth state changed:', event, !!session?.user)
       setIsAuthenticated(!!session?.user)
     })
-    
+
     return () => subscription.unsubscribe()
   }, [])
 
@@ -117,65 +112,42 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
 
     setIsLoading(true)
     try {
-      console.log('Loading data from database...')
-      
       // Load each data type separately with individual error handling
       let projectsData = []
       let tagsData = []
       let pinsData = []
       let linesData = []
       let areasData = []
-      
+
       try {
         projectsData = await mapDataService.getProjects()
-        console.log('Projects loaded:', projectsData.length)
       } catch (error) {
-        console.log('Projects table may not exist yet:', error)
         projectsData = []
       }
-      
+
       try {
         tagsData = await mapDataService.getTags(projectId === 'default' ? undefined : projectId)
-        console.log('Tags loaded:', tagsData.length)
       } catch (error) {
-        console.log('Tags table may not exist yet:', error)
         tagsData = []
       }
-      
+
       try {
         pinsData = await mapDataService.getPins(projectId === 'default' ? undefined : projectId)
-        console.log('Pins loaded:', pinsData.length)
-        // Debug: Log the first few pins to see if labels are present
-        if (pinsData.length > 0) {
-          console.log('Sample pins with labels:', pinsData.slice(0, 3).map(p => ({
-            id: p.id.substring(0, 8),
-            label: p.label || '(no label)',
-            lat: p.lat.toFixed(4),
-            lng: p.lng.toFixed(4)
-          })))
-        }
       } catch (error) {
-        console.log('Pins table may not exist yet:', error)
         pinsData = []
       }
-      
+
       try {
         linesData = await mapDataService.getLines(projectId === 'default' ? undefined : projectId)
-        console.log('Lines loaded:', linesData.length)
       } catch (error) {
-        console.log('Lines table may not exist yet:', error)
         linesData = []
       }
-      
+
       try {
         areasData = await mapDataService.getAreas(projectId === 'default' ? undefined : projectId)
-        console.log('Areas loaded:', areasData.length)
       } catch (error) {
-        console.log('Areas table may not exist yet:', error)
         areasData = []
       }
-
-      console.log('Database data loaded successfully')
 
       // If we have database data, use it; otherwise keep localStorage data
       if (projectsData.length > 0) setProjects(projectsData)
@@ -183,18 +155,16 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
       setPins(pinsData)
       setLines(linesData)
       setAreas(areasData)
-      
+
       // Clear localStorage when we successfully load from database
       // to prevent stale data from overriding database data
       if (typeof window !== 'undefined') {
         localStorage.removeItem('map-drawing-pins')
         localStorage.removeItem('map-drawing-lines')
         localStorage.removeItem('map-drawing-areas')
-        console.log('Cleared localStorage after successful database sync')
       }
-      
+
       setLastSyncTime(new Date())
-      console.log('Database sync completed successfully')
     } catch (error) {
       console.error('Error loading from database:', error)
       // Don't show error toast if user just isn't authenticated
@@ -210,16 +180,21 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
     }
   }, [enableSync, isAuthenticated, isOnline, projectId, toast])
 
-  // Initial data load
+  // Initial data load - only run once when auth state is determined
   useEffect(() => {
+    // Skip if already loaded
+    if (hasInitiallyLoaded) return
+
     if (enableSync && isAuthenticated) {
       // If authenticated, load from database (don't load from localStorage first)
-      loadFromDatabase()
-    } else {
-      // Only load from localStorage if not authenticated
+      loadFromDatabase().finally(() => setHasInitiallyLoaded(true))
+    } else if (!enableSync || isAuthenticated === false) {
+      // Only load from localStorage if not authenticated or sync is disabled
       loadFromLocalStorage()
+      setHasInitiallyLoaded(true)
     }
-  }, [loadFromLocalStorage, loadFromDatabase, enableSync, isAuthenticated])
+    // Wait for isAuthenticated to be determined before loading
+  }, [isAuthenticated, enableSync])
 
   // Migrate localStorage data to database
   const migrateToDatabase = useCallback(async () => {
