@@ -46,6 +46,9 @@ export interface StyleProperties {
     barGap?: number; // Gap between bars in the same category (default: 4, in px)
     barCategoryGap?: number; // Gap between different categories (default: 10, as % of category size)
     columnBorderWidth?: number; // Border thickness for column bars (default: 0, range: 0-5)
+    columnColorMode?: 'unique' | 'single'; // Color mode: 'unique' = different color per sample, 'single' = same color for all (default: 'single')
+    singleColumnColor?: string; // Hex color for single color mode (default: '#3b82f6')
+    sampleColors?: Record<string, string>; // Custom colors for each sample ID when in 'unique' mode (e.g., { "Sample-A": "#ff0000", "Sample-B": "#00ff00" })
 
     // Whisker Plot specific
     whiskerBoxWidth?: number; // Overall width of whisker box (default: 40, in pixels, range: 20-100)
@@ -68,10 +71,16 @@ export interface StyleProperties {
     xAxisLabelSecondLineOffset?: number; // Horizontal offset for second line of X-axis label (default: 0, range: -20 to 20)
     // Y-axis label styling
     yAxisLabelFontSize?: number; // Font size for Y-axis labels (default: 12)
+    // Y-axis title styling
+    yAxisTitleFontSize?: number; // Font size for Y-axis title (default: 14)
+    yAxisTitleFontWeight?: number | string; // Font weight for Y-axis title (default: 'normal', can be 'bold', 'normal', or numeric like 500)
+    yAxisTitleAlign?: 'left' | 'center' | 'right'; // Text alignment for Y-axis title (default: 'center')
     // Chart dimensions
     chartHeight?: number; // Height of each parameter chart (default: 350)
     // Parameter ordering
     parameterOrder?: string[]; // Ordered list of parameter names to display (e.g., ["Length", "Width", "Fouling"])
+    // Parameter-specific Y-axis ranges (for CHEMWQ files)
+    parameterYAxisRanges?: Record<string, { min?: number; max?: number }>; // Custom Y-axis ranges per parameter
   };
 }
 
@@ -85,7 +94,7 @@ export interface StyleRule {
 }
 
 // Version for style rules - increment when defaults change
-export const STYLE_RULES_VERSION = 9;
+export const STYLE_RULES_VERSION = 13;
 
 // Default styling rules - can be expanded
 // IMPORTANT: Order matters! More specific patterns must come BEFORE more general patterns
@@ -191,6 +200,8 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
         barGap: 4, // Gap between bars in same category (px)
         barCategoryGap: 10, // Gap between different categories (% of category size)
         columnBorderWidth: 0, // Border thickness for column bars
+        columnColorMode: 'single', // Default to single color for all columns
+        singleColumnColor: '#3b82f6', // Default blue color
 
         // Whisker Plot specific
         whiskerBoxWidth: 40, // Overall width of whisker box (in pixels)
@@ -231,6 +242,145 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
       }
     }
   },
+  {
+    suffix: "_Meta.csv",
+    styleName: "edna_meta_style",
+    description: "eDNA Metadata - bar charts showing concentration parameters grouped by Date+Station. Station labels abbreviated. X-axis: Date / [Station]. Params: eDNA Concentration, 18SSSU Marker Concentration, COILB Marker Concentration. Only these 3 concentration parameters are displayed.",
+    enabled: true,
+    properties: {
+      spotSample: {
+        // Column Chart specific
+        barGap: 4, // Gap between bars in same category (px)
+        barCategoryGap: 10, // Gap between different categories (% of category size)
+        columnBorderWidth: 0, // Border thickness for column bars
+        columnColorMode: 'single', // Default to single color for all columns
+        singleColumnColor: '#3b82f6', // Default blue color
+
+        // Whisker Plot specific
+        whiskerBoxWidth: 40, // Overall width of whisker box (in pixels)
+        whiskerSpacing: 80, // Spacing between whisker plot centers (in pixels)
+        whiskerLineWidth: 2, // Thickness of whisker lines
+        whiskerBoxBorderWidth: 2, // Border thickness of box
+        whiskerCapWidth: 20, // Width of whisker caps at min/max (% of box width)
+
+        // Chart margins
+        chartMarginTop: 20,
+        chartMarginRight: 30,
+        chartMarginLeft: 40,
+        chartMarginBottom: 80, // Extra space for rotated X-axis labels
+
+        // Error bar styling
+        errorBarWidth: 4, // Width of error bar cap
+        errorBarStrokeWidth: 2, // Thickness of error bar line
+
+        // X-axis label styling
+        xAxisLabelRotation: -45, // Rotation angle in degrees
+        xAxisLabelFontSize: 11, // Font size for labels
+        xAxisLabelSecondLineOffset: 10, // Horizontal offset for second line (aligns to right)
+
+        // Y-axis label styling
+        yAxisLabelFontSize: 12,
+
+        // Y-axis title styling (matched to X-axis label styling)
+        yAxisTitleFontSize: 11, // Match X-axis label font size
+        yAxisTitleFontWeight: 'normal', // Match X-axis label weight
+        yAxisTitleAlign: 'center', // Center align Y-axis title
+
+        // Chart dimensions
+        chartHeight: 350, // Height of each parameter chart
+
+        // Parameter ordering - display ONLY these eDNA concentration parameters
+        parameterOrder: [
+          "eDNA Concentration (ng/µL)",
+          "18SSSU Marker Concentration (ng/µL)",
+          "COILB Marker Concentration (ng/µL)"
+        ]
+      }
+    }
+  },
+  {
+    suffix: "_Cred.csv",
+    styleName: "edna_cred_style",
+    description: "eDNA Credibility Scores - stacked column chart showing species counts by detection credibility (Low/Moderate/High) and GBIF validation status. Displays total unique species detected. Default colors: Green (GBIF verified), Orange (GBIF unverified).",
+    enabled: true,
+    properties: {
+      spotSample: {
+        // Column Chart specific
+        barGap: 4,
+        barCategoryGap: 15,
+        columnBorderWidth: 0,
+
+        // Chart margins
+        chartMarginTop: 60, // Extra space for summary overlay box
+        chartMarginRight: 30,
+        chartMarginLeft: 50,
+        chartMarginBottom: 80,
+
+        // Chart dimensions
+        chartHeight: 400,
+
+        // GBIF color scheme (user-customizable)
+        gbifTrueColor: "#4CAF50",  // Green for verified species
+        gbifFalseColor: "#FF9800", // Orange for unverified species
+
+        // Chart labels
+        chartTitle: "Detection Credibility Score",
+        yAxisLabel: "Species Count"
+      }
+    }
+  },
+  {
+    suffix: "_chem.csv",
+    styleName: "chemwq_style",
+    description: "CHEMWQ Water Quality - Column charts with error bars for discrete water quality measurements (pH, Salinity, Nutrients). Supports parameter-specific Y-axis ranges and unified column coloring.",
+    enabled: true,
+    properties: {
+      spotSample: {
+        // Column Chart specific
+        barGap: 4,
+        barCategoryGap: 10,
+        columnBorderWidth: 0,
+        columnColorMode: 'single', // Default to single color for CHEMWQ
+        singleColumnColor: '#3b82f6', // Default blue color
+
+        // Chart margins
+        chartMarginTop: 20,
+        chartMarginRight: 30,
+        chartMarginLeft: 50,
+        chartMarginBottom: 100, // Extra space for rotated labels
+
+        // Error bar styling
+        errorBarWidth: 4,
+        errorBarStrokeWidth: 2,
+
+        // X-axis label styling
+        xAxisLabelRotation: -45,
+        xAxisLabelFontSize: 10,
+
+        // Y-axis label styling
+        yAxisLabelFontSize: 12,
+
+        // Y-axis title styling
+        yAxisTitleFontSize: 14,
+        yAxisTitleFontWeight: 'normal',
+        yAxisTitleAlign: 'center',
+
+        // Chart dimensions
+        chartHeight: 350,
+
+        // Parameter ordering
+        parameterOrder: [
+          "pH",
+          "Sal (ppt)",
+          "PO4 (mg/L)",
+          "NO3 (mg/L)"
+        ],
+
+        // Parameter-specific Y-axis ranges (initially empty, user can customize)
+        parameterYAxisRanges: {}
+      }
+    }
+  },
   // Add more rules as needed
 ];
 
@@ -242,6 +392,14 @@ interface StylingRulesDialogProps {
   currentFileName?: string; // Current file name to auto-expand matching rule
   onStyleRuleUpdate?: (suffix: string, properties: Partial<StyleProperties>) => void;
   children: React.ReactNode; // Trigger element
+  currentChartType?: 'column' | 'whisker' | 'credibility'; // Current chart type being displayed
+  columnColorMode?: 'unique' | 'single'; // Color mode for column charts
+  onColumnColorModeChange?: (mode: 'unique' | 'single') => void;
+  singleColumnColor?: string; // Color when in single color mode
+  onSingleColumnColorChange?: (color: string) => void;
+  availableSampleIds?: string[]; // List of available sample IDs for color customization
+  sampleIdColors?: Record<string, string>; // Current colors for each sample ID
+  onSampleColorChange?: (sampleId: string, color: string) => void; // Callback when sample color changes
 }
 
 export function StylingRulesDialog({
@@ -251,7 +409,15 @@ export function StylingRulesDialog({
   onStyleRuleToggle,
   currentFileName,
   onStyleRuleUpdate,
-  children
+  children,
+  currentChartType,
+  columnColorMode,
+  onColumnColorModeChange,
+  singleColumnColor,
+  onSingleColumnColorChange,
+  availableSampleIds = [],
+  sampleIdColors = {},
+  onSampleColorChange
 }: StylingRulesDialogProps) {
   // Find the currently active rule (matching filename and enabled)
   const activeRule = currentFileName
@@ -369,53 +535,330 @@ export function StylingRulesDialog({
             {selectedRule.properties.spotSample ? (
               /* Spot-Sample Controls */
               <div className="space-y-3">
-                <h5 className="text-xs font-semibold">Spot-Sample Chart Controls</h5>
+                <h5 className="text-xs font-semibold">
+                  {currentChartType === 'whisker' ? 'Whisker Plot Controls' : currentChartType === 'column' ? 'Column Chart Controls' : 'Chart Controls'}
+                </h5>
 
-                {/* Whisker Spacing - THE FIX! */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Label className="text-xs">Gap Between Whiskers</Label>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent side="right" className="max-w-xs text-xs">
-                          <p>Distance between whisker centers - reduces total plot width</p>
-                        </TooltipContent>
-                      </Tooltip>
+                {/* Column Chart Controls - only show when column chart is active */}
+                {currentChartType === 'column' && (
+                  <>
+                    {/* Color Mode Toggle */}
+                    <div className="space-y-2 p-3 bg-muted/30 rounded-md">
+                      <Label className="text-xs font-semibold">Column Color Mode</Label>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant={columnColorMode === 'unique' ? 'default' : 'outline'}
+                          size="sm"
+                          className="flex-1 h-8 text-xs"
+                          onClick={() => onColumnColorModeChange?.('unique')}
+                        >
+                          Unique Colors
+                        </Button>
+                        <Button
+                          variant={columnColorMode === 'single' ? 'default' : 'outline'}
+                          size="sm"
+                          className="flex-1 h-8 text-xs"
+                          onClick={() => onColumnColorModeChange?.('single')}
+                        >
+                          Single Color
+                        </Button>
+                      </div>
+
+                      {/* Color Picker - only show in single color mode */}
+                      {columnColorMode === 'single' && (
+                        <div className="mt-2 space-y-2">
+                          <Label className="text-xs">Column Color</Label>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                className="w-full h-8 justify-start gap-2"
+                              >
+                                <div
+                                  className="w-4 h-4 rounded border"
+                                  style={{ backgroundColor: singleColumnColor }}
+                                />
+                                <span className="text-xs">{singleColumnColor}</span>
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-64 p-3">
+                              <div className="space-y-3">
+                                <Label className="text-xs font-semibold">Select Color</Label>
+                                <input
+                                  type="color"
+                                  value={singleColumnColor}
+                                  onChange={(e) => onSingleColumnColorChange?.(e.target.value)}
+                                  className="w-full h-10 rounded cursor-pointer"
+                                />
+                                <Input
+                                  type="text"
+                                  value={singleColumnColor}
+                                  onChange={(e) => onSingleColumnColorChange?.(e.target.value)}
+                                  placeholder="#3b82f6"
+                                  className="h-8 text-xs font-mono"
+                                />
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      )}
+
+                      {/* Individual Sample Color Pickers - only show in unique color mode */}
+                      {columnColorMode === 'unique' && availableSampleIds.length > 0 && (
+                        <div className="mt-2 space-y-3">
+                          <div className="border-t pt-3">
+                            <Label className="text-xs font-semibold">Sample Colors</Label>
+                            <p className="text-xs text-muted-foreground mt-1">Customize color for each sample</p>
+                          </div>
+                          <div className="space-y-2 max-h-48 overflow-y-auto">
+                            {availableSampleIds.map(sampleId => (
+                              <div key={sampleId} className="space-y-1">
+                                <Label className="text-xs">{sampleId}</Label>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      className="w-full h-8 justify-start gap-2"
+                                    >
+                                      <div
+                                        className="w-4 h-4 rounded border"
+                                        style={{ backgroundColor: sampleIdColors[sampleId] || '#3b82f6' }}
+                                      />
+                                      <span className="text-xs">{sampleIdColors[sampleId] || '#3b82f6'}</span>
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-64 p-3">
+                                    <div className="space-y-3">
+                                      <Label className="text-xs font-semibold">Color for {sampleId}</Label>
+                                      <input
+                                        type="color"
+                                        value={sampleIdColors[sampleId] || '#3b82f6'}
+                                        onChange={(e) => onSampleColorChange?.(sampleId, e.target.value)}
+                                        className="w-full h-10 rounded cursor-pointer"
+                                      />
+                                      <Input
+                                        type="text"
+                                        value={sampleIdColors[sampleId] || '#3b82f6'}
+                                        onChange={(e) => onSampleColorChange?.(sampleId, e.target.value)}
+                                        placeholder="#3b82f6"
+                                        className="h-8 text-xs font-mono"
+                                      />
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {selectedRule.properties.spotSample?.whiskerSpacing ?? 80}px
-                    </span>
-                  </div>
-                  <Slider
-                    value={[selectedRule.properties.spotSample?.whiskerSpacing ?? 80]}
-                    onValueChange={(values) => handleSpotSamplePropertyChange('whiskerSpacing', values[0])}
-                    min={50}
-                    max={200}
-                    step={10}
-                    className="w-full"
-                  />
-                </div>
 
-                {/* Whisker Box Width */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs">Whisker Box Width</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {selectedRule.properties.spotSample?.whiskerBoxWidth ?? 40}px
-                    </span>
-                  </div>
-                  <Slider
-                    value={[selectedRule.properties.spotSample?.whiskerBoxWidth ?? 40]}
-                    onValueChange={(values) => handleSpotSamplePropertyChange('whiskerBoxWidth', values[0])}
-                    min={20}
-                    max={100}
-                    step={5}
-                    className="w-full"
-                  />
-                </div>
+                    {/* Bar Gap */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Gap Between Bars</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.spotSample?.barGap ?? 4}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.spotSample?.barGap ?? 4]}
+                        onValueChange={(values) => handleSpotSamplePropertyChange('barGap', values[0])}
+                        min={0}
+                        max={20}
+                        step={1}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* Bar Category Gap */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Gap Between Categories</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.spotSample?.barCategoryGap ?? 10}%
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.spotSample?.barCategoryGap ?? 10]}
+                        onValueChange={(values) => handleSpotSamplePropertyChange('barCategoryGap', values[0])}
+                        min={0}
+                        max={50}
+                        step={5}
+                        className="w-full"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Credibility Chart Controls - only show for _Cred files */}
+                {currentChartType === 'credibility' && currentFileName?.toLowerCase().endsWith('_cred.csv') && (
+                  <>
+                    {/* GBIF Color Pickers */}
+                    <div className="space-y-2 p-3 bg-muted/30 rounded-md">
+                      <Label className="text-xs font-semibold">GBIF Colors</Label>
+                      <p className="text-xs text-muted-foreground">Customize colors for GBIF verified/unverified species</p>
+
+                      {/* GBIF TRUE Color */}
+                      <div className="space-y-2">
+                        <Label className="text-xs">GBIF Verified (TRUE)</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="w-full h-8 justify-start gap-2"
+                            >
+                              <div
+                                className="w-4 h-4 rounded border"
+                                style={{ backgroundColor: selectedRule?.properties?.spotSample?.gbifTrueColor || '#4CAF50' }}
+                              />
+                              <span className="text-xs">{selectedRule?.properties?.spotSample?.gbifTrueColor || '#4CAF50'}</span>
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-64 p-3">
+                            <div className="space-y-3">
+                              <Label className="text-xs font-semibold">GBIF Verified Color</Label>
+                              <input
+                                type="color"
+                                value={selectedRule?.properties?.spotSample?.gbifTrueColor || '#4CAF50'}
+                                onChange={(e) => {
+                                  if (!selectedRule) return;
+                                  onStyleRuleUpdate?.(selectedRule.suffix, {
+                                    spotSample: {
+                                      ...selectedRule.properties.spotSample,
+                                      gbifTrueColor: e.target.value
+                                    }
+                                  });
+                                }}
+                                className="w-full h-10 rounded cursor-pointer"
+                              />
+                              <Input
+                                type="text"
+                                value={selectedRule?.properties?.spotSample?.gbifTrueColor || '#4CAF50'}
+                                onChange={(e) => {
+                                  if (!selectedRule) return;
+                                  onStyleRuleUpdate?.(selectedRule.suffix, {
+                                    spotSample: {
+                                      ...selectedRule.properties.spotSample,
+                                      gbifTrueColor: e.target.value
+                                    }
+                                  });
+                                }}
+                                placeholder="#4CAF50"
+                                className="h-8 text-xs font-mono"
+                              />
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+
+                      {/* GBIF FALSE Color */}
+                      <div className="space-y-2">
+                        <Label className="text-xs">GBIF Unverified (FALSE)</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="w-full h-8 justify-start gap-2"
+                            >
+                              <div
+                                className="w-4 h-4 rounded border"
+                                style={{ backgroundColor: selectedRule?.properties?.spotSample?.gbifFalseColor || '#FF9800' }}
+                              />
+                              <span className="text-xs">{selectedRule?.properties?.spotSample?.gbifFalseColor || '#FF9800'}</span>
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-64 p-3">
+                            <div className="space-y-3">
+                              <Label className="text-xs font-semibold">GBIF Unverified Color</Label>
+                              <input
+                                type="color"
+                                value={selectedRule?.properties?.spotSample?.gbifFalseColor || '#FF9800'}
+                                onChange={(e) => {
+                                  if (!selectedRule) return;
+                                  onStyleRuleUpdate?.(selectedRule.suffix, {
+                                    spotSample: {
+                                      ...selectedRule.properties.spotSample,
+                                      gbifFalseColor: e.target.value
+                                    }
+                                  });
+                                }}
+                                className="w-full h-10 rounded cursor-pointer"
+                              />
+                              <Input
+                                type="text"
+                                value={selectedRule?.properties?.spotSample?.gbifFalseColor || '#FF9800'}
+                                onChange={(e) => {
+                                  if (!selectedRule) return;
+                                  onStyleRuleUpdate?.(selectedRule.suffix, {
+                                    spotSample: {
+                                      ...selectedRule.properties.spotSample,
+                                      gbifFalseColor: e.target.value
+                                    }
+                                  });
+                                }}
+                                placeholder="#FF9800"
+                                className="h-8 text-xs font-mono"
+                              />
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Whisker Plot Controls - only show when whisker plot is active */}
+                {currentChartType === 'whisker' && (
+                  <>
+                    {/* Whisker Spacing */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Label className="text-xs">Gap Between Whiskers</Label>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-xs text-xs">
+                              <p>Distance between whisker centers - reduces total plot width</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.spotSample?.whiskerSpacing ?? 80}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.spotSample?.whiskerSpacing ?? 80]}
+                        onValueChange={(values) => handleSpotSamplePropertyChange('whiskerSpacing', values[0])}
+                        min={50}
+                        max={200}
+                        step={10}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* Whisker Box Width */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Whisker Box Width</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.spotSample?.whiskerBoxWidth ?? 40}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.spotSample?.whiskerBoxWidth ?? 40]}
+                        onValueChange={(values) => handleSpotSamplePropertyChange('whiskerBoxWidth', values[0])}
+                        min={20}
+                        max={100}
+                        step={5}
+                        className="w-full"
+                      />
+                    </div>
+                  </>
+                )}
 
                 {/* Chart Height */}
                 <div className="space-y-1.5">
@@ -679,13 +1122,225 @@ export function StylingRulesDialog({
                   variant="outline"
                   size="sm"
                   className="w-full text-xs"
-                  onClick={() => {
-                    // Open expanded controls if needed
-                  }}
+                  onClick={() => setShowAdvanced(!showAdvanced)}
                 >
                   <Info className="h-3 w-3 mr-1" />
-                  More Advanced Controls
+                  {showAdvanced ? 'Hide Advanced Controls' : 'More Advanced Controls'}
                 </Button>
+
+                {/* Advanced controls - shown when expanded */}
+                {showAdvanced && (
+                  <div className="space-y-3 pt-3 border-t">
+                    <h6 className="text-xs font-semibold text-muted-foreground">Advanced Styling</h6>
+
+                    {/* X-Axis Title Position */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">X-Axis Title Position</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.xAxisTitlePosition ?? 20}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.xAxisTitlePosition ?? 20]}
+                        onValueChange={(values) => handlePropertyChange('xAxisTitlePosition', values[0])}
+                        min={0}
+                        max={60}
+                        step={5}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* X-Axis Title Font Size */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">X-Axis Title Font Size</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.xAxisTitleFontSize ?? 10}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.xAxisTitleFontSize ?? 10]}
+                        onValueChange={(values) => handlePropertyChange('xAxisTitleFontSize', values[0])}
+                        min={8}
+                        max={16}
+                        step={1}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* Chart Right Margin */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Chart Right Margin</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.chartRightMargin ?? 80}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.chartRightMargin ?? 80]}
+                        onValueChange={(values) => handlePropertyChange('chartRightMargin', values[0])}
+                        min={40}
+                        max={150}
+                        step={5}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* Chart Bottom Margin */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Chart Bottom Margin</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.chartBottomMargin ?? 10}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.chartBottomMargin ?? 10]}
+                        onValueChange={(values) => handlePropertyChange('chartBottomMargin', values[0])}
+                        min={-20}
+                        max={40}
+                        step={5}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* Plot to Parameters Gap */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Plot to Parameters Gap</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.plotToParametersGap ?? 12}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.plotToParametersGap ?? 12]}
+                        onValueChange={(values) => handlePropertyChange('plotToParametersGap', values[0])}
+                        min={0}
+                        max={40}
+                        step={4}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* Default Line Style */}
+                    <div className="space-y-1">
+                      <Label className="text-xs">Default Line Style</Label>
+                      <Select
+                        value={selectedRule.properties.defaultLineStyle || 'solid'}
+                        onValueChange={(value) => handlePropertyChange('defaultLineStyle', value as 'solid' | 'dashed' | 'dotted')}
+                      >
+                        <SelectTrigger className="h-7 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="solid" className="text-xs">Solid</SelectItem>
+                          <SelectItem value="dashed" className="text-xs">Dashed</SelectItem>
+                          <SelectItem value="dotted" className="text-xs">Dotted</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Default Opacity */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Default Opacity</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {(selectedRule.properties.defaultOpacity ?? 1.0).toFixed(1)}
+                        </span>
+                      </div>
+                      <Slider
+                        value={[(selectedRule.properties.defaultOpacity ?? 1.0) * 100]}
+                        onValueChange={(values) => handlePropertyChange('defaultOpacity', values[0] / 100)}
+                        min={10}
+                        max={100}
+                        step={10}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* Default Line Width */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Default Line Width</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.defaultLineWidth ?? 1}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.defaultLineWidth ?? 1]}
+                        onValueChange={(values) => handlePropertyChange('defaultLineWidth', values[0])}
+                        min={1}
+                        max={4}
+                        step={0.5}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* Secondary Y-Axis Controls (if enabled) */}
+                    {selectedRule.properties.secondaryYAxis && (
+                      <div className="space-y-3 pt-3 border-t">
+                        <h6 className="text-xs font-semibold text-muted-foreground">Secondary Y-Axis</h6>
+
+                        {/* Secondary Y-Axis Title */}
+                        <div className="space-y-1">
+                          <Label className="text-xs">Secondary Y-Axis Title</Label>
+                          <Input
+                            value={selectedRule.properties.secondaryYAxis.title || ""}
+                            onChange={(e) => handleSecondaryYAxisChange('title', e.target.value)}
+                            className="h-7 text-xs"
+                          />
+                        </div>
+
+                        {/* Secondary Y-Axis Width */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs">Secondary Y-Axis Width</Label>
+                            <span className="text-xs text-muted-foreground">
+                              {selectedRule.properties.secondaryYAxis.width ?? 80}px
+                            </span>
+                          </div>
+                          <Slider
+                            value={[selectedRule.properties.secondaryYAxis.width ?? 80]}
+                            onValueChange={(values) => handleSecondaryYAxisChange('width', values[0])}
+                            min={40}
+                            max={150}
+                            step={5}
+                            className="w-full"
+                          />
+                        </div>
+
+                        {/* Divide By Factor */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <Label className="text-xs">Divide By Factor</Label>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="max-w-xs text-xs">
+                                  <p>Secondary axis = (Primary value / this) × 100</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {selectedRule.properties.secondaryYAxis.divideBy ?? 60}
+                            </span>
+                          </div>
+                          <Slider
+                            value={[selectedRule.properties.secondaryYAxis.divideBy ?? 60]}
+                            onValueChange={(values) => handleSecondaryYAxisChange('divideBy', values[0])}
+                            min={1}
+                            max={100}
+                            step={1}
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

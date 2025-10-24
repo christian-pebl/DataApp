@@ -21,6 +21,9 @@ interface SpotSampleStyles {
   xAxisLabelRotation?: number;
   xAxisLabelFontSize?: number;
   yAxisLabelFontSize?: number;
+  yAxisTitleFontSize?: number;
+  yAxisTitleFontWeight?: number | string;
+  yAxisTitleAlign?: 'left' | 'center' | 'right';
   chartHeight?: number;
 }
 
@@ -32,6 +35,9 @@ interface ColumnChartWithErrorBarsProps {
   height?: number;
   showXAxisLabels?: boolean;
   spotSampleStyles?: SpotSampleStyles;
+  columnColorMode?: 'unique' | 'single';
+  singleColumnColor?: string;
+  yAxisRange?: { min?: number; max?: number };
 }
 
 /**
@@ -46,7 +52,10 @@ export function ColumnChartWithErrorBars({
   width = "100%",
   height = 400,
   showXAxisLabels = true,
-  spotSampleStyles
+  spotSampleStyles,
+  columnColorMode = 'single',
+  singleColumnColor = '#3b82f6',
+  yAxisRange
 }: ColumnChartWithErrorBarsProps) {
 
   // Extract styling properties with defaults
@@ -63,6 +72,9 @@ export function ColumnChartWithErrorBars({
     xAxisLabelRotation: spotSampleStyles?.xAxisLabelRotation ?? -45,
     xAxisLabelFontSize: spotSampleStyles?.xAxisLabelFontSize ?? 11,
     yAxisLabelFontSize: spotSampleStyles?.yAxisLabelFontSize ?? 12,
+    yAxisTitleFontSize: spotSampleStyles?.yAxisTitleFontSize ?? 14,
+    yAxisTitleFontWeight: spotSampleStyles?.yAxisTitleFontWeight ?? 'normal',
+    yAxisTitleAlign: spotSampleStyles?.yAxisTitleAlign ?? 'center',
     chartHeight: spotSampleStyles?.chartHeight ?? 350
   };
 
@@ -86,29 +98,35 @@ export function ColumnChartWithErrorBars({
   }
 
   // Transform data for Recharts
-  // Generate a unique offset for this chart instance to prevent cross-chart key collisions
-  const chartInstanceOffset = React.useMemo(() => Math.random() * 0.0001, []);
-
   const chartData = parameterData.map((group, index) => {
-    // Use large enough epsilon to ensure unique pixel coordinates after chart scaling
-    // Add random component per chart instance to prevent collisions between multiple charts
-    const uniqueMean = group.stats.mean + (index * 1.0) + chartInstanceOffset;
-    const uniqueSd = group.stats.sd + (index * 0.5) + chartInstanceOffset;
-
-    return {
-      xAxisLabel: `${group.xAxisLabel}_${index}`, // Make x-axis label unique
+    // FIX: Do NOT add offsets to mean/SD values - this corrupts the chart!
+    // The uniqueness should be achieved through the xAxisLabel key only
+    const result = {
+      xAxisLabel: `${group.xAxisLabel}_${index}`, // Make x-axis label unique (this is the key)
       displayLabel: group.xAxisLabel, // Original label for display
-      mean: uniqueMean, // Slightly adjusted to ensure uniqueness
+      mean: group.stats.mean, // Use ACTUAL mean value for chart
       originalMean: group.stats.mean, // Keep original for tooltip
-      sd: uniqueSd, // Slightly adjusted SD
+      sd: group.stats.sd, // Use ACTUAL SD
       originalSd: group.stats.sd, // Keep original for tooltip
       count: group.count,
       sampleId: group.sampleId,
       uniqueId: `${parameter}-${group.date}-${group.sampleId}-${index}`, // Unique identifier
-      // Error bar data: use uniqueSd to ensure each bar has unique coordinates
-      // For single samples, use tiny but unique error bars
-      errorY: group.count > 1 ? [uniqueSd, uniqueSd] : [(index + 1) * 0.001, (index + 1) * 0.001]
+      // Error bar data
+      errorY: group.count > 1 ? [group.stats.sd, group.stats.sd] : [0, 0] // No error bars for single samples
     };
+
+    // Log first 3 data transformations for debugging
+    if (index < 3) {
+      console.log(`[COLUMN-CHART-DATA] Bar ${index}:`, {
+        xLabel: result.displayLabel,
+        mean: result.mean,
+        sd: result.sd,
+        count: result.count,
+        rawValues: group.values
+      });
+    }
+
+    return result;
   });
 
   // Custom tooltip
@@ -215,15 +233,31 @@ export function ColumnChartWithErrorBars({
         />
 
         <YAxis
-          label={{ value: parameter, angle: -90, position: 'insideLeft' }}
+          label={{
+            value: parameter,
+            angle: -90,
+            position: 'insideLeft',
+            style: {
+              fontSize: styles.yAxisTitleFontSize,
+              fontWeight: styles.yAxisTitleFontWeight,
+              textAnchor: 'middle' // SVG uses 'middle' for centering, not 'center'
+            }
+          }}
           tick={{ fontSize: styles.yAxisLabelFontSize }}
+          domain={[
+            yAxisRange?.min !== undefined ? yAxisRange.min : 'auto',
+            yAxisRange?.max !== undefined ? yAxisRange.max : 'auto'
+          ]}
         />
 
         <Tooltip content={<CustomTooltip />} />
 
         <Bar dataKey="mean" radius={[4, 4, 0, 0]}>
           {chartData.map((entry, index) => {
-            const color = sampleIdColors[entry.sampleId] || '#3b82f6';
+            // Use single color mode if selected, otherwise use unique colors per sample
+            const color = columnColorMode === 'single'
+              ? singleColumnColor
+              : (sampleIdColors[entry.sampleId] || '#3b82f6');
             return (
               <Cell
                 key={`cell-${entry.xAxisLabel}-${index}`}

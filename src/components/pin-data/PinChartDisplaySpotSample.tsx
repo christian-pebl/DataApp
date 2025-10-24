@@ -6,13 +6,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { BarChart3, TableIcon, Settings } from "lucide-react";
 import type { ParsedDataPoint } from './csvParser';
 import { groupBySampleAndDate, type SpotSampleGroup } from '@/lib/statistical-utils';
 import { ColumnChartWithErrorBars } from './ColumnChartWithErrorBars';
 import { WhiskerPlot } from './WhiskerPlot';
+import { StackedCredibilityChart } from './StackedCredibilityChart';
 import { format, parseISO } from 'date-fns';
 import { DEFAULT_STYLE_RULES, STYLE_RULES_VERSION, type StyleRule, type StyleProperties, StylingRulesDialog } from './StylingRulesDialog';
+import { isEdnaMetaFile, extractProjectPrefix, abbreviateStationLabel } from '@/lib/edna-utils';
+import { isCredFile, processCredibilityFile } from '@/lib/edna-cred-processor';
 
 interface PinChartDisplaySpotSampleProps {
   data: ParsedDataPoint[];
@@ -20,6 +25,7 @@ interface PinChartDisplaySpotSampleProps {
   detectedSampleIdColumn: string | null;
   headers: string[];
   fileName?: string;
+  diagnosticLogs?: string[];
 }
 
 // Default color palette for sample IDs
@@ -46,7 +52,8 @@ export function PinChartDisplaySpotSample({
   timeColumn,
   detectedSampleIdColumn,
   headers,
-  fileName
+  fileName,
+  diagnosticLogs
 }: PinChartDisplaySpotSampleProps) {
 
   // IMMEDIATE DIAGNOSTIC LOGGING - runs before any processing
@@ -79,8 +86,20 @@ export function PinChartDisplaySpotSample({
   );
   const [showStylingDialog, setShowStylingDialog] = useState(false);
 
+  // Column chart color mode: 'unique' = different color per sample, 'single' = same color for all
+  // Initialize with defaults, will be updated by useEffect when spotSampleStyles is available
+  const [columnColorMode, setColumnColorMode] = useState<'unique' | 'single'>('single');
+  const [singleColumnColor, setSingleColumnColor] = useState('#3b82f6');
+
   // Parameter visibility state - default to showing first 2 parameters
   const [visibleParameters, setVisibleParameters] = useState<Set<string>>(() => new Set());
+
+  // Parameter-specific Y-axis ranges (for CHEMWQ files)
+  // Initialize with empty object, will be updated by useEffect when spotSampleStyles is available
+  const [parameterYAxisRanges, setParameterYAxisRanges] = useState<Record<string, { min?: number; max?: number }>>({});
+  const [yAxisDialogOpen, setYAxisDialogOpen] = useState<string | null>(null); // Track which parameter dialog is open
+  const [tempYAxisMin, setTempYAxisMin] = useState<string>('');
+  const [tempYAxisMax, setTempYAxisMax] = useState<string>('');
 
   // Load style rules from localStorage (with versioning)
   const [styleRules, setStyleRules] = useState<StyleRule[]>(() => {
@@ -123,8 +142,62 @@ export function PinChartDisplaySpotSample({
     return rule;
   }, [fileName, styleRules]);
 
-  // Extract spot sample styles from matching rule
-  const spotSampleStyles = matchingStyleRule?.properties.spotSample;
+  // Get matching suffix for style updates
+  const matchingSuffix = matchingStyleRule?.suffix;
+
+  // Extract spot sample styles from matching rule (needs to be after matchingStyleRule)
+  const spotSampleStyles = React.useMemo(() => {
+    return matchingStyleRule?.properties.spotSample;
+  }, [matchingStyleRule]);
+
+  // Update color settings when style rules change
+  React.useEffect(() => {
+    if (spotSampleStyles?.columnColorMode) {
+      setColumnColorMode(spotSampleStyles.columnColorMode);
+    }
+    if (spotSampleStyles?.singleColumnColor) {
+      setSingleColumnColor(spotSampleStyles.singleColumnColor);
+    }
+    if (spotSampleStyles?.parameterYAxisRanges) {
+      setParameterYAxisRanges(spotSampleStyles.parameterYAxisRanges);
+    }
+  }, [spotSampleStyles]);
+
+  // Detect and process _Cred files
+  const isCredibilityFile = useMemo(() => {
+    const result = fileName ? isCredFile(fileName) : false;
+    console.log('[SPOT-SAMPLE] 🔍 Credibility file detection:', {
+      fileName,
+      isCredFile: result
+    });
+    return result;
+  }, [fileName]);
+
+  const credibilityData = useMemo(() => {
+    if (!isCredibilityFile) {
+      console.log('[SPOT-SAMPLE] ⏭️  Not a credibility file, skipping _Cred processing');
+      return null;
+    }
+
+    console.log('[SPOT-SAMPLE] 📊 Processing _Cred file:', fileName);
+    console.log('[SPOT-SAMPLE]   - Data rows:', data.length);
+    console.log('[SPOT-SAMPLE]   - Headers:', headers);
+    console.log('[SPOT-SAMPLE]   - Sample first row:', data[0]);
+
+    const { aggregated, skippedCount } = processCredibilityFile(data, headers);
+
+    console.log('[SPOT-SAMPLE] ✅ _Cred processing complete:', {
+      aggregated,
+      skippedCount,
+      totalUniqueSpecies: aggregated.totalUniqueSpecies
+    });
+
+    if (skippedCount > 0) {
+      console.warn(`[SPOT-SAMPLE] ⚠️  Skipped ${skippedCount} invalid rows in _Cred file`);
+    }
+
+    return aggregated;
+  }, [isCredibilityFile, data, headers, fileName]);
 
   // Styling dialog handlers
   const handleStyleRuleToggle = (suffix: string, enabled: boolean) => {
@@ -166,6 +239,67 @@ export function PinChartDisplaySpotSample({
     console.log('[SPOT-SAMPLE] Style rule updated:', suffix, properties);
   };
 
+  // Color mode change handler - updates state and persists to style rules
+  const handleColumnColorModeChange = (mode: 'unique' | 'single') => {
+    setColumnColorMode(mode);
+
+    // Find matching style rule and update it
+    if (matchingSuffix) {
+      handleStyleRuleUpdate(matchingSuffix, {
+        spotSample: { columnColorMode: mode }
+      });
+    }
+    console.log('[SPOT-SAMPLE] Column color mode changed:', mode);
+  };
+
+  // Single column color change handler - updates state and persists to style rules
+  const handleSingleColumnColorChange = (color: string) => {
+    setSingleColumnColor(color);
+
+    // Find matching style rule and update it
+    if (matchingSuffix) {
+      handleStyleRuleUpdate(matchingSuffix, {
+        spotSample: { singleColumnColor: color }
+      });
+    }
+    console.log('[SPOT-SAMPLE] Single column color changed:', color);
+  };
+
+  // Parameter Y-axis range change handler - updates state and persists to style rules
+  const handleParameterYAxisRangeChange = (parameter: string, min?: number, max?: number) => {
+    const updatedRanges = {
+      ...parameterYAxisRanges,
+      [parameter]: { min, max }
+    };
+    setParameterYAxisRanges(updatedRanges);
+
+    // Find matching style rule and update it
+    if (matchingSuffix) {
+      handleStyleRuleUpdate(matchingSuffix, {
+        spotSample: { parameterYAxisRanges: updatedRanges }
+      });
+    }
+    console.log('[SPOT-SAMPLE] Parameter Y-axis range changed:', parameter, { min, max });
+  };
+
+  // Sample color change handler - updates custom sample colors in style rules
+  const handleSampleColorChange = (sampleId: string, color: string) => {
+    // Get current custom colors from style rules
+    const currentCustomColors = spotSampleStyles?.sampleColors || {};
+    const updatedColors = {
+      ...currentCustomColors,
+      [sampleId]: color
+    };
+
+    // Find matching style rule and update it
+    if (matchingSuffix) {
+      handleStyleRuleUpdate(matchingSuffix, {
+        spotSample: { sampleColors: updatedColors }
+      });
+    }
+    console.log('[SPOT-SAMPLE] Sample color changed:', sampleId, color);
+  };
+
   // Get actual sample ID column (user selection or detected)
   const sampleIdColumn = selectedSampleIdColumn || detectedSampleIdColumn;
 
@@ -198,6 +332,8 @@ export function PinChartDisplaySpotSample({
       h.toLowerCase() !== 'time' &&
       h.toLowerCase() !== 'sample' &&
       h.toLowerCase() !== 'sample id' &&
+      h.toLowerCase() !== 'subset' &&
+      h.toLowerCase() !== 'replicate' &&
       h.toLowerCase().replace(/[\s_-]/g, '') !== 'stationid' &&
       h.toLowerCase().replace(/[\s_-]/g, '') !== 'subsetid' &&
       h.toLowerCase().replace(/[\s_-]/g, '') !== 'bladeid' &&
@@ -266,7 +402,12 @@ export function PinChartDisplaySpotSample({
     console.log('[SPOT-SAMPLE] Parameters to process:', parameterColumns);
     console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
 
-    const result = groupBySampleAndDate(data, timeColumn, sampleIdColumn, parameterColumns, stationIdColumn || undefined);
+    // Only pass stationIdColumn as blade ID if it's different from sample ID column
+    // This prevents duplicate labels like "Control-S Control-S" in CHEMWQ files
+    const bladeIdColumn = (stationIdColumn && stationIdColumn !== sampleIdColumn) ? stationIdColumn : undefined;
+    console.log('[SPOT-SAMPLE] Blade ID column (for grouping):', bladeIdColumn || 'none (same as sample ID)');
+
+    const result = groupBySampleAndDate(data, timeColumn, sampleIdColumn, parameterColumns, bladeIdColumn);
 
     console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
     console.log('[SPOT-SAMPLE] Grouping complete!');
@@ -277,28 +418,85 @@ export function PinChartDisplaySpotSample({
     return result;
   }, [data, timeColumn, sampleIdColumn, parameterColumns, stationIdColumn]);
 
+  // Post-process for eDNA files: abbreviate station labels
+  const processedGroupedData = useMemo(() => {
+    if (!fileName || !isEdnaMetaFile(fileName)) {
+      return groupedData;
+    }
+
+    console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
+    console.log('[SPOT-SAMPLE] eDNA Meta file detected, abbreviating station labels');
+
+    const projectPrefix = extractProjectPrefix(fileName);
+    console.log('[SPOT-SAMPLE] Project prefix:', projectPrefix);
+
+    const abbreviated = groupedData.map(group => {
+      const originalLabel = group.xAxisLabel;
+
+      // Extract the station part from the x-axis label
+      // Format is typically: "DD/MM/YY [Station_Name]" or just "Station_Name"
+      const match = originalLabel.match(/\[(.*?)\]/) || originalLabel.match(/^(.*)$/);
+      const stationPart = match ? match[1] : originalLabel;
+
+      const abbreviatedStation = abbreviateStationLabel(stationPart, projectPrefix);
+
+      // Reconstruct the label with abbreviated station
+      let newLabel: string;
+      if (originalLabel.includes('[')) {
+        // Has date prefix, keep it
+        const dateMatch = originalLabel.match(/^(.*?)\s*\[/);
+        const datePart = dateMatch ? dateMatch[1] : '';
+        newLabel = datePart ? `${datePart} [${abbreviatedStation}]` : abbreviatedStation;
+      } else {
+        // No date prefix, just use abbreviated station
+        newLabel = abbreviatedStation;
+      }
+
+      console.log('[SPOT-SAMPLE] Label transform:', originalLabel, '→', newLabel);
+
+      return {
+        ...group,
+        xAxisLabel: newLabel
+      };
+    });
+
+    console.log('[SPOT-SAMPLE] Abbreviation complete');
+    console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
+
+    return abbreviated;
+  }, [groupedData, fileName]);
+
   // Assign colors to unique sample IDs
+  // Use custom colors from style rules if available, otherwise use default palette
   const sampleIdColors = useMemo(() => {
-    const uniqueSampleIds = [...new Set(groupedData.map(d => d.sampleId))];
+    const uniqueSampleIds = [...new Set(processedGroupedData.map(d => d.sampleId))];
     const colors: Record<string, string> = {};
+    const customColors = spotSampleStyles?.sampleColors || {};
 
     uniqueSampleIds.forEach((id, index) => {
-      colors[id] = DEFAULT_COLOR_PALETTE[index % DEFAULT_COLOR_PALETTE.length];
+      // Use custom color if defined, otherwise fall back to default palette
+      colors[id] = customColors[id] || DEFAULT_COLOR_PALETTE[index % DEFAULT_COLOR_PALETTE.length];
     });
 
     console.log('[SPOT-SAMPLE] Assigned colors:', colors);
+    console.log('[SPOT-SAMPLE] Custom colors from style rules:', customColors);
     return colors;
-  }, [groupedData]);
+  }, [processedGroupedData, spotSampleStyles]);
 
   // Get available sample ID column options
   const sampleIdColumnOptions = useMemo(() => {
     return headers.filter(h => h !== timeColumn);
   }, [headers, timeColumn]);
 
+  // Get list of unique sample IDs for color customization
+  const availableSampleIds = useMemo(() => {
+    return [...new Set(processedGroupedData.map(d => d.sampleId))];
+  }, [processedGroupedData]);
+
   // Calculate dynamic chart width for horizontal scrolling
   const uniqueDataPoints = useMemo(() => {
-    return [...new Set(groupedData.map(d => d.xAxisLabel))].length;
-  }, [groupedData]);
+    return [...new Set(processedGroupedData.map(d => d.xAxisLabel))].length;
+  }, [processedGroupedData]);
 
   const needsScrolling = uniqueDataPoints > 20;
   const chartWidth = needsScrolling ? uniqueDataPoints * 60 : undefined;
@@ -331,6 +529,145 @@ export function PinChartDisplaySpotSample({
         <p className="text-xs text-muted-foreground">
           Could not read column headers from the CSV file.
         </p>
+      </div>
+    );
+  }
+
+  // Special handling for _Cred files - bypass normal spot-sample requirements
+  if (isCredibilityFile && credibilityData) {
+    console.log('[SPOT-SAMPLE] 🎨 Rendering _Cred chart:', fileName);
+    console.log('[SPOT-SAMPLE]   - Credibility data:', credibilityData);
+    console.log('[SPOT-SAMPLE]   - Spot sample styles:', spotSampleStyles);
+    console.log('[SPOT-SAMPLE]   - Custom title:', spotSampleStyles?.chartTitle);
+    console.log('[SPOT-SAMPLE]   - Custom Y-axis:', spotSampleStyles?.yAxisLabel);
+    console.log('[SPOT-SAMPLE]   - GBIF colors:', {
+      trueColor: spotSampleStyles?.gbifTrueColor,
+      falseColor: spotSampleStyles?.gbifFalseColor
+    });
+
+    return (
+      <div className="space-y-3">
+        {/* Control Bar */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Chart/Table Toggle */}
+          <div className="flex items-center gap-1 border rounded-lg p-1">
+            <Button
+              variant={!showTable ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setShowTable(false)}
+              className="h-8"
+            >
+              <BarChart3 className="h-4 w-4 mr-1" />
+              Chart
+            </Button>
+            <Button
+              variant={showTable ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setShowTable(true)}
+              className="h-8"
+            >
+              <TableIcon className="h-4 w-4 mr-1" />
+              Table
+            </Button>
+          </div>
+
+          {/* Styling Button */}
+          <StylingRulesDialog
+            open={showStylingDialog}
+            onOpenChange={setShowStylingDialog}
+            styleRules={styleRules}
+            onStyleRuleToggle={handleStyleRuleToggle}
+            onStyleRuleUpdate={handleStyleRuleUpdate}
+            currentFileName={fileName}
+            currentChartType="credibility"
+            columnColorMode={columnColorMode}
+            onColumnColorModeChange={setColumnColorMode}
+            singleColumnColor={singleColumnColor}
+            onSingleColumnColorChange={setSingleColumnColor}
+            availableSampleIds={availableSampleIds}
+            sampleIdColors={sampleIdColors}
+            onSampleColorChange={handleSampleColorChange}
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 ml-auto"
+              title="Configure chart styling"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          </StylingRulesDialog>
+
+          {/* Info Badge */}
+          <div className="text-xs text-muted-foreground">
+            {credibilityData.totalUniqueSpecies} unique species detected
+          </div>
+        </div>
+
+        {/* Chart or Table View */}
+        {showTable ? (
+          <div className="border rounded-lg overflow-hidden">
+            <div className="max-h-[600px] overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="sticky top-0 bg-background">Credibility Level</TableHead>
+                    <TableHead className="sticky top-0 bg-background">GBIF Status</TableHead>
+                    <TableHead className="sticky top-0 bg-background text-right">Species Count</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell className="font-medium">Low</TableCell>
+                    <TableCell>GBIF Verified</TableCell>
+                    <TableCell className="text-right">{credibilityData.low_gbif_true}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium">Low</TableCell>
+                    <TableCell>GBIF Unverified</TableCell>
+                    <TableCell className="text-right">{credibilityData.low_gbif_false}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium">Moderate</TableCell>
+                    <TableCell>GBIF Verified</TableCell>
+                    <TableCell className="text-right">{credibilityData.moderate_gbif_true}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium">Moderate</TableCell>
+                    <TableCell>GBIF Unverified</TableCell>
+                    <TableCell className="text-right">{credibilityData.moderate_gbif_false}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium">High</TableCell>
+                    <TableCell>GBIF Verified</TableCell>
+                    <TableCell className="text-right">{credibilityData.high_gbif_true}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium">High</TableCell>
+                    <TableCell>GBIF Unverified</TableCell>
+                    <TableCell className="text-right">{credibilityData.high_gbif_false}</TableCell>
+                  </TableRow>
+                  <TableRow className="font-semibold bg-muted">
+                    <TableCell colSpan={2}>Total Unique Species</TableCell>
+                    <TableCell className="text-right">{credibilityData.totalUniqueSpecies}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        ) : (
+          <div className="border rounded-lg p-4">
+            <StackedCredibilityChart
+              data={credibilityData}
+              fileName={fileName || 'credibility_data.csv'}
+              customTitle={spotSampleStyles?.chartTitle as string | undefined}
+              customYAxisLabel={spotSampleStyles?.yAxisLabel as string | undefined}
+              gbifTrueColor={spotSampleStyles?.gbifTrueColor as string | undefined}
+              gbifFalseColor={spotSampleStyles?.gbifFalseColor as string | undefined}
+              height={spotSampleStyles?.chartHeight || 400}
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -372,7 +709,7 @@ export function PinChartDisplaySpotSample({
     );
   }
 
-  if (groupedData.length === 0) {
+  if (processedGroupedData.length === 0) {
     console.error('[SPOT-SAMPLE] ❌ ERROR: No grouped data created');
     console.error('[SPOT-SAMPLE] This means the grouping function returned 0 groups');
     console.error('[SPOT-SAMPLE] Check the [STATISTICAL-UTILS] logs above for skip reasons');
@@ -394,16 +731,35 @@ export function PinChartDisplaySpotSample({
             <li>All numeric columns contain null/empty values</li>
           </ul>
         </details>
-        <p className="text-xs text-muted-foreground mt-3 font-semibold">
-          📊 Check console logs for detailed diagnostics
-        </p>
-        <div className="mt-2 p-2 bg-muted rounded text-xs font-mono">
+
+        {diagnosticLogs && diagnosticLogs.length > 0 && (
+          <details className="mt-3 open">
+            <summary className="text-xs font-semibold cursor-pointer text-blue-600 mb-2">
+              📋 Parser Diagnostic Logs ({diagnosticLogs.length} messages)
+            </summary>
+            <div className="mt-2 p-3 bg-muted rounded text-xs font-mono max-h-64 overflow-y-auto">
+              {diagnosticLogs.map((log, index) => (
+                <div key={index} className="py-0.5 border-b border-muted-foreground/10 last:border-0">
+                  {log}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+
+        <div className="mt-3 p-2 bg-muted rounded text-xs font-mono">
           <div>Data rows: {data.length}</div>
           <div>Headers: {headers.length}</div>
           <div>Time column: {timeColumn}</div>
           <div>Sample ID column: {sampleIdColumn}</div>
           <div>Parameters: {parameterColumns.length}</div>
         </div>
+
+        {!diagnosticLogs && (
+          <p className="text-xs text-muted-foreground mt-3 font-semibold">
+            📊 Check console logs for detailed diagnostics
+          </p>
+        )}
       </div>
     );
   }
@@ -508,6 +864,14 @@ export function PinChartDisplaySpotSample({
           onStyleRuleToggle={handleStyleRuleToggle}
           onStyleRuleUpdate={handleStyleRuleUpdate}
           currentFileName={fileName}
+          currentChartType={chartType}
+          columnColorMode={columnColorMode}
+          onColumnColorModeChange={handleColumnColorModeChange}
+          singleColumnColor={singleColumnColor}
+          onSingleColumnColorChange={handleSingleColumnColorChange}
+          availableSampleIds={availableSampleIds}
+          sampleIdColors={sampleIdColors}
+          onSampleColorChange={handleSampleColorChange}
         >
           <Button
             variant="outline"
@@ -521,7 +885,7 @@ export function PinChartDisplaySpotSample({
 
         {/* Info Badge */}
         <div className="text-xs text-muted-foreground">
-          {groupedData.length} data point{groupedData.length !== 1 ? 's' : ''} • {' '}
+          {processedGroupedData.length} data point{processedGroupedData.length !== 1 ? 's' : ''} • {' '}
           {Object.keys(sampleIdColors).length} sample{Object.keys(sampleIdColors).length !== 1 ? 's' : ''}
         </div>
       </div>
@@ -544,7 +908,7 @@ export function PinChartDisplaySpotSample({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {groupedData.map((group, index) => (
+                {processedGroupedData.map((group, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-medium">
                       {format(parseISO(group.date), 'dd/MM/yyyy')}
@@ -581,26 +945,129 @@ export function PinChartDisplaySpotSample({
               console.log('[SPOT-SAMPLE] Chart type:', chartType);
               console.log('[SPOT-SAMPLE] All parameter columns:', parameterColumns);
               console.log('[SPOT-SAMPLE] Visible parameters:', Array.from(visibleParameters));
-              console.log('[SPOT-SAMPLE] Grouped data length:', groupedData.length);
+              console.log('[SPOT-SAMPLE] Grouped data length:', processedGroupedData.length);
               console.log('[SPOT-SAMPLE] Chart width:', chartWidth);
               return null;
             })()}
-            {visibleParametersList.map(param => (
-              <div key={param} className="space-y-2">
-                <h3 className="text-sm font-semibold">{param}</h3>
-                <div style={{ width: chartWidth || '100%' }}>
-                  {chartType === 'column' ? (
-                    <ColumnChartWithErrorBars
-                      data={groupedData}
-                      parameter={param}
-                      sampleIdColors={sampleIdColors}
-                      width={chartWidth || '100%'}
-                      height={350}
-                      spotSampleStyles={spotSampleStyles}
-                    />
-                  ) : (
+            {visibleParametersList.map(param => {
+              // Log data being passed to chart component
+              const paramData = processedGroupedData.filter(d => d.parameter === param);
+              console.log(`[SPOT-SAMPLE-CHART] 🎨 Rendering ${param} chart:`, {
+                parameterName: param,
+                dataPointsCount: paramData.length,
+                sampleFirstThree: paramData.slice(0, 3).map(d => ({
+                  xLabel: d.xAxisLabel,
+                  mean: d.stats.mean,
+                  sd: d.stats.sd,
+                  rawValues: d.values,
+                  valuesCount: d.count
+                }))
+              });
+
+              return (
+                <div key={param} className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold">{param}</h3>
+                    {/* Parameter-specific Y-axis controls */}
+                    <Popover
+                      open={yAxisDialogOpen === param}
+                      onOpenChange={(open) => {
+                        setYAxisDialogOpen(open ? param : null);
+                        // Initialize temp values when opening
+                        if (open) {
+                          const currentRange = parameterYAxisRanges[param];
+                          setTempYAxisMin(currentRange?.min?.toString() || '');
+                          setTempYAxisMax(currentRange?.max?.toString() || '');
+                        }
+                      }}
+                    >
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          title={`Set Y-axis range for ${param}`}
+                        >
+                          <Settings className="h-3 w-3" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-72 p-4">
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold">Y-Axis Range for {param}</Label>
+                            <p className="text-xs text-muted-foreground">
+                              Set custom min/max values for this parameter's Y-axis. Leave empty for auto-scale.
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs">Minimum</Label>
+                            <Input
+                              type="number"
+                              placeholder="Auto"
+                              value={tempYAxisMin}
+                              onChange={(e) => setTempYAxisMin(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs">Maximum</Label>
+                            <Input
+                              type="number"
+                              placeholder="Auto"
+                              value={tempYAxisMax}
+                              onChange={(e) => setTempYAxisMax(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1 h-8 text-xs"
+                              onClick={() => {
+                                // Clear the range
+                                handleParameterYAxisRangeChange(param, undefined, undefined);
+                                setTempYAxisMin('');
+                                setTempYAxisMax('');
+                                setYAxisDialogOpen(null);
+                              }}
+                            >
+                              Clear
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="flex-1 h-8 text-xs"
+                              onClick={() => {
+                                // Apply the range
+                                const min = tempYAxisMin ? parseFloat(tempYAxisMin) : undefined;
+                                const max = tempYAxisMax ? parseFloat(tempYAxisMax) : undefined;
+                                handleParameterYAxisRangeChange(param, min, max);
+                                setYAxisDialogOpen(null);
+                              }}
+                            >
+                              Apply
+                            </Button>
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div style={{ width: chartWidth || '100%' }}>
+                    {chartType === 'column' ? (
+                      <ColumnChartWithErrorBars
+                        data={processedGroupedData}
+                        parameter={param}
+                        sampleIdColors={sampleIdColors}
+                        width={chartWidth || '100%'}
+                        height={350}
+                        spotSampleStyles={spotSampleStyles}
+                        columnColorMode={columnColorMode}
+                        singleColumnColor={singleColumnColor}
+                        yAxisRange={parameterYAxisRanges[param]}
+                      />
+                    ) : (
                     <WhiskerPlot
-                      data={groupedData}
+                      data={processedGroupedData}
                       parameter={param}
                       sampleIdColors={sampleIdColors}
                       width={chartWidth || '100%'}
@@ -610,7 +1077,8 @@ export function PinChartDisplaySpotSample({
                   )}
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         </div>
       )}
