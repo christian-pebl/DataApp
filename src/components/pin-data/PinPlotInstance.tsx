@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { X, Settings2, BarChart, Loader2, AlertCircle, CheckCircle2, Info, ChevronDown, ChevronUp, FileIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { parseMultipleCSVFiles, type ParseResult, type ParsedDataPoint } from "./csvParser";
+import { parseMultipleCSVFiles, parseHaplotypeCsv, type ParseResult, type ParsedDataPoint, type HaplotypeParseResult } from "./csvParser";
 import PinChartDisplay from "@/components/charts/LazyPinChartDisplay";
 import {
   Dialog,
@@ -99,6 +99,7 @@ export function PinPlotInstance({
   const [plotTitle, setPlotTitle] = useState(initialPlotTitle);
   const [isLoading, setIsLoading] = useState(false);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [haplotypeData, setHaplotypeData] = useState<HaplotypeParseResult | null>(null);
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showMergeInfo, setShowMergeInfo] = useState(false);
@@ -106,7 +107,7 @@ export function PinPlotInstance({
 
   // Handle pre-parsed data (for merged plots) or process CSV files
   useEffect(() => {
-    console.log('[PLOT INSTANCE] useEffect triggered. dateFormat:', dateFormat, 'files:', files.length, 'preParsedData:', !!preParsedData);
+    // console.log('[PLOT INSTANCE] useEffect triggered. dateFormat:', dateFormat, 'files:', files.length, 'preParsedData:', !!preParsedData);
 
     if (preParsedData) {
       // Use pre-parsed data directly (merged plot scenario)
@@ -117,37 +118,76 @@ export function PinPlotInstance({
       setIsProcessingFiles(false);
     } else if (files.length > 0) {
       // Normal flow: process CSV files
-      console.log('[PLOT INSTANCE] Calling processCSVFiles with format override:', dateFormat);
+      // console.log('[PLOT INSTANCE] Calling processCSVFiles with format override:', dateFormat);
       processCSVFiles(files, dateFormat);
     }
   }, [files, preParsedData, instanceId, onDataParsed, dateFormat]);
 
   const processCSVFiles = async (csvFiles: File[], formatOverride?: 'DD/MM/YYYY' | 'MM/DD/YYYY') => {
-    console.log('[PLOT INSTANCE] processCSVFiles called with formatOverride:', formatOverride);
+    // console.log('[PLOT INSTANCE] processCSVFiles called with formatOverride:', formatOverride);
     setIsProcessingFiles(true);
     setParseResult(null);
+    setHaplotypeData(null);
 
     try {
-      const result = await parseMultipleCSVFiles(csvFiles, fileType, formatOverride);
-      console.log('[PLOT INSTANCE] CSV parsed. First 3 timestamps:', result.data.slice(0, 3).map(d => d.time));
-      setParseResult(result);
+      // Check if this is a haplotype file
+      const isHaplFile = csvFiles.length > 0 && csvFiles[0].name.toLowerCase().includes('hapl');
 
-      // Notify parent of parsed data for synchronization
-      if (onDataParsed) {
-        onDataParsed(instanceId, result);
-      }
+      if (isHaplFile) {
+        // Parse as haplotype data
+        console.log('🧬 [PLOT INSTANCE] Detected haplotype file, using parseHaplotypeCsv');
+        const haplotypeResult = await parseHaplotypeCsv(csvFiles[0]);
+        setHaplotypeData(haplotypeResult);
 
-      if (result.errors.length > 0) {
-        toast({
-          variant: result.data.length > 0 ? "default" : "destructive",
-          title: result.data.length > 0 ? "Data Processed with Warnings" : "Processing Error",
-          description: `${result.errors.length} issue${result.errors.length > 1 ? 's' : ''} found. ${result.data.length} valid data points loaded.`
-        });
+        // Create a minimal ParseResult for compatibility
+        const dummyParseResult: ParseResult = {
+          data: [],
+          headers: [],
+          errors: haplotypeResult.errors,
+          summary: {
+            totalRows: haplotypeResult.summary.totalSpecies,
+            validRows: haplotypeResult.summary.totalSpecies,
+            columns: haplotypeResult.summary.totalSites,
+            timeColumn: null
+          }
+        };
+        setParseResult(dummyParseResult);
+
+        if (haplotypeResult.errors.length > 0) {
+          toast({
+            variant: haplotypeResult.species.length > 0 ? "default" : "destructive",
+            title: haplotypeResult.species.length > 0 ? "Haplotype Data Processed with Warnings" : "Processing Error",
+            description: `${haplotypeResult.errors.length} issue${haplotypeResult.errors.length > 1 ? 's' : ''} found. ${haplotypeResult.summary.totalSpecies} species loaded.`
+          });
+        } else {
+          toast({
+            title: "Haplotype Data Processed Successfully",
+            description: `Loaded ${haplotypeResult.summary.totalSpecies} species across ${haplotypeResult.summary.totalSites} sites`
+          });
+        }
       } else {
-        toast({
-          title: "Data Processed Successfully",
-          description: `Loaded ${result.data.length} data points from ${csvFiles.length} file${csvFiles.length > 1 ? 's' : ''}`
-        });
+        // Normal CSV parsing
+        const result = await parseMultipleCSVFiles(csvFiles, fileType, formatOverride);
+        // console.log('[PLOT INSTANCE] CSV parsed. First 3 timestamps:', result.data.slice(0, 3).map(d => d.time));
+        setParseResult(result);
+
+        // Notify parent of parsed data for synchronization
+        if (onDataParsed) {
+          onDataParsed(instanceId, result);
+        }
+
+        if (result.errors.length > 0) {
+          toast({
+            variant: result.data.length > 0 ? "default" : "destructive",
+            title: result.data.length > 0 ? "Data Processed with Warnings" : "Processing Error",
+            description: `${result.errors.length} issue${result.errors.length > 1 ? 's' : ''} found. ${result.data.length} valid data points loaded.`
+          });
+        } else {
+          toast({
+            title: "Data Processed Successfully",
+            description: `Loaded ${result.data.length} data points from ${csvFiles.length} file${csvFiles.length > 1 ? 's' : ''}`
+          });
+        }
       }
 
     } catch (err) {
@@ -239,6 +279,8 @@ export function PinPlotInstance({
               // Spot-sample data props (for CROP, CHEM, WQ, EDNA files)
               detectedSampleIdColumn={parseResult.detectedSampleIdColumn}
               headers={parseResult.headers}
+              // Haplotype data (for EDNA hapl files)
+              haplotypeData={haplotypeData || undefined}
             />
           </div>
         ) : (

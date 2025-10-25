@@ -31,22 +31,54 @@ export interface ParseResult {
   diagnosticLogs?: string[];
 }
 
-export type FileType = 'GP' | 'FPOD' | 'Subcam';
+export type FileType = 'GP' | 'FPOD' | 'Subcam' | 'Hapl';
+
+// Haplotype-specific interfaces
+export interface HaplotypeMetadata {
+  credibility: 'HIGH' | 'MODERATE' | 'LOW' | string;
+  phylum: string;
+  isInvasive: boolean;
+  invasiveSpeciesName: string | null;
+  redListStatus: string;
+}
+
+export interface HaplotypeCellData {
+  species: string;
+  site: string;
+  count: number;
+  metadata: HaplotypeMetadata;
+}
+
+export interface HaplotypeParseResult {
+  species: string[];
+  sites: string[];
+  data: HaplotypeCellData[];
+  errors: string[];
+  summary: {
+    totalSpecies: number;
+    totalSites: number;
+    totalCells: number;
+  };
+}
 
 /**
  * Detect date format (DD/MM/YYYY vs MM/DD/YYYY) by analyzing date values
  * Examines first several rows to determine which format is being used
  */
-function detectDateFormat(lines: string[], timeColumnIndex: number, startRow: number = 1): 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD' {
+function detectDateFormat(lines: string[], timeColumnIndex: number, startRow: number = 1, fileName: string = ''): 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD' {
   const sampleSize = Math.min(20, lines.length - startRow); // Check up to 20 data rows
   const dateValues: string[] = [];
   const isoDateValues: string[] = [];
+  const isHaplotypeFile = fileName.toLowerCase().includes('hapl');
 
   console.log('═══════════════════════════════════════════════════════');
-  console.log('[DATE DETECTION] Starting date format detection...');
-  console.log('[DATE DETECTION] Time column index:', timeColumnIndex);
-  console.log('[DATE DETECTION] Start row:', startRow);
-  console.log('[DATE DETECTION] Sample size:', sampleSize);
+  // console.log('[DATE DETECTION] Starting date format detection...');
+  // console.log('[DATE DETECTION] Time column index:', timeColumnIndex);
+  // console.log('[DATE DETECTION] Start row:', startRow);
+  // console.log('[DATE DETECTION] Sample size:', sampleSize);
+  if (isHaplotypeFile) {
+    console.log('🧬 HAPL_DEBUG: Date format detection for haplotype file');
+  }
   console.log('═══════════════════════════════════════════════════════');
 
   // Extract date values from sample rows (starting from the first data row)
@@ -76,6 +108,14 @@ function detectDateFormat(lines: string[], timeColumnIndex: number, startRow: nu
   console.log('[DATE DETECTION] Sample slash dates:', dateValues.slice(0, 5));
   console.log('[DATE DETECTION] ISO format dates found:', isoDateValues.length);
   console.log('[DATE DETECTION] Sample ISO dates:', isoDateValues.slice(0, 5));
+
+  // 🧬 HAPL_DEBUG: Show all sample dates for haplotype files
+  if (isHaplotypeFile) {
+    console.log('🧬 HAPL_DEBUG: Slash dates found:', dateValues.length);
+    console.log('🧬 HAPL_DEBUG: Sample slash dates:', dateValues.slice(0, 10));
+    console.log('🧬 HAPL_DEBUG: ISO dates found:', isoDateValues.length);
+    console.log('🧬 HAPL_DEBUG: Sample ISO dates:', isoDateValues.slice(0, 10));
+  }
 
   // Priority 1: If we found ISO format dates, use that
   if (isoDateValues.length > 0) {
@@ -247,6 +287,9 @@ export async function parseCSVFile(
     diagnosticLogs: diagnosticLogs
   };
 
+  // Detect if this is a haplotype file for enhanced debugging
+  const isHaplotypeFile = file.name.toLowerCase().includes('hapl');
+
   try {
     const text = await file.text();
     const lines = text.trim().split('\n').filter(line => line.trim() !== '');
@@ -259,6 +302,20 @@ export async function parseCSVFile(
 
     diagnosticLogs.push(`📁 File: ${file.name}`);
     diagnosticLogs.push(`📊 Total lines in file: ${lines.length}`);
+
+    // 🧬 HAPL_DEBUG: Enhanced logging for haplotype files
+    if (isHaplotypeFile) {
+      console.log('═════════════════════════════════════════════════════════════');
+      console.log('🧬 HAPL_DEBUG: Haplotype file detected');
+      console.log('🧬 HAPL_DEBUG: File name:', file.name);
+      console.log('🧬 HAPL_DEBUG: File size:', file.size, 'bytes');
+      console.log('🧬 HAPL_DEBUG: Total lines:', lines.length);
+      console.log('🧬 HAPL_DEBUG: First 3 lines (raw):');
+      lines.slice(0, 3).forEach((line, idx) => {
+        console.log(`🧬 HAPL_DEBUG:   Line ${idx}:`, line.substring(0, 200));
+      });
+      console.log('═════════════════════════════════════════════════════════════');
+    }
 
     // Detect the correct header row (important for eDNA _Meta files)
     const headerDetection = detectEdnaMetaHeaderRow(lines, file.name);
@@ -277,6 +334,13 @@ export async function parseCSVFile(
     console.log(`[CSV PARSER] Using row ${headerRowIndex} as header row`);
     console.log(`[CSV PARSER] Headers detected:`, rawHeaders.slice(0, 10));
 
+    // 🧬 HAPL_DEBUG: Log all headers for haplotype files
+    if (isHaplotypeFile) {
+      console.log('🧬 HAPL_DEBUG: Header row index:', headerRowIndex);
+      console.log('🧬 HAPL_DEBUG: All headers:', rawHeaders);
+      console.log('🧬 HAPL_DEBUG: Total columns:', rawHeaders.length);
+    }
+
     // Detect time column with multiple strategies
     const timeColumnIndex = detectTimeColumn(rawHeaders, fileType);
     if (timeColumnIndex >= 0) {
@@ -285,6 +349,16 @@ export async function parseCSVFile(
     } else {
       result.errors.push(`No time column detected for ${fileType} data`);
       diagnosticLogs.push(`⚠️ No time column detected for ${fileType} data`);
+    }
+
+    // 🧬 HAPL_DEBUG: Log time column detection for haplotype files
+    if (isHaplotypeFile) {
+      console.log('🧬 HAPL_DEBUG: Time column index:', timeColumnIndex);
+      if (timeColumnIndex >= 0) {
+        console.log('🧬 HAPL_DEBUG: Time column name:', rawHeaders[timeColumnIndex]);
+      } else {
+        console.log('🧬 HAPL_DEBUG: ⚠️ NO TIME COLUMN DETECTED');
+      }
     }
 
     // Detect sample ID column (for spot-sample data like CROP, CHEM, WQ, EDNA)
@@ -300,9 +374,15 @@ export async function parseCSVFile(
     console.log(`[CSV PARSER] Data starts at row ${dataStartRow}`);
 
     // Use override if provided, otherwise detect date format by analyzing sample data
-    const dateFormat = dateFormatOverride || detectDateFormat(lines, timeColumnIndex, dataStartRow);
+    const dateFormat = dateFormatOverride || detectDateFormat(lines, timeColumnIndex, dataStartRow, file.name);
     diagnosticLogs.push(`📅 Date format: ${dateFormat} ${dateFormatOverride ? '(override)' : '(auto-detected)'}`);
     console.log('[CSV PARSER] Using date format:', dateFormat, dateFormatOverride ? '(override)' : '(detected)');
+
+    // 🧬 HAPL_DEBUG: Log date format for haplotype files
+    if (isHaplotypeFile) {
+      console.log('🧬 HAPL_DEBUG: Date format detected:', dateFormat);
+      console.log('🧬 HAPL_DEBUG: Date format override?', dateFormatOverride || 'No');
+    }
 
     for (let i = dataStartRow; i < lines.length; i++) {
       try {
@@ -318,11 +398,32 @@ export async function parseCSVFile(
 
     diagnosticLogs.push(`✅ Parsing complete: ${result.summary.validRows} valid rows out of ${result.summary.totalRows} total rows`);
 
+    // 🧬 HAPL_DEBUG: Log parsed data structure for haplotype files
+    if (isHaplotypeFile) {
+      console.log('🧬 HAPL_DEBUG: Parsing complete');
+      console.log('🧬 HAPL_DEBUG: Valid rows:', result.summary.validRows);
+      console.log('🧬 HAPL_DEBUG: Total rows:', result.summary.totalRows);
+      console.log('🧬 HAPL_DEBUG: First 3 parsed data points:');
+      result.data.slice(0, 3).forEach((dataPoint, idx) => {
+        console.log(`🧬 HAPL_DEBUG:   Data point ${idx}:`, dataPoint);
+      });
+      console.log('🧬 HAPL_DEBUG: Last parsed data point:', result.data[result.data.length - 1]);
+    }
+
     if (result.summary.validRows === 0 && result.summary.totalRows > 0) {
       diagnosticLogs.push(`❌ No valid data rows were parsed! This may indicate:`);
       diagnosticLogs.push(`   • Data types don't match expected format`);
       diagnosticLogs.push(`   • Date values can't be parsed`);
       diagnosticLogs.push(`   • Wrong header row was selected`);
+
+      // 🧬 HAPL_DEBUG: Extra debugging for failed haplotype parsing
+      if (isHaplotypeFile) {
+        console.log('🧬 HAPL_DEBUG: ❌ NO VALID ROWS PARSED!');
+        console.log('🧬 HAPL_DEBUG: This could mean:');
+        console.log('🧬 HAPL_DEBUG:   - Date format not recognized');
+        console.log('🧬 HAPL_DEBUG:   - Data structure incompatible with parser');
+        console.log('🧬 HAPL_DEBUG:   - Wrong header row selected');
+      }
     }
 
     // Validate and sort by time if possible
@@ -334,9 +435,20 @@ export async function parseCSVFile(
           return timeA - timeB;
         });
         diagnosticLogs.push(`🔄 Data sorted by time column`);
+
+        // 🧬 HAPL_DEBUG: Log date range after sorting
+        if (isHaplotypeFile && result.data.length > 0) {
+          console.log('🧬 HAPL_DEBUG: Data sorted by time');
+          console.log('🧬 HAPL_DEBUG: First date:', result.data[0].time);
+          console.log('🧬 HAPL_DEBUG: Last date:', result.data[result.data.length - 1].time);
+        }
       } catch (sortError) {
         result.errors.push('Warning: Could not sort data by time');
         diagnosticLogs.push(`⚠️ Could not sort data by time`);
+
+        if (isHaplotypeFile) {
+          console.log('🧬 HAPL_DEBUG: ⚠️ Could not sort data by time:', sortError);
+        }
       }
     }
 
@@ -801,4 +913,161 @@ export function isValidTimeFormat(timeStr: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Parse Haplotype CSV file (_hapl.csv format)
+ * Structure: Species names in first column, metadata columns (score, phylum, NNS, RedList_Status),
+ * followed by site columns containing numeric haplotype counts
+ */
+export async function parseHaplotypeCsv(file: File): Promise<HaplotypeParseResult> {
+  const result: HaplotypeParseResult = {
+    species: [],
+    sites: [],
+    data: [],
+    errors: [],
+    summary: {
+      totalSpecies: 0,
+      totalSites: 0,
+      totalCells: 0,
+    },
+  };
+
+  try {
+    const text = await file.text();
+    const lines = text.trim().split('\n').filter(line => line.trim() !== '');
+
+    if (lines.length < 2) {
+      result.errors.push('File must have at least header and one data row');
+      return result;
+    }
+
+    // Parse header row
+    const headerValues = parseCSVLine(lines[0]);
+    console.log('🧬 HAPL_PARSER: Headers:', headerValues);
+
+    // Identify column types
+    const metadataColumns = ['score', 'phylum', 'nns', 'redlist_status', 'redlist'];
+    const taxonomyColumns = ['kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species', 'date'];
+    const metadataIndices: Record<string, number> = {};
+    const siteIndices: number[] = [];
+    let speciesColumnIndex = -1;
+
+    headerValues.forEach((header, index) => {
+      const headerLower = header.toLowerCase().trim();
+
+      // Skip empty headers
+      if (!headerLower) return;
+
+      // Check if this is a metadata column
+      const isMetadata = metadataColumns.some(meta =>
+        headerLower === meta ||
+        headerLower.includes(meta) ||
+        (meta === 'redlist' && headerLower.includes('redlist'))
+      );
+
+      // Check if this is a taxonomy column (skip these as sites)
+      const isTaxonomy = taxonomyColumns.some(tax => headerLower === tax);
+
+      if (isMetadata) {
+        // Store metadata column index
+        if (headerLower.includes('score')) metadataIndices.score = index;
+        else if (headerLower.includes('phylum')) metadataIndices.phylum = index;
+        else if (headerLower === 'nns' || headerLower.includes('nns')) metadataIndices.nns = index;
+        else if (headerLower.includes('redlist')) metadataIndices.redList = index;
+      } else if (isTaxonomy) {
+        // Track species column for later use
+        if (headerLower === 'species') {
+          speciesColumnIndex = index;
+        }
+        // Skip taxonomy columns - they're not sites
+      } else {
+        // This is a site column (contains haplotype counts)
+        siteIndices.push(index);
+      }
+    });
+
+    // Extract site names
+    result.sites = siteIndices.map(idx => headerValues[idx]);
+    console.log('🧬 HAPL_PARSER: Metadata columns:', metadataIndices);
+    console.log('🧬 HAPL_PARSER: Site columns:', result.sites);
+
+    // Parse data rows
+    for (let i = 1; i < lines.length; i++) {
+      try {
+        const values = parseCSVLine(lines[i]);
+
+        if (values.length < 2) continue; // Skip invalid rows
+
+        // Extract species name from the species column
+        const speciesName = speciesColumnIndex >= 0
+          ? values[speciesColumnIndex]?.trim()
+          : values[0]?.trim(); // Fallback to first column if species column not found
+
+        if (!speciesName) continue;
+
+        result.species.push(speciesName);
+
+        // Extract metadata
+        const metadata: HaplotypeMetadata = {
+          credibility: metadataIndices.score !== undefined
+            ? (values[metadataIndices.score]?.trim().toUpperCase() || 'UNKNOWN')
+            : 'UNKNOWN',
+          phylum: metadataIndices.phylum !== undefined
+            ? (values[metadataIndices.phylum]?.trim() || 'Unknown')
+            : 'Unknown',
+          isInvasive: false,
+          invasiveSpeciesName: null,
+          redListStatus: metadataIndices.redList !== undefined
+            ? (values[metadataIndices.redList]?.trim() || 'Not Evaluated')
+            : 'Not Evaluated',
+        };
+
+        // Check NNS (Non-Native Species) column for invasive status
+        if (metadataIndices.nns !== undefined) {
+          const nnsValue = values[metadataIndices.nns]?.trim();
+          if (nnsValue && nnsValue !== 'NA' && nnsValue !== 'N/A' && nnsValue !== '') {
+            metadata.isInvasive = true;
+            metadata.invasiveSpeciesName = nnsValue;
+          }
+        }
+
+        // Extract site data (haplotype counts)
+        siteIndices.forEach(siteIndex => {
+          const siteName = headerValues[siteIndex];
+          const countStr = values[siteIndex]?.trim();
+          const count = countStr ? parseFloat(countStr) : 0;
+
+          // Only add cells with valid counts
+          if (!isNaN(count)) {
+            result.data.push({
+              species: speciesName,
+              site: siteName,
+              count: count,
+              metadata: { ...metadata }, // Clone metadata for each cell
+            });
+            result.summary.totalCells++;
+          }
+        });
+
+      } catch (rowError) {
+        result.errors.push(`Row ${i}: ${rowError instanceof Error ? rowError.message : 'Parse error'}`);
+      }
+    }
+
+    // Update summary
+    result.summary.totalSpecies = result.species.length;
+    result.summary.totalSites = result.sites.length;
+
+    // Sort species alphabetically (as specified: 2A)
+    result.species.sort((a, b) => a.localeCompare(b));
+
+    console.log('🧬 HAPL_PARSER: Parse complete -', result.summary);
+    console.log('🧬 HAPL_PARSER: First 3 cells:', result.data.slice(0, 3));
+
+  } catch (error) {
+    result.errors.push(`File parsing error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+
+  return result;
 }

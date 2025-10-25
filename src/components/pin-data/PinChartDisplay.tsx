@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock, Palette, Eye } from "lucide-react";
+import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock, Palette, Eye, Grid3x3 } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
@@ -21,6 +21,9 @@ import { fileStorageService } from '@/lib/supabase/file-storage-service';
 import { DEFAULT_STYLE_RULES, STYLE_RULES_VERSION, type StyleRule, StylingRulesDialog } from './StylingRulesDialog';
 import { ParameterFilterPanel } from './ParameterFilterPanel';
 import { PinChartDisplaySpotSample } from './PinChartDisplaySpotSample';
+import { HeatmapDisplay } from '@/components/dataflow/HeatmapDisplay';
+import { HaplotypeHeatmap } from './HaplotypeHeatmap';
+import type { HaplotypeParseResult } from './csvParser';
 
 interface PinChartDisplayProps {
   data: ParsedDataPoint[];
@@ -69,6 +72,8 @@ interface PinChartDisplayProps {
   detectedSampleIdColumn?: string | null;
   headers?: string[];
   diagnosticLogs?: string[];
+  // Haplotype data (for EDNA hapl files)
+  haplotypeData?: HaplotypeParseResult;
 }
 
 // Color palette matching the marine data theme
@@ -213,6 +218,63 @@ const formatYAxisTick = (value: number, dataRange: number, dataMax: number): str
   return value.toFixed(decimals);
 };
 
+// Split long Y-axis title into multiple lines at halfway point
+const splitYAxisTitle = (title: string, wordThreshold: number = 3): string[] => {
+  const words = title.trim().split(/\s+/);
+
+  // If fewer words than threshold, don't split
+  if (words.length < wordThreshold) {
+    return [title];
+  }
+
+  // Split at halfway point
+  const midpoint = Math.ceil(words.length / 2);
+  const firstLine = words.slice(0, midpoint).join(' ');
+  const secondLine = words.slice(midpoint).join(' ');
+
+  return [firstLine, secondLine];
+};
+
+// Custom Y-axis label component for multi-line rendering
+const MultiLineYAxisLabel = ({
+  viewBox,
+  value,
+  angle = -90,
+  offset = 0,
+  style = {}
+}: any) => {
+  const lines = Array.isArray(value) ? value : [value];
+  const { x, y, width, height } = viewBox;
+
+  // Calculate center position
+  const cx = x + offset;
+  const cy = y + height / 2;
+
+  // Line height in pixels
+  const lineHeight = 12;
+  const totalHeight = lines.length * lineHeight;
+
+  return (
+    <g transform={`translate(${cx}, ${cy})`}>
+      <text
+        transform={`rotate(${angle})`}
+        textAnchor="middle"
+        style={style}
+      >
+        {lines.map((line: string, index: number) => (
+          <tspan
+            key={index}
+            x={0}
+            dy={index === 0 ? -(totalHeight / 2) + lineHeight : lineHeight}
+          >
+            {line}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  );
+};
+
 // Fallback color palette when CSS variables aren't loaded
 const FALLBACK_COLORS: Record<string, string> = {
   '--chart-1': '#3b82f6', // blue
@@ -319,8 +381,42 @@ export function PinChartDisplay({
   pinId,
   detectedSampleIdColumn,
   headers,
-  diagnosticLogs
+  diagnosticLogs,
+  haplotypeData
 }: PinChartDisplayProps) {
+  // 🧬 HAPL_DEBUG: Log incoming data for haplotype files
+  const isHaplotypeFile = fileName?.toLowerCase().includes('hapl');
+  React.useEffect(() => {
+    if (isHaplotypeFile) {
+      console.log('═════════════════════════════════════════════════════════════');
+      console.log('🧬 HAPL_DEBUG: PinChartDisplay received data');
+      console.log('🧬 HAPL_DEBUG: File name:', fileName);
+      console.log('🧬 HAPL_DEBUG: File type:', fileType);
+      console.log('🧬 HAPL_DEBUG: Time column:', timeColumn);
+      console.log('🧬 HAPL_DEBUG: Data source:', dataSource);
+      console.log('🧬 HAPL_DEBUG: Total data points:', data.length);
+      console.log('🧬 HAPL_DEBUG: First 3 data points:');
+      data.slice(0, 3).forEach((point, idx) => {
+        console.log(`🧬 HAPL_DEBUG:   Point ${idx}:`, point);
+      });
+      if (data.length > 0) {
+        console.log('🧬 HAPL_DEBUG: Last data point:', data[data.length - 1]);
+        console.log('🧬 HAPL_DEBUG: Data keys (parameters):', Object.keys(data[0]));
+      }
+      console.log('🧬 HAPL_DEBUG: Headers:', headers);
+      console.log('🧬 HAPL_DEBUG: Detected sample ID column:', detectedSampleIdColumn);
+      console.log('🧬 HAPL_DEBUG: Diagnostic logs:', diagnosticLogs);
+      console.log('🧬 HAPL_DEBUG: Has haplotypeData?', !!haplotypeData);
+      if (haplotypeData) {
+        console.log('🧬 HAPL_DEBUG: Haplotype species count:', haplotypeData.species.length);
+        console.log('🧬 HAPL_DEBUG: Haplotype sites count:', haplotypeData.sites.length);
+        console.log('🧬 HAPL_DEBUG: Haplotype total cells:', haplotypeData.data.length);
+        console.log('🧬 HAPL_DEBUG: Haplotype summary:', haplotypeData.summary);
+      }
+      console.log('═════════════════════════════════════════════════════════════');
+    }
+  }, [data, fileName, isHaplotypeFile, haplotypeData]);
+
   // Log initial settings for debugging restoration
   React.useEffect(() => {
     if (initialCompactView !== undefined || initialCustomYAxisLabel !== undefined || initialAxisMode !== undefined) {
@@ -336,6 +432,13 @@ export function PinChartDisplay({
 
   // Toggle state for switching between chart and table view
   const [showTable, setShowTable] = useState(false);
+
+  // Heatmap view state - for Subcam nmax files
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [heatmapColor, setHeatmapColor] = useState('#1e3a8a'); // Dark blue default
+
+  // Haplotype heatmap view state - for EDNA hapl files (default to true for hapl files)
+  const [showHaplotypeHeatmap, setShowHaplotypeHeatmap] = useState(isHaplotypeFile && !!haplotypeData);
 
   // Compact view state - shows only selected parameters without borders
   const [compactView, setCompactView] = useState(initialCompactView ?? false);
@@ -513,6 +616,43 @@ export function PinChartDisplay({
     return params;
   }, [data, timeColumn, fileName]);
 
+  // Detect if this is a Subcam nmax file and identify species columns
+  const { isSubcamNmaxFile, speciesColumns } = useMemo(() => {
+    const isNmaxFile = fileType === 'Subcam' && fileName?.toLowerCase().includes('nmax');
+
+    if (!isNmaxFile || allParameters.length === 0) {
+      return { isSubcamNmaxFile: false, speciesColumns: [] };
+    }
+
+    // Keywords to identify metadata columns (first 4-6 columns typically)
+    const metadataKeywords = ['total', 'cumulative', 'observation', 'unique', 'recording', 'timestamp', 'date', 'time'];
+
+    // Find the first column that doesn't match metadata keywords
+    // Default to 6 (assume first 6 are metadata) if all match
+    let firstSpeciesIndex = 6;
+    for (let i = 0; i < Math.min(allParameters.length, 6); i++) {
+      const paramLower = allParameters[i].toLowerCase();
+      const isMetadata = metadataKeywords.some(keyword => paramLower.includes(keyword));
+      if (!isMetadata) {
+        firstSpeciesIndex = i;
+        break;
+      }
+    }
+
+    // Get species columns (all columns after metadata columns)
+    const species = allParameters.slice(firstSpeciesIndex);
+
+    console.log('[SUBCAM HEATMAP] Detected nmax file:', {
+      fileName,
+      totalParams: allParameters.length,
+      firstSpeciesIndex,
+      speciesCount: species.length,
+      speciesColumns: species
+    });
+
+    return { isSubcamNmaxFile: true, speciesColumns: species };
+  }, [fileType, fileName, allParameters]);
+
   // Initialize parameter visibility state
   const [parameterStates, setParameterStates] = useState<Record<string, ParameterState>>(() => {
     const initialState: Record<string, ParameterState> = {};
@@ -651,6 +791,21 @@ export function PinChartDisplay({
 
   // Calculate dynamic chart height based on number of visible parameters
   const dynamicChartHeight = useMemo(() => {
+    // For heatmap mode, calculate height based on number of visible species
+    if (showHeatmap && isSubcamNmaxFile) {
+      const visibleSpeciesCount = speciesColumns.filter(species => parameterStates[species]?.visible).length;
+      // Get row height from styling rule, default to 35px
+      const rowHeight = appliedStyleRule?.properties.heatmapRowHeight || 35;
+      // Calculate height: (rowHeight per species row) + margins (150px for margins/axes/brush)
+      const heatmapHeight = Math.max(300, (visibleSpeciesCount * rowHeight) + 150);
+      console.log('[HEATMAP HEIGHT]', {
+        visibleSpeciesCount,
+        rowHeight,
+        calculatedHeight: heatmapHeight
+      });
+      return heatmapHeight;
+    }
+
     const baseHeight = appliedStyleRule?.properties.chartHeight || 208;
     const visibleCount = visibleParameters.length;
     const hasExplicitHeight = appliedStyleRule?.properties.chartHeight !== undefined;
@@ -687,7 +842,7 @@ export function PinChartDisplay({
     // For 4+ parameters, use the full height
     // console.log('[CHART HEIGHT] Using full height for 4+ params:', baseHeight);
     return baseHeight;
-  }, [visibleParameters.length, appliedStyleRule?.properties.chartHeight, fileName, appliedStyleRule?.styleName]);
+  }, [visibleParameters.length, appliedStyleRule?.properties.chartHeight, appliedStyleRule?.properties.heatmapRowHeight, fileName, appliedStyleRule?.styleName, showHeatmap, isSubcamNmaxFile, speciesColumns, parameterStates]);
 
   // Get moving average parameters (for display in parameter list)
   const movingAverageParameters = useMemo(() => {
@@ -713,11 +868,11 @@ export function PinChartDisplay({
   // Combine base parameters and MA parameters for display
   const allDisplayParameters = useMemo(() => {
     const combined = [...visibleParameters, ...movingAverageParameters];
-    console.log('[MA DEBUG] allDisplayParameters:', {
-      visibleParameters,
-      movingAverageParameters,
-      combined
-    });
+    // console.log('[MA DEBUG] allDisplayParameters:', {
+    //   visibleParameters,
+    //   movingAverageParameters,
+    //   combined
+    // });
     return combined;
   }, [visibleParameters, movingAverageParameters]);
 
@@ -797,6 +952,42 @@ export function PinChartDisplay({
     }
   };
 
+  // Handle heatmap toggle with parameter visibility updates
+  const handleHeatmapToggle = (enabled: boolean) => {
+    setShowHeatmap(enabled);
+
+    // Only adjust visibility for nmax files when toggling TO heatmap mode
+    if (enabled && isSubcamNmaxFile && speciesColumns.length > 0) {
+      setParameterStates(prev => {
+        const updated = { ...prev };
+
+        // Hide all aggregated metadata parameters (first 6)
+        const metadataParams = allParameters.slice(0, Math.min(6, allParameters.length));
+        metadataParams.forEach(param => {
+          if (updated[param]) {
+            updated[param] = { ...updated[param], visible: false };
+          }
+        });
+
+        // Show first few species columns (default to showing 10 species)
+        const defaultVisibleSpeciesCount = Math.min(10, speciesColumns.length);
+        speciesColumns.forEach((species, index) => {
+          if (updated[species]) {
+            updated[species] = { ...updated[species], visible: index < defaultVisibleSpeciesCount };
+          }
+        });
+
+        console.log('[HEATMAP TOGGLE] Updated parameter visibility:', {
+          hiddenMetadata: metadataParams,
+          visibleSpecies: speciesColumns.slice(0, defaultVisibleSpeciesCount),
+          totalSpecies: speciesColumns.length
+        });
+
+        return updated;
+      });
+    }
+  };
+
   // Determine which brush indices to use based on mode
   const activeBrushStart = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.startIndex : brushStartIndex;
   const activeBrushEnd = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.endIndex : brushEndIndex;
@@ -811,7 +1002,7 @@ export function PinChartDisplay({
   }, [parameterStates]);
 
   const displayData = useMemo(() => {
-    console.log('[MA DEBUG] displayData useMemo RUNNING. maSettingsKey:', maSettingsKey, 'maUpdateCounter:', maUpdateCounter);
+    // console.log('[MA DEBUG] displayData useMemo RUNNING. maSettingsKey:', maSettingsKey, 'maUpdateCounter:', maUpdateCounter);
 
     if (data.length === 0) return [];
 
@@ -839,7 +1030,7 @@ export function PinChartDisplay({
     // Step 2: Apply time-of-day filters (if any parameter has them enabled)
     const hasTimeFilters = Object.values(parameterStates).some(state => state?.timeFilter?.enabled);
 
-    console.log('[MA DEBUG] Step 2: hasTimeFilters:', hasTimeFilters);
+    // console.log('[MA DEBUG] Step 2: hasTimeFilters:', hasTimeFilters);
 
     // Apply time filters (if any enabled)
     const filteredData = !hasTimeFilters ? baseData : baseData.map(point => {
@@ -863,11 +1054,11 @@ export function PinChartDisplay({
     // Step 3: Calculate moving averages (if any parameter has them enabled)
     const hasMovingAverages = Object.values(parameterStates).some(state => state?.movingAverage?.enabled);
 
-    console.log('[MA DEBUG] hasMovingAverages:', hasMovingAverages);
-    console.log('[MA DEBUG] parameterStates:', parameterStates);
+    // console.log('[MA DEBUG] hasMovingAverages:', hasMovingAverages);
+    // console.log('[MA DEBUG] parameterStates:', parameterStates);
 
     if (!hasMovingAverages) {
-      console.log('[MA DEBUG] No MA enabled, returning filtered data without MA calculation');
+      // console.log('[MA DEBUG] No MA enabled, returning filtered data without MA calculation');
       return filteredData; // No MA, return filtered data
     }
 
@@ -2080,7 +2271,8 @@ export function PinChartDisplay({
     console.log(`Move ${parameter} ${direction}`);
   };
 
-  if (data.length === 0) {
+  // Allow haplotype files to bypass the "no data" check since they use a different data structure
+  if (data.length === 0 && !haplotypeData) {
     return (
       <div className="flex items-center justify-center h-48 text-center">
         <div className="text-muted-foreground">
@@ -2091,7 +2283,8 @@ export function PinChartDisplay({
     );
   }
 
-  if (numericParameters.length === 0) {
+  // Allow haplotype files to bypass the "no numeric parameters" check
+  if (numericParameters.length === 0 && !haplotypeData) {
     return (
       <div className="flex items-center justify-center h-48 text-center">
         <div className="text-muted-foreground">
@@ -2121,7 +2314,8 @@ export function PinChartDisplay({
 
   // If discrete file detected and we have the necessary data, use spot-sample component
   // _Cred files don't need detectedSampleIdColumn
-  if (isDiscreteFile && headers && (detectedSampleIdColumn || isCredFile)) {
+  // Accept empty strings as valid sample ID columns (for files with unnamed columns)
+  if (isDiscreteFile && headers && ((detectedSampleIdColumn !== null && detectedSampleIdColumn !== undefined) || isCredFile)) {
     console.log('[PIN-CHART-DISPLAY] ✓ Routing to spot-sample component');
     console.log('[PIN-CHART-DISPLAY]   - isDiscreteFile:', isDiscreteFile);
     console.log('[PIN-CHART-DISPLAY]   - isCredFile:', isCredFile);
@@ -2171,8 +2365,92 @@ export function PinChartDisplay({
             <TableIcon className="h-4 w-4 text-muted-foreground" />
           </div>
 
-          {/* Compact View Toggle - only show in chart mode */}
-          {!showTable && (
+          {/* Heatmap Toggle - only show for Subcam nmax files in chart mode */}
+          {!showTable && isSubcamNmaxFile && (
+            <div className="flex items-center gap-2 pl-4 border-l">
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Line</span>
+              <Switch
+                checked={showHeatmap}
+                onCheckedChange={handleHeatmapToggle}
+                className="h-5 w-9"
+              />
+              <span className="text-xs text-muted-foreground">Heatmap</span>
+              <Grid3x3 className="h-4 w-4 text-muted-foreground" />
+            </div>
+          )}
+
+          {/* Heatmap Settings - only show in heatmap mode for nmax files */}
+          {!showTable && showHeatmap && isSubcamNmaxFile && (
+            <div className="flex items-center gap-2 pl-4 border-l">
+              <StylingRulesDialog
+                open={showStylingRules}
+                onOpenChange={setShowStylingRules}
+                styleRules={styleRules}
+                onStyleRuleToggle={handleStyleRuleToggle}
+                onStyleRuleUpdate={handleStyleRuleUpdate}
+                currentFileName={fileName}
+              >
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  title="Heatmap settings (row height)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowStylingRules(true);
+                  }}
+                >
+                  <Settings className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </StylingRulesDialog>
+            </div>
+          )}
+
+          {/* Haplotype Heatmap Toggle - only show for EDNA hapl files in chart mode */}
+          {!showTable && isHaplotypeFile && haplotypeData && (
+            <div className="flex items-center gap-2 pl-4 border-l">
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Table</span>
+              <Switch
+                checked={showHaplotypeHeatmap}
+                onCheckedChange={setShowHaplotypeHeatmap}
+                className="h-5 w-9"
+              />
+              <span className="text-xs text-muted-foreground">Heatmap</span>
+              <Grid3x3 className="h-4 w-4 text-muted-foreground" />
+            </div>
+          )}
+
+          {/* Haplotype Heatmap Settings - only show in haplotype heatmap mode */}
+          {!showTable && showHaplotypeHeatmap && isHaplotypeFile && haplotypeData && (
+            <div className="flex items-center gap-2 pl-4 border-l">
+              <StylingRulesDialog
+                open={showStylingRules}
+                onOpenChange={setShowStylingRules}
+                styleRules={styleRules}
+                onStyleRuleToggle={handleStyleRuleToggle}
+                onStyleRuleUpdate={handleStyleRuleUpdate}
+                currentFileName={fileName}
+              >
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  title="Haplotype heatmap settings (row height)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowStylingRules(true);
+                  }}
+                >
+                  <Settings className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </StylingRulesDialog>
+            </div>
+          )}
+
+          {/* Compact View Toggle - only show in chart mode and not in heatmap mode */}
+          {!showTable && !showHeatmap && !showHaplotypeHeatmap && (
             <>
               <div className="flex items-center gap-2 pl-4 border-l">
                 <span className="text-xs text-muted-foreground">Compact</span>
@@ -2185,8 +2463,8 @@ export function PinChartDisplay({
             </>
           )}
 
-          {/* Single/Multi Axis Toggle - only show in chart mode */}
-          {!showTable && (
+          {/* Single/Multi Axis Toggle - only show in chart mode and not in heatmap mode */}
+          {!showTable && !showHeatmap && !showHaplotypeHeatmap && (
             <>
               <div className="flex items-center gap-2 pl-4 border-l">
                 <span className="text-xs text-muted-foreground">Single</span>
@@ -2244,6 +2522,36 @@ export function PinChartDisplay({
                         Leave empty to use default label
                       </p>
                     </div>
+
+                    {/* Heatmap Color Picker - only show for Subcam nmax files */}
+                    {isSubcamNmaxFile && (
+                      <div className="pt-2 border-t space-y-2">
+                        <Label className="text-xs font-medium flex items-center gap-2">
+                          <Palette className="h-3.5 w-3.5" />
+                          Heatmap Color
+                        </Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="w-full h-8 justify-start gap-2"
+                            >
+                              <div
+                                className="h-4 w-4 rounded border"
+                                style={{ backgroundColor: heatmapColor }}
+                              />
+                              <span className="text-xs">{heatmapColor}</span>
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-3" side="left">
+                            <HexColorPicker color={heatmapColor} onChange={setHeatmapColor} />
+                          </PopoverContent>
+                        </Popover>
+                        <p className="text-[0.65rem] text-muted-foreground">
+                          Primary color for heatmap visualization
+                        </p>
+                      </div>
+                    )}
 
                     {/* Styling Rules Button */}
                     <div className="pt-2 border-t">
@@ -2402,6 +2710,67 @@ export function PinChartDisplay({
             )}
           </div>
         </div>
+      ) : showHeatmap && isSubcamNmaxFile ? (
+        // Heatmap View for Subcam nmax files
+        <div className="flex" style={{ gap: `${appliedStyleRule?.properties.plotToParametersGap ?? 12}px` }}>
+          {/* Main Heatmap - Takes up most space */}
+          <div className="flex-1">
+            <HeatmapDisplay
+              data={displayData}
+              series={speciesColumns.filter(species => parameterStates[species]?.visible)}
+              containerHeight={dynamicChartHeight}
+              brushStartIndex={activeBrushStart}
+              brushEndIndex={activeBrushEnd}
+              onBrushChange={timeAxisMode === 'separate' ? handleBrushChange : undefined}
+              timeFormat={showYearInXAxis ? 'full' : 'short'}
+              customColor={heatmapColor}
+            />
+          </div>
+
+          {/* Species Selection Panel - Right sidebar */}
+          <div className="w-64 border rounded-md bg-card">
+            <div className="p-3 border-b">
+              <h3 className="text-sm font-semibold">Species Selection</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                {speciesColumns.filter(s => parameterStates[s]?.visible).length} of {speciesColumns.length} visible
+              </p>
+            </div>
+            <div className="p-2 max-h-[600px] overflow-y-auto space-y-1">
+              {speciesColumns.map((species) => (
+                <div key={species} className="flex items-center gap-2 p-2 rounded hover:bg-accent/50 transition-colors">
+                  <Checkbox
+                    id={`species-${species}`}
+                    checked={parameterStates[species]?.visible ?? false}
+                    onCheckedChange={(checked) => {
+                      setParameterStates(prev => ({
+                        ...prev,
+                        [species]: {
+                          ...prev[species],
+                          visible: checked as boolean
+                        }
+                      }));
+                    }}
+                  />
+                  <Label
+                    htmlFor={`species-${species}`}
+                    className="text-xs cursor-pointer flex-1"
+                  >
+                    {species}
+                  </Label>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : showHaplotypeHeatmap && isHaplotypeFile && haplotypeData ? (
+        // Haplotype Heatmap View for EDNA hapl files
+        <div className="flex-1">
+          <HaplotypeHeatmap
+            haplotypeData={haplotypeData}
+            containerHeight={dynamicChartHeight}
+            rowHeight={appliedStyleRule?.properties.heatmapRowHeight}
+          />
+        </div>
       ) : (
         // Chart View (existing chart code)
         <div className="flex" style={{ gap: `${appliedStyleRule?.properties.plotToParametersGap ?? 12}px` }}>
@@ -2464,15 +2833,36 @@ export function PinChartDisplay({
                     return ticks;
                   })() : undefined}
                   tickFormatter={(value) => formatYAxisTick(value, dataRange, dataMax)}
-                  label={(showYAxisLabels || appliedStyleRule?.properties.yAxisTitle || customYAxisLabel) ? {
-                    value: customYAxisLabel || appliedStyleRule?.properties.yAxisTitle || (visibleParameters.length === 1
+                  label={(showYAxisLabels || appliedStyleRule?.properties.yAxisTitle || customYAxisLabel) ? (() => {
+                    const labelText = customYAxisLabel || appliedStyleRule?.properties.yAxisTitle || (visibleParameters.length === 1
                       ? formatParameterWithSource(visibleParameters[0])
-                      : 'Value'),
-                    angle: -90,
-                    position: 'insideLeft',
-                    offset: axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? 5 : getLabelOffset(maxTickDigits),
-                    style: { textAnchor: 'middle', fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' }
-                  } : undefined}
+                      : 'Value');
+                    const labelOffset = axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? 5 : getLabelOffset(maxTickDigits);
+                    const baseStyle = { textAnchor: 'middle', fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))' };
+
+                    // Check if multi-line is enabled
+                    if (appliedStyleRule?.properties.yAxisMultiLine) {
+                      const threshold = appliedStyleRule.properties.yAxisMultiLineWordThreshold || 3;
+                      const lines = splitYAxisTitle(labelText, threshold);
+
+                      // If split into multiple lines, use custom component
+                      if (lines.length > 1) {
+                        return {
+                          content: <MultiLineYAxisLabel value={lines} angle={-90} offset={labelOffset} style={baseStyle} />,
+                          position: 'insideLeft'
+                        };
+                      }
+                    }
+
+                    // Default single-line label
+                    return {
+                      value: labelText,
+                      angle: -90,
+                      position: 'insideLeft',
+                      offset: labelOffset,
+                      style: baseStyle
+                    };
+                  })() : undefined}
                 />
 
                 {/* Secondary Y-Axis (Right) - Calculated */}
@@ -2636,6 +3026,37 @@ export function PinChartDisplay({
                   const paramColor = getColorValue(parameterStates[parameter].color);
                   // Add gap between left axes: 3rd axis (index 2) gets +10px width
                   const axisWidth = (index === 2) ? 42 : 32;
+                  const labelText = formatParameterWithSource(parameter);
+                  const labelOffset = getMultiAxisLabelOffset(domain, paramRange, paramMax);
+                  const labelStyle = {
+                    textAnchor: 'middle',
+                    fontSize: '0.55rem',
+                    fill: paramColor,
+                    fontWeight: 500
+                  };
+
+                  // Prepare label config (check for multi-line)
+                  let labelConfig: any = {
+                    value: labelText,
+                    angle: -90,
+                    position: orientation === 'left' ? 'insideLeft' : 'insideRight',
+                    offset: labelOffset,
+                    style: labelStyle
+                  };
+
+                  // Check if multi-line is enabled
+                  if (appliedStyleRule?.properties.yAxisMultiLine) {
+                    const threshold = appliedStyleRule.properties.yAxisMultiLineWordThreshold || 3;
+                    const lines = splitYAxisTitle(labelText, threshold);
+
+                    // If split into multiple lines, use custom component
+                    if (lines.length > 1) {
+                      labelConfig = {
+                        content: <MultiLineYAxisLabel value={lines} angle={-90} offset={labelOffset} style={labelStyle} />,
+                        position: orientation === 'left' ? 'insideLeft' : 'insideRight'
+                      };
+                    }
+                  }
 
                   return (
                     <YAxis
@@ -2646,18 +3067,7 @@ export function PinChartDisplay({
                       stroke={paramColor}
                       width={axisWidth}
                       tickFormatter={(value) => formatYAxisTick(value, paramRange, paramMax)}
-                      label={{
-                        value: formatParameterWithSource(parameter),
-                        angle: -90,
-                        position: orientation === 'left' ? 'insideLeft' : 'insideRight',
-                        offset: getMultiAxisLabelOffset(domain, paramRange, paramMax),
-                        style: {
-                          textAnchor: 'middle',
-                          fontSize: '0.55rem',
-                          fill: paramColor,
-                          fontWeight: 500
-                        }
-                      }}
+                      label={labelConfig}
                       domain={domain}
                     />
                   );

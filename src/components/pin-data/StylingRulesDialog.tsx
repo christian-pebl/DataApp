@@ -34,6 +34,9 @@ export interface StyleProperties {
   chartBottomMargin?: number; // Bottom margin inside chart (space for X-axis and title, default: -5)
   chartHeight?: number; // Total chart container height (default: 208, which is h-52 in Tailwind)
   xAxisTitleFontSize?: number; // Font size for X-axis title (default: 14 = 0.875rem)
+  yAxisMultiLine?: boolean; // Enable multi-line y-axis titles (splits long titles at halfway point)
+  yAxisMultiLineWordThreshold?: number; // Minimum number of words before splitting (default: 3)
+  heatmapRowHeight?: number; // Height of each row in heatmap view (default: 35, in px)
 
   // Parameter-level styling properties
   defaultLineStyle?: 'solid' | 'dashed' | 'dotted'; // Line style for parameters (default: solid)
@@ -94,7 +97,7 @@ export interface StyleRule {
 }
 
 // Version for style rules - increment when defaults change
-export const STYLE_RULES_VERSION = 13;
+export const STYLE_RULES_VERSION = 16;
 
 // Default styling rules - can be expanded
 // IMPORTANT: Order matters! More specific patterns must come BEFORE more general patterns
@@ -186,6 +189,27 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
       defaultLineStyle: 'dashed', // Use dashed lines for _std parameters
       defaultOpacity: 1.0, // Full opacity
       defaultLineWidth: 1 // Standard line width
+    }
+  },
+  {
+    suffix: "_nmax.csv",
+    styleName: "nmax_style",
+    description: "Subcam maximum values data styling with multi-line Y-axis titles for long parameter names and configurable heatmap row height",
+    enabled: true,
+    properties: {
+      xAxisTitle: "Time",
+      defaultAxisMode: 'single',
+      yAxisWidth: 80,
+      yAxisMultiLine: true, // Enable multi-line Y-axis titles
+      yAxisMultiLineWordThreshold: 3, // Split titles with 3+ words
+      plotToParametersGap: 12,
+      chartRightMargin: 12,
+      xAxisTitlePosition: 20,
+      xAxisTitleMargin: -5,
+      chartBottomMargin: 10,
+      chartHeight: 208,
+      xAxisTitleFontSize: 10,
+      heatmapRowHeight: 35 // Default heatmap row height in pixels
     }
   },
   // Spot-sample / Discrete sampling files styling (CROP, CHEM, WQ, EDNA)
@@ -409,6 +433,16 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
         chartTitle: "eDNA Phylum Composition",
         yAxisLabel: "Relative Abundance (%)"
       }
+    }
+  },
+  // eDNA Haplotype files - heatmap showing species distribution across sites
+  {
+    suffix: "_Hapl.csv",
+    styleName: "hapl_style",
+    description: "eDNA Haplotype data styling with configurable heatmap row height for species visualization",
+    enabled: true,
+    properties: {
+      heatmapRowHeight: 35 // Default heatmap row height in pixels
     }
   },
   // Add more rules as needed
@@ -1146,6 +1180,36 @@ export function StylingRulesDialog({
                     className="w-full"
                   />
                 </div>
+
+                {/* Heatmap Row Height - show for nmax and Hapl files */}
+                {(selectedRule.suffix === "_nmax.csv" || selectedRule.suffix === "_Hapl.csv") && (
+                  <div className="space-y-1.5 p-3 bg-muted/30 rounded-md">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Label className="text-xs font-semibold">Heatmap Row Height</Label>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-xs text-xs">
+                            <p>Height of each species row in heatmap view (range: -40 to 80px, default: 35px). Use lower values for more compact display.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {selectedRule.properties.heatmapRowHeight || 35}px
+                      </span>
+                    </div>
+                    <Slider
+                      value={[selectedRule.properties.heatmapRowHeight || 35]}
+                      onValueChange={(values) => handlePropertyChange('heatmapRowHeight', values[0])}
+                      min={-40}
+                      max={80}
+                      step={1}
+                      className="w-full"
+                    />
+                  </div>
+                )}
 
                 {/* More controls button */}
                 <Button
