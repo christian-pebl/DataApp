@@ -78,16 +78,16 @@ export function ColumnChartWithErrorBars({
     chartHeight: spotSampleStyles?.chartHeight ?? 350
   };
 
-  console.log('[COLUMN-CHART] Rendering for parameter:', parameter);
-  console.log('[COLUMN-CHART] Total data groups:', data.length);
-  console.log('[COLUMN-CHART] Sample colors:', sampleIdColors);
-  console.log('[COLUMN-CHART] Applied styles:', styles);
+  // console.log('[COLUMN-CHART] Rendering for parameter:', parameter);
+  // console.log('[COLUMN-CHART] Total data groups:', data.length);
+  // console.log('[COLUMN-CHART] Sample colors:', sampleIdColors);
+  // console.log('[COLUMN-CHART] Applied styles:', styles);
 
   // Filter data for this parameter
   const parameterData = data.filter(d => d.parameter === parameter);
 
-  console.log('[COLUMN-CHART] Filtered data for this parameter:', parameterData.length);
-  console.log('[COLUMN-CHART] First 3 data points:', parameterData.slice(0, 3));
+  // console.log('[COLUMN-CHART] Filtered data for this parameter:', parameterData.length);
+  // console.log('[COLUMN-CHART] First 3 data points:', parameterData.slice(0, 3));
 
   if (parameterData.length === 0) {
     return (
@@ -116,15 +116,15 @@ export function ColumnChartWithErrorBars({
     };
 
     // Log first 3 data transformations for debugging
-    if (index < 3) {
-      console.log(`[COLUMN-CHART-DATA] Bar ${index}:`, {
-        xLabel: result.displayLabel,
-        mean: result.mean,
-        sd: result.sd,
-        count: result.count,
-        rawValues: group.values
-      });
-    }
+    // if (index < 3) {
+    //   console.log(`[COLUMN-CHART-DATA] Bar ${index}:`, {
+    //     xLabel: result.displayLabel,
+    //     mean: result.mean,
+    //     sd: result.sd,
+    //     count: result.count,
+    //     rawValues: group.values
+    //   });
+    // }
 
     return result;
   });

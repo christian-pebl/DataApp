@@ -376,16 +376,27 @@ export function PinChartDisplaySpotSample({
       h.toLowerCase().replace(/[\s_-]/g, '') !== 'stationid' &&
       h.toLowerCase().replace(/[\s_-]/g, '') !== 'subsetid' &&
       h.toLowerCase().replace(/[\s_-]/g, '') !== 'bladeid' &&
-      h.toLowerCase().replace(/[\s_-]/g, '') !== 'imageid'
+      h.toLowerCase().replace(/[\s_-]/g, '') !== 'imageid' &&
+      // Exclude haplotype taxonomy columns (text fields, not numeric data)
+      h.toLowerCase() !== 'kingdom' &&
+      h.toLowerCase() !== 'phylum' &&
+      h.toLowerCase() !== 'class' &&
+      h.toLowerCase() !== 'order' &&
+      h.toLowerCase() !== 'family' &&
+      h.toLowerCase() !== 'genus' &&
+      h.toLowerCase() !== 'species' &&
+      h.toLowerCase() !== 'redlist_status' &&
+      h.toLowerCase() !== 'score' &&
+      h.toLowerCase() !== 'nns'
     );
 
-    console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
-    console.log('[SPOT-SAMPLE] Header Analysis:');
-    console.log('[SPOT-SAMPLE] All headers:', headers);
-    console.log('[SPOT-SAMPLE] Time column:', timeColumn);
-    console.log('[SPOT-SAMPLE] Sample ID column:', sampleIdColumn);
-    console.log('[SPOT-SAMPLE] Station ID column:', stationIdColumn);
-    console.log('[SPOT-SAMPLE] Filtered parameter columns:', filtered);
+    // console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
+    // console.log('[SPOT-SAMPLE] Header Analysis:');
+    // console.log('[SPOT-SAMPLE] All headers:', headers);
+    // console.log('[SPOT-SAMPLE] Time column:', timeColumn);
+    // console.log('[SPOT-SAMPLE] Sample ID column:', sampleIdColumn);
+    // console.log('[SPOT-SAMPLE] Station ID column:', stationIdColumn);
+    // console.log('[SPOT-SAMPLE] Filtered parameter columns:', filtered);
 
     // Sort parameters according to parameterOrder if defined
     let sortedParams = filtered;
@@ -426,20 +437,21 @@ export function PinChartDisplaySpotSample({
 
   // Group data by date + sample ID
   const groupedData = useMemo(() => {
-    if (!timeColumn || !sampleIdColumn) {
+    // Allow empty strings as valid column names (for unnamed columns)
+    if (!timeColumn || sampleIdColumn === null || sampleIdColumn === undefined) {
       console.log('[SPOT-SAMPLE] ❌ Missing required columns:', { timeColumn, sampleIdColumn });
       return [];
     }
 
-    console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
-    console.log('[SPOT-SAMPLE] Starting data grouping...');
-    console.log('[SPOT-SAMPLE] Total data rows:', data.length);
-    console.log('[SPOT-SAMPLE] Sample first 3 rows:', data.slice(0, 3));
-    console.log('[SPOT-SAMPLE] Time column:', timeColumn);
-    console.log('[SPOT-SAMPLE] Sample ID column:', sampleIdColumn);
-    console.log('[SPOT-SAMPLE] Station ID column:', stationIdColumn || 'none');
-    console.log('[SPOT-SAMPLE] Parameters to process:', parameterColumns);
-    console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
+    // console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
+    // console.log('[SPOT-SAMPLE] Starting data grouping...');
+    // console.log('[SPOT-SAMPLE] Total data rows:', data.length);
+    // console.log('[SPOT-SAMPLE] Sample first 3 rows:', data.slice(0, 3));
+    // console.log('[SPOT-SAMPLE] Time column:', timeColumn);
+    // console.log('[SPOT-SAMPLE] Sample ID column:', sampleIdColumn);
+    // console.log('[SPOT-SAMPLE] Station ID column:', stationIdColumn || 'none');
+    // console.log('[SPOT-SAMPLE] Parameters to process:', parameterColumns);
+    // console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
 
     // Only pass stationIdColumn as blade ID if it's different from sample ID column
     // This prevents duplicate labels like "Control-S Control-S" in CHEMWQ files
@@ -448,11 +460,11 @@ export function PinChartDisplaySpotSample({
 
     const result = groupBySampleAndDate(data, timeColumn, sampleIdColumn, parameterColumns, bladeIdColumn);
 
-    console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
-    console.log('[SPOT-SAMPLE] Grouping complete!');
-    console.log('[SPOT-SAMPLE] Result groups:', result.length);
-    console.log('[SPOT-SAMPLE] Sample first 3 groups:', result.slice(0, 3));
-    console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
+    // console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
+    // console.log('[SPOT-SAMPLE] Grouping complete!');
+    // console.log('[SPOT-SAMPLE] Result groups:', result.length);
+    // console.log('[SPOT-SAMPLE] Sample first 3 groups:', result.slice(0, 3));
+    // console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
 
     return result;
   }, [data, timeColumn, sampleIdColumn, parameterColumns, stationIdColumn]);
@@ -852,7 +864,8 @@ export function PinChartDisplaySpotSample({
     );
   }
 
-  if (!sampleIdColumn) {
+  // Allow empty strings as valid column names (for unnamed columns)
+  if (sampleIdColumn === null || sampleIdColumn === undefined) {
     console.error('[SPOT-SAMPLE] ❌ ERROR: No sample ID column detected');
     return (
       <div className="p-4 border border-destructive rounded-lg bg-destructive/10">
@@ -1006,13 +1019,15 @@ export function PinChartDisplaySpotSample({
               <SelectValue>
                 {selectedSampleIdColumn
                   ? selectedSampleIdColumn
-                  : `Auto (${detectedSampleIdColumn})`}
+                  : detectedSampleIdColumn === ''
+                    ? 'Auto (Column 2)'
+                    : `Auto (${detectedSampleIdColumn})`}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {sampleIdColumnOptions.map(col => (
-                <SelectItem key={col} value={col}>
-                  {col}
+              {sampleIdColumnOptions.map((col, idx) => (
+                <SelectItem key={col || `col-${idx}`} value={col || '__empty__'}>
+                  {col === '' ? 'Column 2 (Unnamed)' : col}
                 </SelectItem>
               ))}
             </SelectContent>

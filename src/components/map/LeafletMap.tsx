@@ -248,9 +248,9 @@ const LeafletMap = ({
         if (!mapContainerRef.current) return
 
         hasInitializedRef.current = true
-        console.log('Initializing Leaflet map...');
+        // console.log('Initializing Leaflet map...');
 
-        try {
+        try{
             const map = L.map(mapContainerRef.current, {
                 center: center,
                 zoom: zoom,
@@ -311,9 +311,9 @@ const LeafletMap = ({
                         onMove(center, zoom, false);
                     });
                 }
-                
-                console.log('Leaflet map initialized successfully');
-                
+
+                // console.log('Leaflet map initialized successfully');
+
                 // Force resize after a short delay
                 setTimeout(() => {
                     if (mapRef.current) {
@@ -958,17 +958,17 @@ const LeafletMap = ({
 
     // Handle pending line popup
     useEffect(() => {
-        console.log('🎯 STEP 3: pendingLine useEffect', {
-            pendingLine: !!pendingLine,
-            mapRef: !!mapRef.current,
-            linePopupActive: linePopupActiveRef.current,
-            lineSaving: lineSavingRef.current,
-            popupsInDOM: document.querySelectorAll('.leaflet-popup').length,
-            timestamp: Date.now()
-        });
-        
+        // console.log('🎯 STEP 3: pendingLine useEffect', {
+        //     pendingLine: !!pendingLine,
+        //     mapRef: !!mapRef.current,
+        //     linePopupActive: linePopupActiveRef.current,
+        //     lineSaving: lineSavingRef.current,
+        //     popupsInDOM: document.querySelectorAll('.leaflet-popup').length,
+        //     timestamp: Date.now()
+        // });
+
         if (pendingLine && mapRef.current && !linePopupActiveRef.current && !lineSavingRef.current) {
-            console.log('🎯 STEP 4: Creating line popup');
+            // console.log('🎯 STEP 4: Creating line popup');
             linePopupActiveRef.current = true;
             
             const lineCoords = pendingLine.path.map(p => [p.lat, p.lng] as [number, number]);

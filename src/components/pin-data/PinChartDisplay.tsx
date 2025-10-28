@@ -969,17 +969,17 @@ export function PinChartDisplay({
           }
         });
 
-        // Show first few species columns (default to showing 10 species)
-        const defaultVisibleSpeciesCount = Math.min(10, speciesColumns.length);
+        // Show ALL species columns (Latin names) by default for nmax files
+        const defaultVisibleSpeciesCount = speciesColumns.length;
         speciesColumns.forEach((species, index) => {
           if (updated[species]) {
-            updated[species] = { ...updated[species], visible: index < defaultVisibleSpeciesCount };
+            updated[species] = { ...updated[species], visible: true };
           }
         });
 
         console.log('[HEATMAP TOGGLE] Updated parameter visibility:', {
           hiddenMetadata: metadataParams,
-          visibleSpecies: speciesColumns.slice(0, defaultVisibleSpeciesCount),
+          visibleSpecies: speciesColumns,
           totalSpecies: speciesColumns.length
         });
 

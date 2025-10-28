@@ -22,6 +22,7 @@ interface HeatmapDisplayProps {
   brushEndIndex?: number;
   onBrushChange?: (newIndex: { startIndex?: number; endIndex?: number }) => void;
   timeFormat?: 'short' | 'full';
+  customColor?: string; // Custom color for heatmap (hex format)
 }
 
 interface ProcessedCell {
@@ -36,14 +37,15 @@ interface OverviewDataPoint {
     value: number;
 }
 
-export function HeatmapDisplay({ 
-    data, 
-    series, 
+export function HeatmapDisplay({
+    data,
+    series,
     containerHeight,
     brushStartIndex,
     brushEndIndex,
     onBrushChange,
-    timeFormat = 'short'
+    timeFormat = 'short',
+    customColor
 }: HeatmapDisplayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [svgDimensions, setSvgDimensions] = useState({ width: 0, height: 0 });
@@ -136,11 +138,26 @@ export function HeatmapDisplay({
   }, [data, series, brushStartIndex, brushEndIndex]);
 
   const colorScale = useMemo(() => {
+    // Convert hex to rgba for gradient
+    const hexToRgba = (hex: string, alpha: number) => {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    };
+
+    const lightColor = customColor
+      ? hexToRgba(customColor, 0.1)
+      : "hsla(var(--primary) / 0.1)";
+    const darkColor = customColor
+      ? hexToRgba(customColor, 1.0)
+      : "hsla(var(--primary) / 1.0)";
+
     return scaleLinear<string>()
       .domain([Math.max(0.001, processedData.minValue), processedData.maxValue])
-      .range(["hsla(var(--primary) / 0.1)", "hsla(var(--primary) / 1.0)"])
+      .range([lightColor, darkColor])
       .clamp(true);
-  }, [processedData.minValue, processedData.maxValue]);
+  }, [processedData.minValue, processedData.maxValue, customColor]);
   
   if (!data || data.length === 0 || series.length === 0 || processedData.uniqueDays.length === 0) {
     return (
@@ -230,36 +247,71 @@ export function HeatmapDisplay({
                         const cell = cellMap.get(`${day}__${s}`);
                         const cellValue = cell?.value ?? 0;
                         const fillColor = cellValue > 0 ? colorScale(cellValue) : 'hsl(var(--muted)/0.3)';
-                        const textColorClass = cellValue > (processedData.maxValue / 1.5) ? 'fill-primary-foreground' : 'fill-foreground';
-                        
+
+                        // Determine font size based on cell dimensions
+                        const cellWidth = xScale.bandwidth();
+                        const cellHeight = yScale.bandwidth();
+                        // Calculate font size - scale down for very small cells
+                        const fontSize = Math.max(6, Math.min(cellWidth * 1.2, cellHeight / 1.5, 11));
+                        // Show text for non-zero values with very minimal thresholds
+                        // Only require minimum height, ignore width constraint
+                        const showText = cell && cell.value > 0 && cellHeight > 8;
+
+                        // Debug logging for first few cells
+                        if (day === uniqueDays[0] && s === visibleSeries[0]) {
+                          console.log('[HEATMAP TEXT DEBUG]', {
+                            cellWidth,
+                            cellHeight,
+                            fontSize,
+                            showText,
+                            cellValue: cell?.value,
+                            hasCell: !!cell,
+                            reason: !showText ? (!cell ? 'no cell' : cell.value <= 0 ? 'zero value' : cellHeight <= 8 ? 'height too small' : 'unknown') : 'showing'
+                          });
+                        }
+
                         return (
-                          <Tooltip key={`${s}-${day}`} delayDuration={100}>
+                          <Tooltip key={`${s}-${day}`} delayDuration={200}>
                             <TooltipTrigger asChild>
-                              <g transform={`translate(${xScale(day)}, ${yScale(s)})`}>
+                              <g
+                                transform={`translate(${xScale(day)}, ${yScale(s)})`}
+                                style={{ cursor: 'pointer' }}
+                              >
                                 <rect
                                   width={xScale.bandwidth()}
                                   height={yScale.bandwidth()}
                                   fill={fillColor}
-                                  className="stroke-background/50"
+                                  className="stroke-background/50 hover:stroke-foreground"
                                   strokeWidth={1}
+                                  style={{ pointerEvents: 'all' }}
                                 />
-                                {cell && xScale.bandwidth() > 30 && (
-                                   <text
+                                {showText && (
+                                  <text
                                     x={xScale.bandwidth() / 2}
                                     y={yScale.bandwidth() / 2}
                                     textAnchor="middle"
                                     dominantBaseline="middle"
-                                    className={cn("text-[0.6rem] pointer-events-none", textColorClass)}
+                                    className="pointer-events-none font-bold select-none"
+                                    style={{
+                                      fontSize: `${fontSize}px`,
+                                      fill: 'white',
+                                      paintOrder: 'stroke',
+                                      stroke: 'rgba(200,200,200,0.7)',
+                                      strokeWidth: '1.2px',
+                                      strokeLinejoin: 'round'
+                                    }}
                                   >
-                                    {cell.value.toFixed(1)}
+                                    {cell.value.toFixed(0)}
                                   </text>
                                 )}
                               </g>
                             </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="font-bold">{format(parseISO(day), 'PPP')}</p>
-                              <p>{s}: {cell ? cell.value.toFixed(2) : 'No data'}</p>
-                              {cell && <p className="text-muted-foreground text-xs">({cell.count} records)</p>}
+                            <TooltipContent side="top" className="max-w-xs">
+                              <div className="space-y-1">
+                                <p className="font-bold text-sm">{format(parseISO(day), 'PPP')}</p>
+                                <p className="text-sm">{s}: <span className="font-semibold">{cell ? cell.value.toFixed(2) : 'No data'}</span></p>
+                                {cell && <p className="text-muted-foreground text-xs">({cell.count} {cell.count === 1 ? 'record' : 'records'})</p>}
+                              </div>
                             </TooltipContent>
                           </Tooltip>
                         );

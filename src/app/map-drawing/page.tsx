@@ -846,11 +846,11 @@ function MapDrawingPageContent() {
   useEffect(() => {
     const checkForSavedPlotLoad = () => {
       try {
-        console.log('🔍 [MAP-DRAWING] Checking for pending saved plot load...');
+        // console.log('🔍 [MAP-DRAWING] Checking for pending saved plot load...');
 
         const storedData = sessionStorage.getItem('pebl-load-plot-view');
         if (!storedData) {
-          console.log('ℹ️ [MAP-DRAWING] No saved plot in sessionStorage');
+          // console.log('ℹ️ [MAP-DRAWING] No saved plot in sessionStorage');
           return;
         }
 
@@ -6661,11 +6661,11 @@ function MapDrawingPageContent() {
           <div className="flex-1 overflow-hidden">
             {selectedFileType && selectedFiles.length > 0 ? (
               (() => {
-                console.log('📍 Object location for marine/meteo:', {
-                  objectGpsCoords,
-                  objectName,
-                  hasCoords: !!objectGpsCoords
-                });
+                // console.log('📍 Object location for marine/meteo:', {
+                //   objectGpsCoords,
+                //   objectName,
+                //   hasCoords: !!objectGpsCoords
+                // });
                 return (
                   <PinMarineDeviceData
                     fileType={selectedFileType}
@@ -6727,6 +6727,9 @@ function MapDrawingPageContent() {
                   {dynamicProjects[currentProjectContext || activeProjectId]?.name}
                 </span>
               </DialogTitle>
+              <DialogDescription className="sr-only">
+                Manage and upload data files for the current project
+              </DialogDescription>
               {/* Action Buttons - Inline with header */}
               <div className="flex items-center gap-2">
                 {/* Merge Button - Moved to DataTimeline header */}

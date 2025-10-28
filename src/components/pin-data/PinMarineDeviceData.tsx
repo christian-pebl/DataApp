@@ -1073,17 +1073,17 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   useEffect(() => {
     const checkForPendingPlotLoad = async () => {
       try {
-        console.log('🔍 [PINMARINEDEVICEDATA] useEffect triggered - checking for pending plot load');
-        console.log('🔍 [PINMARINEDEVICEDATA] Current state:', {
-          projectId: projectId || 'NOT SET',
-          fileType,
-          filesLength: files.length,
-          hasRestoreFunction: !!restorePlotViewState
-        });
+        // console.log('🔍 [PINMARINEDEVICEDATA] useEffect triggered - checking for pending plot load');
+        // console.log('🔍 [PINMARINEDEVICEDATA] Current state:', {
+        //   projectId: projectId || 'NOT SET',
+        //   fileType,
+        //   filesLength: files.length,
+        //   hasRestoreFunction: !!restorePlotViewState
+        // });
 
         const storedData = sessionStorage.getItem('pebl-load-plot-view');
         if (!storedData) {
-          console.log('ℹ️ [PINMARINEDEVICEDATA] No pending plot load in sessionStorage');
+          // console.log('ℹ️ [PINMARINEDEVICEDATA] No pending plot load in sessionStorage');
           return;
         }
 
@@ -1263,50 +1263,42 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     }));
   }, []);
 
-  // Create a stable callback factory using useRef to avoid recreating on every render
-  const visibilityCallbacksRef = useRef<Record<string, (
-    params: string[],
-    colors: Record<string, string>,
-    paramSettings?: Record<string, any>,
-    plotSettings?: {
-      axisMode?: 'single' | 'multi';
-      customYAxisLabel?: string;
-      compactView?: boolean;
-      customParameterNames?: Record<string, string>;
-    }
-  ) => void>>({});
+  // Create stable callbacks using useMemo - only recreate when plots array changes
+  // This prevents infinite render loops by ensuring callback references remain stable
+  const visibilityCallbacks = useMemo(() => {
+    const callbacks: Record<string, (
+      params: string[],
+      colors: Record<string, string>,
+      paramSettings?: Record<string, any>,
+      plotSettings?: {
+        axisMode?: 'single' | 'multi';
+        customYAxisLabel?: string;
+        compactView?: boolean;
+        customParameterNames?: Record<string, string>;
+      }
+    ) => void> = {};
 
-  // Ensure we have a callback for each plot, but don't recreate existing ones
-  plots.forEach(plot => {
-    if (!visibilityCallbacksRef.current[plot.id]) {
-      visibilityCallbacksRef.current[plot.id] = (
-        params: string[],
-        colors: Record<string, string>,
-        paramSettings?: Record<string, any>,
-        plotSettings?: {
-          axisMode?: 'single' | 'multi';
-          customYAxisLabel?: string;
-          compactView?: boolean;
-          customParameterNames?: Record<string, string>;
-        }
-      ) => {
+    plots.forEach(plot => {
+      callbacks[plot.id] = (params, colors, paramSettings, plotSettings) => {
         handleVisibilityChange(plot.id, params, colors, paramSettings, plotSettings);
       };
-    }
-  });
+    });
 
-  // Debug: Log whenever plots array changes
-  useEffect(() => {
-    console.log('🔵 [PLOTS STATE CHANGE] plots.length:', plots.length);
-    console.log('🔵 [PLOTS STATE] Plot details:', plots.map((p, i) => ({
-      index: i,
-      id: p.id,
-      type: p.type,
-      title: p.title || p.fileName || p.locationName,
-      hasFiles: p.files?.length > 0,
-      hasLocation: !!p.location
-    })));
-  }, [plots]);
+    return callbacks;
+  }, [plots, handleVisibilityChange]);
+
+  // Debug: Log whenever plots array changes (DISABLED for cleaner console)
+  // useEffect(() => {
+  //   console.log('🔵 [PLOTS STATE CHANGE] plots.length:', plots.length);
+  //   console.log('🔵 [PLOTS STATE] Plot details:', plots.map((p, i) => ({
+  //     index: i,
+  //     id: p.id,
+  //     type: p.type,
+  //     title: p.title || p.fileName || p.locationName,
+  //     hasFiles: p.files?.length > 0,
+  //     hasLocation: !!p.location
+  //   })));
+  // }, [plots]);
 
   // Recreate computed plots when source data becomes available
   useEffect(() => {
@@ -2352,9 +2344,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             )}
 
             <div className="flex-1 overflow-y-auto space-y-3">
-              {console.log('🎨 [RENDER] Rendering plots, count:', plots.length)}
               {plots.map((plot, index) => {
-                console.log(`🎨 [RENDER] Plot ${index + 1}:`, { id: plot.id, type: plot.type, title: plot.title || plot.fileName || plot.locationName });
                 // Render device plot (including merged plots which are now device plots with pre-parsed data)
                 if (plot.type === 'device') {
                   return (
@@ -2372,7 +2362,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                       onDataParsed={handlePlotDataParsed}
                       onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
                       isLastPlot={index === plots.length - 1}
-                      onVisibilityChange={visibilityCallbacksRef.current[plot.id]}
+                      onVisibilityChange={visibilityCallbacks[plot.id]}
                       // Pass initial state for restoring saved views
                       initialVisibleParameters={plotVisibilityState[plot.id]?.params}
                       initialParameterColors={plotVisibilityState[plot.id]?.colors}
@@ -2401,7 +2391,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                     onDataParsed={handlePlotDataParsed}
                     onBrushChange={timeAxisMode === 'common' && index === plots.length - 1 ? handleGlobalBrushChange : undefined}
                     isLastPlot={index === plots.length - 1}
-                    onVisibilityChange={visibilityCallbacksRef.current[plot.id]}
+                    onVisibilityChange={visibilityCallbacks[plot.id]}
                     // Pass initial state for restoring saved views
                     initialVisibleParameters={plotVisibilityState[plot.id]?.params}
                     initialParameterColors={plotVisibilityState[plot.id]?.colors}
