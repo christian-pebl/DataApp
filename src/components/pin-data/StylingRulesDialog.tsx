@@ -97,7 +97,7 @@ export interface StyleRule {
 }
 
 // Version for style rules - increment when defaults change
-export const STYLE_RULES_VERSION = 16;
+export const STYLE_RULES_VERSION = 17;
 
 // Default styling rules - can be expanded
 // IMPORTANT: Order matters! More specific patterns must come BEFORE more general patterns
@@ -216,7 +216,7 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
   {
     suffix: "_indiv.csv",
     styleName: "indiv_style",
-    description: "Individual blade measurements - whisker plots grouped by Date+Farm+Station. Station ID extracted from 'blade ID' column after underscore (e.g., '1_1-SW-1' → '1-SW-1'). X-axis: Date / [Farm Station]. Params: length, width, Fouling, Fertility, Yield. First 2 shown by default, select more via sidebar.",
+    description: "Individual blade measurements - whisker plots grouped by Date+Farm+Station. Station ID extracted from 'blade ID' column after underscore (e.g., '1_1-SW-1' → '1-SW-1'). X-axis: Date / [Farm Station]. Params: length, width, Fouling, Yield, Fertility. First 4 shown by default (Fertility hidden, often zero), select more via sidebar.",
     enabled: true,
     properties: {
       spotSample: {
@@ -260,8 +260,8 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
           "length (cm)",
           "width (cm)",
           "Fouling (% area)",
-          "Fertility (% blade sorus)",
-          "Yield (kg/m)"
+          "Yield (kg/m)",
+          "Fertility (% blade sorus)"
         ]
       }
     }

@@ -260,40 +260,66 @@ class PlotViewService {
    * Delete a plot view
    */
   async deletePlotView(viewId: string): Promise<ServiceResult> {
-    perfLogger.start(`deletePlotView-${viewId.slice(0, 8)}`);
+    const perfLabel = `deletePlotView-${viewId.slice(0, 8)}`;
+    perfLogger.start(perfLabel);
+    console.log('🗑️ [SERVICE-1] deletePlotView called with viewId:', viewId);
 
     try {
       // Get current user
+      console.log('🔐 [SERVICE-2] Getting current user...');
       const { data: { user }, error: authError } = await this.supabase.auth.getUser();
 
       if (authError || !user) {
-        console.error('❌ Authentication required to delete plot views');
-        perfLogger.end(`deletePlotView-${viewId.slice(0, 8)}`, 'auth-failed');
+        console.error('❌ [SERVICE-ERROR-1] Authentication required to delete plot views:', authError);
+        perfLogger.end(perfLabel, 'auth-failed');
         return { success: false, error: 'Authentication required' };
       }
 
-      console.log('🗑️ Deleting plot view:', viewId);
+      console.log('✅ [SERVICE-3] User authenticated:', user.id);
+      console.log('🗑️ [SERVICE-4] Deleting plot view from database:', {
+        viewId,
+        userId: user.id
+      });
 
-      const { error } = await this.supabase
+      const { error, count } = await this.supabase
         .from('saved_plot_views')
-        .delete()
+        .delete({ count: 'exact' })
         .eq('id', viewId)
         .eq('user_id', user.id); // Ensure user owns this view
 
+      console.log('🗑️ [SERVICE-5] Delete query complete:', {
+        error: error ? error.message : null,
+        count,
+        hasError: !!error
+      });
+
       if (error) {
-        console.error('❌ Error deleting plot view:', error);
-        perfLogger.end(`deletePlotView-${viewId.slice(0, 8)}`, 'error');
+        console.error('❌ [SERVICE-ERROR-2] Error deleting plot view:', {
+          error,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        perfLogger.end(perfLabel, 'error');
         return { success: false, error: error.message };
       }
 
-      console.log('✅ Plot view deleted successfully');
-      perfLogger.end(`deletePlotView-${viewId.slice(0, 8)}`, 'success');
+      console.log('✅ [SERVICE-6] Plot view deleted successfully, rows affected:', count);
+      perfLogger.end(perfLabel, 'success');
 
       return { success: true };
 
     } catch (error) {
-      console.error('❌ Delete plot view exception:', error);
-      perfLogger.end(`deletePlotView-${viewId.slice(0, 8)}`, 'exception');
+      console.error('❌ [SERVICE-ERROR-3] Delete plot view exception:', error);
+      if (error instanceof Error) {
+        console.error('❌ [SERVICE-ERROR-3] Exception details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        });
+      }
+      perfLogger.end(perfLabel, 'exception');
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'

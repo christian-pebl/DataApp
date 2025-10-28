@@ -267,7 +267,13 @@ export function ColumnChartWithErrorBars({
               />
             );
           })}
-          {/* Error bars - only rendered if sd > 0 */}
+          {/*
+            Error bars - only rendered if sd > 0
+            NOTE: Recharts ErrorBar internally generates SVG line elements with keys based on coordinates.
+            In development mode with React Strict Mode, this may cause duplicate key warnings when
+            multiple error bars have similar coordinates. This is a known Recharts limitation and
+            does not affect functionality. The warnings typically don't appear in production builds.
+          */}
           <ErrorBar
             dataKey="errorY"
             width={styles.errorBarWidth}

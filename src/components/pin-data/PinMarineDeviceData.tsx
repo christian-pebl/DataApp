@@ -2632,8 +2632,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
               <table className="w-full text-sm">
                 <thead className="bg-muted sticky top-0">
                   <tr>
-                    {mergePreviewData.headers.map(header => (
-                      <th key={header} className="p-2 text-left border-b font-semibold">
+                    {mergePreviewData.headers.map((header, headerIdx) => (
+                      <th key={`header-${headerIdx}`} className="p-2 text-left border-b font-semibold">
                         {header}
                       </th>
                     ))}
@@ -2642,8 +2642,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                 <tbody>
                   {mergePreviewData.data.slice(0, 100).map((row, idx) => (
                     <tr key={idx} className="border-b hover:bg-muted/50">
-                      {mergePreviewData.headers.map(header => (
-                        <td key={header} className="p-2">
+                      {mergePreviewData.headers.map((header, headerIdx) => (
+                        <td key={`cell-${idx}-${headerIdx}`} className="p-2">
                           {row[header] !== null && row[header] !== undefined
                             ? String(row[header])
                             : '-'}
@@ -2846,8 +2846,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
               <table className="w-full text-sm">
                 <thead className="bg-muted sticky top-0">
                   <tr>
-                    {subtractPreviewData.headers.map(header => (
-                      <th key={header} className="p-2 text-left border-b font-semibold">
+                    {subtractPreviewData.headers.map((header, headerIdx) => (
+                      <th key={`header-${headerIdx}`} className="p-2 text-left border-b font-semibold">
                         {header}
                       </th>
                     ))}
@@ -2856,8 +2856,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                 <tbody>
                   {subtractPreviewData.data.slice(0, 100).map((row, idx) => (
                     <tr key={idx} className="border-b hover:bg-muted/50">
-                      {subtractPreviewData.headers.map(header => (
-                        <td key={header} className="p-2">
+                      {subtractPreviewData.headers.map((header, headerIdx) => (
+                        <td key={`cell-${idx}-${headerIdx}`} className="p-2">
                           {row[header] !== null && row[header] !== undefined
                             ? String(row[header])
                             : '-'}

@@ -27,15 +27,17 @@ export interface AggregatedTaxonomyData {
 }
 
 /**
- * Identifies sample columns (non-taxonomy columns)
+ * Identifies sample columns (non-taxonomy columns and non-metadata columns)
  * Taxonomy columns: kingdom, phylum, class, order, family, genus, species
+ * Metadata columns: date, time, sample, replicate, etc.
  */
 function identifySampleColumns(headers: string[]): string[] {
   const taxonomyColumns = ['kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species'];
+  const metadataColumns = ['date', 'time', 'sample', 'replicate', 'subset'];
 
   const sampleColumns = headers.filter(h => {
     const normalized = h.toLowerCase().trim();
-    return !taxonomyColumns.includes(normalized);
+    return !taxonomyColumns.includes(normalized) && !metadataColumns.includes(normalized);
   });
 
   console.log('[eDNA Taxonomy] Identified sample columns:', sampleColumns);

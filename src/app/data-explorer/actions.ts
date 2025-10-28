@@ -86,35 +86,55 @@ export async function getAllUserFilesAction(): Promise<{
     // Fetch files for pins
     let filesData: any[] = [];
     if (pinIds.length > 0) {
-      const { data, error: filesError } = await supabase
+      console.log(`[Data Explorer Actions] 🔍 Fetching files for ${pinIds.length} pins...`);
+      const { data: pinFilesData, error: filesError } = await supabase
         .from('pin_files')
         .select('id, file_name, file_type, pin_id, area_id, project_id, uploaded_at, start_date, end_date')
         .in('pin_id', pinIds)
         .order('file_name', { ascending: true });
 
       if (filesError) {
-        console.error('[Data Explorer Actions] Error fetching pin files:', filesError);
-      } else if (data) {
-        filesData.push(...data);
+        console.error('[Data Explorer Actions] ❌ Error fetching pin files:', filesError);
+      } else if (pinFilesData) {
+        console.log(`[Data Explorer Actions] ✅ Found ${pinFilesData.length} pin files`);
+        console.log(`[Data Explorer Actions] 📋 Pin files:`, pinFilesData.map(f => f.file_name));
+        const nmaxFiles = pinFilesData.filter(f => f.file_name.includes('_nmax'));
+        if (nmaxFiles.length > 0) {
+          console.log(`[Data Explorer Actions] 🎯 Found ${nmaxFiles.length} _nmax files in pin files:`, nmaxFiles.map(f => f.file_name));
+        }
+        filesData.push(...pinFilesData);
       }
     }
 
     // Fetch files for areas
     if (areaIds.length > 0) {
-      const { data, error: areaFilesError } = await supabase
+      console.log(`[Data Explorer Actions] 🔍 Fetching files for ${areaIds.length} areas...`);
+      const { data: areaFilesData, error: areaFilesError } = await supabase
         .from('pin_files')
         .select('id, file_name, file_type, pin_id, area_id, project_id, uploaded_at, start_date, end_date')
         .in('area_id', areaIds)
         .order('file_name', { ascending: true });
 
       if (areaFilesError) {
-        console.error('[Data Explorer Actions] Error fetching area files:', areaFilesError);
-      } else if (data) {
-        filesData.push(...data);
+        console.error('[Data Explorer Actions] ❌ Error fetching area files:', areaFilesError);
+      } else if (areaFilesData) {
+        console.log(`[Data Explorer Actions] ✅ Found ${areaFilesData.length} area files`);
+        console.log(`[Data Explorer Actions] 📋 Area files:`, areaFilesData.map(f => f.file_name));
+        const nmaxFiles = areaFilesData.filter(f => f.file_name.includes('_nmax'));
+        if (nmaxFiles.length > 0) {
+          console.log(`[Data Explorer Actions] 🎯 Found ${nmaxFiles.length} _nmax files in area files:`, nmaxFiles.map(f => f.file_name));
+        }
+        filesData.push(...areaFilesData);
       }
     }
 
-    console.log(`[Data Explorer Actions] Found ${filesData?.length || 0} files`);
+    console.log(`[Data Explorer Actions] 📊 Total files found: ${filesData?.length || 0}`);
+    const allNmaxFiles = filesData.filter(f => f.file_name.includes('_nmax'));
+    if (allNmaxFiles.length > 0) {
+      console.log(`[Data Explorer Actions] 🎯 Total _nmax files: ${allNmaxFiles.length}`, allNmaxFiles.map(f => f.file_name));
+    } else {
+      console.log(`[Data Explorer Actions] ⚠️ No _nmax files found!`);
+    }
 
     // Get unique project IDs
     const projectIds = [...new Set(filesData?.map(f => f.project_id).filter(Boolean) || [])];

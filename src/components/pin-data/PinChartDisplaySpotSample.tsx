@@ -410,7 +410,7 @@ export function PinChartDisplaySpotSample({
       );
 
       // Only keep parameters that are in the parameterOrder list
-      sortedParams = filtered
+      const orderedParams = filtered
         .filter(param => orderMap.has(param.toLowerCase()))
         .sort((a, b) => {
           const indexA = orderMap.get(a.toLowerCase()) ?? 999;
@@ -418,7 +418,14 @@ export function PinChartDisplaySpotSample({
           return indexA - indexB;
         });
 
-      console.log('[SPOT-SAMPLE] Filtered to only ordered parameters:', sortedParams);
+      // If no parameters match the order, fall back to all filtered parameters
+      if (orderedParams.length > 0) {
+        sortedParams = orderedParams;
+        console.log('[SPOT-SAMPLE] Filtered to only ordered parameters:', sortedParams);
+      } else {
+        console.log('[SPOT-SAMPLE] ⚠️  No parameters matched the order list, using all filtered parameters');
+        console.log('[SPOT-SAMPLE] All filtered parameters:', filtered);
+      }
     }
 
     console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
@@ -426,14 +433,30 @@ export function PinChartDisplaySpotSample({
     return sortedParams;
   }, [headers, timeColumn, sampleIdColumn, stationIdColumn, spotSampleStyles]);
 
-  // Initialize visible parameters to first 2 when parameterColumns change
+  // Initialize visible parameters when parameterColumns change
+  // Default count depends on file prefix
   React.useEffect(() => {
     if (parameterColumns.length > 0 && visibleParameters.size === 0) {
-      const defaultVisible = new Set(parameterColumns.slice(0, 2));
+      // Determine default parameter count based on file prefix
+      let defaultCount = 2; // Default for most files
+
+      const fileNameUpper = fileName.toUpperCase();
+      if (fileNameUpper.includes('CHEM-SW') || fileNameUpper.includes('CHEMSW')) {
+        defaultCount = 7; // CHEM-SW files show first 7 parameters
+        console.log('[SPOT-SAMPLE] CHEM-SW file detected, showing first 7 parameters');
+      } else if (fileNameUpper.includes('CHEM-WQ') || fileNameUpper.includes('CHEMWQ')) {
+        defaultCount = 4; // CHEM-WQ files show first 4 parameters
+        console.log('[SPOT-SAMPLE] CHEM-WQ file detected, showing first 4 parameters');
+      } else if (fileNameUpper.includes('_INDIV')) {
+        defaultCount = 4; // _indiv files show first 4 parameters (length, width, fouling, yield)
+        console.log('[SPOT-SAMPLE] _indiv file detected, showing first 4 parameters');
+      }
+
+      const defaultVisible = new Set(parameterColumns.slice(0, defaultCount));
       setVisibleParameters(defaultVisible);
       console.log('[SPOT-SAMPLE] Initialized visible parameters:', Array.from(defaultVisible));
     }
-  }, [parameterColumns, visibleParameters.size]);
+  }, [parameterColumns, visibleParameters.size, fileName]);
 
   // Group data by date + sample ID
   const groupedData = useMemo(() => {
@@ -1026,7 +1049,7 @@ export function PinChartDisplaySpotSample({
             </SelectTrigger>
             <SelectContent>
               {sampleIdColumnOptions.map((col, idx) => (
-                <SelectItem key={col || `col-${idx}`} value={col || '__empty__'}>
+                <SelectItem key={`col-${idx}`} value={col || '__empty__'}>
                   {col === '' ? 'Column 2 (Unnamed)' : col}
                 </SelectItem>
               ))}
