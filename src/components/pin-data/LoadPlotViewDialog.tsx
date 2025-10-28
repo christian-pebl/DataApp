@@ -19,16 +19,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { FolderOpen, Trash2, AlertTriangle, FileText, Calendar, Loader2 } from "lucide-react";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { FolderOpen, Trash2, AlertTriangle, FileText, Calendar, Loader2, X, Check, Pencil, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import type { SavedPlotView, PlotViewValidationResult } from "@/lib/supabase/plot-view-types";
@@ -49,7 +47,13 @@ export function LoadPlotViewDialog({
   const [views, setViews] = useState<SavedPlotView[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [deletingViewId, setDeletingViewId] = useState<string | null>(null);
-  const [viewToDelete, setViewToDelete] = useState<SavedPlotView | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null); // viewId of the confirm popover
+  const [editingViewId, setEditingViewId] = useState<string | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState<string | null>(null); // viewId of the edit dialog
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [sortColumn, setSortColumn] = useState<'name' | 'created_at'>('created_at');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const { toast } = useToast();
 
   const loadViews = useCallback(async () => {
@@ -130,33 +134,57 @@ export function LoadPlotViewDialog({
   };
 
   const handleDeleteClick = useCallback((view: SavedPlotView, e?: React.MouseEvent) => {
-    console.log('🗑️ Delete button clicked for view:', view.name);
+    console.log('🗑️ [DELETE-FLOW-1] Delete button clicked for view:', view.name, view.id);
+    console.log('🗑️ [DELETE-FLOW-1] Current state:', {
+      deletingViewId,
+      deleteConfirmOpen,
+      isLoading,
+      viewsCount: views.length
+    });
     e?.preventDefault();
     e?.stopPropagation();
 
-    // Set the view to delete, which will open the AlertDialog
-    setViewToDelete(view);
-  }, []);
+    // Open the confirmation popover for this specific view
+    console.log('🗑️ [DELETE-FLOW-2] Opening confirmation popover for:', view.id);
+    setDeleteConfirmOpen(view.id);
+  }, [deletingViewId, deleteConfirmOpen, isLoading, views.length]);
 
-  const handleDeleteConfirm = useCallback(async () => {
-    if (!viewToDelete) return;
+  const handleDeleteConfirm = useCallback(async (view: SavedPlotView) => {
+    console.log('✅ [DELETE-FLOW-3] Confirming delete for view:', view.name, view.id);
+    console.log('✅ [DELETE-FLOW-3] Current state before delete:', {
+      deletingViewId,
+      deleteConfirmOpen,
+      isLoading
+    });
 
-    console.log('✅ Confirming delete for view:', viewToDelete.name);
-    setDeletingViewId(viewToDelete.id);
+    // Close the popover first
+    setDeleteConfirmOpen(null);
+
+    // Set deleting state
+    console.log('🔄 [DELETE-FLOW-4] Setting deletingViewId to:', view.id);
+    setDeletingViewId(view.id);
 
     try {
+      console.log('📡 [DELETE-FLOW-5] Importing plot view service...');
       const { plotViewService } = await import('@/lib/supabase/plot-view-service');
-      const result = await plotViewService.deletePlotView(viewToDelete.id);
+
+      console.log('📡 [DELETE-FLOW-6] Calling deletePlotView service for:', view.id);
+      const result = await plotViewService.deletePlotView(view.id);
+
+      console.log('📡 [DELETE-FLOW-7] Delete service result:', result);
 
       if (result.success) {
+        console.log('✅ [DELETE-FLOW-8] Delete successful, showing toast');
         toast({
           title: "View Deleted",
-          description: `"${viewToDelete.name}" has been deleted`
+          description: `"${view.name}" has been deleted`
         });
 
-        // Reload views
+        console.log('🔄 [DELETE-FLOW-9] Reloading views...');
         await loadViews();
+        console.log('✅ [DELETE-FLOW-10] Views reloaded successfully');
       } else {
+        console.error('❌ [DELETE-FLOW-ERROR-1] Delete failed:', result.error);
         toast({
           variant: "destructive",
           title: "Delete Failed",
@@ -164,17 +192,109 @@ export function LoadPlotViewDialog({
         });
       }
     } catch (error) {
-      console.error('❌ Error deleting view:', error);
+      console.error('❌ [DELETE-FLOW-ERROR-2] Exception during delete:', error);
       toast({
         variant: "destructive",
         title: "Error",
         description: "An unexpected error occurred"
       });
     } finally {
+      console.log('🧹 [DELETE-FLOW-11] Cleanup: clearing deletingViewId');
       setDeletingViewId(null);
-      setViewToDelete(null);
     }
-  }, [viewToDelete, toast, loadViews]);
+  }, [deletingViewId, deleteConfirmOpen, isLoading, toast, loadViews]);
+
+  const handleDeleteCancel = useCallback((viewId: string) => {
+    console.log('❌ [DELETE-FLOW-CANCEL] User cancelled delete for:', viewId);
+    setDeleteConfirmOpen(null);
+  }, []);
+
+  const handleEditClick = useCallback((view: SavedPlotView, e?: React.MouseEvent) => {
+    console.log('✏️ [EDIT-FLOW-1] Edit button clicked for view:', view.name, view.id);
+    e?.preventDefault();
+    e?.stopPropagation();
+
+    // Set the current values for editing
+    setEditName(view.name);
+    setEditDescription(view.description || "");
+    setEditDialogOpen(view.id);
+  }, []);
+
+  const handleEditSave = useCallback(async (view: SavedPlotView) => {
+    console.log('✅ [EDIT-FLOW-2] Saving edits for view:', view.name, view.id);
+
+    // Close the dialog first
+    setEditDialogOpen(null);
+
+    // Set editing state
+    setEditingViewId(view.id);
+
+    try {
+      const { plotViewService } = await import('@/lib/supabase/plot-view-service');
+
+      const result = await plotViewService.updatePlotView(view.id, {
+        name: editName.trim() || view.name, // Fallback to original if empty
+        description: editDescription.trim() || undefined
+      });
+
+      if (result.success) {
+        toast({
+          title: "View Updated",
+          description: `"${editName}" has been updated successfully`
+        });
+
+        // Reload views to show the updated data
+        await loadViews();
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Update Failed",
+          description: result.error || "Failed to update view"
+        });
+      }
+    } catch (error) {
+      console.error('❌ [EDIT-FLOW-ERROR] Exception during update:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "An unexpected error occurred"
+      });
+    } finally {
+      setEditingViewId(null);
+    }
+  }, [editName, editDescription, toast, loadViews]);
+
+  const handleEditCancel = useCallback((viewId: string) => {
+    console.log('❌ [EDIT-FLOW-CANCEL] User cancelled edit for:', viewId);
+    setEditDialogOpen(null);
+  }, []);
+
+  const handleSort = useCallback((column: 'name' | 'created_at') => {
+    if (sortColumn === column) {
+      // Toggle direction if clicking the same column
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      // New column, default to ascending for name, descending for created_at
+      setSortColumn(column);
+      setSortDirection(column === 'name' ? 'asc' : 'desc');
+    }
+  }, [sortColumn]);
+
+  // Sorted views
+  const sortedViews = React.useMemo(() => {
+    const sorted = [...views].sort((a, b) => {
+      if (sortColumn === 'name') {
+        const comparison = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+        return sortDirection === 'asc' ? comparison : -comparison;
+      } else {
+        // created_at
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+      }
+    });
+    return sorted;
+  }, [views, sortColumn, sortDirection]);
 
   return (
     <>
@@ -208,15 +328,47 @@ export function LoadPlotViewDialog({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[200px]">Name</TableHead>
+                    <TableHead className="w-[200px]">
+                      <button
+                        onClick={() => handleSort('name')}
+                        className="flex items-center gap-1 hover:text-foreground transition-colors font-medium"
+                      >
+                        Name
+                        {sortColumn === 'name' ? (
+                          sortDirection === 'asc' ? (
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          ) : (
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />
+                        )}
+                      </button>
+                    </TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead className="w-[120px]">Plots</TableHead>
-                    <TableHead className="w-[150px]">Created</TableHead>
-                    <TableHead className="w-[140px] text-right">Actions</TableHead>
+                    <TableHead className="w-[150px]">
+                      <button
+                        onClick={() => handleSort('created_at')}
+                        className="flex items-center gap-1 hover:text-foreground transition-colors font-medium"
+                      >
+                        Created
+                        {sortColumn === 'created_at' ? (
+                          sortDirection === 'asc' ? (
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          ) : (
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />
+                        )}
+                      </button>
+                    </TableHead>
+                    <TableHead className="w-[180px] text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {views.map((view) => (
+                  {sortedViews.map((view) => (
                     <TableRow key={view.id}>
                       <TableCell className="font-medium">
                         {view.name}
@@ -248,29 +400,181 @@ export function LoadPlotViewDialog({
                             <FolderOpen className="h-3.5 w-3.5 mr-1" />
                             Load
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              console.log('🖱️ Button clicked! State:', {
-                                viewId: view.id,
-                                viewName: view.name,
-                                deletingViewId,
-                                isLoading,
-                                disabled: deletingViewId === view.id || isLoading
-                              });
-                              handleDeleteClick(view, e);
+
+                          <Popover
+                            open={editDialogOpen === view.id}
+                            onOpenChange={(open) => {
+                              if (!open) {
+                                setEditDialogOpen(null);
+                              }
                             }}
-                            disabled={deletingViewId === view.id || isLoading}
-                            className="h-8 text-destructive hover:text-destructive"
-                            title={`Delete ${view.name}`}
                           >
-                            {deletingViewId === view.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-3.5 w-3.5" />
-                            )}
-                          </Button>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => handleEditClick(view, e)}
+                                disabled={editingViewId === view.id || isLoading}
+                                className="h-8"
+                                title={`Edit ${view.name}`}
+                              >
+                                {editingViewId === view.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Pencil className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              className="w-80 p-4"
+                              side="left"
+                              align="center"
+                              onOpenAutoFocus={(e) => {
+                                e.preventDefault();
+                              }}
+                            >
+                              <div className="space-y-4">
+                                <div>
+                                  <h4 className="font-semibold text-sm mb-3">Edit Plot View</h4>
+
+                                  <div className="space-y-3">
+                                    <div className="space-y-1.5">
+                                      <Label htmlFor="edit-name" className="text-xs">
+                                        Name
+                                      </Label>
+                                      <Input
+                                        id="edit-name"
+                                        value={editName}
+                                        onChange={(e) => setEditName(e.target.value)}
+                                        placeholder="Enter view name"
+                                        className="h-8"
+                                      />
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                      <Label htmlFor="edit-description" className="text-xs">
+                                        Description
+                                      </Label>
+                                      <Textarea
+                                        id="edit-description"
+                                        value={editDescription}
+                                        onChange={(e) => setEditDescription(e.target.value)}
+                                        placeholder="Enter description (optional)"
+                                        className="min-h-[60px] text-sm"
+                                        rows={3}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex gap-2 justify-end pt-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleEditCancel(view.id)}
+                                    className="h-8"
+                                  >
+                                    <X className="h-3 w-3 mr-1" />
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    onClick={() => handleEditSave(view)}
+                                    disabled={!editName.trim()}
+                                    className="h-8"
+                                  >
+                                    <Check className="h-3 w-3 mr-1" />
+                                    Save
+                                  </Button>
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+
+                          <Popover
+                            open={deleteConfirmOpen === view.id}
+                            onOpenChange={(open) => {
+                              console.log('🔔 [POPOVER] onOpenChange:', open, 'for view:', view.id);
+                              if (!open) {
+                                setDeleteConfirmOpen(null);
+                              }
+                            }}
+                          >
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  console.log('🖱️ [POPOVER-TRIGGER] Button clicked! State:', {
+                                    viewId: view.id,
+                                    viewName: view.name,
+                                    deletingViewId,
+                                    deleteConfirmOpen,
+                                    isLoading,
+                                    disabled: deletingViewId === view.id || isLoading
+                                  });
+                                  handleDeleteClick(view, e);
+                                }}
+                                disabled={deletingViewId === view.id || isLoading}
+                                className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                title={`Delete ${view.name}`}
+                              >
+                                {deletingViewId === view.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              className="w-64 p-4"
+                              side="left"
+                              align="center"
+                              onOpenAutoFocus={(e) => {
+                                console.log('🔔 [POPOVER] onOpenAutoFocus');
+                                e.preventDefault();
+                              }}
+                            >
+                              <div className="space-y-3">
+                                <div className="flex items-start gap-2">
+                                  <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+                                  <div className="flex-1">
+                                    <h4 className="font-semibold text-sm">Delete Plot View?</h4>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      Delete <strong>{view.name}</strong>? This cannot be undone.
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex gap-2 justify-end">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      console.log('❌ [POPOVER] Cancel clicked');
+                                      handleDeleteCancel(view.id);
+                                    }}
+                                    className="h-8"
+                                  >
+                                    <X className="h-3 w-3 mr-1" />
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                      console.log('✅ [POPOVER] Delete confirmed clicked');
+                                      handleDeleteConfirm(view);
+                                    }}
+                                    className="h-8"
+                                  >
+                                    <Check className="h-3 w-3 mr-1" />
+                                    Delete
+                                  </Button>
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -281,62 +585,6 @@ export function LoadPlotViewDialog({
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Delete Confirmation Dialog - Render separately to avoid conflicts */}
-      {viewToDelete && (
-        <AlertDialog
-          open={true}
-          onOpenChange={(isOpen) => {
-            console.log('🔔 AlertDialog onOpenChange:', isOpen);
-            if (!isOpen && !deletingViewId) {
-              console.log('🔔 Closing AlertDialog, clearing viewToDelete');
-              setViewToDelete(null);
-            }
-          }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
-                Delete Plot View
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to delete <strong>"{viewToDelete.name}"</strong>?
-                This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel
-                disabled={!!deletingViewId}
-                onClick={() => {
-                  console.log('🔔 Cancel clicked');
-                  setViewToDelete(null);
-                }}
-              >
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={(e) => {
-                  e.preventDefault();
-                  console.log('🔔 Delete clicked');
-                  handleDeleteConfirm();
-                }}
-                disabled={!!deletingViewId}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {deletingViewId ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                    Deleting...
-                  </>
-                ) : (
-                  'Delete'
-                )}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
     </>
   );
 }
