@@ -89,7 +89,7 @@ const Shimmer = ({ className }: { className?: string }) => (
 
 // Skeleton row component for smooth loading
 const SkeletonTableRow = ({ index }: { index: number }) => (
-  <div 
+  <div
     className="grid grid-cols-12 gap-2 py-1.5 text-xs opacity-0 animate-[fadeIn_0.3s_ease-in-out_forwards]"
     style={{ animationDelay: `${index * 50}ms` }}
   >
@@ -97,12 +97,12 @@ const SkeletonTableRow = ({ index }: { index: number }) => (
     <div className="col-span-1 flex items-center">
       <Shimmer className="w-3 h-3" />
     </div>
-    
+
     {/* File name skeleton */}
     <div className="col-span-4 flex items-center">
       <Shimmer className="h-4 w-full max-w-[200px]" />
     </div>
-    
+
     {/* Date/Duration section skeleton */}
     <div className="col-span-5 grid grid-cols-3 gap-1 bg-muted/5 px-2 py-1 rounded-sm">
       <div className="flex items-center justify-center">
@@ -115,13 +115,27 @@ const SkeletonTableRow = ({ index }: { index: number }) => (
         <Shimmer className="h-4 w-12" />
       </div>
     </div>
-    
+
     {/* Info button skeleton */}
     <div className="col-span-2 flex items-center justify-end">
       <Shimmer className="h-4 w-4" />
     </div>
   </div>
 );
+
+// Helper function to safely format dates with validation
+const safeFormatDate = (dateValue: string | Date | null | undefined, formatString: string): string => {
+  if (!dateValue) return 'Unknown';
+
+  try {
+    const date = typeof dateValue === 'string' ? new Date(dateValue) : dateValue;
+    if (!isValid(date)) return 'Unknown';
+    return format(date, formatString);
+  } catch (error) {
+    console.error('[DataTimeline] Invalid date format:', dateValue, error);
+    return 'Unknown';
+  }
+};
 
 // Helper function to parse various date formats to proper Date
 const parseCustomDate = (dateString: string): Date | null => {
@@ -1055,7 +1069,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                           <span className="text-muted-foreground">
                                             {isMergedFile(file) ? 'Created:' : 'Uploaded:'}
                                           </span>
-                                          <span>{format(new Date(file.uploadedAt), 'MMM d, yyyy')}</span>
+                                          <span>{safeFormatDate(file.uploadedAt, 'MMM d, yyyy')}</span>
                                         </div>
                                         {isMergedFile(file) ? (
                                           // Merged file info
@@ -1644,7 +1658,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                       </div>
                                       <div className="flex justify-between">
                                         <span className="text-muted-foreground">Uploaded:</span>
-                                        <span>{format(new Date(fileWithDate.file.uploadedAt), 'MMM d, yyyy')}</span>
+                                        <span>{safeFormatDate(fileWithDate.file.uploadedAt, 'MMM d, yyyy')}</span>
                                       </div>
                                       {dateRange.startDate && dateRange.endDate && (
                                         <>
