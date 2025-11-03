@@ -12,6 +12,15 @@ interface HaplotypeHeatmapProps {
   haplotypeData: HaplotypeParseResult;
   containerHeight: number;
   rowHeight?: number; // Height of each species row (default: 35)
+  cellWidth?: number; // Width of each cell/column (default: 85)
+  spotSampleStyles?: {
+    xAxisLabelRotation?: number;
+    xAxisLabelFontSize?: number;
+    yAxisLabelFontSize?: number;
+    yAxisTitleFontSize?: number;
+    yAxisTitleFontWeight?: number | string;
+    yAxisTitleAlign?: 'left' | 'center' | 'right';
+  };
 }
 
 interface ProcessedCell extends HaplotypeCellData {
@@ -21,10 +30,22 @@ interface ProcessedCell extends HaplotypeCellData {
 export function HaplotypeHeatmap({
   haplotypeData,
   containerHeight,
-  rowHeight = 35
+  rowHeight = 35,
+  cellWidth = 85,
+  spotSampleStyles
 }: HaplotypeHeatmapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [svgDimensions, setSvgDimensions] = useState({ width: 0, height: 0 });
+
+  // Extract styling properties with defaults
+  const styles = {
+    xAxisLabelRotation: spotSampleStyles?.xAxisLabelRotation ?? -45,
+    xAxisLabelFontSize: spotSampleStyles?.xAxisLabelFontSize ?? 11,
+    yAxisLabelFontSize: spotSampleStyles?.yAxisLabelFontSize ?? 12,
+    yAxisTitleFontSize: spotSampleStyles?.yAxisTitleFontSize ?? 14,
+    yAxisTitleFontWeight: spotSampleStyles?.yAxisTitleFontWeight ?? 'normal',
+    yAxisTitleAlign: spotSampleStyles?.yAxisTitleAlign ?? 'center'
+  };
 
   // Credibility filter state (all enabled by default)
   const [showHigh, setShowHigh] = useState(true);
@@ -161,13 +182,23 @@ export function HaplotypeHeatmap({
   }
 
   const { width } = svgDimensions;
-  const plotWidth = width > 0 ? width - margin.left - margin.right : 0;
 
-  // Calculate plot height based on number of species and row height
+  // Calculate plot dimensions based on cell width and row height
+  const plotWidth = sites.length * cellWidth;
   const plotHeight = filteredSpecies.length * rowHeight;
 
-  const xScale = scaleBand<string>().domain(sites).range([0, plotWidth]).padding(0.05);
-  const yScale = scaleBand<string>().domain(filteredSpecies).range([0, plotHeight]).padding(0.05);
+  // Use fixed bandwidth for xScale based on cellWidth
+  const xScale = scaleBand<string>()
+    .domain(sites)
+    .range([0, plotWidth])
+    .paddingInner(0.05)
+    .paddingOuter(0.05);
+
+  const yScale = scaleBand<string>()
+    .domain(filteredSpecies)
+    .range([0, plotHeight])
+    .paddingInner(0.05)
+    .paddingOuter(0.05);
 
   // Helper function to check if species is threatened
   const isThreatened = (redListStatus: string): boolean => {
@@ -225,7 +256,11 @@ export function HaplotypeHeatmap({
                       y={(yScale(speciesName) ?? 0) + yScale.bandwidth() / 2}
                       textAnchor="end"
                       dominantBaseline="middle"
-                      className="text-xs fill-current text-muted-foreground"
+                      className="fill-current text-muted-foreground"
+                      style={{
+                        fontSize: `${styles.yAxisLabelFontSize}px`,
+                        fontWeight: styles.yAxisTitleFontWeight
+                      }}
                       title={speciesName}
                     >
                       {speciesName.length > 35 ? `${speciesName.substring(0, 33)}...` : speciesName}
@@ -238,12 +273,13 @@ export function HaplotypeHeatmap({
                   {sites.map(site => (
                     <g key={site} transform={`translate(${(xScale(site) ?? 0) + xScale.bandwidth() / 2}, 0)`}>
                       <text
-                        transform="rotate(-45)"
+                        transform={`rotate(${styles.xAxisLabelRotation})`}
                         y={10}
                         x={-5}
                         textAnchor="end"
                         dominantBaseline="middle"
-                        className="text-xs fill-current text-muted-foreground"
+                        className="fill-current text-muted-foreground"
+                        style={{ fontSize: `${styles.xAxisLabelFontSize}px` }}
                       >
                         {site}
                       </text>

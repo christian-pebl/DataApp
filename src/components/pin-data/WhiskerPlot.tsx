@@ -24,12 +24,15 @@ interface SpotSampleStyles {
   xAxisShowDate?: boolean;
   xAxisShowStationName?: boolean;
   xAxisShowSampleId?: boolean;
+  yAxisLabel?: string; // Custom Y-axis label (overrides parameter name)
   yAxisLabelFontSize?: number;
   yAxisTitleFontSize?: number;
   yAxisTitleFontWeight?: number | string;
   yAxisTitleAlign?: 'left' | 'center' | 'right';
+  yAxisTitleOffset?: number;
   chartHeight?: number;
   chartWidth?: number; // Fixed chart width override
+  chartTitle?: string; // Custom chart title
 }
 
 interface WhiskerPlotProps {
@@ -40,6 +43,7 @@ interface WhiskerPlotProps {
   height?: number;
   showXAxisLabels?: boolean;
   spotSampleStyles?: SpotSampleStyles;
+  yAxisRange?: { min?: number; max?: number };
 }
 
 /**
@@ -54,10 +58,18 @@ export function WhiskerPlot({
   width = "100%",
   height = 400,
   showXAxisLabels = true,
-  spotSampleStyles
+  spotSampleStyles,
+  yAxisRange
 }: WhiskerPlotProps) {
 
+  // Helper function to capitalize first letter of parameter names
+  // Converts "length (cm)" -> "Length (cm)", "width (cm)" -> "Width (cm)"
+  const capitalizeParameter = (param: string): string => {
+    return param.charAt(0).toUpperCase() + param.slice(1);
+  };
+
   // Extract styling properties with defaults
+  const baseYAxisLabelFontSize = spotSampleStyles?.yAxisLabelFontSize ?? 12;
   const styles = {
     chartMarginTop: spotSampleStyles?.chartMarginTop ?? 20,
     chartMarginRight: spotSampleStyles?.chartMarginRight ?? 30,
@@ -69,10 +81,11 @@ export function WhiskerPlot({
     xAxisShowDate: spotSampleStyles?.xAxisShowDate ?? true,
     xAxisShowStationName: spotSampleStyles?.xAxisShowStationName ?? true,
     xAxisShowSampleId: spotSampleStyles?.xAxisShowSampleId ?? true,
-    yAxisLabelFontSize: spotSampleStyles?.yAxisLabelFontSize ?? 12,
-    yAxisTitleFontSize: spotSampleStyles?.yAxisTitleFontSize ?? 14,
+    yAxisLabelFontSize: baseYAxisLabelFontSize,
+    yAxisTitleFontSize: spotSampleStyles?.yAxisTitleFontSize ?? (baseYAxisLabelFontSize + 2), // Title is 2px larger than labels
     yAxisTitleFontWeight: spotSampleStyles?.yAxisTitleFontWeight ?? 'normal',
     yAxisTitleAlign: spotSampleStyles?.yAxisTitleAlign ?? 'center',
+    yAxisTitleOffset: spotSampleStyles?.yAxisTitleOffset ?? 40,
     chartHeight: spotSampleStyles?.chartHeight ?? 350,
     chartWidth: spotSampleStyles?.chartWidth,
     whiskerBoxWidth: spotSampleStyles?.whiskerBoxWidth ?? 40,
@@ -150,12 +163,28 @@ export function WhiskerPlot({
     return ticks;
   };
 
-  // Calculate Y-axis domain - always start at 0
+  // Calculate Y-axis domain
   const allValues = parameterData.flatMap(d => [d.stats.min, d.stats.max]).filter(v => !isNaN(v) && isFinite(v));
   const dataMax = allValues.length > 0 ? Math.max(...allValues) : 1;
-  const yMin = 0; // Always start at 0
-  const yTicks = calculateNiceTicks(dataMax, 8); // At least 8 ticks for granular intervals
-  const yMax = yTicks[yTicks.length - 1]; // Use the last tick as max
+
+  // Use custom range if provided, otherwise calculate from data
+  let yMin: number;
+  let yMax: number;
+  let yTicks: number[];
+
+  if (yAxisRange?.min !== undefined || yAxisRange?.max !== undefined) {
+    // Custom range provided
+    yMin = yAxisRange.min !== undefined ? yAxisRange.min : 0;
+    const customMax = yAxisRange.max !== undefined ? yAxisRange.max : dataMax;
+    yTicks = calculateNiceTicks(customMax, 8);
+    yMax = yAxisRange.max !== undefined ? yAxisRange.max : yTicks[yTicks.length - 1];
+  } else {
+    // Auto-calculate from data
+    yMin = 0; // Always start at 0
+    yTicks = calculateNiceTicks(dataMax, 8); // At least 8 ticks for granular intervals
+    yMax = yTicks[yTicks.length - 1]; // Use the last tick as max
+  }
+
   const yRange = yMax - yMin;
 
   // Chart dimensions
@@ -285,17 +314,27 @@ export function WhiskerPlot({
             strokeWidth={1}
           />
 
+          {/* Top horizontal line */}
+          <line
+            x1={0}
+            y1={0}
+            x2={plotWidth}
+            y2={0}
+            stroke="#666"
+            strokeWidth={1}
+          />
+
           {/* Y-axis label */}
           <text
-            x={-plotHeight / 2}
-            y={-45}
-            transform={`rotate(-90, ${-plotHeight / 2}, -45)`}
+            x={0}
+            y={0}
+            transform={`translate(${-styles.yAxisTitleOffset}, ${plotHeight / 2}) rotate(-90)`}
             textAnchor="middle"
             fontSize={styles.yAxisTitleFontSize}
-            fill="#000"
+            fill="#666"
             fontWeight={styles.yAxisTitleFontWeight}
           >
-            {parameter}
+            {spotSampleStyles?.yAxisLabel || capitalizeParameter(parameter)}
           </text>
 
           {/* Box plots */}
@@ -432,69 +471,126 @@ export function WhiskerPlot({
             const stationName = bracketParts.length > 1 ? bracketParts[0] : '';
             const sampleId = bracketParts.length > 1 ? bracketParts[1] : bracketContent;
 
-            // Build label components based on toggle settings
-            const labelComponents: string[] = [];
-            if (styles.xAxisShowDate && dateLabel) {
-              labelComponents.push(dateLabel);
-            }
-            if (styles.xAxisShowStationName && stationName) {
-              labelComponents.push(stationName);
-            }
-            if (styles.xAxisShowSampleId && sampleId) {
-              labelComponents.push(sampleId);
-            }
+            // Map component types to their values
+            const componentMap: Record<'date' | 'station' | 'sample', string> = {
+              date: dateLabel,
+              station: stationName,
+              sample: sampleId
+            };
 
-            // Calculate line breaks - show first part on line 1, rest on line 2
-            const firstLine = labelComponents[0] || '';
-            const secondLine = labelComponents.slice(1).join(' ');
+            // Get label layout configuration
+            const labelLineMode = spotSampleStyles?.xAxisLabelLineMode ?? 'two-line';
+            const line1Components = spotSampleStyles?.xAxisLine1Components ?? ['date'];
+            const line2Components = spotSampleStyles?.xAxisLine2Components ?? ['station', 'sample'];
 
-            const secondLineOffset = styles.xAxisLabelSecondLineOffset || 0;
-            const secondLineX = x + secondLineOffset;
-            const secondLineY = plotHeight + 15 + styles.xAxisLabelFontSize + 2;
+            // Build final display based on mode
+            if (labelLineMode === 'single') {
+              // Single line mode: show all enabled components on one line
+              const labelComponents: string[] = [];
+              if (styles.xAxisShowDate && dateLabel) {
+                labelComponents.push(dateLabel);
+              }
+              if (styles.xAxisShowStationName && stationName) {
+                labelComponents.push(stationName);
+              }
+              if (styles.xAxisShowSampleId && sampleId) {
+                labelComponents.push(sampleId);
+              }
 
-            return (
-              <g key={uniqueKey}>
-                {/* First line */}
-                {firstLine && (
+              const displayText = labelComponents.length > 0 ? labelComponents.join(' ') : '-';
+
+              return (
+                <g key={uniqueKey}>
                   <text
                     x={x}
                     y={plotHeight + 15}
                     textAnchor="end"
                     fontSize={styles.xAxisLabelFontSize}
-                    fill="#666"
+                    fill={displayText === '-' ? '#999' : '#666'}
                     transform={`rotate(${styles.xAxisLabelRotation}, ${x}, ${plotHeight + 15})`}
                   >
-                    {firstLine}
+                    {displayText}
                   </text>
-                )}
-                {/* Second line */}
-                {secondLine && (
-                  <text
-                    x={secondLineX}
-                    y={secondLineY}
-                    textAnchor="end"
-                    fontSize={styles.xAxisLabelFontSize}
-                    fill="#666"
-                    transform={`rotate(${styles.xAxisLabelRotation}, ${secondLineX}, ${secondLineY})`}
-                  >
-                    {secondLine}
-                  </text>
-                )}
-                {/* Placeholder if nothing to show */}
-                {!firstLine && !secondLine && (
-                  <text
-                    x={x}
-                    y={plotHeight + 15}
-                    textAnchor="end"
-                    fontSize={styles.xAxisLabelFontSize}
-                    fill="#999"
-                    transform={`rotate(${styles.xAxisLabelRotation}, ${x}, ${plotHeight + 15})`}
-                  >
-                    -
-                  </text>
-                )}
-              </g>
-            );
+                </g>
+              );
+            } else {
+              // Two-line mode: distribute components according to line assignments
+              const line1Parts: string[] = [];
+              const line2Parts: string[] = [];
+
+              // Build line 1 from assigned components (respecting visibility toggles)
+              line1Components.forEach(comp => {
+                const value = componentMap[comp];
+                if (value) {
+                  if (comp === 'date' && !styles.xAxisShowDate) return;
+                  if (comp === 'station' && !styles.xAxisShowStationName) return;
+                  if (comp === 'sample' && !styles.xAxisShowSampleId) return;
+                  line1Parts.push(value);
+                }
+              });
+
+              // Build line 2 from assigned components (respecting visibility toggles)
+              line2Components.forEach(comp => {
+                const value = componentMap[comp];
+                if (value) {
+                  if (comp === 'date' && !styles.xAxisShowDate) return;
+                  if (comp === 'station' && !styles.xAxisShowStationName) return;
+                  if (comp === 'sample' && !styles.xAxisShowSampleId) return;
+                  line2Parts.push(value);
+                }
+              });
+
+              const firstLine = line1Parts.join(' ');
+              const secondLine = line2Parts.join(' ');
+
+              const secondLineOffset = styles.xAxisLabelSecondLineOffset || 0;
+              const secondLineX = x + secondLineOffset;
+              const secondLineY = plotHeight + 15 + styles.xAxisLabelFontSize + 2;
+
+              return (
+                <g key={uniqueKey}>
+                  {/* First line */}
+                  {firstLine && (
+                    <text
+                      x={x}
+                      y={plotHeight + 15}
+                      textAnchor="end"
+                      fontSize={styles.xAxisLabelFontSize}
+                      fill="#666"
+                      transform={`rotate(${styles.xAxisLabelRotation}, ${x}, ${plotHeight + 15})`}
+                    >
+                      {firstLine}
+                    </text>
+                  )}
+                  {/* Second line */}
+                  {secondLine && (
+                    <text
+                      x={secondLineX}
+                      y={secondLineY}
+                      textAnchor="end"
+                      fontSize={styles.xAxisLabelFontSize}
+                      fill="#666"
+                      transform={`rotate(${styles.xAxisLabelRotation}, ${secondLineX}, ${secondLineY})`}
+                    >
+                      {secondLine}
+                    </text>
+                  )}
+                  {/* Placeholder if nothing to show */}
+                  {!firstLine && !secondLine && (
+                    <text
+                      x={x}
+                      y={plotHeight + 15}
+                      textAnchor="end"
+                      fontSize={styles.xAxisLabelFontSize}
+                      fill="#999"
+                      transform={`rotate(${styles.xAxisLabelRotation}, ${x}, ${plotHeight + 15})`}
+                    >
+                      -
+                    </text>
+                  )}
+                </g>
+              );
+            }
           })}
         </g>
       </svg>

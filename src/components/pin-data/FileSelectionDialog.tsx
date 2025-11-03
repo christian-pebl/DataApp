@@ -155,6 +155,10 @@ export function FileSelectionDialog({
         if (!typeMap.has('WQ')) typeMap.set('WQ', []);
         typeMap.get('WQ')!.push(file);
       }
+      if (fileName.includes('edna')) {
+        if (!typeMap.has('EDNA')) typeMap.set('EDNA', []);
+        typeMap.get('EDNA')!.push(file);
+      }
     });
     const types = Array.from(typeMap.keys()).sort();
 

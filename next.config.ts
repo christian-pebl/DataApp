@@ -193,7 +193,7 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-eval' 'unsafe-inline'", // Next.js requires unsafe-eval and unsafe-inline
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com",
+              "font-src 'self' data: https://fonts.gstatic.com", // Added data: for data URI fonts
               "img-src 'self' data: https: blob:",
               "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mapbox.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://*.basemaps.cartocdn.com",
               "frame-ancestors 'none'",

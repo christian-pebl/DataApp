@@ -2800,6 +2800,8 @@ export function PinChartDisplay({
             haplotypeData={haplotypeData}
             containerHeight={dynamicChartHeight}
             rowHeight={appliedStyleRule?.properties.heatmapRowHeight}
+            cellWidth={appliedStyleRule?.properties.heatmapCellWidth}
+            spotSampleStyles={appliedStyleRule?.properties.spotSample}
           />
         </div>
       ) : (

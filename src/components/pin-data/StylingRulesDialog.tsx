@@ -37,6 +37,7 @@ export interface StyleProperties {
   yAxisMultiLine?: boolean; // Enable multi-line y-axis titles (splits long titles at halfway point)
   yAxisMultiLineWordThreshold?: number; // Minimum number of words before splitting (default: 3)
   heatmapRowHeight?: number; // Height of each row in heatmap view (default: 35, in px)
+  heatmapCellWidth?: number; // Width of each cell in heatmap view (default: 85, in px)
 
   // Parameter-level styling properties
   defaultLineStyle?: 'solid' | 'dashed' | 'dotted'; // Line style for parameters (default: solid)
@@ -76,6 +77,10 @@ export interface StyleProperties {
     xAxisShowDate?: boolean; // Show date in X-axis label (default: true)
     xAxisShowStationName?: boolean; // Show station name in X-axis label (default: true)
     xAxisShowSampleId?: boolean; // Show sample ID in X-axis label (default: true)
+    // X-axis label layout configuration
+    xAxisLabelLineMode?: 'single' | 'two-line'; // Display mode: 'single' = all on one line, 'two-line' = split across two lines (default: 'two-line')
+    xAxisLine1Components?: ('date' | 'station' | 'sample')[]; // Components for line 1 (default: ['date'])
+    xAxisLine2Components?: ('date' | 'station' | 'sample')[]; // Components for line 2 (default: ['station', 'sample'])
     // Data filtering (for _indiv files)
     filterByDates?: string[]; // Filter to show only specific dates (e.g., ["2024-01-15", "2024-01-20"])
     filterByStations?: string[]; // Filter to show only specific station names (e.g., ["Farm-L", "Farm-R"])
@@ -88,12 +93,17 @@ export interface StyleProperties {
     yAxisTitleFontSize?: number; // Font size for Y-axis title (default: 14)
     yAxisTitleFontWeight?: number | string; // Font weight for Y-axis title (default: 'normal', can be 'bold', 'normal', or numeric like 500)
     yAxisTitleAlign?: 'left' | 'center' | 'right'; // Text alignment for Y-axis title (default: 'center')
+    yAxisTitleOffset?: number; // Distance of Y-axis title from axis (default: 40, in px)
     // Chart dimensions
     chartHeight?: number; // Height of each parameter chart (default: 350)
     // Parameter ordering
     parameterOrder?: string[]; // Ordered list of parameter names to display (e.g., ["Length", "Width", "Fouling"])
     // Parameter-specific Y-axis ranges (for CHEMWQ files)
     parameterYAxisRanges?: Record<string, { min?: number; max?: number }>; // Custom Y-axis ranges per parameter
+
+    // Taxonomy chart specific (for _taxo files)
+    barSize?: number; // Width of stacked columns (default: 40, in pixels, range: 10-100)
+    barCategoryGap?: string; // Gap between columns (default: "10%", can be percentage like "10%" or pixels like "20")
   };
 }
 
@@ -264,6 +274,11 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
         xAxisShowStationName: true, // Show station name in X-axis label
         xAxisShowSampleId: true, // Show sample ID in X-axis label
 
+        // X-axis label layout configuration
+        xAxisLabelLineMode: 'two-line', // Default to two-line layout (current behavior)
+        xAxisLine1Components: ['date'], // Date on first line
+        xAxisLine2Components: ['station', 'sample'], // Station and sample on second line
+
         // Data filtering - empty arrays means show all data
         filterByDates: [], // Show all dates by default
         filterByStations: [], // Show all stations by default
@@ -275,8 +290,8 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
         // Y-axis label styling
         yAxisLabelFontSize: 12,
 
-        // Y-axis title styling (matches the chart title appearance)
-        yAxisTitleFontSize: 14, // Font size for Y-axis title (matches h3 text-sm)
+        // Y-axis title styling (automatically scales with label font size)
+        yAxisTitleFontSize: 14, // Font size for Y-axis title (label size + 2px)
         yAxisTitleFontWeight: 600, // Font weight for Y-axis title (matches font-semibold)
         yAxisTitleAlign: 'center', // Center align Y-axis title
 
@@ -318,7 +333,7 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
         // Chart margins
         chartMarginTop: 20,
         chartMarginRight: 30,
-        chartMarginLeft: 40,
+        chartMarginLeft: 60,
         chartMarginBottom: 80, // Extra space for rotated X-axis labels
 
         // Error bar styling
@@ -330,13 +345,24 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
         xAxisLabelFontSize: 11, // Font size for labels
         xAxisLabelSecondLineOffset: 10, // Horizontal offset for second line (aligns to right)
 
+        // X-axis label component toggles
+        xAxisShowDate: true, // Show date in X-axis label
+        xAxisShowStationName: true, // Show station name in X-axis label
+        xAxisShowSampleId: true, // Show sample ID in X-axis label
+
+        // X-axis label layout configuration
+        xAxisLabelLineMode: 'two-line', // Default to two-line layout
+        xAxisLine1Components: ['date'], // Date on first line
+        xAxisLine2Components: ['station', 'sample'], // Station and sample on second line
+
         // Y-axis label styling
         yAxisLabelFontSize: 12,
 
-        // Y-axis title styling (matched to X-axis label styling)
-        yAxisTitleFontSize: 11, // Match X-axis label font size
-        yAxisTitleFontWeight: 'normal', // Match X-axis label weight
-        yAxisTitleAlign: 'center', // Center align Y-axis title
+        // Y-axis title styling
+        yAxisTitleFontSize: 14,
+        yAxisTitleFontWeight: 'normal',
+        yAxisTitleAlign: 'center',
+        yAxisTitleOffset: 40,
 
         // Chart dimensions
         chartHeight: 350, // Height of each parameter chart
@@ -457,9 +483,42 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
     enabled: true,
     properties: {
       spotSample: {
+        // Chart margins
+        chartMarginTop: 40,
+        chartMarginRight: 150,
+        chartMarginLeft: 60,
+        chartMarginBottom: 80,
+
+        // X-axis label styling
+        xAxisLabelRotation: -45,
+        xAxisLabelFontSize: 11,
+
+        // X-axis label component toggles
+        xAxisShowDate: true,
+        xAxisShowStationName: true,
+        xAxisShowSampleId: true,
+
+        // X-axis label layout configuration
+        xAxisLabelLineMode: 'single', // Default to single line for taxonomy
+        xAxisLine1Components: ['date', 'station', 'sample'],
+        xAxisLine2Components: [],
+
+        // Y-axis label styling
+        yAxisLabelFontSize: 12,
+
+        // Y-axis title styling
+        yAxisTitleFontSize: 14,
+        yAxisTitleFontWeight: 'bold',
+        yAxisTitleAlign: 'center',
+
+        // Chart dimensions and labels
         chartHeight: 600,
         chartTitle: "eDNA Phylum Composition",
-        yAxisLabel: "Relative Abundance (%)"
+        yAxisLabel: "Relative Abundance (%)",
+
+        // Taxonomy chart specific
+        barSize: 40, // Width of stacked columns
+        barCategoryGap: "10%" // Gap between columns
       }
     }
   },
@@ -467,10 +526,24 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
   {
     suffix: "_Hapl.csv",
     styleName: "hapl_style",
-    description: "eDNA Haplotype data styling with configurable heatmap row height for species visualization",
+    description: "eDNA Haplotype data styling with configurable heatmap row height and cell width for species visualization",
     enabled: true,
     properties: {
-      heatmapRowHeight: 35 // Default heatmap row height in pixels
+      heatmapRowHeight: 35, // Default heatmap row height in pixels
+      heatmapCellWidth: 85, // Default heatmap cell width in pixels
+      spotSample: {
+        // X-axis label styling
+        xAxisLabelRotation: -45,
+        xAxisLabelFontSize: 11,
+
+        // Y-axis label styling
+        yAxisLabelFontSize: 12,
+
+        // Y-axis title styling
+        yAxisTitleFontSize: 14,
+        yAxisTitleFontWeight: 'normal',
+        yAxisTitleAlign: 'center'
+      }
     }
   },
   // Add more rules as needed
@@ -988,42 +1061,293 @@ export function StylingRulesDialog({
                   />
                 </div>
 
-                {/* X-axis Label Components - only show for _indiv files */}
-                {selectedRule.suffix === "_indiv.csv" && (
+                {/* Y-axis Label Font Size (tick labels) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Y-Axis Label Font Size</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedRule.properties.spotSample?.yAxisLabelFontSize ?? 12}px
+                    </span>
+                  </div>
+                  <Slider
+                    value={[selectedRule.properties.spotSample?.yAxisLabelFontSize ?? 12]}
+                    onValueChange={(values) => handleSpotSamplePropertyChange('yAxisLabelFontSize', values[0])}
+                    min={8}
+                    max={30}
+                    step={1}
+                    className="w-full"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Controls the size of tick labels (numbers on Y-axis)
+                  </p>
+                </div>
+
+                {/* Y-axis Title Font Size */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Y-Axis Title Font Size</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedRule.properties.spotSample?.yAxisTitleFontSize ?? 14}px
+                    </span>
+                  </div>
+                  <Slider
+                    value={[selectedRule.properties.spotSample?.yAxisTitleFontSize ?? 14]}
+                    onValueChange={(values) => handleSpotSamplePropertyChange('yAxisTitleFontSize', values[0])}
+                    min={8}
+                    max={30}
+                    step={1}
+                    className="w-full"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Controls the size of the axis title text
+                  </p>
+                </div>
+
+                {/* Y-axis Title Offset */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Y-Axis Title Offset</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedRule.properties.spotSample?.yAxisTitleOffset ?? 40}px
+                    </span>
+                  </div>
+                  <Slider
+                    value={[selectedRule.properties.spotSample?.yAxisTitleOffset ?? 40]}
+                    onValueChange={(values) => handleSpotSamplePropertyChange('yAxisTitleOffset', values[0])}
+                    min={20}
+                    max={100}
+                    step={5}
+                    className="w-full"
+                  />
+                </div>
+
+                {/* X-axis Label Configuration - show for _indiv, _Meta, _taxo, and _Hapl files */}
+                {(selectedRule.suffix === "_indiv.csv" ||
+                  selectedRule.suffix === "_Meta.csv" ||
+                  selectedRule.suffix === "_taxo.csv" ||
+                  selectedRule.suffix === "_Hapl.csv") && (
                   <div className="space-y-2 p-3 bg-muted/30 rounded-md">
-                    <Label className="text-xs font-semibold">X-Axis Label Components</Label>
-                    <p className="text-xs text-muted-foreground">Show/hide parts of the X-axis labels</p>
+                    <Label className="text-xs font-semibold">X-Axis Label Layout</Label>
+                    <p className="text-xs text-muted-foreground">Customize how labels are displayed</p>
 
                     <div className="space-y-3">
-                      {/* Show Date Toggle */}
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="show-date" className="text-xs cursor-pointer">Show Date</Label>
-                        <Switch
-                          id="show-date"
-                          checked={selectedRule.properties.spotSample?.xAxisShowDate ?? true}
-                          onCheckedChange={(checked) => handleSpotSamplePropertyChange('xAxisShowDate', checked)}
-                        />
+                      {/* Line Mode Selector */}
+                      <div className="space-y-2">
+                        <Label className="text-xs">Label Layout</Label>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant={selectedRule.properties.spotSample?.xAxisLabelLineMode === 'single' ? 'default' : 'outline'}
+                            size="sm"
+                            className="flex-1 h-8 text-xs"
+                            onClick={() => handleSpotSamplePropertyChange('xAxisLabelLineMode', 'single')}
+                          >
+                            Single Line
+                          </Button>
+                          <Button
+                            variant={(selectedRule.properties.spotSample?.xAxisLabelLineMode ?? 'two-line') === 'two-line' ? 'default' : 'outline'}
+                            size="sm"
+                            className="flex-1 h-8 text-xs"
+                            onClick={() => handleSpotSamplePropertyChange('xAxisLabelLineMode', 'two-line')}
+                          >
+                            Two Lines
+                          </Button>
+                        </div>
                       </div>
 
-                      {/* Show Station Name Toggle */}
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="show-station" className="text-xs cursor-pointer">Show Station Name</Label>
-                        <Switch
-                          id="show-station"
-                          checked={selectedRule.properties.spotSample?.xAxisShowStationName ?? true}
-                          onCheckedChange={(checked) => handleSpotSamplePropertyChange('xAxisShowStationName', checked)}
-                        />
-                      </div>
+                      {/* Component assignment - only show in two-line mode */}
+                      {(selectedRule.properties.spotSample?.xAxisLabelLineMode ?? 'two-line') === 'two-line' && (
+                        <>
+                          {/* Line 1 Components */}
+                          <div className="space-y-2 pt-2 border-t">
+                            <Label className="text-xs font-semibold">Line 1 Components</Label>
+                            <div className="space-y-2">
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="line1-date"
+                                  checked={(selectedRule.properties.spotSample?.xAxisLine1Components ?? ['date']).includes('date')}
+                                  onChange={(e) => {
+                                    const current = selectedRule.properties.spotSample?.xAxisLine1Components ?? ['date'];
+                                    const updated = e.target.checked
+                                      ? [...current.filter(c => c !== 'date'), 'date']
+                                      : current.filter(c => c !== 'date');
+                                    handleSpotSamplePropertyChange('xAxisLine1Components', updated);
+                                  }}
+                                  className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <Label htmlFor="line1-date" className="text-xs cursor-pointer">Date</Label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="line1-station"
+                                  checked={(selectedRule.properties.spotSample?.xAxisLine1Components ?? ['date']).includes('station')}
+                                  onChange={(e) => {
+                                    const current = selectedRule.properties.spotSample?.xAxisLine1Components ?? ['date'];
+                                    const updated = e.target.checked
+                                      ? [...current.filter(c => c !== 'station'), 'station']
+                                      : current.filter(c => c !== 'station');
+                                    handleSpotSamplePropertyChange('xAxisLine1Components', updated);
+                                  }}
+                                  className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <Label htmlFor="line1-station" className="text-xs cursor-pointer">Station ID</Label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="line1-sample"
+                                  checked={(selectedRule.properties.spotSample?.xAxisLine1Components ?? ['date']).includes('sample')}
+                                  onChange={(e) => {
+                                    const current = selectedRule.properties.spotSample?.xAxisLine1Components ?? ['date'];
+                                    const updated = e.target.checked
+                                      ? [...current.filter(c => c !== 'sample'), 'sample']
+                                      : current.filter(c => c !== 'sample');
+                                    handleSpotSamplePropertyChange('xAxisLine1Components', updated);
+                                  }}
+                                  className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <Label htmlFor="line1-sample" className="text-xs cursor-pointer">Sample ID</Label>
+                              </div>
+                            </div>
+                          </div>
 
-                      {/* Show Sample ID Toggle */}
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="show-sample-id" className="text-xs cursor-pointer">Show Sample ID</Label>
-                        <Switch
-                          id="show-sample-id"
-                          checked={selectedRule.properties.spotSample?.xAxisShowSampleId ?? true}
-                          onCheckedChange={(checked) => handleSpotSamplePropertyChange('xAxisShowSampleId', checked)}
-                        />
+                          {/* Line 2 Components */}
+                          <div className="space-y-2 pt-2 border-t">
+                            <Label className="text-xs font-semibold">Line 2 Components</Label>
+                            <div className="space-y-2">
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="line2-date"
+                                  checked={(selectedRule.properties.spotSample?.xAxisLine2Components ?? ['station', 'sample']).includes('date')}
+                                  onChange={(e) => {
+                                    const current = selectedRule.properties.spotSample?.xAxisLine2Components ?? ['station', 'sample'];
+                                    const updated = e.target.checked
+                                      ? [...current.filter(c => c !== 'date'), 'date']
+                                      : current.filter(c => c !== 'date');
+                                    handleSpotSamplePropertyChange('xAxisLine2Components', updated);
+                                  }}
+                                  className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <Label htmlFor="line2-date" className="text-xs cursor-pointer">Date</Label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="line2-station"
+                                  checked={(selectedRule.properties.spotSample?.xAxisLine2Components ?? ['station', 'sample']).includes('station')}
+                                  onChange={(e) => {
+                                    const current = selectedRule.properties.spotSample?.xAxisLine2Components ?? ['station', 'sample'];
+                                    const updated = e.target.checked
+                                      ? [...current.filter(c => c !== 'station'), 'station']
+                                      : current.filter(c => c !== 'station');
+                                    handleSpotSamplePropertyChange('xAxisLine2Components', updated);
+                                  }}
+                                  className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <Label htmlFor="line2-station" className="text-xs cursor-pointer">Station ID</Label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="line2-sample"
+                                  checked={(selectedRule.properties.spotSample?.xAxisLine2Components ?? ['station', 'sample']).includes('sample')}
+                                  onChange={(e) => {
+                                    const current = selectedRule.properties.spotSample?.xAxisLine2Components ?? ['station', 'sample'];
+                                    const updated = e.target.checked
+                                      ? [...current.filter(c => c !== 'sample'), 'sample']
+                                      : current.filter(c => c !== 'sample');
+                                    handleSpotSamplePropertyChange('xAxisLine2Components', updated);
+                                  }}
+                                  className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <Label htmlFor="line2-sample" className="text-xs cursor-pointer">Sample ID</Label>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Component Visibility - separator */}
+                      <div className="pt-2 border-t">
+                        <Label className="text-xs font-semibold">Component Visibility</Label>
+                        <p className="text-xs text-muted-foreground mb-2">Show/hide specific label parts</p>
+
+                        {/* Show Date Toggle */}
+                        <div className="flex items-center justify-between mb-2">
+                          <Label htmlFor="show-date" className="text-xs cursor-pointer">Show Date</Label>
+                          <Switch
+                            id="show-date"
+                            checked={selectedRule.properties.spotSample?.xAxisShowDate ?? true}
+                            onCheckedChange={(checked) => handleSpotSamplePropertyChange('xAxisShowDate', checked)}
+                          />
+                        </div>
+
+                        {/* Show Station Name Toggle */}
+                        <div className="flex items-center justify-between mb-2">
+                          <Label htmlFor="show-station" className="text-xs cursor-pointer">Show Station Name</Label>
+                          <Switch
+                            id="show-station"
+                            checked={selectedRule.properties.spotSample?.xAxisShowStationName ?? true}
+                            onCheckedChange={(checked) => handleSpotSamplePropertyChange('xAxisShowStationName', checked)}
+                          />
+                        </div>
+
+                        {/* Show Sample ID Toggle */}
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="show-sample-id" className="text-xs cursor-pointer">Show Sample ID</Label>
+                          <Switch
+                            id="show-sample-id"
+                            checked={selectedRule.properties.spotSample?.xAxisShowSampleId ?? true}
+                            onCheckedChange={(checked) => handleSpotSamplePropertyChange('xAxisShowSampleId', checked)}
+                          />
+                        </div>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Taxonomy Chart Controls - show only for _taxo files */}
+                {selectedRule.suffix === "_taxo.csv" && (
+                  <div className="space-y-2 p-3 bg-muted/30 rounded-md">
+                    <Label className="text-xs font-semibold">Column Styling</Label>
+                    <p className="text-xs text-muted-foreground">Adjust column width and spacing</p>
+
+                    {/* Column Width Slider */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Column Width</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.spotSample?.barSize ?? 40}px
+                        </span>
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.spotSample?.barSize ?? 40]}
+                        onValueChange={(values) => handleSpotSamplePropertyChange('barSize', values[0])}
+                        min={10}
+                        max={100}
+                        step={5}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* Column Gap Slider */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Gap Between Columns</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedRule.properties.spotSample?.barCategoryGap ?? "10%"}
+                        </span>
+                      </div>
+                      <Slider
+                        value={[parseInt((selectedRule.properties.spotSample?.barCategoryGap ?? "10%").toString().replace('%', ''))]}
+                        onValueChange={(values) => handleSpotSamplePropertyChange('barCategoryGap', `${values[0]}%`)}
+                        min={0}
+                        max={50}
+                        step={5}
+                        className="w-full"
+                      />
                     </div>
                   </div>
                 )}
@@ -1128,7 +1452,7 @@ export function StylingRulesDialog({
                         value={[selectedRule.properties.spotSample?.xAxisLabelFontSize ?? 11]}
                         onValueChange={(values) => handleSpotSamplePropertyChange('xAxisLabelFontSize', values[0])}
                         min={8}
-                        max={16}
+                        max={30}
                         step={1}
                         className="w-full"
                       />
@@ -1167,7 +1491,7 @@ export function StylingRulesDialog({
                             value={[selectedRule.properties.spotSample?.chartMarginLeft ?? 60]}
                             onValueChange={(values) => handleSpotSamplePropertyChange('chartMarginLeft', values[0])}
                             min={20}
-                            max={80}
+                            max={150}
                             step={5}
                             className="w-full"
                           />
@@ -1178,7 +1502,7 @@ export function StylingRulesDialog({
                             value={[selectedRule.properties.spotSample?.chartMarginRight ?? 30]}
                             onValueChange={(values) => handleSpotSamplePropertyChange('chartMarginRight', values[0])}
                             min={10}
-                            max={60}
+                            max={150}
                             step={5}
                             className="w-full"
                           />
@@ -1274,6 +1598,36 @@ export function StylingRulesDialog({
                       min={-40}
                       max={80}
                       step={1}
+                      className="w-full"
+                    />
+                  </div>
+                )}
+
+                {/* Heatmap Cell Width - show for Hapl files only */}
+                {selectedRule.suffix === "_Hapl.csv" && (
+                  <div className="space-y-1.5 p-3 bg-muted/30 rounded-md">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Label className="text-xs font-semibold">Heatmap Row Width</Label>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-xs text-xs">
+                            <p>Width of each cell/column in heatmap view (range: 40 to 150px, default: 85px). Controls horizontal spacing of site columns.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {selectedRule.properties.heatmapCellWidth || 85}px
+                      </span>
+                    </div>
+                    <Slider
+                      value={[selectedRule.properties.heatmapCellWidth || 85]}
+                      onValueChange={(values) => handlePropertyChange('heatmapCellWidth', values[0])}
+                      min={40}
+                      max={150}
+                      step={5}
                       className="w-full"
                     />
                   </div>

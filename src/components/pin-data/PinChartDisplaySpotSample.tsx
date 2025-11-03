@@ -985,13 +985,14 @@ export function PinChartDisplaySpotSample({
             </div>
           </div>
         ) : (
-          <div className="border rounded-lg p-4">
+          <div className="border rounded-lg p-4 overflow-visible">
             <StackedTaxonomyChart
               data={taxonomyData}
               fileName={fileName || 'taxonomy_data.csv'}
               customTitle={spotSampleStyles?.chartTitle as string | undefined}
               customYAxisLabel={spotSampleStyles?.yAxisLabel as string | undefined}
               height={spotSampleStyles?.chartHeight || 600}
+              spotSampleStyles={spotSampleStyles}
             />
           </div>
         )}
@@ -1581,6 +1582,7 @@ export function PinChartDisplaySpotSample({
                       width={chartWidth || '100%'}
                       height={350}
                       spotSampleStyles={spotSampleStyles}
+                      yAxisRange={parameterYAxisRanges[param]}
                     />
                   )}
                 </div>

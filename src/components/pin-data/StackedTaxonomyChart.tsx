@@ -12,6 +12,25 @@ interface StackedTaxonomyChartProps {
   phylumColors?: { [phylum: string]: string };
   width?: number | string;
   height?: number;
+  spotSampleStyles?: {
+    chartMarginTop?: number;
+    chartMarginRight?: number;
+    chartMarginLeft?: number;
+    chartMarginBottom?: number;
+    xAxisLabelRotation?: number;
+    xAxisLabelFontSize?: number;
+    xAxisShowDate?: boolean;
+    xAxisShowStationName?: boolean;
+    xAxisShowSampleId?: boolean;
+    xAxisLabelLineMode?: 'single' | 'two-line';
+    xAxisLine1Components?: ('date' | 'station' | 'sample')[];
+    xAxisLine2Components?: ('date' | 'station' | 'sample')[];
+    yAxisLabelFontSize?: number;
+    yAxisTitleFontSize?: number;
+    yAxisTitleFontWeight?: number | string;
+    yAxisTitleAlign?: 'left' | 'center' | 'right';
+    chartHeight?: number;
+  };
 }
 
 /**
@@ -94,8 +113,32 @@ export function StackedTaxonomyChart({
   customYAxisLabel = 'Relative Abundance (%)',
   phylumColors,
   width = "100%",
-  height = 600
+  height = 600,
+  spotSampleStyles
 }: StackedTaxonomyChartProps) {
+
+  // Extract styling properties with defaults
+  const styles = {
+    chartMarginTop: spotSampleStyles?.chartMarginTop ?? 40,
+    chartMarginRight: spotSampleStyles?.chartMarginRight ?? 150,
+    chartMarginLeft: spotSampleStyles?.chartMarginLeft ?? 60,
+    chartMarginBottom: spotSampleStyles?.chartMarginBottom ?? 80,
+    xAxisLabelRotation: spotSampleStyles?.xAxisLabelRotation ?? -45,
+    xAxisLabelFontSize: spotSampleStyles?.xAxisLabelFontSize ?? 11,
+    xAxisShowDate: spotSampleStyles?.xAxisShowDate ?? true,
+    xAxisShowStationName: spotSampleStyles?.xAxisShowStationName ?? true,
+    xAxisShowSampleId: spotSampleStyles?.xAxisShowSampleId ?? true,
+    xAxisLabelLineMode: spotSampleStyles?.xAxisLabelLineMode ?? 'single',
+    xAxisLine1Components: spotSampleStyles?.xAxisLine1Components ?? ['date', 'station', 'sample'],
+    xAxisLine2Components: spotSampleStyles?.xAxisLine2Components ?? [],
+    yAxisLabelFontSize: spotSampleStyles?.yAxisLabelFontSize ?? 12,
+    yAxisTitleFontSize: spotSampleStyles?.yAxisTitleFontSize ?? 14,
+    yAxisTitleFontWeight: spotSampleStyles?.yAxisTitleFontWeight ?? 'bold',
+    yAxisTitleAlign: spotSampleStyles?.yAxisTitleAlign ?? 'center',
+    chartHeight: spotSampleStyles?.chartHeight ?? 600,
+    barSize: spotSampleStyles?.barSize ?? 40,
+    barCategoryGap: spotSampleStyles?.barCategoryGap ?? "10%"
+  };
 
   // Merge default colors with custom colors
   const colorPalette = { ...DEFAULT_PHYLUM_COLORS, ...phylumColors };
@@ -183,17 +226,24 @@ export function StackedTaxonomyChart({
   }
 
   return (
-    <div className="relative w-full" style={{ height }}>
+    <div className="relative w-full" style={{ height: styles.chartHeight, overflow: 'visible' }}>
       {/* Chart Title */}
       <div className="text-center mb-2">
         <h3 className="text-lg font-semibold text-gray-800">{customTitle}</h3>
       </div>
 
       {/* Stacked Bar Chart */}
-      <ResponsiveContainer width={width} height={height - 60}>
+      <ResponsiveContainer width={width} height={styles.chartHeight - 60} style={{ overflow: 'visible' }}>
         <BarChart
           data={chartData}
-          margin={{ top: 40, right: 150, left: 60, bottom: 80 }}
+          margin={{
+            top: styles.chartMarginTop,
+            right: styles.chartMarginRight,
+            left: styles.chartMarginLeft,
+            bottom: styles.chartMarginBottom
+          }}
+          barSize={styles.barSize}
+          barCategoryGap={styles.barCategoryGap}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
 
@@ -203,10 +253,11 @@ export function StackedTaxonomyChart({
               value: 'Sampling Location',
               position: 'insideBottom',
               offset: -15,
-              style: { fontSize: '12px', fontWeight: 'normal' }
+              style: { fontSize: `${styles.xAxisLabelFontSize}px`, fontWeight: 'normal' }
             }}
-            tick={{ fontSize: 11, angle: -45, textAnchor: 'end' }}
-            height={80}
+            tick={{ fontSize: styles.xAxisLabelFontSize, angle: styles.xAxisLabelRotation, textAnchor: 'end' }}
+            height={styles.chartMarginBottom}
+            interval={0}
           />
 
           <YAxis
@@ -215,15 +266,19 @@ export function StackedTaxonomyChart({
               value: customYAxisLabel,
               angle: -90,
               position: 'insideLeft',
-              style: { fontSize: '14px', fontWeight: 'bold', textAnchor: 'middle' }
+              style: {
+                fontSize: `${styles.yAxisTitleFontSize}px`,
+                fontWeight: styles.yAxisTitleFontWeight,
+                textAnchor: 'middle'
+              }
             }}
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: styles.yAxisLabelFontSize }}
           />
 
           <Tooltip content={<CustomTooltip />} />
 
           <Legend
-            verticalAlign="middle"
+            verticalAlign="top"
             align="right"
             layout="vertical"
             wrapperStyle={{

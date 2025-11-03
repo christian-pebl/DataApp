@@ -133,11 +133,12 @@ interface PinMarineDeviceDataProps {
     error?: string;
   }>;
   projectId?: string;
+  onRefreshFiles?: () => Promise<void>; // Callback to refresh file list when dialog opens
   // Auto-load saved plot view
   initialViewToLoad?: string; // Plot view ID to auto-load on mount
 }
 
-export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, multiFileMergeMode = 'sequential', objectLocation, objectName, allProjectFilesForTimeline, getFileDateRange, projectId, initialViewToLoad }: PinMarineDeviceDataProps) {
+export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, multiFileMergeMode = 'sequential', objectLocation, objectName, allProjectFilesForTimeline, getFileDateRange, projectId, onRefreshFiles, initialViewToLoad }: PinMarineDeviceDataProps) {
   const { toast } = useToast();
 
   // State for managing plots with file data
@@ -172,6 +173,15 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   const [mergePreviewData, setMergePreviewData] = useState<ParseResult | null>(null);
   const [mergeRawData, setMergeRawData] = useState<ParseResult | null>(null); // Unrounded data
   const [timeRoundingInterval, setTimeRoundingInterval] = useState<string>('1hr'); // Default 1 hour
+
+  // Refresh file list when file selector dialog opens
+  useEffect(() => {
+    if (showFileSelector && onRefreshFiles) {
+      onRefreshFiles().catch(err => {
+        console.error('Failed to refresh files:', err);
+      });
+    }
+  }, [showFileSelector, onRefreshFiles]);
 
   // CSV preview for subtract
   const [showSubtractPreview, setShowSubtractPreview] = useState(false);

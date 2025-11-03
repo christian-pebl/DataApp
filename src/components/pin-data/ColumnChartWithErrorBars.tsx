@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ErrorBar, LabelList } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ErrorBar, LabelList, ReferenceLine } from 'recharts';
 import type { SpotSampleGroup } from '@/lib/statistical-utils';
 
 interface SpotSampleStyles {
@@ -23,11 +23,13 @@ interface SpotSampleStyles {
   xAxisShowDate?: boolean;
   xAxisShowStationName?: boolean;
   xAxisShowSampleId?: boolean;
+  yAxisLabel?: string; // Custom Y-axis label (overrides parameter name)
   yAxisLabelFontSize?: number;
   yAxisTitleFontSize?: number;
   yAxisTitleFontWeight?: number | string;
   yAxisTitleAlign?: 'left' | 'center' | 'right';
   chartHeight?: number;
+  chartTitle?: string; // Custom chart title
 }
 
 interface ColumnChartWithErrorBarsProps {
@@ -61,7 +63,14 @@ export function ColumnChartWithErrorBars({
   yAxisRange
 }: ColumnChartWithErrorBarsProps) {
 
+  // Helper function to capitalize first letter of parameter names
+  // Converts "length (cm)" -> "Length (cm)", "width (cm)" -> "Width (cm)"
+  const capitalizeParameter = (param: string): string => {
+    return param.charAt(0).toUpperCase() + param.slice(1);
+  };
+
   // Extract styling properties with defaults
+  const baseYAxisLabelFontSize = spotSampleStyles?.yAxisLabelFontSize ?? 12;
   const styles = {
     barGap: spotSampleStyles?.barGap ?? 4,
     barCategoryGap: spotSampleStyles?.barCategoryGap ?? 10,
@@ -77,8 +86,8 @@ export function ColumnChartWithErrorBars({
     xAxisShowDate: spotSampleStyles?.xAxisShowDate ?? true,
     xAxisShowStationName: spotSampleStyles?.xAxisShowStationName ?? true,
     xAxisShowSampleId: spotSampleStyles?.xAxisShowSampleId ?? true,
-    yAxisLabelFontSize: spotSampleStyles?.yAxisLabelFontSize ?? 12,
-    yAxisTitleFontSize: spotSampleStyles?.yAxisTitleFontSize ?? 14,
+    yAxisLabelFontSize: baseYAxisLabelFontSize,
+    yAxisTitleFontSize: spotSampleStyles?.yAxisTitleFontSize ?? (baseYAxisLabelFontSize + 2), // Title is 2px larger than labels
     yAxisTitleFontWeight: spotSampleStyles?.yAxisTitleFontWeight ?? 'normal',
     yAxisTitleAlign: spotSampleStyles?.yAxisTitleAlign ?? 'center',
     chartHeight: spotSampleStyles?.chartHeight ?? 350
@@ -107,6 +116,10 @@ export function ColumnChartWithErrorBars({
   const chartData = parameterData.map((group, index) => {
     // FIX: Do NOT add offsets to mean/SD values - this corrupts the chart!
     // The uniqueness should be achieved through the xAxisLabel key only
+
+    // Only include error bars when there's actual meaningful error (SD > 0 and count > 1)
+    const hasError = group.count > 1 && group.stats.sd > 0;
+
     const result = {
       xAxisLabel: `${group.xAxisLabel}_${index}`, // Make x-axis label unique (this is the key)
       displayLabel: group.xAxisLabel, // Original label for display
@@ -117,8 +130,9 @@ export function ColumnChartWithErrorBars({
       count: group.count,
       sampleId: group.sampleId,
       uniqueId: `${parameter}-${group.date}-${group.sampleId}-${index}`, // Unique identifier
-      // Error bar data
-      errorY: group.count > 1 ? [group.stats.sd, group.stats.sd] : [0, 0] // No error bars for single samples
+      // Error bar data - only set if there's meaningful error to prevent duplicate keys
+      // Setting to undefined prevents Recharts from rendering error bars for these points
+      errorY: hasError ? [group.stats.sd, group.stats.sd] : undefined
     };
 
     // Log first 3 data transformations for debugging
@@ -191,71 +205,126 @@ export function ColumnChartWithErrorBars({
     const stationName = bracketParts.length > 1 ? bracketParts[0] : '';
     const sampleId = bracketParts.length > 1 ? bracketParts[1] : bracketContent;
 
-    // Build label components based on toggle settings
-    const labelComponents: string[] = [];
-    if (styles.xAxisShowDate && dateLabel) {
-      labelComponents.push(dateLabel);
-    }
-    if (styles.xAxisShowStationName && stationName) {
-      labelComponents.push(stationName);
-    }
-    if (styles.xAxisShowSampleId && sampleId) {
-      labelComponents.push(sampleId);
-    }
+    // Map component types to their values
+    const componentMap: Record<'date' | 'station' | 'sample', string> = {
+      date: dateLabel,
+      station: stationName,
+      sample: sampleId
+    };
 
-    // If no components are shown, display a placeholder
-    const displayText = labelComponents.length > 0 ? labelComponents.join(' ') : '-';
+    // Get label layout configuration
+    const labelLineMode = spotSampleStyles?.xAxisLabelLineMode ?? 'two-line';
+    const line1Components = spotSampleStyles?.xAxisLine1Components ?? ['date'];
+    const line2Components = spotSampleStyles?.xAxisLine2Components ?? ['station', 'sample'];
 
-    // Calculate line breaks - show first part on line 1, rest on line 2
-    const firstLine = labelComponents[0] || '';
-    const secondLine = labelComponents.slice(1).join(' ');
+    // Build final display based on mode
+    if (labelLineMode === 'single') {
+      // Single line mode: show all enabled components on one line
+      const labelComponents: string[] = [];
+      if (styles.xAxisShowDate && dateLabel) {
+        labelComponents.push(dateLabel);
+      }
+      if (styles.xAxisShowStationName && stationName) {
+        labelComponents.push(stationName);
+      }
+      if (styles.xAxisShowSampleId && sampleId) {
+        labelComponents.push(sampleId);
+      }
 
-    return (
-      <g transform={`translate(${x},${y})`}>
-        {/* First line */}
-        {firstLine && (
+      const displayText = labelComponents.length > 0 ? labelComponents.join(' ') : '-';
+
+      return (
+        <g transform={`translate(${x},${y})`}>
           <text
             x={0}
             y={0}
             dy={16}
             textAnchor="end"
-            fill="#666"
+            fill={displayText === '-' ? '#999' : '#666'}
             fontSize={styles.xAxisLabelFontSize}
             transform={`rotate(${styles.xAxisLabelRotation})`}
           >
-            {firstLine}
+            {displayText}
           </text>
-        )}
-        {/* Second line */}
-        {secondLine && (
-          <text
-            x={0}
-            y={0}
-            dy={16 + styles.xAxisLabelFontSize + 2}
-            textAnchor="end"
-            fill="#666"
-            fontSize={styles.xAxisLabelFontSize}
-            transform={`rotate(${styles.xAxisLabelRotation})`}
-          >
-            {secondLine}
-          </text>
-        )}
-        {/* Placeholder if nothing to show */}
-        {!firstLine && !secondLine && (
-          <text
-            x={0}
-            y={0}
-            dy={16}
-            textAnchor="end"
-            fill="#999"
-            fontSize={styles.xAxisLabelFontSize}
-            transform={`rotate(${styles.xAxisLabelRotation})`}
-          >
-            -
-          </text>
-        )}
-      </g>
-    );
+        </g>
+      );
+    } else {
+      // Two-line mode: distribute components according to line assignments
+      const line1Parts: string[] = [];
+      const line2Parts: string[] = [];
+
+      // Build line 1 from assigned components (respecting visibility toggles)
+      line1Components.forEach(comp => {
+        const value = componentMap[comp];
+        if (value) {
+          if (comp === 'date' && !styles.xAxisShowDate) return;
+          if (comp === 'station' && !styles.xAxisShowStationName) return;
+          if (comp === 'sample' && !styles.xAxisShowSampleId) return;
+          line1Parts.push(value);
+        }
+      });
+
+      // Build line 2 from assigned components (respecting visibility toggles)
+      line2Components.forEach(comp => {
+        const value = componentMap[comp];
+        if (value) {
+          if (comp === 'date' && !styles.xAxisShowDate) return;
+          if (comp === 'station' && !styles.xAxisShowStationName) return;
+          if (comp === 'sample' && !styles.xAxisShowSampleId) return;
+          line2Parts.push(value);
+        }
+      });
+
+      const firstLine = line1Parts.join(' ');
+      const secondLine = line2Parts.join(' ');
+
+      return (
+        <g transform={`translate(${x},${y})`}>
+          {/* First line */}
+          {firstLine && (
+            <text
+              x={0}
+              y={0}
+              dy={16}
+              textAnchor="end"
+              fill="#666"
+              fontSize={styles.xAxisLabelFontSize}
+              transform={`rotate(${styles.xAxisLabelRotation})`}
+            >
+              {firstLine}
+            </text>
+          )}
+          {/* Second line */}
+          {secondLine && (
+            <text
+              x={0}
+              y={0}
+              dy={16 + styles.xAxisLabelFontSize + 2}
+              textAnchor="end"
+              fill="#666"
+              fontSize={styles.xAxisLabelFontSize}
+              transform={`rotate(${styles.xAxisLabelRotation})`}
+            >
+              {secondLine}
+            </text>
+          )}
+          {/* Placeholder if nothing to show */}
+          {!firstLine && !secondLine && (
+            <text
+              x={0}
+              y={0}
+              dy={16}
+              textAnchor="end"
+              fill="#999"
+              fontSize={styles.xAxisLabelFontSize}
+              transform={`rotate(${styles.xAxisLabelRotation})`}
+            >
+              -
+            </text>
+          )}
+        </g>
+      );
+    }
   };
 
   return (
@@ -282,13 +351,14 @@ export function ColumnChartWithErrorBars({
 
         <YAxis
           label={{
-            value: parameter,
+            value: spotSampleStyles?.yAxisLabel || capitalizeParameter(parameter),
             angle: -90,
             position: 'insideLeft',
             style: {
               fontSize: styles.yAxisTitleFontSize,
               fontWeight: styles.yAxisTitleFontWeight,
-              textAnchor: 'middle' // SVG uses 'middle' for centering, not 'center'
+              textAnchor: 'middle', // SVG uses 'middle' for centering, not 'center'
+              fill: '#666' // Match the plot color scheme
             }
           }}
           tick={{ fontSize: styles.yAxisLabelFontSize }}
@@ -323,11 +393,10 @@ export function ColumnChartWithErrorBars({
             style={{ fontSize: 11, fill: '#333', fontWeight: 500 }}
           />
           {/*
-            Error bars - only rendered if sd > 0
-            NOTE: Recharts ErrorBar internally generates SVG line elements with keys based on coordinates.
-            In development mode with React Strict Mode, this may cause duplicate key warnings when
-            multiple error bars have similar coordinates. This is a known Recharts limitation and
-            does not affect functionality. The warnings typically don't appear in production builds.
+            Error bars - only rendered when errorY is defined (SD > 0 and count > 1)
+            By setting errorY to undefined for data points without meaningful error,
+            we prevent duplicate key warnings that occur when multiple error bars
+            have identical coordinates (e.g., when SD = 0).
           */}
           <ErrorBar
             dataKey="errorY"

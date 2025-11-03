@@ -6683,6 +6683,7 @@ function MapDrawingPageContent() {
                     allProjectFilesForTimeline={allProjectFilesForTimeline}
                     getFileDateRange={getFileDateRange}
                     projectId={currentProjectContext || activeProjectId}
+                    onRefreshFiles={reloadProjectFiles}
                   />
                 );
               })()
