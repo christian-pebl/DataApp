@@ -78,6 +78,12 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
     }
     checkAuth()
 
+    // Fallback timeout to ensure auth check completes even if something goes wrong
+    const fallbackTimeout = setTimeout(() => {
+      console.log('⚠️  Auth check timeout - marking as complete')
+      setAuthCheckComplete(true)
+    }, 3000) // 3 second timeout
+
     // Listen for auth changes
     const supabase = createClient()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -86,7 +92,10 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
       setAuthCheckComplete(true)
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      clearTimeout(fallbackTimeout)
+      subscription.unsubscribe()
+    }
   }, [])
 
   // Listen for online/offline status
@@ -109,16 +118,30 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
   const loadFromLocalStorage = useCallback(() => {
     if (typeof window === 'undefined') return
 
+    console.log('📂 Loading data from localStorage...')
     try {
       const storedPins = localStorage.getItem('map-drawing-pins')
       const storedLines = localStorage.getItem('map-drawing-lines')
       const storedAreas = localStorage.getItem('map-drawing-areas')
-      
-      if (storedPins) setPins(JSON.parse(storedPins))
-      if (storedLines) setLines(JSON.parse(storedLines))
-      if (storedAreas) setAreas(JSON.parse(storedAreas))
+
+      if (storedPins) {
+        const parsedPins = JSON.parse(storedPins)
+        setPins(parsedPins)
+        console.log(`✅ Loaded ${parsedPins.length} pins from localStorage`)
+      }
+      if (storedLines) {
+        const parsedLines = JSON.parse(storedLines)
+        setLines(parsedLines)
+        console.log(`✅ Loaded ${parsedLines.length} lines from localStorage`)
+      }
+      if (storedAreas) {
+        const parsedAreas = JSON.parse(storedAreas)
+        setAreas(parsedAreas)
+        console.log(`✅ Loaded ${parsedAreas.length} areas from localStorage`)
+      }
+      console.log('✅ localStorage load complete')
     } catch (error) {
-      console.error('Error loading from localStorage:', error)
+      console.error('❌ Error loading from localStorage:', error)
     }
   }, [])
 
@@ -239,12 +262,18 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
       // Mark as loaded immediately to prevent duplicate calls
       hasInitiallyLoadedRef.current = true
       // If authenticated, load from database (don't load from localStorage first)
-      loadFromDatabase()
+      loadFromDatabase().catch(err => {
+        console.error('Failed to load from database:', err)
+        // Ensure loading state is cleared even on error
+        setIsLoading(false)
+      })
     } else if (!enableSync || isAuthenticated === false) {
       // Mark as loaded immediately
       hasInitiallyLoadedRef.current = true
       // Only load from localStorage if not authenticated or sync is disabled
       loadFromLocalStorage()
+      // Immediately set loading to false since localStorage load is synchronous
+      setIsLoading(false)
     }
     // Wait for authCheckComplete before loading
     // eslint-disable-next-line react-hooks/exhaustive-deps

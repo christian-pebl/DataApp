@@ -103,6 +103,14 @@ export function PinChartDisplaySpotSample({
   const [tempYAxisMin, setTempYAxisMin] = useState<string>('');
   const [tempYAxisMax, setTempYAxisMax] = useState<string>('');
 
+  // Data filtering state (for _indiv files)
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [selectedStations, setSelectedStations] = useState<string[]>([]);
+  const [selectedSampleIds, setSelectedSampleIds] = useState<string[]>([]);
+
+  // Data aggregation state (for _indiv files)
+  const [aggregationMode, setAggregationMode] = useState<'detailed' | 'by-date'>('detailed');
+
   // Load style rules from localStorage (with versioning)
   const [styleRules, setStyleRules] = useState<StyleRule[]>(() => {
     if (typeof window === 'undefined') return DEFAULT_STYLE_RULES;
@@ -540,10 +548,131 @@ export function PinChartDisplaySpotSample({
     return abbreviated;
   }, [groupedData, fileName]);
 
+  // Extract unique dates, stations, and sample IDs for filtering (for _indiv files)
+  const availableDates = useMemo(() => {
+    const dates = [...new Set(processedGroupedData.map(d => d.date))];
+    return dates.sort(); // Sort chronologically
+  }, [processedGroupedData]);
+
+  const availableStations = useMemo(() => {
+    const stations = [...new Set(processedGroupedData.map(d => d.sampleId))];
+    return stations.sort(); // Sort alphabetically
+  }, [processedGroupedData]);
+
+  const availableSampleIdsForFilter = useMemo(() => {
+    const sampleIds = [...new Set(
+      processedGroupedData
+        .filter(d => d.bladeId) // Only include if bladeId exists
+        .map(d => d.bladeId!)
+    )];
+    return sampleIds.sort(); // Sort alphabetically
+  }, [processedGroupedData]);
+
+  // Apply filtering to grouped data (for _indiv files)
+  const filteredGroupedData = useMemo(() => {
+    let filtered = processedGroupedData;
+
+    // Apply date filter
+    if (selectedDates.length > 0) {
+      filtered = filtered.filter(d => selectedDates.includes(d.date));
+    }
+
+    // Apply station filter
+    if (selectedStations.length > 0) {
+      filtered = filtered.filter(d => selectedStations.includes(d.sampleId));
+    }
+
+    // Apply sample ID filter
+    if (selectedSampleIds.length > 0) {
+      filtered = filtered.filter(d => d.bladeId && selectedSampleIds.includes(d.bladeId));
+    }
+
+    console.log('[SPOT-SAMPLE] Filtering applied:', {
+      original: processedGroupedData.length,
+      filtered: filtered.length,
+      selectedDates,
+      selectedStations,
+      selectedSampleIds
+    });
+
+    return filtered;
+  }, [processedGroupedData, selectedDates, selectedStations, selectedSampleIds]);
+
+  // Apply aggregation mode (for _indiv files)
+  const finalGroupedData = useMemo(() => {
+    if (aggregationMode === 'detailed') {
+      return filteredGroupedData;
+    }
+
+    // Aggregate by date - combine all samples for each date+parameter
+    const aggregated: SpotSampleGroup[] = [];
+    const dateParamMap = new Map<string, number[]>();
+
+    // Collect all values by date+parameter
+    filteredGroupedData.forEach(group => {
+      const key = `${group.date}|${group.parameter}`;
+      const existing = dateParamMap.get(key) || [];
+      dateParamMap.set(key, [...existing, ...group.values]);
+    });
+
+    // Create aggregated groups
+    dateParamMap.forEach((values, key) => {
+      const [date, parameter] = key.split('|');
+
+      // Calculate statistics for aggregated data
+      const sorted = values.slice().sort((a, b) => a - b);
+      const count = values.length;
+      const mean = values.reduce((sum, v) => sum + v, 0) / count;
+      const min = sorted[0];
+      const max = sorted[count - 1];
+      const Q1 = sorted[Math.floor(count * 0.25)];
+      const median = count % 2 === 0
+        ? (sorted[Math.floor(count / 2) - 1] + sorted[Math.floor(count / 2)]) / 2
+        : sorted[Math.floor(count / 2)];
+      const Q3 = sorted[Math.floor(count * 0.75)];
+
+      // Calculate standard deviation and standard error
+      const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / count;
+      const sd = Math.sqrt(variance);
+      const se = sd / Math.sqrt(count);
+
+      // Format date for display
+      const dateObj = new Date(date);
+      const formattedDate = `${String(dateObj.getDate()).padStart(2, '0')}/${String(dateObj.getMonth() + 1).padStart(2, '0')}/${String(dateObj.getFullYear()).slice(-2)}`;
+
+      aggregated.push({
+        date,
+        sampleId: 'All Samples', // Indicate this is aggregated
+        xAxisLabel: formattedDate, // Just show the date
+        parameter,
+        values,
+        count,
+        stats: {
+          mean,
+          sd,
+          se,
+          min,
+          Q1,
+          median,
+          Q3,
+          max
+        }
+      });
+    });
+
+    console.log('[SPOT-SAMPLE] Aggregation applied:', {
+      mode: aggregationMode,
+      original: filteredGroupedData.length,
+      aggregated: aggregated.length
+    });
+
+    return aggregated;
+  }, [filteredGroupedData, aggregationMode]);
+
   // Assign colors to unique sample IDs
   // Use custom colors from style rules if available, otherwise use default palette
   const sampleIdColors = useMemo(() => {
-    const uniqueSampleIds = [...new Set(processedGroupedData.map(d => d.sampleId))];
+    const uniqueSampleIds = [...new Set(finalGroupedData.map(d => d.sampleId))];
     const colors: Record<string, string> = {};
     const customColors = spotSampleStyles?.sampleColors || {};
 
@@ -555,7 +684,7 @@ export function PinChartDisplaySpotSample({
     console.log('[SPOT-SAMPLE] Assigned colors:', colors);
     console.log('[SPOT-SAMPLE] Custom colors from style rules:', customColors);
     return colors;
-  }, [processedGroupedData, spotSampleStyles]);
+  }, [finalGroupedData, spotSampleStyles]);
 
   // Get available sample ID column options
   const sampleIdColumnOptions = useMemo(() => {
@@ -564,13 +693,13 @@ export function PinChartDisplaySpotSample({
 
   // Get list of unique sample IDs for color customization
   const availableSampleIds = useMemo(() => {
-    return [...new Set(processedGroupedData.map(d => d.sampleId))];
-  }, [processedGroupedData]);
+    return [...new Set(finalGroupedData.map(d => d.sampleId))];
+  }, [finalGroupedData]);
 
   // Calculate dynamic chart width for horizontal scrolling
   const uniqueDataPoints = useMemo(() => {
-    return [...new Set(processedGroupedData.map(d => d.xAxisLabel))].length;
-  }, [processedGroupedData]);
+    return [...new Set(finalGroupedData.map(d => d.xAxisLabel))].length;
+  }, [finalGroupedData]);
 
   const needsScrolling = uniqueDataPoints > 20;
   const chartWidth = needsScrolling ? uniqueDataPoints * 60 : undefined;
@@ -908,8 +1037,8 @@ export function PinChartDisplaySpotSample({
     );
   }
 
-  if (processedGroupedData.length === 0) {
-    console.error('[SPOT-SAMPLE] ❌ ERROR: No grouped data created');
+  if (finalGroupedData.length === 0) {
+    console.error('[SPOT-SAMPLE] ❌ ERROR: No grouped data created (or all data filtered out)');
     console.error('[SPOT-SAMPLE] This means the grouping function returned 0 groups');
     console.error('[SPOT-SAMPLE] Check the [STATISTICAL-UTILS] logs above for skip reasons');
 
@@ -1057,6 +1186,184 @@ export function PinChartDisplaySpotSample({
           </Select>
         </div>
 
+        {/* Filter Controls - only show for _indiv files */}
+        {fileName?.toLowerCase().endsWith('_indiv.csv') && (
+          <>
+            {/* Date Filter */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8">
+                  Dates {selectedDates.length > 0 && `(${selectedDates.length})`}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold">Filter by Date</Label>
+                    {selectedDates.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={() => setSelectedDates([])}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {availableDates.map(date => {
+                      const dateObj = new Date(date);
+                      const formattedDate = `${String(dateObj.getDate()).padStart(2, '0')}/${String(dateObj.getMonth() + 1).padStart(2, '0')}/${dateObj.getFullYear()}`;
+                      return (
+                        <div key={date} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`date-${date}`}
+                            checked={selectedDates.includes(date)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedDates([...selectedDates, date]);
+                              } else {
+                                setSelectedDates(selectedDates.filter(d => d !== date));
+                              }
+                            }}
+                          />
+                          <label
+                            htmlFor={`date-${date}`}
+                            className="text-xs cursor-pointer"
+                          >
+                            {formattedDate}
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Station Filter */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8">
+                  Stations {selectedStations.length > 0 && `(${selectedStations.length})`}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold">Filter by Station</Label>
+                    {selectedStations.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={() => setSelectedStations([])}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {availableStations.map(station => (
+                      <div key={station} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`station-${station}`}
+                          checked={selectedStations.includes(station)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedStations([...selectedStations, station]);
+                            } else {
+                              setSelectedStations(selectedStations.filter(s => s !== station));
+                            }
+                          }}
+                        />
+                        <label
+                          htmlFor={`station-${station}`}
+                          className="text-xs cursor-pointer"
+                        >
+                          {station}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Sample ID Filter */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8">
+                  Sample IDs {selectedSampleIds.length > 0 && `(${selectedSampleIds.length})`}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold">Filter by Sample ID</Label>
+                    {selectedSampleIds.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={() => setSelectedSampleIds([])}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {availableSampleIdsForFilter.map(sampleId => (
+                      <div key={sampleId} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`sampleid-${sampleId}`}
+                          checked={selectedSampleIds.includes(sampleId)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedSampleIds([...selectedSampleIds, sampleId]);
+                            } else {
+                              setSelectedSampleIds(selectedSampleIds.filter(id => id !== sampleId));
+                            }
+                          }}
+                        />
+                        <label
+                          htmlFor={`sampleid-${sampleId}`}
+                          className="text-xs cursor-pointer"
+                        >
+                          {sampleId}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Aggregation Mode Toggle */}
+            <div className="flex items-center gap-1 border rounded-lg p-1">
+              <Button
+                variant={aggregationMode === 'detailed' ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setAggregationMode('detailed')}
+                className="h-6 text-xs"
+                title="Show all individual data points"
+              >
+                Detailed
+              </Button>
+              <Button
+                variant={aggregationMode === 'by-date' ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setAggregationMode('by-date')}
+                className="h-6 text-xs"
+                title="Aggregate all samples by date"
+              >
+                By Date
+              </Button>
+            </div>
+          </>
+        )}
+
         {/* Styling Button */}
         <StylingRulesDialog
           open={showStylingDialog}
@@ -1086,7 +1393,7 @@ export function PinChartDisplaySpotSample({
 
         {/* Info Badge */}
         <div className="text-xs text-muted-foreground">
-          {processedGroupedData.length} data point{processedGroupedData.length !== 1 ? 's' : ''} • {' '}
+          {finalGroupedData.length} data point{finalGroupedData.length !== 1 ? 's' : ''} • {' '}
           {Object.keys(sampleIdColors).length} sample{Object.keys(sampleIdColors).length !== 1 ? 's' : ''}
         </div>
       </div>
@@ -1109,7 +1416,7 @@ export function PinChartDisplaySpotSample({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {processedGroupedData.map((group, index) => (
+                {finalGroupedData.map((group, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-medium">
                       {format(parseISO(group.date), 'dd/MM/yyyy')}
@@ -1146,13 +1453,13 @@ export function PinChartDisplaySpotSample({
               console.log('[SPOT-SAMPLE] Chart type:', chartType);
               console.log('[SPOT-SAMPLE] All parameter columns:', parameterColumns);
               console.log('[SPOT-SAMPLE] Visible parameters:', Array.from(visibleParameters));
-              console.log('[SPOT-SAMPLE] Grouped data length:', processedGroupedData.length);
+              console.log('[SPOT-SAMPLE] Grouped data length:', finalGroupedData.length);
               console.log('[SPOT-SAMPLE] Chart width:', chartWidth);
               return null;
             })()}
             {visibleParametersList.map(param => {
               // Log data being passed to chart component
-              const paramData = processedGroupedData.filter(d => d.parameter === param);
+              const paramData = finalGroupedData.filter(d => d.parameter === param);
               console.log(`[SPOT-SAMPLE-CHART] 🎨 Rendering ${param} chart:`, {
                 parameterName: param,
                 dataPointsCount: paramData.length,
@@ -1256,7 +1563,7 @@ export function PinChartDisplaySpotSample({
                   <div style={{ width: chartWidth || '100%' }}>
                     {chartType === 'column' ? (
                       <ColumnChartWithErrorBars
-                        data={processedGroupedData}
+                        data={finalGroupedData}
                         parameter={param}
                         sampleIdColors={sampleIdColors}
                         width={chartWidth || '100%'}
@@ -1268,7 +1575,7 @@ export function PinChartDisplaySpotSample({
                       />
                     ) : (
                     <WhiskerPlot
-                      data={processedGroupedData}
+                      data={finalGroupedData}
                       parameter={param}
                       sampleIdColors={sampleIdColors}
                       width={chartWidth || '100%'}

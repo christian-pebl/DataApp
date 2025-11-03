@@ -1222,41 +1222,48 @@ function MapDrawingPageContent() {
   const reloadProjectFiles = useCallback(async () => {
     console.log('🔄 Reloading all project files...');
 
-    // Reload files for all pins
-    const fileMetadata: Record<string, PinFile[]> = {};
-    for (const pin of pins) {
-      try {
-        const files = await fileStorageService.getPinFiles(pin.id);
-        if (files.length > 0) {
-          fileMetadata[pin.id] = files;
-        }
-      } catch (error) {
-        console.error(`Error reloading files for pin ${pin.id}:`, error);
-      }
+    const projectId = currentProjectContext || activeProjectId;
+    if (!projectId) {
+      console.warn('No project ID available for reloading files');
+      return;
     }
 
-    // Reload files for all areas
-    const areaFileMetadataTemp: Record<string, PinFile[]> = {};
-    for (const area of areas) {
-      try {
-        const files = await fileStorageService.getAreaFiles(area.id);
-        if (files.length > 0) {
-          areaFileMetadataTemp[area.id] = files;
+    try {
+      // Load ALL files for the entire project (same approach as initial load)
+      // This ensures we get files from ALL pins/areas, not just the ones currently drawn on the map
+      const allProjectFiles = await fileStorageService.getProjectFiles(projectId);
+
+      // Group files by pinId or areaId
+      const pinMetadata: Record<string, PinFile[]> = {};
+      const areaMetadata: Record<string, PinFile[]> = {};
+
+      for (const file of allProjectFiles) {
+        if (file.pinId) {
+          if (!pinMetadata[file.pinId]) {
+            pinMetadata[file.pinId] = [];
+          }
+          pinMetadata[file.pinId].push(file);
+        } else if (file.areaId) {
+          if (!areaMetadata[file.areaId]) {
+            areaMetadata[file.areaId] = [];
+          }
+          areaMetadata[file.areaId].push(file);
         }
-      } catch (error) {
-        console.error(`Error reloading files for area ${area.id}:`, error);
       }
+
+      // Update state
+      setPinFileMetadata(pinMetadata);
+      setAreaFileMetadata(areaMetadata);
+
+      console.log(`✅ Reloaded ${allProjectFiles.length} files (${Object.keys(pinMetadata).length} pins, ${Object.keys(areaMetadata).length} areas)`);
+
+      // Also refresh merged files
+      await fetchMergedFiles();
+
+    } catch (error) {
+      console.error('Error reloading project files:', error);
     }
-
-    // Update state
-    setPinFileMetadata(fileMetadata);
-    setAreaFileMetadata(areaFileMetadataTemp);
-
-    // Also refresh merged files
-    await fetchMergedFiles();
-
-    console.log('✅ All project files reloaded');
-  }, [pins, areas, fetchMergedFiles]);
+  }, [currentProjectContext, activeProjectId, fetchMergedFiles]);
 
   // Fetch merged files when dialog opens or project changes
   useEffect(() => {

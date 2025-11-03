@@ -76,6 +76,12 @@ export interface StyleProperties {
     xAxisShowDate?: boolean; // Show date in X-axis label (default: true)
     xAxisShowStationName?: boolean; // Show station name in X-axis label (default: true)
     xAxisShowSampleId?: boolean; // Show sample ID in X-axis label (default: true)
+    // Data filtering (for _indiv files)
+    filterByDates?: string[]; // Filter to show only specific dates (e.g., ["2024-01-15", "2024-01-20"])
+    filterByStations?: string[]; // Filter to show only specific station names (e.g., ["Farm-L", "Farm-R"])
+    filterBySampleIds?: string[]; // Filter to show only specific sample IDs (e.g., ["4-SW-1", "5-NE-2"])
+    // Data aggregation mode (for _indiv files)
+    aggregationMode?: 'detailed' | 'by-date'; // Display mode: 'detailed' = all data points, 'by-date' = aggregate all samples per date (default: 'detailed')
     // Y-axis label styling
     yAxisLabelFontSize?: number; // Font size for Y-axis labels (default: 12)
     // Y-axis title styling
@@ -101,7 +107,7 @@ export interface StyleRule {
 }
 
 // Version for style rules - increment when defaults change
-export const STYLE_RULES_VERSION = 19;
+export const STYLE_RULES_VERSION = 20;
 
 // Default styling rules - can be expanded
 // IMPORTANT: Order matters! More specific patterns must come BEFORE more general patterns
@@ -257,6 +263,14 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
         xAxisShowDate: true, // Show date in X-axis label
         xAxisShowStationName: true, // Show station name in X-axis label
         xAxisShowSampleId: true, // Show sample ID in X-axis label
+
+        // Data filtering - empty arrays means show all data
+        filterByDates: [], // Show all dates by default
+        filterByStations: [], // Show all stations by default
+        filterBySampleIds: [], // Show all sample IDs by default
+
+        // Data aggregation mode
+        aggregationMode: 'detailed', // Show detailed data by default
 
         // Y-axis label styling
         yAxisLabelFontSize: 12,

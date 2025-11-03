@@ -2289,9 +2289,24 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   }, [plots, toast]);
 
   // Initialize with one plot for the initially selected files
+  // TESTING: Always add an empty plot on mount for quick testing
   React.useEffect(() => {
-    if (!plotsInitialized.current && plots.length === 0 && files.length > 0) {
-      addPlot('device', files, { fileType, customTitle: getFileName(files) });
+    if (!plotsInitialized.current && plots.length === 0) {
+      if (files.length > 0) {
+        // If files are provided, add a plot with those files
+        addPlot('device', files, { fileType, customTitle: getFileName(files) });
+      } else {
+        // TESTING: Add an empty plot by default for quick testing of load functionality
+        console.log('📊 [TESTING] Adding empty default plot for testing');
+        setPlots([{
+          id: `plot-${Date.now()}`,
+          title: 'Plot 1',
+          type: 'device',
+          fileType: fileType,
+          files: [],
+          fileName: 'Empty Plot'
+        }]);
+      }
       plotsInitialized.current = true;
     }
   }, [addPlot, plots.length, fileType, files]);
