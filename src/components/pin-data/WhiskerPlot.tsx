@@ -21,6 +21,9 @@ interface SpotSampleStyles {
   xAxisLabelRotation?: number;
   xAxisLabelFontSize?: number;
   xAxisLabelSecondLineOffset?: number;
+  xAxisShowDate?: boolean;
+  xAxisShowStationName?: boolean;
+  xAxisShowSampleId?: boolean;
   yAxisLabelFontSize?: number;
   yAxisTitleFontSize?: number;
   yAxisTitleFontWeight?: number | string;
@@ -63,6 +66,9 @@ export function WhiskerPlot({
     xAxisLabelRotation: spotSampleStyles?.xAxisLabelRotation ?? -45,
     xAxisLabelFontSize: spotSampleStyles?.xAxisLabelFontSize ?? 11,
     xAxisLabelSecondLineOffset: spotSampleStyles?.xAxisLabelSecondLineOffset ?? 0,
+    xAxisShowDate: spotSampleStyles?.xAxisShowDate ?? true,
+    xAxisShowStationName: spotSampleStyles?.xAxisShowStationName ?? true,
+    xAxisShowSampleId: spotSampleStyles?.xAxisShowSampleId ?? true,
     yAxisLabelFontSize: spotSampleStyles?.yAxisLabelFontSize ?? 12,
     yAxisTitleFontSize: spotSampleStyles?.yAxisTitleFontSize ?? 14,
     yAxisTitleFontWeight: spotSampleStyles?.yAxisTitleFontWeight ?? 'normal',
@@ -415,11 +421,32 @@ export function WhiskerPlot({
             // Create unique key from group properties
             const uniqueKey = `label-${group.date}-${group.sampleId}-${group.bladeId || 'no-blade'}-${index}`;
 
-            // Split label into date and sample ID (with subset if present)
-            // Format: "DD/MM/YY [Sample-ID Subset]"
+            // Split label into date and sample info
+            // Format: "DD/MM/YY [Station-Name Sample-ID]" or "DD/MM/YY [Sample-ID]"
             const labelParts = group.xAxisLabel.match(/^(.+?)\s+\[(.+?)\]$/);
             const dateLabel = labelParts ? labelParts[1] : group.xAxisLabel;
-            const sampleLabel = labelParts ? `[${labelParts[2]}]` : '';
+            const bracketContent = labelParts ? labelParts[2] : '';
+
+            // Try to split bracket content into station name and sample ID
+            const bracketParts = bracketContent.split(' ');
+            const stationName = bracketParts.length > 1 ? bracketParts[0] : '';
+            const sampleId = bracketParts.length > 1 ? bracketParts[1] : bracketContent;
+
+            // Build label components based on toggle settings
+            const labelComponents: string[] = [];
+            if (styles.xAxisShowDate && dateLabel) {
+              labelComponents.push(dateLabel);
+            }
+            if (styles.xAxisShowStationName && stationName) {
+              labelComponents.push(stationName);
+            }
+            if (styles.xAxisShowSampleId && sampleId) {
+              labelComponents.push(sampleId);
+            }
+
+            // Calculate line breaks - show first part on line 1, rest on line 2
+            const firstLine = labelComponents[0] || '';
+            const secondLine = labelComponents.slice(1).join(' ');
 
             const secondLineOffset = styles.xAxisLabelSecondLineOffset || 0;
             const secondLineX = x + secondLineOffset;
@@ -427,19 +454,21 @@ export function WhiskerPlot({
 
             return (
               <g key={uniqueKey}>
-                {/* Date on first line */}
-                <text
-                  x={x}
-                  y={plotHeight + 15}
-                  textAnchor="end"
-                  fontSize={styles.xAxisLabelFontSize}
-                  fill="#666"
-                  transform={`rotate(${styles.xAxisLabelRotation}, ${x}, ${plotHeight + 15})`}
-                >
-                  {dateLabel}
-                </text>
-                {/* Sample ID (and subset) on second line */}
-                {sampleLabel && (
+                {/* First line */}
+                {firstLine && (
+                  <text
+                    x={x}
+                    y={plotHeight + 15}
+                    textAnchor="end"
+                    fontSize={styles.xAxisLabelFontSize}
+                    fill="#666"
+                    transform={`rotate(${styles.xAxisLabelRotation}, ${x}, ${plotHeight + 15})`}
+                  >
+                    {firstLine}
+                  </text>
+                )}
+                {/* Second line */}
+                {secondLine && (
                   <text
                     x={secondLineX}
                     y={secondLineY}
@@ -448,7 +477,20 @@ export function WhiskerPlot({
                     fill="#666"
                     transform={`rotate(${styles.xAxisLabelRotation}, ${secondLineX}, ${secondLineY})`}
                   >
-                    {sampleLabel}
+                    {secondLine}
+                  </text>
+                )}
+                {/* Placeholder if nothing to show */}
+                {!firstLine && !secondLine && (
+                  <text
+                    x={x}
+                    y={plotHeight + 15}
+                    textAnchor="end"
+                    fontSize={styles.xAxisLabelFontSize}
+                    fill="#999"
+                    transform={`rotate(${styles.xAxisLabelRotation}, ${x}, ${plotHeight + 15})`}
+                  >
+                    -
                   </text>
                 )}
               </g>

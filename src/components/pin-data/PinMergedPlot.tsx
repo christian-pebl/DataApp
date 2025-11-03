@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { HexColorPicker } from 'react-colorful';
-import { Split, ArrowLeft, ArrowRight, X, Loader2, AlertCircle, Settings, ChevronLeft, ChevronRight, Circle, Filter, BarChart3, Sparkles } from 'lucide-react';
+import { Split, ArrowLeft, ArrowRight, X, Loader2, AlertCircle, Settings, ChevronLeft, ChevronRight, Circle, Filter, BarChart3, Sparkles, Ruler } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   LineChart,
@@ -47,6 +47,24 @@ const KEY_TO_DISPLAY_NAME: Record<string, string> = Object.fromEntries(
   Object.entries(DISPLAY_NAME_TO_KEY).map(([display, key]) => [key, display])
 );
 
+interface ParameterSettings {
+  timeFilter?: {
+    enabled: boolean;
+    excludeStart: string;
+    excludeEnd: string;
+  };
+  movingAverage?: {
+    enabled: boolean;
+    windowDays: number;
+    showLine: boolean;
+  };
+  yAxisRange?: {
+    enabled: boolean;
+    min: number;
+    max: number;
+  };
+}
+
 interface MergedParameterConfig {
   parameter: string;
   sourceType: 'GP' | 'FPOD' | 'Subcam' | 'marine';
@@ -66,6 +84,9 @@ interface MergedParameterConfig {
   isSmoothed?: boolean;
   originalObsCount?: number;
   smoothedObsCount?: number;
+
+  // Parameter-specific settings (time filter, MA, y-axis range)
+  settings?: ParameterSettings;
 }
 
 interface PinMergedPlotProps {
@@ -79,6 +100,7 @@ interface PinMergedPlotProps {
   isLastPlot?: boolean;
   onRemovePlot?: (id: string) => void;
   onUnmerge?: (id: string) => void;
+  onSettingsChange?: (instanceId: string, leftSettings: ParameterSettings, rightSettings: ParameterSettings) => void;
 }
 
 // Format date for X-axis ticks
@@ -190,7 +212,8 @@ export function PinMergedPlot({
   onBrushChange,
   isLastPlot = true,
   onRemovePlot,
-  onUnmerge
+  onUnmerge,
+  onSettingsChange
 }: PinMergedPlotProps) {
   // Generate auto title
   const autoTitle = `${leftParam.parameter} + ${rightParam.parameter}`;
@@ -210,22 +233,17 @@ export function PinMergedPlot({
   const [leftVisible, setLeftVisible] = useState(true);
   const [rightVisible, setRightVisible] = useState(true);
 
-  // Parameter settings states (time filter and MA)
-  interface ParameterSettings {
-    timeFilter?: {
-      enabled: boolean;
-      excludeStart: string;
-      excludeEnd: string;
-    };
-    movingAverage?: {
-      enabled: boolean;
-      windowDays: number;
-      showLine: boolean;
-    };
-  }
+  // Parameter settings states (time filter, MA, and y-axis range)
+  // Initialize from props if available, otherwise empty
+  const [leftSettings, setLeftSettings] = useState<ParameterSettings>(leftParam.settings || {});
+  const [rightSettings, setRightSettings] = useState<ParameterSettings>(rightParam.settings || {});
 
-  const [leftSettings, setLeftSettings] = useState<ParameterSettings>({});
-  const [rightSettings, setRightSettings] = useState<ParameterSettings>({});
+  // Notify parent when settings change (for saving plot views)
+  useEffect(() => {
+    if (onSettingsChange) {
+      onSettingsChange(instanceId, leftSettings, rightSettings);
+    }
+  }, [leftSettings, rightSettings, instanceId, onSettingsChange]);
 
   // Local brush state (for separate mode)
   const [localBrushStart, setLocalBrushStart] = useState(0);
@@ -531,6 +549,13 @@ export function PinMergedPlot({
 
   // Calculate domain for left parameter
   const leftDomain = useMemo((): [number, number] => {
+    // Use custom y-axis range if enabled
+    if (leftSettings.yAxisRange?.enabled &&
+        leftSettings.yAxisRange.min !== undefined &&
+        leftSettings.yAxisRange.max !== undefined) {
+      return [leftSettings.yAxisRange.min, leftSettings.yAxisRange.max];
+    }
+
     const values = displayData
       .map(d => d[leftParam.parameter])
       .filter((v): v is number => typeof v === 'number' && !isNaN(v));
@@ -542,10 +567,17 @@ export function PinMergedPlot({
     const padding = (max - min) * 0.1 || 1;
 
     return [min - padding, max + padding];
-  }, [displayData, leftParam.parameter]);
+  }, [displayData, leftParam.parameter, leftSettings.yAxisRange]);
 
   // Calculate domain for right parameter
   const rightDomain = useMemo((): [number, number] => {
+    // Use custom y-axis range if enabled
+    if (rightSettings.yAxisRange?.enabled &&
+        rightSettings.yAxisRange.min !== undefined &&
+        rightSettings.yAxisRange.max !== undefined) {
+      return [rightSettings.yAxisRange.min, rightSettings.yAxisRange.max];
+    }
+
     const values = displayData
       .map(d => d[rightParam.parameter])
       .filter((v): v is number => typeof v === 'number' && !isNaN(v));
@@ -557,7 +589,7 @@ export function PinMergedPlot({
     const padding = (max - min) * 0.1 || 1;
 
     return [min - padding, max + padding];
-  }, [displayData, rightParam.parameter]);
+  }, [displayData, rightParam.parameter, rightSettings.yAxisRange]);
 
   // Calculate combined domain for single y-axis mode
   const combinedDomain = useMemo((): [number, number] => {
@@ -988,7 +1020,7 @@ export function PinMergedPlot({
                         size="sm"
                         className={cn(
                           "h-5 w-5 p-0 hover:bg-accent",
-                          (leftSettings.timeFilter?.enabled || leftSettings.movingAverage?.enabled) && "text-primary"
+                          (leftSettings.timeFilter?.enabled || leftSettings.movingAverage?.enabled || leftSettings.yAxisRange?.enabled) && "text-primary"
                         )}
                         onClick={(e) => e.stopPropagation()}
                       >
@@ -1136,6 +1168,76 @@ export function PinMergedPlot({
                             </div>
                           )}
                         </div>
+
+                        {/* Y-Axis Range Section */}
+                        <div className="space-y-2 border-t pt-3">
+                          <div className="flex items-center gap-2">
+                            <Ruler className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-xs font-medium">Y-Axis Range</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id="left-yaxis"
+                              checked={leftSettings.yAxisRange?.enabled || false}
+                              onCheckedChange={(checked) =>
+                                setLeftSettings({
+                                  ...leftSettings,
+                                  yAxisRange: {
+                                    enabled: checked as boolean,
+                                    min: leftSettings.yAxisRange?.min ?? leftDomain[0],
+                                    max: leftSettings.yAxisRange?.max ?? leftDomain[1]
+                                  }
+                                })
+                              }
+                              className="h-3 w-3"
+                            />
+                            <Label htmlFor="left-yaxis" className="text-xs cursor-pointer">
+                              Custom Y-axis range
+                            </Label>
+                          </div>
+                          {leftSettings.yAxisRange?.enabled && (
+                            <div className="pl-5 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs w-12">Min:</Label>
+                                <Input
+                                  type="number"
+                                  step="any"
+                                  value={leftSettings.yAxisRange?.min ?? ''}
+                                  onChange={(e) =>
+                                    setLeftSettings({
+                                      ...leftSettings,
+                                      yAxisRange: {
+                                        ...leftSettings.yAxisRange!,
+                                        min: parseFloat(e.target.value)
+                                      }
+                                    })
+                                  }
+                                  className="h-7 text-xs"
+                                  placeholder="Min value"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs w-12">Max:</Label>
+                                <Input
+                                  type="number"
+                                  step="any"
+                                  value={leftSettings.yAxisRange?.max ?? ''}
+                                  onChange={(e) =>
+                                    setLeftSettings({
+                                      ...leftSettings,
+                                      yAxisRange: {
+                                        ...leftSettings.yAxisRange!,
+                                        max: parseFloat(e.target.value)
+                                      }
+                                    })
+                                  }
+                                  className="h-7 text-xs"
+                                  placeholder="Max value"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </PopoverContent>
                   </Popover>
@@ -1229,7 +1331,7 @@ export function PinMergedPlot({
                         size="sm"
                         className={cn(
                           "h-5 w-5 p-0 hover:bg-accent",
-                          (rightSettings.timeFilter?.enabled || rightSettings.movingAverage?.enabled) && "text-primary"
+                          (rightSettings.timeFilter?.enabled || rightSettings.movingAverage?.enabled || rightSettings.yAxisRange?.enabled) && "text-primary"
                         )}
                         onClick={(e) => e.stopPropagation()}
                       >
@@ -1373,6 +1475,76 @@ export function PinMergedPlot({
                                 <Label htmlFor="right-ma-show" className="text-xs cursor-pointer">
                                   Show MA line on chart
                                 </Label>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Y-Axis Range Section */}
+                        <div className="space-y-2 border-t pt-3">
+                          <div className="flex items-center gap-2">
+                            <Ruler className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-xs font-medium">Y-Axis Range</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id="right-yaxis"
+                              checked={rightSettings.yAxisRange?.enabled || false}
+                              onCheckedChange={(checked) =>
+                                setRightSettings({
+                                  ...rightSettings,
+                                  yAxisRange: {
+                                    enabled: checked as boolean,
+                                    min: rightSettings.yAxisRange?.min ?? rightDomain[0],
+                                    max: rightSettings.yAxisRange?.max ?? rightDomain[1]
+                                  }
+                                })
+                              }
+                              className="h-3 w-3"
+                            />
+                            <Label htmlFor="right-yaxis" className="text-xs cursor-pointer">
+                              Custom Y-axis range
+                            </Label>
+                          </div>
+                          {rightSettings.yAxisRange?.enabled && (
+                            <div className="pl-5 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs w-12">Min:</Label>
+                                <Input
+                                  type="number"
+                                  step="any"
+                                  value={rightSettings.yAxisRange?.min ?? ''}
+                                  onChange={(e) =>
+                                    setRightSettings({
+                                      ...rightSettings,
+                                      yAxisRange: {
+                                        ...rightSettings.yAxisRange!,
+                                        min: parseFloat(e.target.value)
+                                      }
+                                    })
+                                  }
+                                  className="h-7 text-xs"
+                                  placeholder="Min value"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs w-12">Max:</Label>
+                                <Input
+                                  type="number"
+                                  step="any"
+                                  value={rightSettings.yAxisRange?.max ?? ''}
+                                  onChange={(e) =>
+                                    setRightSettings({
+                                      ...rightSettings,
+                                      yAxisRange: {
+                                        ...rightSettings.yAxisRange!,
+                                        max: parseFloat(e.target.value)
+                                      }
+                                    })
+                                  }
+                                  className="h-7 text-xs"
+                                  placeholder="Max value"
+                                />
                               </div>
                             </div>
                           )}

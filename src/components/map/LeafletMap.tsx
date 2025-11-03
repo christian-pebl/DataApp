@@ -598,24 +598,43 @@ const LeafletMap = ({
         }
     }, [lines, onEditItem, useEditPanel, disableDefaultPopups, forceUseEditCallback, popupMode]);
 
-    // Line Edit Mode
+    // Line Edit Mode - Refs for persistent marker storage
+    const lineEditMarkersRef = useRef<Marker[]>([]);
+    const lineEditLayerRef = useRef<Polyline | null>(null);
+    const lineEditPathRef = useRef<{ lat: number; lng: number }[] | null>(null);
+    const isDraggingLinePointRef = useRef(false);
+
+    // Line Edit Mode - Create/Remove markers based on mode and line ID
     useEffect(() => {
         if (!mapRef.current || !L || lineEditMode === 'none' || !editingLineId || !tempLinePath) {
+            // Cleanup if exiting edit mode
+            lineEditMarkersRef.current.forEach(marker => marker.remove());
+            lineEditMarkersRef.current = [];
+            if (lineEditLayerRef.current) {
+                lineEditLayerRef.current.remove();
+                lineEditLayerRef.current = null;
+            }
+            lineEditPathRef.current = null;
+            return;
+        }
+
+        // Only recreate markers if we're editing a different line or entering edit mode for first time
+        const isNewEditSession = lineEditMarkersRef.current.length === 0;
+
+        if (!isNewEditSession) {
+            // Just update positions of existing markers and line - don't recreate
             return;
         }
 
         console.log('🎯 Line Edit Mode: Setting up draggable markers for line', editingLineId);
         console.log('🎯 Initial temp path:', tempLinePath);
 
-        const editMarkers: Marker[] = [];
-        let tempLineLayer: Polyline | null = null;
-
-        // Create a mutable copy of the path for real-time updates
-        const mutablePath = [...tempLinePath];
+        // Store path in ref
+        lineEditPathRef.current = [...tempLinePath];
 
         // Draw the temporary line first
-        tempLineLayer = L.polyline(
-            mutablePath.map(p => [p.lat, p.lng] as [number, number]),
+        lineEditLayerRef.current = L.polyline(
+            lineEditPathRef.current.map(p => [p.lat, p.lng] as [number, number]),
             {
                 color: '#3b82f6',
                 weight: 4,
@@ -626,13 +645,17 @@ const LeafletMap = ({
 
         // Function to update the temporary line
         const updateTempLine = (index: number, newPos: LatLng) => {
-            mutablePath[index] = {
+            if (!lineEditPathRef.current) return;
+
+            lineEditPathRef.current[index] = {
                 lat: newPos.lat,
                 lng: newPos.lng
             };
 
-            if (tempLineLayer) {
-                tempLineLayer.setLatLngs(mutablePath.map(p => [p.lat, p.lng] as [number, number]));
+            if (lineEditLayerRef.current) {
+                lineEditLayerRef.current.setLatLngs(
+                    lineEditPathRef.current.map(p => [p.lat, p.lng] as [number, number])
+                );
             }
         };
 
@@ -652,56 +675,82 @@ const LeafletMap = ({
                     zIndexOffset: 1000
                 }).addTo(mapRef.current!);
 
-                let isDragging = false;
-
                 marker.on('dragstart', (e: any) => {
-                    isDragging = true;
+                    isDraggingLinePointRef.current = true;
                     console.log(`🎯 Started dragging point ${index} at:`, e.target.getLatLng());
                 });
 
                 marker.on('drag', (e: any) => {
-                    if (!isDragging) return;
+                    if (!isDraggingLinePointRef.current) return;
 
                     const newPos = e.target.getLatLng();
-                    // console.log(`🎯 Dragging point ${index} to:`, newPos); // Commented out to reduce console spam
-
-                    // Update the line visualization immediately
+                    // Update the line visualization immediately for smooth dragging
                     updateTempLine(index, newPos);
-
-                    // Throttle the parent handler call
-                    if (onLinePointDrag) {
-                        onLinePointDrag(index, newPos);
-                    }
                 });
 
                 marker.on('dragend', (e: any) => {
-                    isDragging = false;
+                    isDraggingLinePointRef.current = false;
                     const finalPos = e.target.getLatLng();
                     console.log(`🎯 Finished dragging point ${index} at:`, finalPos);
 
                     // Final update to ensure sync
                     updateTempLine(index, finalPos);
 
+                    // Only update parent state when dragging is complete
                     if (onLinePointDrag) {
                         onLinePointDrag(index, finalPos);
                     }
                 });
 
-                editMarkers.push(marker);
+                lineEditMarkersRef.current.push(marker);
             }
         });
 
-        console.log(`🎯 Line Edit Mode: Created ${editMarkers.length} draggable markers`);
+        console.log(`🎯 Line Edit Mode: Created ${lineEditMarkersRef.current.length} draggable markers`);
 
         return () => {
             console.log('🎯 Line Edit Mode: Cleaning up');
             // Cleanup
-            editMarkers.forEach(marker => marker.remove());
-            if (tempLineLayer) {
-                tempLineLayer.remove();
+            lineEditMarkersRef.current.forEach(marker => marker.remove());
+            lineEditMarkersRef.current = [];
+            if (lineEditLayerRef.current) {
+                lineEditLayerRef.current.remove();
+                lineEditLayerRef.current = null;
             }
+            lineEditPathRef.current = null;
         };
-    }, [lineEditMode, editingLineId, tempLinePath, onLinePointDrag]);
+    }, [lineEditMode, editingLineId]); // Removed tempLinePath from dependencies!
+
+    // Update marker positions when tempLinePath changes (but don't recreate markers)
+    useEffect(() => {
+        if (!tempLinePath || isDraggingLinePointRef.current || lineEditMarkersRef.current.length === 0) {
+            return;
+        }
+
+        // Update marker positions without recreating them
+        tempLinePath.forEach((point, index) => {
+            if (index === 0 || index === tempLinePath.length - 1) {
+                const markerIndex = index === 0 ? 0 : 1;
+                const marker = lineEditMarkersRef.current[markerIndex];
+                if (marker) {
+                    const currentPos = marker.getLatLng();
+                    // Only update if position actually changed to avoid unnecessary updates
+                    if (Math.abs(currentPos.lat - point.lat) > 0.000001 ||
+                        Math.abs(currentPos.lng - point.lng) > 0.000001) {
+                        marker.setLatLng([point.lat, point.lng]);
+                    }
+                }
+            }
+        });
+
+        // Update line path
+        if (lineEditLayerRef.current && lineEditPathRef.current) {
+            lineEditPathRef.current = [...tempLinePath];
+            lineEditLayerRef.current.setLatLngs(
+                lineEditPathRef.current.map(p => [p.lat, p.lng] as [number, number])
+            );
+        }
+    }, [tempLinePath]);
 
     // Render areas
     useEffect(() => {

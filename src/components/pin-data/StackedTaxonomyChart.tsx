@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, LabelList } from 'recharts';
 import type { AggregatedTaxonomyData } from '@/lib/edna-taxonomy-processor';
 
 interface StackedTaxonomyChartProps {
@@ -245,7 +245,14 @@ export function StackedTaxonomyChart({
                 stackId="a"
                 fill={getPhylumColor(phylum)}
                 radius={index === data.allPhyla.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-              />
+              >
+                <LabelList
+                  dataKey={displayName}
+                  position="center"
+                  formatter={(value: number) => value > 5 ? `${value.toFixed(1)}%` : ''}
+                  style={{ fontSize: 10, fill: '#fff', fontWeight: 600 }}
+                />
+              </Bar>
             );
           })}
 

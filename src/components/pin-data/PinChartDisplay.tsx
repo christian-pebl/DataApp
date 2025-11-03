@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock, Palette, Eye, Grid3x3 } from "lucide-react";
+import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock, Palette, Eye, Grid3x3, Ruler } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
@@ -110,6 +110,10 @@ interface ParameterState {
     enabled: boolean;
     windowDays: number;
     showLine: boolean;
+  };
+  yAxisRange?: {
+    min?: number;
+    max?: number;
   };
 }
 
@@ -499,6 +503,12 @@ export function PinChartDisplay({
   const [showDateFormatDialog, setShowDateFormatDialog] = useState(false);
   const [pendingDateFormat, setPendingDateFormat] = useState<'DD/MM/YYYY' | 'MM/DD/YYYY' | null>(null);
 
+  // Y-axis range dialog state
+  const [showYAxisRangeDialog, setShowYAxisRangeDialog] = useState(false);
+  const [yAxisRangeParameter, setYAxisRangeParameter] = useState<string | null>(null);
+  const [yAxisRangeMin, setYAxisRangeMin] = useState<string>('');
+  const [yAxisRangeMax, setYAxisRangeMax] = useState<string>('');
+
   // Raw CSV viewing state
   const [showRawCSV, setShowRawCSV] = useState(false);
   const [rawCSVContent, setRawCSVContent] = useState<string>('');
@@ -693,7 +703,8 @@ export function PinChartDisplay({
         lineStyle: settings.lineStyle ?? appliedStyleRule?.properties.defaultLineStyle ?? 'solid',
         lineWidth: settings.lineWidth ?? appliedStyleRule?.properties.defaultLineWidth ?? 1,
         timeFilter: settings.timeFilter,
-        movingAverage: settings.movingAverage
+        movingAverage: settings.movingAverage,
+        yAxisRange: settings.yAxisRange
       };
 
       // console.log(`[PINCHART INIT] Parameter "${param}":`, {
@@ -889,7 +900,7 @@ export function PinChartDisplay({
       return acc;
     }, {} as Record<string, string>);
 
-    // Extract full parameter settings (MA, opacity, line styles, etc.)
+    // Extract full parameter settings (MA, opacity, line styles, Y-axis range, etc.)
     const settings = Object.keys(parameterStates).reduce((acc, param) => {
       const state = parameterStates[param];
       if (state) {
@@ -900,6 +911,7 @@ export function PinChartDisplay({
         if (state.lineWidth !== undefined && state.lineWidth !== 2) paramSettings.lineWidth = state.lineWidth;
         if (state.movingAverage) paramSettings.movingAverage = state.movingAverage;
         if (state.timeFilter) paramSettings.timeFilter = state.timeFilter;
+        if (state.yAxisRange) paramSettings.yAxisRange = state.yAxisRange;
 
         if (Object.keys(paramSettings).length > 0) {
           acc[param] = paramSettings;
@@ -1246,6 +1258,15 @@ export function PinChartDisplay({
     }
 
     visibleParameters.forEach(param => {
+      const paramState = parameterStates[param];
+
+      // Use custom y-axis range if enabled
+      if (paramState?.yAxisRange?.min !== undefined && paramState?.yAxisRange?.max !== undefined) {
+        domains[param] = [paramState.yAxisRange.min, paramState.yAxisRange.max];
+        return;
+      }
+
+      // Otherwise calculate from data
       let min = Infinity;
       let max = -Infinity;
 
@@ -1263,7 +1284,7 @@ export function PinChartDisplay({
     });
 
     return domains;
-  }, [displayData, visibleParameters]);
+  }, [displayData, visibleParameters, parameterStates]);
 
   // Set initial brush end index
   React.useEffect(() => {
@@ -1500,6 +1521,16 @@ export function PinChartDisplay({
           excludeStart: excludeStart || '05:00',
           excludeEnd: excludeEnd || '20:00'
         }
+      }
+    }));
+  };
+
+  const updateYAxisRange = (parameter: string, min?: number, max?: number) => {
+    setParameterStates(prev => ({
+      ...prev,
+      [parameter]: {
+        ...prev[parameter],
+        yAxisRange: (min !== undefined || max !== undefined) ? { min, max } : undefined
       }
     }));
   };
@@ -3638,7 +3669,33 @@ export function PinChartDisplay({
                             title={`${state.movingAverage.windowDays}d MA ${state.movingAverage.showLine ? '(visible)' : '(hidden)'}`}
                           />
                         )}
+                        {/* Y-axis range indicator */}
+                        {state.yAxisRange && (state.yAxisRange.min !== undefined || state.yAxisRange.max !== undefined) && (
+                          <Settings
+                            className="h-2.5 w-2.5 text-primary opacity-70"
+                            title={`Custom Y-axis: ${state.yAxisRange.min ?? 'auto'} to ${state.yAxisRange.max ?? 'auto'}`}
+                          />
+                        )}
                       </div>
+
+                      {/* Y-axis settings button - only show for column charts */}
+                      {plotType === 'column' && !isMA && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 opacity-60 hover:opacity-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setYAxisRangeParameter(parameter);
+                            setYAxisRangeMin(state.yAxisRange?.min?.toString() || '');
+                            setYAxisRangeMax(state.yAxisRange?.max?.toString() || '');
+                            setShowYAxisRangeDialog(true);
+                          }}
+                          title="Set custom Y-axis range for column chart"
+                        >
+                          <Settings className="h-3 w-3" />
+                        </Button>
+                      )}
                     </div>
 
                     {/* Right side controls */}
@@ -3883,7 +3940,7 @@ export function PinChartDisplay({
                             size="sm"
                             className={cn(
                               "h-5 w-5 p-0 hover:bg-accent",
-                              (state.timeFilter?.enabled || state.movingAverage?.enabled) && "text-primary"
+                              (state.timeFilter?.enabled || state.movingAverage?.enabled || (state.yAxisRange?.min !== undefined && state.yAxisRange?.max !== undefined)) && "text-primary"
                             )}
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -4012,6 +4069,70 @@ export function PinChartDisplay({
                                   </>
                                 )}
                               </div>
+                            </div>
+
+                            {/* Y-Axis Range Section */}
+                            <div className="space-y-2 border-t pt-3">
+                              <div className="flex items-center gap-2">
+                                <Ruler className="h-3.5 w-3.5 text-muted-foreground" />
+                                <span className="text-xs font-medium">Y-Axis Range</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  id={`yaxis-${parameter}`}
+                                  checked={(state.yAxisRange?.min !== undefined && state.yAxisRange?.max !== undefined)}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      // Enable with current domain as defaults
+                                      const currentDomain = parameterDomains[parameter] || [0, 100];
+                                      updateYAxisRange(parameter, currentDomain[0], currentDomain[1]);
+                                    } else {
+                                      // Disable by clearing range
+                                      updateYAxisRange(parameter, undefined, undefined);
+                                    }
+                                  }}
+                                  className="h-3 w-3"
+                                />
+                                <Label htmlFor={`yaxis-${parameter}`} className="text-xs cursor-pointer">
+                                  Custom Y-axis range
+                                </Label>
+                              </div>
+                              {(state.yAxisRange?.min !== undefined && state.yAxisRange?.max !== undefined) && (
+                                <div className="pl-5 space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <Label className="text-xs w-12">Min:</Label>
+                                    <Input
+                                      type="number"
+                                      step="any"
+                                      value={state.yAxisRange?.min ?? ''}
+                                      onChange={(e) => {
+                                        const newMin = parseFloat(e.target.value);
+                                        if (!isNaN(newMin)) {
+                                          updateYAxisRange(parameter, newMin, state.yAxisRange?.max);
+                                        }
+                                      }}
+                                      className="h-7 text-xs"
+                                      placeholder="Min value"
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Label className="text-xs w-12">Max:</Label>
+                                    <Input
+                                      type="number"
+                                      step="any"
+                                      value={state.yAxisRange?.max ?? ''}
+                                      onChange={(e) => {
+                                        const newMax = parseFloat(e.target.value);
+                                        if (!isNaN(newMax)) {
+                                          updateYAxisRange(parameter, state.yAxisRange?.min, newMax);
+                                        }
+                                      }}
+                                      className="h-7 text-xs"
+                                      placeholder="Max value"
+                                    />
+                                  </div>
+                                </div>
+                              )}
                             </div>
 
                             {/* Display Options Section - only show in compact view */}
@@ -4446,6 +4567,102 @@ export function PinChartDisplay({
                 Save to Database (MOD_)
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Y-Axis Range Dialog */}
+      <Dialog open={showYAxisRangeDialog} onOpenChange={setShowYAxisRangeDialog}>
+        <DialogContent className="max-w-md z-[9999]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5 text-primary" />
+              Set Y-Axis Range
+            </DialogTitle>
+            <DialogDescription>
+              Customize the Y-axis range for <strong>{yAxisRangeParameter}</strong> in column chart view.
+              Leave blank for automatic scaling.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="yaxis-min" className="text-sm font-medium">
+                Minimum Value
+              </Label>
+              <Input
+                id="yaxis-min"
+                type="number"
+                step="any"
+                placeholder="Auto"
+                value={yAxisRangeMin}
+                onChange={(e) => setYAxisRangeMin(e.target.value)}
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank for automatic minimum
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="yaxis-max" className="text-sm font-medium">
+                Maximum Value
+              </Label>
+              <Input
+                id="yaxis-max"
+                type="number"
+                step="any"
+                placeholder="Auto"
+                value={yAxisRangeMax}
+                onChange={(e) => setYAxisRangeMax(e.target.value)}
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank for automatic maximum
+              </p>
+            </div>
+
+            {yAxisRangeParameter && parameterStates[yAxisRangeParameter]?.yAxisRange && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md">
+                <p className="text-xs text-amber-800 dark:text-amber-200">
+                  <strong>Current settings:</strong><br />
+                  Min: {parameterStates[yAxisRangeParameter].yAxisRange?.min ?? 'Auto'}<br />
+                  Max: {parameterStates[yAxisRangeParameter].yAxisRange?.max ?? 'Auto'}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (yAxisRangeParameter) {
+                  updateYAxisRange(yAxisRangeParameter, undefined, undefined);
+                }
+                setShowYAxisRangeDialog(false);
+              }}
+            >
+              Reset to Auto
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setShowYAxisRangeDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (yAxisRangeParameter) {
+                  const min = yAxisRangeMin ? parseFloat(yAxisRangeMin) : undefined;
+                  const max = yAxisRangeMax ? parseFloat(yAxisRangeMax) : undefined;
+                  updateYAxisRange(yAxisRangeParameter, min, max);
+                }
+                setShowYAxisRangeDialog(false);
+              }}
+            >
+              Apply
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

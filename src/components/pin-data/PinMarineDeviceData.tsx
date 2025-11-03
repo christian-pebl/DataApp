@@ -21,6 +21,24 @@ import type { ParseResult } from "./csvParser";
 import type { CombinedDataPoint } from "@/app/om-marine-explorer/shared";
 import type { SavedPlotViewConfig, SavedPlotView, PlotViewValidationResult } from "@/lib/supabase/plot-view-types";
 
+interface ParameterSettings {
+  timeFilter?: {
+    enabled: boolean;
+    excludeStart: string;
+    excludeEnd: string;
+  };
+  movingAverage?: {
+    enabled: boolean;
+    windowDays: number;
+    showLine: boolean;
+  };
+  yAxisRange?: {
+    enabled: boolean;
+    min: number;
+    max: number;
+  };
+}
+
 interface MergedParameterConfig {
   parameter: string;
   sourceType: 'GP' | 'FPOD' | 'Subcam' | 'marine';
@@ -35,6 +53,8 @@ interface MergedParameterConfig {
   isSmoothed?: boolean;
   originalObsCount?: number;
   smoothedObsCount?: number;
+  // Parameter-specific settings (time filter, MA, y-axis range)
+  settings?: ParameterSettings;
 }
 
 interface PlotConfig {

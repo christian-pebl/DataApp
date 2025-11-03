@@ -5,6 +5,9 @@ import UserMenu from '@/components/auth/UserMenu'
 import { User } from '@supabase/supabase-js'
 import { PEBLLogoNav } from '@/components/branding/PEBLLogo'
 import { createClient } from '@/lib/supabase/client'
+import { Button } from '@/components/ui/button'
+import { LogIn } from 'lucide-react'
+import Link from 'next/link'
 
 interface TopNavigationProps {
   user: User | null
@@ -24,7 +27,7 @@ const NavigationSkeleton = () => (
   </nav>
 )
 
-// Error fallback navigation - still shows logo
+// Error fallback navigation - still shows logo and login button
 const NavigationError = () => (
   <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
     <div className="flex h-full items-center justify-between px-4 w-full">
@@ -32,7 +35,12 @@ const NavigationError = () => (
         <PEBLLogoNav />
       </div>
       <div className="flex items-center gap-2">
-        <div className="h-8 w-8" />
+        <Link href="/auth">
+          <Button variant="default" size="sm" className="gap-2">
+            <LogIn className="h-4 w-4" />
+            Sign In
+          </Button>
+        </Link>
       </div>
     </div>
   </nav>
@@ -127,7 +135,12 @@ export default function TopNavigation({ user: initialUser }: TopNavigationProps)
             {initialUser ? (
               <UserMenu user={initialUser} />
             ) : (
-              <div className="h-8 w-8" />
+              <Link href="/auth">
+                <Button variant="default" size="sm" className="gap-2">
+                  <LogIn className="h-4 w-4" />
+                  Sign In
+                </Button>
+              </Link>
             )}
           </div>
         </div>
@@ -159,7 +172,12 @@ export default function TopNavigation({ user: initialUser }: TopNavigationProps)
           ) : isLoading ? (
             <div className="h-9 w-9 rounded-full bg-muted animate-pulse" />
           ) : (
-            <div className="h-8 w-8" /> // Placeholder to maintain layout consistency
+            <Link href="/auth">
+              <Button variant="default" size="sm" className="gap-2">
+                <LogIn className="h-4 w-4" />
+                Sign In
+              </Button>
+            </Link>
           )}
         </div>
       </div>

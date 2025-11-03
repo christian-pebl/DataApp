@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, LabelList } from 'recharts';
 import type { AggregatedCredData } from '@/lib/edna-cred-processor';
 
 interface StackedCredibilityChartProps {
@@ -136,7 +136,14 @@ export function StackedCredibilityChart({
             stackId="a"
             fill={gbifTrueColor}
             radius={[0, 0, 0, 0]}
-          />
+          >
+            <LabelList
+              dataKey="GBIF Verified"
+              position="center"
+              formatter={(value: number) => value > 0 ? value : ''}
+              style={{ fontSize: 11, fill: '#fff', fontWeight: 600 }}
+            />
+          </Bar>
 
           {/* GBIF Unverified (Top of stack - Orange) */}
           <Bar
@@ -144,7 +151,14 @@ export function StackedCredibilityChart({
             stackId="a"
             fill={gbifFalseColor}
             radius={[4, 4, 0, 0]}
-          />
+          >
+            <LabelList
+              dataKey="GBIF Unverified"
+              position="center"
+              formatter={(value: number) => value > 0 ? value : ''}
+              style={{ fontSize: 11, fill: '#fff', fontWeight: 600 }}
+            />
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>

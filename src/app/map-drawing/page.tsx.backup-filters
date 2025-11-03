@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map as MapIcon, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X, Search, CheckCircle2, XCircle, ChevronUp, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle, Move3D, Copy, FileCode } from 'lucide-react';
+import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X, Search, CheckCircle2, XCircle, ChevronUp, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle, Move3D, Copy, FileCode } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line as RechartsLine, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, Brush, LabelList, ReferenceLine } from 'recharts';
 import type { LucideIcon } from "lucide-react";
 import { Checkbox } from '@/components/ui/checkbox';
@@ -58,44 +58,24 @@ import { projectService } from '@/lib/supabase/project-service';
 import { getTimeWindowSummary } from '@/lib/dateParser';
 import { fileStorageService, type PinFile } from '@/lib/supabase/file-storage-service';
 import { mapDataService } from '@/lib/supabase/map-data-service';
-import { perfLogger } from '@/lib/perf-logger';
+import { ShareDialogSimplified } from '@/components/sharing/ShareDialogSimplified';
 import { DataRestoreNotifications } from '@/components/auth/DataRestoreDialog';
 import { createClient } from '@/lib/supabase/client';
 import type { DateRange } from "react-day-picker";
 import type { CombinedDataPoint, LogStep as ApiLogStep, CombinedParameterKey } from '../om-marine-explorer/shared';
 import { ALL_PARAMETERS, PARAMETER_CONFIG } from '../om-marine-explorer/shared';
 import { fetchCombinedDataAction } from '../om-marine-explorer/actions';
-import MarinePlotsGrid from '@/components/charts/LazyMarinePlotsGrid';
+import { MarinePlotsGrid } from '@/components/marine/MarinePlotsGrid';
 import { DataTimeline } from '@/components/pin-data/DataTimeline';
-import { DEFAULT_MERGE_RULES, type MergeRule } from '@/components/pin-data/MergeRulesDialog';
 import { DatePickerWithRange } from '@/components/ui/date-picker-with-range';
-import { getMergedFilesByProjectAction } from '@/app/api/merged-files/actions';
-import type { MergedFile } from '@/lib/supabase/merged-files-service';
-import {
-  parseCoordinateInput,
-  getCoordinateFormats,
-  validateCoordinate,
-  CoordinateFormat,
-  COORDINATE_FORMAT_LABELS,
-  COORDINATE_FORMAT_EXAMPLES
+import { 
+  parseCoordinateInput, 
+  getCoordinateFormats, 
+  validateCoordinate, 
+  CoordinateFormat, 
+  COORDINATE_FORMAT_LABELS, 
+  COORDINATE_FORMAT_EXAMPLES 
 } from '@/lib/coordinate-utils';
-import { usePageLoadingState } from '@/hooks/usePageLoadingState';
-import { TopProgressBar } from '@/components/loading/TopProgressBar';
-import { MapSkeleton, MarinePlotsSkeleton, DataTimelineSkeleton } from '@/components/loading/PageSkeletons';
-import { DateInputDialog } from '@/components/pin-data/DateInputDialog';
-import { hasTimeColumn, createFileWithDateColumn } from '@/lib/csv-date-injector';
-import { extractEdnaDate, isEdnaMetaFile } from '@/lib/edna-utils';
-
-// Lazy load heavy dialog components
-const ShareDialogSimplified = dynamic(
-  () => import('@/components/sharing/ShareDialogSimplified').then(mod => ({ default: mod.ShareDialogSimplified })),
-  { ssr: false, loading: () => <div className="animate-pulse">Loading...</div> }
-);
-
-const MergeRulesDialog = dynamic(
-  () => import('@/components/pin-data/MergeRulesDialog').then(mod => ({ default: mod.MergeRulesDialog })),
-  { ssr: false, loading: () => <div className="animate-pulse">Loading...</div> }
-);
 // Define types locally to avoid SSR issues with Leaflet
 interface LatLng {
   lat: number;
@@ -373,7 +353,7 @@ const PinMeteoPlotRow = React.memo(({
 PinMeteoPlotRow.displayName = 'PinMeteoPlotRow';
 
 
-function MapDrawingPageContent() {
+export default function MapDrawingPage() {
   const { view, setView } = useMapView('dev-user');
   const { settings, setSettings } = useSettings();
   const { toast, dismiss } = useToast();
@@ -421,7 +401,6 @@ function MapDrawingPageContent() {
   const [showProjectMenuInfo, setShowProjectMenuInfo] = useState<string | null>(null);
   const [mapScale, setMapScale] = useState<{ distance: number; unit: string; pixels: number } | null>(null);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
-  const [objectTypeFilter, setObjectTypeFilter] = useState<'all' | 'pin' | 'line' | 'area'>('all');
   const [sidebarWidth, setSidebarWidth] = useState(320); // Default width in pixels
   const [originalSidebarWidth, setOriginalSidebarWidth] = useState(320); // Store original width
   const [isResizing, setIsResizing] = useState(false);
@@ -440,34 +419,13 @@ function MapDrawingPageContent() {
   const [showDataDropdown, setShowDataDropdown] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [selectedPinForShare, setSelectedPinForShare] = useState<{ id: string; label: string } | null>(null);
-  const [showMultiFileConfirmDialog, setShowMultiFileConfirmDialog] = useState(false);
-  const [multiFileConfirmData, setMultiFileConfirmData] = useState<{
-    parsedFiles: any[];
-    validation: any;
-    downloadedFiles: File[];
-    fileType: 'GP' | 'FPOD' | 'Subcam';
-    selectedFiles: any[]; // Add selectedFiles to store original file metadata
-  } | null>(null);
-  const [multiFileMergeMode, setMultiFileMergeMode] = useState<'sequential' | 'stack-parameters'>('sequential');
-  const [mergeRules, setMergeRules] = useState<MergeRule[]>(DEFAULT_MERGE_RULES);
   const [showSharePopover, setShowSharePopover] = useState(false);
   const [sharePrivacyLevel, setSharePrivacyLevel] = useState<'private' | 'public' | 'specific'>('private');
   const [shareEmails, setShareEmails] = useState('');
   const [isUpdatingPrivacy, setIsUpdatingPrivacy] = useState(false);
   const [pinFiles, setPinFiles] = useState<Record<string, File[]>>({});
   const [pinFileMetadata, setPinFileMetadata] = useState<Record<string, PinFile[]>>({});
-  const [areaFileMetadata, setAreaFileMetadata] = useState<Record<string, PinFile[]>>({});
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
-  const [projectDataFilter, setProjectDataFilter] = useState<'all' | 'pins' | 'areas'>('all');
-
-  // Date input dialog state (for files without time columns)
-  const [showDateInputDialog, setShowDateInputDialog] = useState(false);
-  const [pendingDateFile, setPendingDateFile] = useState<{file: File; targetId: string; targetType: 'pin' | 'area'} | null>(null);
-
-  // Merged files state (must be declared before availableFilesForPlots)
-  // Store as PinFile format for compatibility with timeline and other components
-  const [mergedFiles, setMergedFiles] = useState<(PinFile & { fileSource: 'merged', pinLabel: string })[]>([]);
-  const [isLoadingMergedFiles, setIsLoadingMergedFiles] = useState(false);
 
   // Transform pinFileMetadata into availableFiles format for PinMarineDeviceData
   const availableFilesForPlots = React.useMemo(() => {
@@ -475,24 +433,26 @@ function MapDrawingPageContent() {
       pinId: string;
       pinName: string;
       pinLocation?: { lat: number; lng: number };
-      fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'EDNA' | 'MERGED';
+      fileType: 'GP' | 'FPOD' | 'Subcam';
       files: File[];
       fileName: string;
       metadata?: PinFile; // Include metadata for downloading
     }> = [];
 
-    perfLogger.start('buildFileOptions');
-    let totalFiles = 0;
-    let totalPins = 0;
+    console.log('Building availableFilesForPlots...', {
+      pinFileMetadataKeys: Object.keys(pinFileMetadata),
+      pinFilesKeys: Object.keys(pinFiles),
+      pinsCount: pins.length
+    });
 
     for (const [pinId, metadata] of Object.entries(pinFileMetadata)) {
       const pin = pins.find(p => p.id === pinId);
+      if (!pin) {
+        console.log(`Pin ${pinId} not found in pins list`);
+        continue;
+      }
 
-      // Don't skip files if pin isn't found - show ALL project files
-      // This allows file selector to match the timeline view
-
-      totalPins++;
-      totalFiles += metadata.length;
+      console.log(`Processing ${metadata.length} files for pin ${pin.label}`);
 
       for (const fileMeta of metadata) {
         // Determine file type from filename
@@ -500,35 +460,22 @@ function MapDrawingPageContent() {
         // Example: ALGA_GP_F_L_PELAGIC_2504-2506_LOG_AVG.csv
         // Old format: DATATYPE_ProjectName_Station_YYMM-YYMM
         // Example: GP-Pel_Alga-Control-S_2410-2411_LOG_AVG.CSV
-        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'EDNA' | 'MERGED' = 'GP';
+        let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
 
         const parts = fileMeta.fileName.split('_');
         const position0 = parts[0]?.toLowerCase() || '';
         const position1 = parts[1]?.toLowerCase() || '';
-        const fileNameLower = fileMeta.fileName.toLowerCase();
 
         // Check first two positions for data type (case-insensitive)
-        // Also check for _chem and _wq suffixes
-        // Check for specific CHEMSW and CHEMWQ before general CHEM/WQ
-        if (position0.includes('crop') || position1.includes('crop')) {
-          fileType = 'CROP';
-        } else if (position0.includes('chemsw') || position1.includes('chemsw')) {
-          fileType = 'CHEMSW';
-        } else if (position0.includes('chemwq') || position1.includes('chemwq')) {
-          fileType = 'CHEMWQ';
-        } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
-          fileType = 'CHEM';
-        } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
-          fileType = 'WQ';
-        } else if (position0.includes('edna') || position1.includes('edna')) {
-          fileType = 'EDNA';
-        } else if (position0.includes('fpod') || position1.includes('fpod')) {
+        if (position0.includes('fpod') || position1.includes('fpod')) {
           fileType = 'FPOD';
         } else if (position0.includes('subcam') || position1.includes('subcam')) {
           fileType = 'Subcam';
         } else if (position0.includes('gp') || position1.includes('gp')) {
           fileType = 'GP';
         }
+
+        console.log(`[FILE TYPE DETECTION] ${fileMeta.fileName} → ${fileType} (pos0: ${position0}, pos1: ${position1})`);
 
         // Check if we have the actual File object
         const actualFiles = pinFiles[pinId] || [];
@@ -537,8 +484,8 @@ function MapDrawingPageContent() {
         // Add to list with metadata for on-demand downloading
         fileOptions.push({
           pinId,
-          pinName: pin?.label || `Pin ${pinId.substring(0, 8)}...`, // Fallback if pin not drawn
-          pinLocation: pin?.location, // May be undefined
+          pinName: pin.label || 'Unnamed Pin',
+          pinLocation: pin.location,
           fileType,
           files: matchingFile ? [matchingFile] : [], // Empty array if not loaded yet
           fileName: fileMeta.fileName,
@@ -547,72 +494,9 @@ function MapDrawingPageContent() {
       }
     }
 
-    // Add merged files to the list
-    for (const mergedFile of mergedFiles) {
-      fileOptions.push({
-        pinId: 'merged', // Special ID for merged files
-        pinName: 'Merged Files',
-        pinLocation: undefined,
-        fileType: 'MERGED',
-        files: [], // Merged files need to be downloaded
-        fileName: mergedFile.fileName,
-        metadata: {
-          id: mergedFile.id,
-          pinId: 'merged',
-          fileName: mergedFile.fileName,
-          filePath: mergedFile.filePath,
-          fileSize: 0, // Size not available
-          fileType: 'MERGED',
-          uploadedAt: new Date(mergedFile.createdAt),
-          projectId: mergedFile.projectId,
-          startDate: mergedFile.startDate ? new Date(mergedFile.startDate) : undefined,
-          endDate: mergedFile.endDate ? new Date(mergedFile.endDate) : undefined
-        }
-      });
-    }
-
-    perfLogger.end('buildFileOptions', `${fileOptions.length} options from ${totalFiles} files across ${totalPins} pins + ${mergedFiles.length} merged files`);
+    console.log(`Generated ${fileOptions.length} file options for plots`);
     return fileOptions;
-  }, [pinFileMetadata, pins, pinFiles, mergedFiles]);
-
-  // Transform pinFileMetadata into DataTimeline format (includes pin labels)
-  const allProjectFilesForTimeline = React.useMemo(() => {
-    const result: (PinFile & { pinLabel: string })[] = [];
-
-    for (const [pinId, files] of Object.entries(pinFileMetadata)) {
-      const pin = pins.find(p => p.id === pinId);
-      const pinLabel = pin?.label || `Pin ${pinId.substring(0, 8)}...`;
-
-      files.forEach(file => {
-        result.push({
-          ...file,
-          pinLabel
-        });
-      });
-    }
-
-    // Add merged files with special label
-    mergedFiles.forEach(mergedFile => {
-      result.push({
-        id: mergedFile.id,
-        pinId: 'merged',
-        fileName: mergedFile.fileName,
-        filePath: mergedFile.filePath,
-        fileSize: 0,
-        fileType: 'MERGED',
-        uploadedAt: new Date(mergedFile.createdAt),
-        projectId: mergedFile.projectId,
-        startDate: mergedFile.startDate ? new Date(mergedFile.startDate) : undefined,
-        endDate: mergedFile.endDate ? new Date(mergedFile.endDate) : undefined,
-        pinLabel: 'Merged Files',
-        isDiscrete: false,
-        fileSource: 'merged' // Mark as merged file for identification
-      } as PinFile & { pinLabel: string; fileSource: 'merged' });
-    });
-
-    return result;
-  }, [pinFileMetadata, pins, mergedFiles]);
-
+  }, [pinFileMetadata, pins, pinFiles]);
   const [showExploreDropdown, setShowExploreDropdown] = useState(false);
   const [selectedPinForExplore, setSelectedPinForExplore] = useState<string | null>(null);
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<{ id: string; name: string } | null>(null);
@@ -628,8 +512,6 @@ function MapDrawingPageContent() {
   const [newProjectDescription, setNewProjectDescription] = useState('');
   const [showUploadPinSelector, setShowUploadPinSelector] = useState(false);
   const [selectedUploadPinId, setSelectedUploadPinId] = useState<string>('');
-  const [selectedUploadAreaId, setSelectedUploadAreaId] = useState<string>(''); // NEW: For area uploads
-  const [uploadTargetType, setUploadTargetType] = useState<'pin' | 'area'>('pin'); // NEW: Toggle between pin and area
   const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
   const [duplicateFiles, setDuplicateFiles] = useState<{fileName: string, existingFile: PinFile}[]>([]);
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
@@ -641,14 +523,6 @@ function MapDrawingPageContent() {
   const [selectedPins, setSelectedPins] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedSuffixes, setSelectedSuffixes] = useState<string[]>([]);
-  const [selectedDateRanges, setSelectedDateRanges] = useState<string[]>([]);
-  const [selectedFileSources, setSelectedFileSources] = useState<string[]>(['upload', 'merged']); // Both selected by default
-
-  // Extract date range from filename (format: YYMM_YYMM)
-  const extractDateRange = (fileName: string): string | null => {
-    const match = fileName.match(/(\d{4}_\d{4})/);
-    return match ? match[1] : null;
-  };
 
   // Initialize Supabase client for CSV analysis
   const supabase = createClient();
@@ -719,30 +593,17 @@ function MapDrawingPageContent() {
     setPersistentActiveProject(projectId);
   };
 
-  // Unified loading state for smooth UX
-  const {
-    isLoading: isPageLoading,
-    progress: loadingProgress,
-    currentStage,
-    isInitialLoad
-  } = usePageLoadingState({
-    isLoadingProjects,
-    isLoadingActiveProject,
-    isLoadingPinMeteoData,
-    isDataLoading,
-    isUploadingFiles,
-  });
-
   // Load dynamic projects from database
   const loadDynamicProjects = useCallback(async () => {
-    perfLogger.start('loadProjects');
+    console.log('🔄 Loading dynamic projects from database...');
     setIsLoadingProjects(true);
     try {
       const databaseProjects = await projectService.getProjects();
-
+      console.log('📂 Found database projects:', databaseProjects);
+      
       // Combine hardcoded projects with database projects
       const combinedProjects = { ...PROJECT_LOCATIONS };
-
+      
       databaseProjects.forEach(project => {
         // Use project ID as key, add isDynamic flag
         combinedProjects[project.id] = {
@@ -750,8 +611,8 @@ function MapDrawingPageContent() {
           isDynamic: true
         };
       });
-
-      perfLogger.end('loadProjects', `${databaseProjects.length} projects loaded`);
+      
+      console.log('✅ Combined projects:', combinedProjects);
       setDynamicProjects(combinedProjects);
       
       // Update project visibility to include new projects
@@ -841,51 +702,7 @@ function MapDrawingPageContent() {
 
     checkLocationPermission();
   }, []);
-
-  // Auto-open marine device modal when redirected from data-explorer with saved plot
-  useEffect(() => {
-    const checkForSavedPlotLoad = () => {
-      try {
-        // console.log('🔍 [MAP-DRAWING] Checking for pending saved plot load...');
-
-        const storedData = sessionStorage.getItem('pebl-load-plot-view');
-        if (!storedData) {
-          // console.log('ℹ️ [MAP-DRAWING] No saved plot in sessionStorage');
-          return;
-        }
-
-        const parsedData = JSON.parse(storedData);
-        const { viewId, viewName, timestamp } = parsedData;
-
-        console.log('✅ [MAP-DRAWING] Found saved plot to load:', {
-          viewId,
-          viewName,
-          timestamp,
-          timeSinceSet: Date.now() - timestamp,
-          currentProjectId: currentProjectContext || activeProjectId
-        });
-
-        // Open the modal with dummy data - PinMarineDeviceData will handle the actual loading
-        console.log('📂 [MAP-DRAWING] Opening marine device modal for auto-load...');
-        setSelectedFileType('GP'); // Default type, will be overridden by loaded view
-        setSelectedFiles([]); // Empty files, will be downloaded by PinMarineDeviceData
-        setShowMarineDeviceModal(true);
-
-        console.log('✅ [MAP-DRAWING] Modal state set to open. PinMarineDeviceData should now mount and detect sessionStorage.');
-
-        // Note: We don't clear sessionStorage here - PinMarineDeviceData will do that
-        // after it successfully loads the view
-
-      } catch (error) {
-        console.error('❌ [MAP-DRAWING] Error checking for saved plot load:', error);
-        // Clear invalid data
-        sessionStorage.removeItem('pebl-load-plot-view');
-      }
-    };
-
-    checkForSavedPlotLoad();
-  }, [currentProjectContext, activeProjectId]);
-
+  
   const [itemToEdit, setItemToEdit] = useState<Pin | Line | Area | null>(null);
   const [editingGeometry, setEditingGeometry] = useState<Line | Area | null>(null);
   
@@ -977,52 +794,43 @@ function MapDrawingPageContent() {
     }
   };
 
-  // Load ALL pin files from Supabase for the current project
-  // This ensures the file selector shows ALL files, not just files from currently drawn pins
+  // Load pin files from Supabase when pins change
   useEffect(() => {
     const loadPinFiles = async () => {
-      const projectId = currentProjectContext || activeProjectId;
-      if (!projectId) return;
-
-      perfLogger.start('loadPinFiles');
-      const pinMetadata: Record<string, PinFile[]> = {};
-      const areaMetadata: Record<string, PinFile[]> = {};
-
-      try {
-        // Load ALL files for the entire project (not just drawn pins)
-        const allProjectFiles = await fileStorageService.getProjectFiles(projectId);
-
-        // Group files by pinId or areaId
-        for (const file of allProjectFiles) {
-          if (file.pinId) {
-            if (!pinMetadata[file.pinId]) {
-              pinMetadata[file.pinId] = [];
-            }
-            pinMetadata[file.pinId].push(file);
-          } else if (file.areaId) {
-            if (!areaMetadata[file.areaId]) {
-              areaMetadata[file.areaId] = [];
-            }
-            areaMetadata[file.areaId].push(file);
-          }
-        }
-
-        const totalFiles = allProjectFiles.length;
-        const pinCount = Object.keys(pinMetadata).length;
-        const areaCount = Object.keys(areaMetadata).length;
-
-        perfLogger.end('loadPinFiles', `${totalFiles} files from ${pinCount} pins + ${areaCount} areas (project-wide)`);
-        setPinFileMetadata(pinMetadata);
-        setAreaFileMetadata(areaMetadata);
-
-      } catch (error) {
-        perfLogger.end('loadPinFiles');
-        perfLogger.error('Failed to load project files', error);
+      if (pins.length === 0) {
+        console.log('🔍 No pins to load files for');
+        return;
       }
+      
+      console.log(`🔍 Loading files for ${pins.length} pins...`);
+      const fileMetadata: Record<string, PinFile[]> = {};
+      
+      // Load files for each pin
+      for (const pin of pins) {
+        try {
+          console.log(`  📍 Checking files for pin: ${pin.label || 'Unnamed'} (${pin.id})`);
+          const files = await fileStorageService.getPinFiles(pin.id);
+          
+          if (files.length > 0) {
+            console.log(`    ✅ Found ${files.length} file(s) for pin ${pin.id}`);
+            files.forEach(file => {
+              console.log(`      - ${file.fileName} (${(file.fileSize / 1024).toFixed(2)} KB)`);
+            });
+            fileMetadata[pin.id] = files;
+          } else {
+            console.log(`    📭 No files found for pin ${pin.id}`);
+          }
+        } catch (error) {
+          console.error(`    ❌ Error loading files for pin ${pin.id}:`, error);
+        }
+      }
+      
+      console.log(`📦 Total file metadata loaded:`, Object.keys(fileMetadata).length, 'pins with files');
+      setPinFileMetadata(fileMetadata);
     };
 
     loadPinFiles();
-  }, [currentProjectContext, activeProjectId]); // Re-load when project changes
+  }, [pins]);
 
 
 
@@ -1040,28 +848,25 @@ function MapDrawingPageContent() {
   }, [toast]);
 
   // Map move handler for line and area drawing - use ref to avoid stale closures
-  const mapMoveHandlerRef = useRef<(center: LatLng, zoom: number, isMoving: boolean) => void>();
-
+  const mapMoveHandlerRef = useRef<(center: LatLng, zoom: number) => void>();
+  
   // Update the handler ref whenever dependencies change
-  mapMoveHandlerRef.current = (center: LatLng, zoom: number, isMoving: boolean = false) => {
-    // Only update crosshair during continuous movement (isMoving=true) if actively drawing
-    const shouldUpdateDuringMove = isMoving && (isDrawingLine || isDrawingArea);
-
-    // Update view - but only on moveend (not during continuous dragging) to avoid excessive re-renders
-    if (!isMoving) {
-      setView({ center, zoom });
-      updateMapScale(center, zoom);
-    }
-
-    // Update crosshair position for line drawing (this needs to update during movement)
-    if (isDrawingLine && lineStartPoint && shouldUpdateDuringMove) {
+  mapMoveHandlerRef.current = (center: LatLng, zoom: number) => {
+    // Update view in useMapView hook
+    setView({ center, zoom });
+    
+    // Update crosshair position for line drawing
+    if (isDrawingLine && lineStartPoint) {
       setCurrentMousePosition(center);
     }
-
-    // Update crosshair position for area drawing (this needs to update during movement)
-    if (isDrawingArea && areaStartPoint && shouldUpdateDuringMove) {
+    
+    // Update crosshair position for area drawing
+    if (isDrawingArea && areaStartPoint) {
       setCurrentAreaEndPoint(center);
     }
+    
+    // Update scale bar
+    updateMapScale(center, zoom);
   };
 
   // Calculate scale bar
@@ -1177,99 +982,10 @@ function MapDrawingPageContent() {
       setPinMeteoBrushEndIndex(undefined);
     }
   }, [pinMeteoData, pinMeteoBrushEndIndex]);
-
-  // Fetch merged files - extracted as reusable function
-  const fetchMergedFiles = useCallback(async () => {
-    const projectId = currentProjectContext || activeProjectId;
-    if (!projectId) {
-      setMergedFiles([]);
-      return;
-    }
-
-    setIsLoadingMergedFiles(true);
-    try {
-      const result = await getMergedFilesByProjectAction(projectId);
-      if (result.success && result.data) {
-        // Convert MergedFile to PinFile format for compatibility
-        const mergedFilesWithLabel = result.data.map(mf => ({
-          id: mf.id,
-          pinId: mf.pinId,
-          fileName: mf.fileName,
-          filePath: mf.filePath,
-          fileSize: mf.fileSize,
-          fileType: mf.fileType,
-          uploadedAt: new Date(mf.createdAt),
-          projectId: mf.projectId,
-          startDate: mf.startDate ? new Date(mf.startDate) : undefined,
-          endDate: mf.endDate ? new Date(mf.endDate) : undefined,
-          fileSource: 'merged' as const,
-          pinLabel: 'Merged' // Merged files don't have a specific pin, use generic label
-        }));
-        setMergedFiles(mergedFilesWithLabel);
-      } else {
-        console.error('Failed to fetch merged files:', result.error);
-        setMergedFiles([]);
-      }
-    } catch (error) {
-      console.error('Error fetching merged files:', error);
-      setMergedFiles([]);
-    } finally {
-      setIsLoadingMergedFiles(false);
-    }
-  }, [currentProjectContext, activeProjectId]);
-
-  // Reload all project files - comprehensive refresh function
-  const reloadProjectFiles = useCallback(async () => {
-    console.log('🔄 Reloading all project files...');
-
-    // Reload files for all pins
-    const fileMetadata: Record<string, PinFile[]> = {};
-    for (const pin of pins) {
-      try {
-        const files = await fileStorageService.getPinFiles(pin.id);
-        if (files.length > 0) {
-          fileMetadata[pin.id] = files;
-        }
-      } catch (error) {
-        console.error(`Error reloading files for pin ${pin.id}:`, error);
-      }
-    }
-
-    // Reload files for all areas
-    const areaFileMetadataTemp: Record<string, PinFile[]> = {};
-    for (const area of areas) {
-      try {
-        const files = await fileStorageService.getAreaFiles(area.id);
-        if (files.length > 0) {
-          areaFileMetadataTemp[area.id] = files;
-        }
-      } catch (error) {
-        console.error(`Error reloading files for area ${area.id}:`, error);
-      }
-    }
-
-    // Update state
-    setPinFileMetadata(fileMetadata);
-    setAreaFileMetadata(areaFileMetadataTemp);
-
-    // Also refresh merged files
-    await fetchMergedFiles();
-
-    console.log('✅ All project files reloaded');
-  }, [pins, areas, fetchMergedFiles]);
-
-  // Fetch merged files when dialog opens or project changes
-  useEffect(() => {
-    if (showProjectDataDialog) {
-      fetchMergedFiles();
-    } else {
-      setMergedFiles([]);
-    }
-  }, [showProjectDataDialog, fetchMergedFiles]);
-
+  
   // Stable callback that calls the current handler
-  const handleMapMove = useCallback((center: LatLng, zoom: number, isMoving: boolean = false) => {
-    mapMoveHandlerRef.current?.(center, zoom, isMoving);
+  const handleMapMove = useCallback((center: LatLng, zoom: number) => {
+    mapMoveHandlerRef.current?.(center, zoom);
   }, []);
 
   const handleMapClick = useCallback((e: LeafletMouseEvent) => {
@@ -2022,34 +1738,23 @@ function MapDrawingPageContent() {
   const getProjectFiles = useCallback((projectId?: string) => {
     const targetProjectId = projectId || activeProjectId;
     if (!targetProjectId) return [];
-
+    
     const projectPins = pins.filter(pin => pin.projectId === targetProjectId);
-    const projectAreas = areas.filter(area => area.projectId === targetProjectId);
     const allFiles: PinFile[] = [];
-
-    // Add pin files
+    
     projectPins.forEach(pin => {
       const pinFilesMetadata = pinFileMetadata[pin.id] || [];
       allFiles.push(...pinFilesMetadata);
     });
-
-    // Add area files
-    projectAreas.forEach(area => {
-      const areaFilesMetadata = areaFileMetadata[area.id] || [];
-      allFiles.push(...areaFilesMetadata);
-    });
-
+    
     return allFiles;
-  }, [activeProjectId, pins, areas, pinFileMetadata, areaFileMetadata]);
+  }, [activeProjectId, pins, pinFileMetadata]);
 
   // CSV Date Analysis Functions
-  // Now uses the intelligent csvParser.ts for consistent date parsing across the app
   const analyzeCSVDateRange = useCallback(async (file: PinFile): Promise<{
     totalDays: number | null;
     startDate: string | null;
     endDate: string | null;
-    uniqueDates?: string[]; // Array of unique date strings for discrete sampling (CROP files)
-    isCrop?: boolean; // Flag to indicate CROP file type
     error?: string;
   }> => {
     try {
@@ -2062,7 +1767,7 @@ function MapDrawingPageContent() {
 
       // Use the correct property name for file path
       const storagePath = file.filePath || (file as any).storagePath || (file as any).storage_path;
-
+      
       if (!storagePath) {
         return {
           totalDays: null,
@@ -2074,45 +1779,16 @@ function MapDrawingPageContent() {
 
       console.log('📁 Using storage path:', storagePath);
 
-      // Download file content from Supabase Storage with timeout
-      console.log('⏱️  Starting file download with 30s timeout...');
-      const downloadPromise = supabase.storage
+      // Download file content from Supabase Storage
+      const { data: fileData, error: downloadError } = await supabase.storage
         .from('pin-files')
         .download(storagePath);
-
-      // Create timeout promise
-      const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((_, reject) => {
-        setTimeout(() => reject(new Error('Download timeout after 30 seconds')), 30000);
-      });
-
-      let fileData: Blob;
-      let downloadError: any;
-
-      try {
-        const result = await Promise.race([downloadPromise, timeoutPromise]);
-        fileData = result.data as Blob;
-        downloadError = result.error;
-      } catch (error) {
-        console.error('❌ File download timeout or error:', {
-          fileName: file.fileName,
-          storagePath: storagePath,
-          error: error
-        });
-        return {
-          totalDays: null,
-          startDate: null,
-          endDate: null,
-          error: `Download timeout: ${error instanceof Error ? error.message : 'Unknown error'}`
-        };
-      }
 
       if (downloadError) {
         console.error('❌ File download error:', {
           fileName: file.fileName,
           storagePath: storagePath,
-          error: downloadError,
-          errorMessage: downloadError.message,
-          errorDetails: JSON.stringify(downloadError)
+          error: downloadError
         });
         return {
           totalDays: null,
@@ -2122,136 +1798,98 @@ function MapDrawingPageContent() {
         };
       }
 
-      if (!fileData) {
-        console.error('❌ File data is null despite no error:', {
-          fileName: file.fileName,
-          storagePath: storagePath
-        });
+      console.log('✅ File downloaded successfully:', file.fileName);
+
+      // Convert blob to text
+      const text = await fileData.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
         return {
           totalDays: null,
           startDate: null,
           endDate: null,
-          error: 'Download returned null data'
+          error: 'File has no data rows'
         };
       }
 
-      console.log('✅ File downloaded successfully:', file.fileName, 'Size:', fileData.size, 'bytes');
+      // Parse CSV header
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      
+      // Find date/time columns (case-insensitive)
+      const dateTimeColumns = headers.map((header, index) => ({ 
+        header: header.toLowerCase(), 
+        originalHeader: header,
+        index 
+      }))
+        .filter(({ header }) => 
+          header.includes('timestamp') ||
+          header.includes('datetime') ||
+          header.includes('time') || 
+          header.includes('date') || 
+          header.includes('day') || 
+          header.includes('year') ||
+          header.includes('month')
+        )
+        .sort((a, b) => {
+          // Prioritize timestamp and datetime columns for ISO format
+          const aPriority = a.header.includes('timestamp') ? 0 : 
+                           a.header.includes('datetime') ? 1 : 
+                           a.header.includes('time') ? 2 : 3;
+          const bPriority = b.header.includes('timestamp') ? 0 : 
+                           b.header.includes('datetime') ? 1 : 
+                           b.header.includes('time') ? 2 : 3;
+          return aPriority - bPriority;
+        });
 
-      // Detect if this is a discrete sampling file (CROP, CHEM, CHEMSW, CHEMWQ, WQ, EDNA)
-      const fileName = file.fileName.toLowerCase();
-      const isDiscreteFile = fileName.includes('crop') || fileName.includes('chem') ||
-                             fileName.includes('chemsw') || fileName.includes('chemwq') ||
-                             fileName.includes('wq') || fileName.includes('edna');
-
-      console.log('🔍 File type detection:', {
-        fileName: file.fileName,
-        isDiscreteFile,
-        detectionReason: fileName.includes('crop') ? 'CROP' :
-                        fileName.includes('chemsw') ? 'CHEMSW' :
-                        fileName.includes('chemwq') ? 'CHEMWQ' :
-                        fileName.includes('chem') ? 'CHEM' :
-                        fileName.includes('wq') ? 'WQ' :
-                        fileName.includes('edna') ? 'EDNA' : 'continuous'
-      });
-
-      // Convert Blob to File object for csvParser
-      const fileObject = new File([fileData], file.fileName, { type: 'text/csv' });
-
-      // Use the intelligent csvParser with auto-detection (supports DD/MM/YYYY, MM/DD/YYYY, and YYYY-MM-DD formats)
-      const { parseCSVFile } = await import('@/components/pin-data/csvParser');
-      const dateFormatOverride = undefined; // Let csvParser auto-detect the format
-
-      console.log('📅 Using csvParser with dateFormat:', dateFormatOverride || 'auto-detect');
-
-      const parseResult = await parseCSVFile(fileObject, 'GP', dateFormatOverride);
-
-      if (parseResult.errors.length > 0) {
-        console.warn('⚠️ CSV parsing warnings:', parseResult.errors);
-      }
-
-      if (parseResult.data.length === 0) {
+      if (dateTimeColumns.length === 0) {
         return {
           totalDays: null,
           startDate: null,
           endDate: null,
-          error: 'No valid dates could be parsed'
+          error: 'No date/time columns found'
         };
       }
 
-      console.log('📊 Parsed data from csvParser:', {
-        fileName: file.fileName,
-        totalValidRows: parseResult.data.length,
-        firstFewTimes: parseResult.data.slice(0, 5).map(d => d.time),
-        lastFewTimes: parseResult.data.slice(-5).map(d => d.time)
-      });
+      // STEP 1: Collect sample date values for format detection
+      const sampleSize = Math.min(20, lines.length - 1);
+      const sampleDateValues: string[] = [];
 
-      // Convert time strings to Date objects
-      const dates: Date[] = parseResult.data
-        .map(row => {
-          try {
-            return new Date(row.time);
-          } catch {
-            return null;
+      for (let i = 1; i <= sampleSize && i < lines.length; i++) {
+        const row = lines[i].split(',');
+        for (const { index } of dateTimeColumns) {
+          if (index < row.length) {
+            const value = row[index].trim();
+            if (value) {
+              sampleDateValues.push(value);
+              break; // Got a value for this row, move to next row
+            }
           }
-        })
-        .filter((d): d is Date => d !== null && !isNaN(d.getTime()));
+        }
+      }
 
-      // SANITY CHECK: Extract expected date range from filename
-      // E.g., "ALGA_CROP_F_L_2503-2506" means March 2025 (2503) to June 2025 (2506)
-      const filenameMatch = file.fileName.match(/(\d{2})(\d{2})-(\d{2})(\d{2})/);
-      if (filenameMatch && isDiscreteFile) {
-        const [, startYY, startMM, endYY, endMM] = filenameMatch;
-        const expectedStartMonth = parseInt(startMM);
-        const expectedEndMonth = parseInt(endMM);
-        const expectedStartYear = 2000 + parseInt(startYY);
-        const expectedEndYear = 2000 + parseInt(endYY);
+      // STEP 2: Detect date format from sample values
+      const detectedFormat = detectDateFormat(sampleDateValues);
+      console.log(`[TIMELINE ANALYSIS] File: ${file.fileName} | Detected format: ${detectedFormat}`);
 
-        console.log('🔍 SANITY CHECK - Expected date range from filename:', {
-          fileName: file.fileName,
-          expectedRange: `${startMM}/${expectedStartYear} - ${endMM}/${expectedEndYear}`,
-          expectedStartMonth,
-          expectedEndMonth,
-          expectedStartYear,
-          expectedEndYear
-        });
+      // STEP 3: Parse date values from all data rows using detected format
+      const dates: Date[] = [];
 
-        // Validate each parsed date against expected range
-        const invalidDates: Date[] = [];
-        dates.forEach(date => {
-          const dateYear = date.getFullYear();
-          const dateMonth = date.getMonth() + 1; // 1-based month
+      for (let i = 1; i < lines.length; i++) {
+        const row = lines[i].split(',');
 
-          // Check if date is outside expected range
-          const beforeStart = dateYear < expectedStartYear ||
-                             (dateYear === expectedStartYear && dateMonth < expectedStartMonth);
-          const afterEnd = dateYear > expectedEndYear ||
-                          (dateYear === expectedEndYear && dateMonth > expectedEndMonth);
-
-          if (beforeStart || afterEnd) {
-            invalidDates.push(date);
+        // Try each date column to find valid dates
+        for (const { index } of dateTimeColumns) {
+          if (index < row.length) {
+            const value = row[index].trim();
+            if (value) {
+              const parsedDate = parseCSVDate(value, detectedFormat);
+              if (parsedDate && !isNaN(parsedDate.getTime())) {
+                dates.push(parsedDate);
+                break; // Found a valid date for this row, move to next row
+              }
+            }
           }
-        });
-
-        if (invalidDates.length > 0) {
-          console.error('❌ SANITY CHECK FAILED - Dates outside expected range:', {
-            fileName: file.fileName,
-            expectedRange: `${expectedStartMonth}/${expectedStartYear} - ${expectedEndMonth}/${expectedEndYear}`,
-            invalidDates: invalidDates.map(d => ({
-              parsed: d.toISOString(),
-              month: d.getMonth() + 1,
-              year: d.getFullYear()
-            })),
-            allParsedDates: dates.map(d => ({
-              date: d.toISOString(),
-              month: d.getMonth() + 1,
-              year: d.getFullYear()
-            }))
-          });
-
-          console.warn('⚠️ This indicates the date format was parsed incorrectly!');
-          console.warn('⚠️ Check that DD/MM/YYYY format is being used (not MM/DD/YYYY)');
-        } else {
-          console.log('✅ SANITY CHECK PASSED - All dates within expected range');
         }
       }
 
@@ -2268,13 +1906,9 @@ function MapDrawingPageContent() {
       dates.sort((a, b) => a.getTime() - b.getTime());
       const startDate = dates[0];
       const endDate = dates[dates.length - 1];
-
-      console.log('📈 Date range calculated:', {
-        fileName: file.fileName,
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        totalDatesParsed: dates.length
-      });
+      
+      // Calculate total days
+      const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
       // Format dates in DD/MM/YYYY format for CSV files
       const formatDateForCSV = (date: Date): string => {
@@ -2283,52 +1917,6 @@ function MapDrawingPageContent() {
         const year = String(date.getFullYear()); // Full 4-digit year
         return `${day}/${month}/${year}`;
       };
-
-      // Use the discrete file detection from earlier (already determined above)
-      const isDiscrete = isDiscreteFile;
-
-      console.log('🔍 File type detection:', {
-        fileName: file.fileName,
-        isDiscrete,
-        detectionReason: fileName.includes('crop') ? 'CROP' :
-                        fileName.includes('chemsw') ? 'CHEMSW' :
-                        fileName.includes('chemwq') ? 'CHEMWQ' :
-                        fileName.includes('chem') ? 'CHEM' :
-                        fileName.includes('wq') ? 'WQ' :
-                        fileName.includes('edna') ? 'EDNA' : 'continuous'
-      });
-
-      // For discrete files, count unique days; for others, calculate continuous range
-      let totalDays: number;
-      let uniqueDates: string[] | undefined;
-
-      if (isDiscrete) {
-        // Get unique dates (date-only, ignoring time)
-        const uniqueDateSet = new Set<string>();
-        dates.forEach(date => {
-          const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-          uniqueDateSet.add(formatDateForCSV(dateOnly));
-        });
-        uniqueDates = Array.from(uniqueDateSet).sort((a, b) => {
-          // Parse dates back for proper sorting
-          const [dayA, monthA, yearA] = a.split('/').map(Number);
-          const [dayB, monthB, yearB] = b.split('/').map(Number);
-          const dateA = new Date(yearA, monthA - 1, dayA);
-          const dateB = new Date(yearB, monthB - 1, dayB);
-          return dateA.getTime() - dateB.getTime();
-        });
-        totalDays = uniqueDates.length; // Number of unique sampling days
-
-        console.log('📅 DISCRETE file - Unique sampling days:', {
-          fileName: file.fileName,
-          totalUniqueDays: totalDays,
-          uniqueDates: uniqueDates,
-          allDatesCount: dates.length
-        });
-      } else {
-        // Continuous data: calculate range
-        totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      }
 
       const formattedStartDate = formatDateForCSV(startDate);
       const formattedEndDate = formatDateForCSV(endDate);
@@ -2357,23 +1945,11 @@ function MapDrawingPageContent() {
         });
       }
 
-      const result = {
+      return {
         totalDays,
         startDate: formattedStartDate,
         endDate: formattedEndDate,
-        uniqueDates,
-        isCrop: isDiscrete, // Renamed for compatibility
       };
-
-      console.log('✅ FINAL RESULT for', file.fileName, ':', {
-        startDate: result.startDate,
-        endDate: result.endDate,
-        totalDays: result.totalDays,
-        isDiscrete: result.isCrop,
-        uniqueDatesCount: result.uniqueDates?.length || 0
-      });
-
-      return result;
 
     } catch (error) {
       console.error('❌ CSV analysis error:', {
@@ -2394,13 +1970,234 @@ function MapDrawingPageContent() {
   // Self-test on page load to verify our date parsing
   React.useEffect(() => {
     const testISO = "2024-08-01T00:00:00.000Z";
-    // Date parsing self-test removed - functionality verified
+    const testDate = new Date(testISO);
+    const formatDateForCSV = (date: Date): string => {
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = String(date.getFullYear());
+      return `${day}/${month}/${year}`;
+    };
+    console.log('🧪 Date parsing self-test:');
+    console.log('Input ISO:', testISO);
+    console.log('Parsed Date:', testDate.toISOString());
+    console.log('Formatted Output:', formatDateForCSV(testDate));
+    console.log('Expected: 01/08/2024');
   }, []);
 
   // Parse various date formats commonly found in CSV files
-  // NOTE: Old detectDateFormat() and parseCSVDate() functions removed
-  // Now using the intelligent csvParser.ts for consistent date parsing across the app
-  // See CLAUDE.md Task 3 for unified date parser strategy
+  /**
+   * Detect date format (DD/MM/YYYY vs MM/DD/YYYY) by analyzing date values
+   * Matches the logic from csvParser.ts for consistency
+   */
+  const detectDateFormat = (dateValues: string[]): 'DD/MM/YYYY' | 'MM/DD/YYYY' => {
+    console.log('[TIMELINE DATE DETECTION] Starting date format detection...');
+    console.log('[TIMELINE DATE DETECTION] Sample dates:', dateValues.slice(0, 5));
+
+    if (dateValues.length === 0) {
+      console.log('[TIMELINE DATE DETECTION] No date values found, defaulting to DD/MM/YYYY');
+      return 'DD/MM/YYYY'; // Default to European format
+    }
+
+    let hasFirstComponentOver12 = false;
+    let hasSecondComponentOver12 = false;
+    const firstComponents: number[] = [];
+    const secondComponents: number[] = [];
+
+    // Analyze each date value
+    for (const dateStr of dateValues) {
+      // Extract just the date part if it has time component
+      const datePart = dateStr.split(' ')[0];
+      if (!datePart.includes('/')) continue;
+
+      const parts = datePart.split('/');
+      if (parts.length >= 3) {
+        const first = parseInt(parts[0], 10);
+        const second = parseInt(parts[1], 10);
+
+        if (!isNaN(first) && !isNaN(second)) {
+          firstComponents.push(first);
+          secondComponents.push(second);
+
+          if (first > 12) hasFirstComponentOver12 = true;
+          if (second > 12) hasSecondComponentOver12 = true;
+        }
+      }
+    }
+
+    console.log('[TIMELINE DATE DETECTION] First components:', firstComponents.slice(0, 10));
+    console.log('[TIMELINE DATE DETECTION] Second components:', secondComponents.slice(0, 10));
+    console.log('[TIMELINE DATE DETECTION] Has first > 12:', hasFirstComponentOver12);
+    console.log('[TIMELINE DATE DETECTION] Has second > 12:', hasSecondComponentOver12);
+
+    // Rule 1: If first component > 12, must be DD/MM/YYYY
+    if (hasFirstComponentOver12 && !hasSecondComponentOver12) {
+      console.log('[TIMELINE DATE DETECTION] ✓ Detected format: DD/MM/YYYY (Rule 1: first > 12)');
+      return 'DD/MM/YYYY';
+    }
+
+    // Rule 2: If second component > 12, must be MM/DD/YYYY
+    if (hasSecondComponentOver12 && !hasFirstComponentOver12) {
+      console.log('[TIMELINE DATE DETECTION] ✓ Detected format: MM/DD/YYYY (Rule 2: second > 12)');
+      return 'MM/DD/YYYY';
+    }
+
+    // Rule 3: Both ambiguous (all values ≤12), look for sequential patterns
+    if (!hasFirstComponentOver12 && !hasSecondComponentOver12 && firstComponents.length > 3) {
+      // Check if first components show day-like progression (1-30 range with variety)
+      const firstRange = Math.max(...firstComponents) - Math.min(...firstComponents);
+      const firstUnique = new Set(firstComponents).size;
+
+      // Check if second components show day-like progression
+      const secondRange = Math.max(...secondComponents) - Math.min(...secondComponents);
+      const secondUnique = new Set(secondComponents).size;
+
+      console.log('[TIMELINE DATE DETECTION] Pattern analysis - First range:', firstRange, 'unique:', firstUnique);
+      console.log('[TIMELINE DATE DETECTION] Pattern analysis - Second range:', secondRange, 'unique:', secondUnique);
+
+      // If first component has wider range and more variety, likely to be days
+      if (firstRange > secondRange && firstUnique > secondUnique) {
+        console.log('[TIMELINE DATE DETECTION] ✓ Detected format: DD/MM/YYYY (Rule 3: first has more variety)');
+        return 'DD/MM/YYYY';
+      }
+
+      // If second component has wider range and more variety, likely to be days
+      if (secondRange > firstRange && secondUnique > firstUnique) {
+        console.log('[TIMELINE DATE DETECTION] ✓ Detected format: MM/DD/YYYY (Rule 3: second has more variety)');
+        return 'MM/DD/YYYY';
+      }
+    }
+
+    // Default to European format (DD/MM/YYYY) if still ambiguous
+    console.log('[TIMELINE DATE DETECTION] ✓ Using default format: DD/MM/YYYY (ambiguous case)');
+    return 'DD/MM/YYYY';
+  };
+
+  /**
+   * Parse CSV date with adaptive format detection
+   * Now matches the logic from csvParser.ts processTimeValue
+   */
+  const parseCSVDate = (value: string, dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY'): Date | null => {
+    if (!value || value.trim() === '') return null;
+
+    const cleanValue = value.trim();
+
+    // Try different date parsing strategies
+    const parsers = [
+      // ISO format with Z suffix (2024-06-08T12:00:00.000Z)
+      () => {
+        // First try direct ISO parsing which should handle the Z suffix
+        const date = new Date(cleanValue);
+        return isNaN(date.getTime()) ? null : date;
+      },
+
+      // ISO format without Z (2023-06-15T10:30:00, 2023-06-15)
+      () => {
+        if (cleanValue.includes('T') && !cleanValue.includes('Z')) {
+          const date = new Date(cleanValue + 'Z'); // Add Z to treat as UTC
+          return isNaN(date.getTime()) ? null : date;
+        }
+        return null;
+      },
+
+      // Unix timestamp (seconds)
+      () => {
+        const num = parseFloat(cleanValue);
+        if (!isNaN(num) && num > 1000000000 && num < 2000000000) {
+          return new Date(num * 1000);
+        }
+        return null;
+      },
+
+      // Unix timestamp (milliseconds)
+      () => {
+        const num = parseFloat(cleanValue);
+        if (!isNaN(num) && num > 1000000000000) {
+          return new Date(num);
+        }
+        return null;
+      },
+
+      // Excel date format (days since 1900-01-01)
+      () => {
+        const num = parseFloat(cleanValue);
+        if (!isNaN(num) && num > 1 && num < 100000) {
+          // Excel date: days since 1900-01-01 (accounting for Excel's leap year bug)
+          const excelEpoch = new Date('1899-12-30'); // Excel's epoch is off by 1 day
+          return new Date(excelEpoch.getTime() + (num * 86400000));
+        }
+        return null;
+      },
+
+      // Common date formats with ADAPTIVE parsing based on detected format
+      () => {
+        // Pattern 1: DD/MM/YYYY or MM/DD/YYYY (with slashes or dashes)
+        const datePattern = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/;
+        const dateMatch = cleanValue.match(datePattern);
+        if (dateMatch) {
+          const [, d1, d2, year] = dateMatch;
+          let day: string, month: string;
+
+          // Use detected date format to interpret d1 and d2
+          if (dateFormat === 'DD/MM/YYYY') {
+            // Format is DD/MM/YYYY: d1 = day, d2 = month
+            day = d1;
+            month = d2;
+          } else {
+            // Format is MM/DD/YYYY: d1 = month, d2 = day
+            month = d1;
+            day = d2;
+          }
+
+          const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+
+          // Validate date
+          if (!isNaN(date.getTime()) && date.getFullYear() > 1990 && date.getFullYear() < 2100) {
+            // Additional validation: ensure month and day are valid
+            const monthNum = parseInt(month);
+            const dayNum = parseInt(day);
+
+            if (monthNum < 1 || monthNum > 12) return null;
+            if (dayNum < 1 || dayNum > 31) return null;
+
+            // Verify that parsing didn't auto-correct the date
+            if (date.getFullYear() !== parseInt(year)) return null;
+            if (date.getMonth() + 1 !== monthNum) return null;
+            if (date.getDate() !== dayNum) return null;
+
+            console.log(`[TIMELINE DATE PARSE] "${cleanValue}" → Format: ${dateFormat} → day=${day}, month=${month} → ${date.toISOString()}`);
+            return date;
+          }
+        }
+
+        // Pattern 2: YYYY/MM/DD or YYYY-MM-DD (ISO-like format) - year first is unambiguous
+        const yyyymmddPattern = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/;
+        const yyyyMatch = cleanValue.match(yyyymmddPattern);
+        if (yyyyMatch) {
+          const [, year, month, day] = yyyyMatch;
+          const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+          if (!isNaN(date.getTime()) && date.getFullYear() > 1990 && date.getFullYear() < 2100) {
+            return date;
+          }
+        }
+
+        return null;
+      }
+    ];
+
+    // Try each parser
+    for (const parser of parsers) {
+      try {
+        const result = parser();
+        if (result && !isNaN(result.getTime()) && result.getFullYear() > 1990 && result.getFullYear() < 2100) {
+          return result;
+        }
+      } catch (e) {
+        // Continue to next parser
+      }
+    }
+
+    return null;
+  };
 
   // Cache for file date analysis to avoid re-analyzing the same files
   // Clear cache on mount to ensure fresh analysis after date parsing fixes
@@ -2408,14 +2205,13 @@ function MapDrawingPageContent() {
     totalDays: number | null;
     startDate: string | null;
     endDate: string | null;
-    uniqueDates?: string[];
-    isCrop?: boolean;
     error?: string;
   }>>({});
 
   // Clear the file date cache on component mount (run once)
   useEffect(() => {
     setFileDateCache({});
+    console.log('🔄 Cleared file date cache on mount');
   }, []);
 
   // Function to get or analyze file date range
@@ -2861,8 +2657,12 @@ function MapDrawingPageContent() {
 
       await updateLineData(editingLineId, updateData);
 
-      // Note: updateLineData handles the state update internally via useMapData hook
-      // No need to manually update local state
+      // Update local state
+      setLines(prev => prev.map(line =>
+        line.id === editingLineId
+          ? { ...line, path: tempLinePath }
+          : line
+      ));
 
       // Reset edit mode
       setLineEditMode('none');
@@ -3323,80 +3123,6 @@ function MapDrawingPageContent() {
     return categories;
   };
 
-  // Get or create "Area-wide Data" pin for project-level files (e.g., CHEMWQ with _ALL_ station)
-  const getOrCreateAreawidePin = async (projectId: string): Promise<string | null> => {
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
-        console.error('User not authenticated');
-        return null;
-      }
-
-      // Check if area-wide pin already exists
-      const areawidePinLabel = '📊 Area-wide Data';
-      const existingPin = pins.find(pin =>
-        pin.projectId === projectId && pin.label === areawidePinLabel
-      );
-
-      if (existingPin) {
-        console.log('✅ Using existing area-wide pin:', existingPin.id);
-        return existingPin.id;
-      }
-
-      // Create new area-wide pin
-      console.log('📌 Creating area-wide pin for project:', projectId);
-      const { data: newPin, error } = await supabase
-        .from('pins')
-        .insert({
-          user_id: user.id,
-          project_id: projectId,
-          label: areawidePinLabel,
-          lat: 0,  // No specific location
-          lng: 0,
-          color: '#8b5cf6',  // Purple color to distinguish from location pins
-        })
-        .select()
-        .single();
-
-      if (error || !newPin) {
-        console.error('❌ Failed to create area-wide pin:', {
-          error,
-          errorMessage: error?.message,
-          errorCode: error?.code,
-          errorDetails: error?.details,
-          errorHint: error?.hint,
-          projectId,
-          userId: user.id
-        });
-        toast({
-          variant: "destructive",
-          title: "Failed to create area-wide pin",
-          description: error?.message || 'Unknown error'
-        });
-        return null;
-      }
-
-      console.log('✅ Created area-wide pin:', newPin.id);
-
-      // Add to pins state
-      setPins(prev => [...prev, {
-        id: newPin.id,
-        lat: 0,
-        lon: 0,
-        label: areawidePinLabel,
-        color: '#8b5cf6',
-        projectId: projectId,
-      }]);
-
-      return newPin.id;
-    } catch (error) {
-      console.error('Error in getOrCreateAreawidePin:', error);
-      return null;
-    }
-  };
-
   // Initiate file upload - select files first, then show pin selector
   const handleInitiateFileUpload = () => {
     const input = document.createElement('input');
@@ -3419,27 +3145,6 @@ function MapDrawingPageContent() {
 
       if (csvFiles.length > 0) {
         setPendingUploadFiles(csvFiles);
-
-        // Auto-detect _ALL_ files (files not assigned to specific pin)
-        const hasAllFiles = csvFiles.some(file => {
-          const parts = file.name.split('_');
-          const position2 = parts[2]?.toUpperCase() || '';
-          return position2 === 'ALL';
-        });
-
-        // For _ALL_ files, auto-create/use area-wide pin
-        if (hasAllFiles && activeProjectId) {
-          console.log('🌐 Detected _ALL_ file(s) - auto-selecting area-wide pin');
-          const areawidePin = await getOrCreateAreawidePin(activeProjectId);
-          if (areawidePin) {
-            setSelectedUploadPinId(areawidePin);
-            toast({
-              title: "Area-wide File Detected",
-              description: "File will be uploaded to '📊 Area-wide Data' pin",
-            });
-          }
-        }
-
         setShowUploadPinSelector(true);
       }
     };
@@ -3447,45 +3152,8 @@ function MapDrawingPageContent() {
     input.click();
   };
 
-  // Handle date confirmation for files without time columns
-  const handleDateConfirm = async (date: string) => {
-    if (!pendingDateFile) return;
-
-    try {
-      console.log('[DATE-INPUT] User confirmed date:', date, 'for file:', pendingDateFile.file.name);
-
-      // Inject date into file
-      const modifiedFile = await createFileWithDateColumn(pendingDateFile.file, date);
-
-      console.log('[DATE-INPUT] Modified file created:', modifiedFile.name, 'Size:', modifiedFile.size);
-
-      // Replace the file in pendingUploadFiles
-      const updatedFiles = pendingUploadFiles.map(f =>
-        f.name === pendingDateFile.file.name ? modifiedFile : f
-      );
-
-      // Close dialog
-      setShowDateInputDialog(false);
-      const fileToProcess = pendingDateFile;
-      setPendingDateFile(null);
-
-      // Continue with upload (skip duplicate check since we already did it)
-      console.log('[DATE-INPUT] Continuing upload with modified file');
-      await handleFileUpload(fileToProcess.targetId, fileToProcess.targetType, updatedFiles, true);
-    } catch (error) {
-      console.error('[DATE-INPUT] Error processing date input:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to add date column to file'
-      });
-      setShowDateInputDialog(false);
-      setPendingDateFile(null);
-    }
-  };
-
-  // Handle file upload for pins or areas - now receives target (pin or area) and files
-  const handleFileUpload = async (targetId: string, targetType: 'pin' | 'area' = 'pin', filesToUpload?: File[], skipDuplicateCheck: boolean = false) => {
+  // Handle file upload for pins - now receives files and pinId
+  const handleFileUpload = async (pinId: string, filesToUpload?: File[], skipDuplicateCheck: boolean = false) => {
     const csvFiles = filesToUpload || pendingUploadFiles;
 
     if (csvFiles.length === 0) {
@@ -3513,10 +3181,8 @@ function MapDrawingPageContent() {
       console.log('🔍 Checking for duplicate files...');
 
       // Fetch existing files from database to ensure we have latest data
-      const existingFiles = targetType === 'pin'
-        ? await fileStorageService.getPinFiles(targetId)
-        : await fileStorageService.getAreaFiles(targetId);
-      console.log(`📂 Found ${existingFiles.length} existing files for ${targetType} ${targetId}`);
+      const existingFiles = await fileStorageService.getPinFiles(pinId);
+      console.log(`📂 Found ${existingFiles.length} existing files for pin ${pinId}`);
 
       const duplicates: {fileName: string, existingFile: PinFile}[] = [];
 
@@ -3539,28 +3205,6 @@ function MapDrawingPageContent() {
       }
     }
 
-    // Check if any files need a date column (skip if we're already handling date input)
-    if (!skipDuplicateCheck) {
-      console.log('🔍 Checking files for time columns...');
-
-      for (const file of csvFiles) {
-        const hasTime = await hasTimeColumn(file);
-
-        if (!hasTime) {
-          console.log(`⚠️  File "${file.name}" has no time column, requesting date input`);
-
-          // Show date input dialog for this file
-          setPendingDateFile({ file, targetId, targetType });
-          setShowDateInputDialog(true);
-          return; // Pause upload until user provides date
-        } else {
-          console.log(`✅ File "${file.name}" has time column`);
-        }
-      }
-
-      console.log('✅ All files have time columns, proceeding with upload');
-    }
-
     setIsUploadingFiles(true);
 
     try {
@@ -3568,58 +3212,60 @@ function MapDrawingPageContent() {
       const failedUploads: string[] = [];
 
       // Upload each file to Supabase
-      perfLogger.start('uploadFiles');
+      console.log(`📤 Starting upload of ${csvFiles.length} file(s) to pin ${pinId}`);
+      console.log('Active project ID:', activeProjectId);
 
       for (const file of csvFiles) {
+        console.log(`  📎 Uploading: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`);
+
         try {
-          const target = { type: targetType, id: targetId } as import('@/lib/supabase/file-storage-service').UploadTarget;
-          const result = await fileStorageService.uploadFile(target, file, activeProjectId);
+          const result = await fileStorageService.uploadPinFile(pinId, file, activeProjectId);
 
           if (result) {
+            console.log(`    ✅ Successfully uploaded: ${file.name}`);
+            console.log(`    📍 File path: ${result.filePath}`);
             uploadResults.push(result);
           } else {
-            perfLogger.error(`Failed to upload: ${file.name}`);
+            console.error(`    ❌ Failed to upload: ${file.name} - check console for details`);
             failedUploads.push(file.name);
           }
         } catch (uploadError) {
-          perfLogger.error(`Exception uploading ${file.name}`, uploadError);
+          console.error(`    ❌ Exception during upload of ${file.name}:`, uploadError);
           failedUploads.push(file.name);
         }
       }
 
-      perfLogger.end('uploadFiles', `${uploadResults.length}/${csvFiles.length} files uploaded successfully`);
-
       if (uploadResults.length > 0) {
-        // Reload all project files to ensure timeline is completely up to date
-        console.log('🔄 Triggering full project files reload after upload...');
-        await reloadProjectFiles();
+        // Update local file metadata state
+        setPinFileMetadata(prev => ({
+          ...prev,
+          [pinId]: [...(prev[pinId] || []), ...uploadResults]
+        }));
       }
 
       // Show success/failure toast
       if (failedUploads.length === 0) {
         toast({
           title: "Files Uploaded Successfully",
-          description: `${uploadResults.length} CSV file${uploadResults.length > 1 ? 's' : ''} uploaded to ${targetType === 'pin' ? 'pin' : 'area'}.`
+          description: `${uploadResults.length} CSV file${uploadResults.length > 1 ? 's' : ''} uploaded to Supabase.`
             });
-
-            // Keep the explore dropdown open to show the newly uploaded files (pins only)
-            if (targetType === 'pin') {
-              setShowExploreDropdown(true);
-              setSelectedPinForExplore(targetId);
-            }
+            
+            // Keep the explore dropdown open to show the newly uploaded files
+            setShowExploreDropdown(true);
+            setSelectedPinForExplore(pinId);
           } else {
             toast({
               variant: failedUploads.length === csvFiles.length ? "destructive" : "default",
               title: failedUploads.length === csvFiles.length ? "Upload Failed" : "Partial Upload Success",
-              description: failedUploads.length === csvFiles.length
+              description: failedUploads.length === csvFiles.length 
                 ? `Failed to upload ${failedUploads.length} files`
                 : `${uploadResults.length} uploaded, ${failedUploads.length} failed: ${failedUploads.join(', ')}`
             });
-
-            // If at least some files uploaded successfully, keep dropdown open (pins only)
-            if (uploadResults.length > 0 && targetType === 'pin') {
+            
+            // If at least some files uploaded successfully, keep dropdown open
+            if (uploadResults.length > 0) {
               setShowExploreDropdown(true);
-              setSelectedPinForExplore(targetId);
+              setSelectedPinForExplore(pinId);
             }
       }
 
@@ -3634,14 +3280,12 @@ function MapDrawingPageContent() {
       setIsUploadingFiles(false);
       setPendingUploadFiles([]);
       setSelectedUploadPinId('');
-      setSelectedUploadAreaId('');
     }
   };
 
   // Handle replacing duplicate files
   const handleReplaceDuplicates = async () => {
-    const targetId = uploadTargetType === 'pin' ? selectedUploadPinId : selectedUploadAreaId;
-    if (!targetId) return;
+    if (!selectedUploadPinId) return;
 
     setShowDuplicateWarning(false);
 
@@ -3651,13 +3295,11 @@ function MapDrawingPageContent() {
         await fileStorageService.deleteFile(dup.existingFile.id);
         console.log(`Deleted duplicate file: ${dup.fileName}`);
 
-        // Also update local state to remove the deleted file (only for pins)
-        if (uploadTargetType === 'pin') {
-          setPinFileMetadata(prev => ({
-            ...prev,
-            [targetId]: (prev[targetId] || []).filter(f => f.id !== dup.existingFile.id)
-          }));
-        }
+        // Also update local state to remove the deleted file
+        setPinFileMetadata(prev => ({
+          ...prev,
+          [selectedUploadPinId]: (prev[selectedUploadPinId] || []).filter(f => f.id !== dup.existingFile.id)
+        }));
       } catch (error) {
         console.error(`Failed to delete duplicate file ${dup.fileName}:`, error);
       }
@@ -3667,7 +3309,7 @@ function MapDrawingPageContent() {
     setDuplicateFiles([]);
 
     // Now proceed with the upload, skipping duplicate check
-    await handleFileUpload(targetId, uploadTargetType, pendingUploadFiles, true);
+    await handleFileUpload(selectedUploadPinId, pendingUploadFiles, true);
   };
 
   // Handle cancelling duplicate upload
@@ -3713,25 +3355,16 @@ function MapDrawingPageContent() {
     // UI state is already preserved, no need to reopen anything
   }, []);
 
-  // Merge Rules Handler
-  const handleMergeRuleToggle = useCallback((suffix: string, enabled: boolean) => {
-    setMergeRules(prevRules =>
-      prevRules.map(rule =>
-        rule.suffix === suffix ? { ...rule, enabled } : rule
-      )
-    );
-  }, []);
-
   // Handle request to return to file selection from Add New Plot button
   const handleRequestFileSelection = useCallback(() => {
     // Close the marine device modal
     setShowMarineDeviceModal(false);
     setSelectedFileType(null);
     setSelectedFiles([]);
-
+    
     // UI state is already preserved, no need to reopen anything
     // The explore dropdown and object properties should still be open
-
+    
     // Reopen the object properties with the file selector
     // We need to find the original pin that was being edited
     const pinForReselection = selectedPinForExplore || 
@@ -3757,59 +3390,7 @@ function MapDrawingPageContent() {
     try {
       console.log(`📥 Downloading file for plot: ${fileName} (pin: ${pinId})`);
 
-      // Handle merged files separately
-      if (pinId === 'merged') {
-        console.log(`🔀 Looking up merged file: ${fileName}`);
-        const mergedFileMetadata = mergedFiles.find(
-          f => f.fileName === fileName
-        );
-
-        if (!mergedFileMetadata) {
-          console.error('❌ Merged file metadata not found:', { fileName });
-          toast({
-            variant: "destructive",
-            title: "Download Failed",
-            description: "Merged file metadata not found"
-          });
-          return null;
-        }
-
-        // Download merged file from storage
-        console.log(`📦 Downloading merged file from storage: ${mergedFileMetadata.filePath}`);
-        const blob = await fileStorageService.downloadPinFile(mergedFileMetadata.filePath);
-
-        if (!blob) {
-          console.error('❌ Failed to download merged file from storage');
-          toast({
-            variant: "destructive",
-            title: "Download Failed",
-            description: `Could not download ${fileName}`
-          });
-          return null;
-        }
-
-        // Convert to File object
-        const file = new File([blob], fileName, {
-          type: mergedFileMetadata.fileType || 'text/csv'
-        });
-
-        console.log(`✅ Merged file downloaded successfully: ${fileName} (${(file.size / 1024).toFixed(2)} KB)`);
-
-        // Cache it in pinFiles state
-        setPinFiles(prev => ({
-          ...prev,
-          [pinId]: [...(prev[pinId] || []), file]
-        }));
-
-        toast({
-          title: "Merged File Downloaded",
-          description: `${fileName} is ready for plotting`
-        });
-
-        return file;
-      }
-
-      // Get file metadata for regular (uploaded) files
+      // Get file metadata
       const fileMetadata = pinFileMetadata[pinId]?.find(
         f => f.fileName === fileName
       );
@@ -3866,7 +3447,7 @@ function MapDrawingPageContent() {
       });
       return null;
     }
-  }, [pinFileMetadata, mergedFiles, toast]);
+  }, [pinFileMetadata, toast]);
 
   // Handle file type selection
   const handleFileTypeSelection = async (fileType: 'GP' | 'FPOD' | 'Subcam') => {
@@ -3945,8 +3526,6 @@ function MapDrawingPageContent() {
 
   return (
     <>
-      {/* Top progress bar for smooth loading feedback */}
-      <TopProgressBar isLoading={isPageLoading} progress={loadingProgress} />
 
 
 
@@ -3963,38 +3542,35 @@ function MapDrawingPageContent() {
       {/* Map Container - Account for top navigation height (h-14 = 3.5rem) */}
       <main className="relative overflow-hidden bg-background text-foreground" style={{ height: 'calc(100vh - 3.5rem)' }}>
         <div className="h-full w-full relative" style={{ minHeight: '500px', cursor: drawingMode === 'none' ? 'default' : 'crosshair' }}>
-
-          {/* Show skeleton during initial load */}
-          {isPageLoading && isInitialLoad ? (
-            <MapSkeleton />
-          ) : (
-            <LeafletMap
-              mapRef={mapRef}
-              center={[view.center.lat, view.center.lng]}
-              zoom={view.zoom}
-              pins={pins}
-              lines={lines}
-              areas={areas}
-              projects={projects}
-              tags={tags}
-              settings={settings}
-              currentLocation={null}
-              onLocationFound={() => {}}
-              onLocationError={() => {}}
-              onMove={handleMapMove}
-              isDrawingLine={isDrawingLine}
-              lineStartPoint={lineStartPoint}
-              currentMousePosition={currentMousePosition}
-              isDrawingArea={isDrawingArea}
-              onMapClick={handleMapClick}
-              onMapMouseMove={handleMapMouseMove}
-              pendingAreaPath={pendingAreaPath}
-              areaStartPoint={areaStartPoint}
-              currentAreaEndPoint={currentAreaEndPoint}
-              pendingPin={pendingPin}
-              onPinSave={handlePinSave}
-              onPinCancel={handlePinCancel}
-              pendingLine={pendingLine}
+          
+          
+          <LeafletMap
+            mapRef={mapRef}
+            center={[view.center.lat, view.center.lng]}
+            zoom={view.zoom}
+            pins={pins}
+            lines={lines}
+            areas={areas}
+            projects={projects}
+            tags={tags}
+            settings={settings}
+            currentLocation={null}
+            onLocationFound={() => {}}
+            onLocationError={() => {}}
+            onMove={handleMapMove}
+            isDrawingLine={isDrawingLine}
+            lineStartPoint={lineStartPoint}
+            currentMousePosition={currentMousePosition}
+            isDrawingArea={isDrawingArea}
+            onMapClick={handleMapClick}
+            onMapMouseMove={handleMapMouseMove}
+            pendingAreaPath={pendingAreaPath}
+            areaStartPoint={areaStartPoint}
+            currentAreaEndPoint={currentAreaEndPoint}
+            pendingPin={pendingPin}
+            onPinSave={handlePinSave}
+            onPinCancel={handlePinCancel}
+            pendingLine={pendingLine}
             onLineSave={handleLineSave}
             onLineCancel={handleLineCancel}
             pendingArea={pendingArea}
@@ -4031,7 +3607,6 @@ function MapDrawingPageContent() {
             tempAreaPath={tempAreaPath}
             onAreaCornerDrag={handleAreaCornerDrag}
           />
-          )}
 
           {/* Center Crosshairs */}
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none z-[500]">
@@ -4700,9 +4275,7 @@ function MapDrawingPageContent() {
                                 size="sm"
                                 onClick={() => {
                                   // Don't close the dropdown, just trigger file upload
-                                  // Determine if this is a pin or area based on properties
-                                  const targetType = ('fillVisible' in itemToEdit && 'path' in itemToEdit) ? 'area' : 'pin';
-                                  handleFileUpload(itemToEdit.id, targetType);
+                                  handleFileUpload(itemToEdit.id);
                                 }}
                                 disabled={isUploadingFiles}
                                 className="w-full justify-start gap-2 h-8 text-xs"
@@ -4760,15 +4333,8 @@ function MapDrawingPageContent() {
                                     </Button>
                                   </div>
 
-                                  {/* Loading skeleton while fetching data */}
-                                  {isLoadingPinMeteoData && (
-                                    <div className="mt-3">
-                                      <MarinePlotsSkeleton />
-                                    </div>
-                                  )}
-
                                   {/* Meteo Data Display - MarinePlotsGrid Style with Double Width and Expandable Panel */}
-                                  {!isLoadingPinMeteoData && pinMeteoData && pinMeteoData.length > 0 && (
+                                  {pinMeteoData && pinMeteoData.length > 0 && (
                                     <div className="w-full">
                                       {/* Header */}
                                       <div className="mb-2 flex items-center justify-between">
@@ -5534,11 +5100,10 @@ function MapDrawingPageContent() {
               className={`fixed left-0 bg-background border-r shadow-xl z-[1600] transform transition-transform duration-300 ease-in-out ${
                 showMainMenu ? 'translate-x-0' : '-translate-x-full'
               }`}
-              style={{
+              style={{ 
                 width: `${sidebarWidth}px`,
-                top: '80px', // Start below the header bar
-                height: 'calc(100vh - 80px)', // Adjust height accordingly
-                transition: 'width 0.3s ease-out' // Smooth width transitions
+                top: '80px', // Start below the header bar 
+                height: 'calc(100vh - 80px)' // Adjust height accordingly
               }}
               data-menu-dropdown
             >
@@ -5823,100 +5388,14 @@ function MapDrawingPageContent() {
                                 </Button>
                               </div>
                             </div>
-
+                            
                           </div>
-
-
+                          
+                          
                           {/* Active Project Objects Dropdown */}
                           {showProjectInfo === activeProjectId && (
-                            <div className="px-3 pb-3 pt-4">
-
-                              {/* Filter Buttons Row */}
-                              {totalObjects > 0 && (
-                                <div className="flex gap-1 mb-2">
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant={objectTypeFilter === 'all' ? 'default' : 'outline'}
-                                          size="sm"
-                                          className="h-6 text-xs px-2 flex-1"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setObjectTypeFilter('all');
-                                          }}
-                                        >
-                                          All
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="bottom">
-                                        <p>Show all objects</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant={objectTypeFilter === 'pin' ? 'default' : 'outline'}
-                                          size="sm"
-                                          className="h-6 w-6 p-0"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setObjectTypeFilter('pin');
-                                          }}
-                                        >
-                                          <MapPin className="h-3 w-3 text-blue-500" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="bottom">
-                                        <p>Show pins only</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant={objectTypeFilter === 'line' ? 'default' : 'outline'}
-                                          size="sm"
-                                          className="h-6 w-6 p-0"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setObjectTypeFilter('line');
-                                          }}
-                                        >
-                                          <Minus className="h-3 w-3 text-green-500" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="bottom">
-                                        <p>Show lines only</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant={objectTypeFilter === 'area' ? 'default' : 'outline'}
-                                          size="sm"
-                                          className="h-6 w-6 p-0"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setObjectTypeFilter('area');
-                                          }}
-                                        >
-                                          <Square className="h-3 w-3 text-red-500" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="bottom">
-                                        <p>Show areas only</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                </div>
-                              )}
-
+                            <div className="px-3 pb-3">
+                              
                               {totalObjects === 0 ? (
                                 <div className="text-xs text-muted-foreground text-center py-4">
                                   No objects in this project
@@ -5928,10 +5407,7 @@ function MapDrawingPageContent() {
                                     ...projectPins.map(pin => ({ ...pin, type: 'pin' as const })),
                                     ...projectLines.map(line => ({ ...line, type: 'line' as const })),
                                     ...projectAreas.map(area => ({ ...area, type: 'area' as const }))
-                                  ].filter(object => {
-                                    if (objectTypeFilter === 'all') return true;
-                                    return object.type === objectTypeFilter;
-                                  }).map(object => (
+                                  ].map(object => (
                                     <div
                                       key={object.id}
                                       className={`w-full flex items-center gap-2 p-2 rounded text-xs transition-all ${
@@ -6658,11 +6134,11 @@ function MapDrawingPageContent() {
           <div className="flex-1 overflow-hidden">
             {selectedFileType && selectedFiles.length > 0 ? (
               (() => {
-                // console.log('📍 Object location for marine/meteo:', {
-                //   objectGpsCoords,
-                //   objectName,
-                //   hasCoords: !!objectGpsCoords
-                // });
+                console.log('📍 Object location for marine/meteo:', {
+                  objectGpsCoords,
+                  objectName,
+                  hasCoords: !!objectGpsCoords
+                });
                 return (
                   <PinMarineDeviceData
                     fileType={selectedFileType}
@@ -6672,10 +6148,6 @@ function MapDrawingPageContent() {
                     onDownloadFile={handleDownloadFileForPlot}
                     objectLocation={objectGpsCoords}
                     objectName={objectName}
-                    multiFileMergeMode={multiFileMergeMode}
-                    allProjectFilesForTimeline={allProjectFilesForTimeline}
-                    getFileDateRange={getFileDateRange}
-                    projectId={currentProjectContext || activeProjectId}
                   />
                 );
               })()
@@ -6709,7 +6181,6 @@ function MapDrawingPageContent() {
           setShowUploadPinSelector(false);
           setSelectedUploadPinId('');
           setPendingUploadFiles([]);
-          setProjectDataFilter('all');
         }
         setShowProjectDataDialog(open);
       }}>
@@ -6724,92 +6195,35 @@ function MapDrawingPageContent() {
                   {dynamicProjects[currentProjectContext || activeProjectId]?.name}
                 </span>
               </DialogTitle>
-              <DialogDescription className="sr-only">
-                Manage and upload data files for the current project
-              </DialogDescription>
-              {/* Action Buttons - Inline with header */}
-              <div className="flex items-center gap-2">
-                {/* Merge Button - Moved to DataTimeline header */}
-
-                {/* Upload Button */}
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="flex items-center gap-1.5 h-7 px-2.5"
-                  disabled={isUploadingFiles}
-                  onClick={handleInitiateFileUpload}
-                >
-                  {isUploadingFiles ? (
-                    <>
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span className="text-xs">Uploading...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-3 w-3" />
-                      <span className="text-xs">Upload</span>
-                    </>
-                  )}
-                </Button>
-              </div>
+              {/* Upload Button - Inline with header */}
+              <Button
+                variant="default"
+                size="sm"
+                className="flex items-center gap-1.5 h-7 px-2.5"
+                disabled={isUploadingFiles}
+                onClick={handleInitiateFileUpload}
+              >
+                {isUploadingFiles ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span className="text-xs">Uploading...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-3 w-3" />
+                    <span className="text-xs">Upload</span>
+                  </>
+                )}
+              </Button>
             </div>
           </DialogHeader>
-
-          {/* Filter Buttons */}
-          <div className="flex-shrink-0 px-6 py-3 border-b">
-            <div className="flex gap-2">
-              <Button
-                variant={projectDataFilter === 'all' ? 'default' : 'outline'}
-                size="sm"
-                className="h-7 text-xs px-3"
-                onClick={() => setProjectDataFilter('all')}
-              >
-                All Files
-              </Button>
-              <Button
-                variant={projectDataFilter === 'pins' ? 'default' : 'outline'}
-                size="sm"
-                className="h-7 text-xs px-3 flex items-center gap-1.5"
-                onClick={() => setProjectDataFilter('pins')}
-              >
-                <MapPin className="h-3 w-3 text-blue-500" />
-                Pin Files
-              </Button>
-              <Button
-                variant={projectDataFilter === 'areas' ? 'default' : 'outline'}
-                size="sm"
-                className="h-7 text-xs px-3 flex items-center gap-1.5"
-                onClick={() => setProjectDataFilter('areas')}
-              >
-                <Square className="h-3 w-3 text-red-500" />
-                Area Files
-              </Button>
-            </div>
-          </div>
-
+          
           <div className="flex-1 overflow-y-auto">
             {(() => {
-              let projectFiles = getProjectFiles(currentProjectContext || activeProjectId);
-
-              // Apply filter
-              if (projectDataFilter === 'pins') {
-                projectFiles = projectFiles.filter(file => file.pinId);
-              } else if (projectDataFilter === 'areas') {
-                projectFiles = projectFiles.filter(file => file.areaId);
-              }
-
+              const projectFiles = getProjectFiles(currentProjectContext || activeProjectId);
               const groupedFiles = groupFilesByType(projectFiles);
-
-              // Add fileSource property to uploaded files
-              const uploadedFiles = Object.values(groupedFiles).flat().map(file => ({
-                ...file,
-                fileSource: 'upload' as const
-              }));
-
-              // Combine uploaded and merged files for timeline display
-              const allFiles = [...uploadedFiles, ...mergedFiles];
-              const hasFiles = allFiles.length > 0;
-
+              const hasFiles = projectFiles.length > 0;
+              
               if (!hasFiles) {
                 return (
                   <div className="text-center py-8">
@@ -6819,32 +6233,22 @@ function MapDrawingPageContent() {
                 );
               }
               
+              // Flatten all files for timeline display
+              const allFiles = Object.values(groupedFiles).flat();
+              
               // Handler for clicking file names in timeline
               const handleTimelineFileClick = async (file: PinFile & { pinLabel: string }) => {
                 try {
                   // Determine file type from filename
                   // New format: PROJECTNAME_DATATYPE_STATION_DIRECTION_[PELAGIC]_YYMM-YYMM
                   // Old format: DATATYPE_ProjectName_Station_YYMM-YYMM
-                  let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'EDNA' = 'GP';
+                  let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
 
                   const parts = file.fileName.split('_');
                   const position0 = parts[0]?.toLowerCase() || '';
                   const position1 = parts[1]?.toLowerCase() || '';
-                  const fileNameLower = file.fileName.toLowerCase();
 
-                  if (position0.includes('crop') || position1.includes('crop')) {
-                    fileType = 'CROP';
-                  } else if (position0.includes('chemsw') || position1.includes('chemsw')) {
-                    fileType = 'CHEMSW';
-                  } else if (position0.includes('chemwq') || position1.includes('chemwq')) {
-                    fileType = 'CHEMWQ';
-                  } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
-                    fileType = 'CHEM';
-                  } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
-                    fileType = 'WQ';
-                  } else if (position0.includes('edna') || position1.includes('edna')) {
-                    fileType = 'EDNA';
-                  } else if (position0.includes('fpod') || position1.includes('fpod')) {
+                  if (position0.includes('fpod') || position1.includes('fpod')) {
                     fileType = 'FPOD';
                   } else if (position0.includes('subcam') || position1.includes('subcam')) {
                     fileType = 'Subcam';
@@ -6879,124 +6283,38 @@ function MapDrawingPageContent() {
                 }
               };
 
-              // Helper function to check if file matches type filter
-              const matchesType = (file: any, type: string): boolean => {
-                const fileName = file.fileName.toLowerCase();
-                if (type === 'SubCam') return fileName.includes('subcam');
-                if (type === 'GP') return fileName.includes('gp');
-                if (type === 'FPOD') return fileName.includes('fpod');
-                return false;
-              };
+              // Get unique pins and types
+              const uniquePins = Array.from(new Set(allFiles.map(file => file.pinLabel))).sort();
+              const uniqueTypes = Array.from(new Set(Object.keys(groupedFiles))).sort();
 
-              // Helper function to extract suffix from filename
-              const extractSuffix = (fileName: string): string => {
-                const nameWithoutExt = fileName.replace(/\.[^/.]+$/, '');
+              // Extract unique suffixes (last part after final underscore, before extension)
+              const uniqueSuffixes = Array.from(new Set(allFiles.map(file => {
+                const nameWithoutExt = file.fileName.replace(/\.[^/.]+$/, ''); // Remove extension
                 const parts = nameWithoutExt.split('_');
                 return parts.length > 0 ? parts[parts.length - 1] : '';
-              };
-
-              // Apply filters to get filtered files
-              const filteredFiles = allFiles.filter(file => {
-                const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
-                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
-
-                // Suffix filter
-                const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
-                  const fileSuffix = extractSuffix(file.fileName);
-                  return fileSuffix === suffix;
-                });
-
-                // Date range filter
-                const dateRangeMatch = selectedDateRanges.length === 0 || selectedDateRanges.some(range => {
-                  const fileRange = extractDateRange(file.fileName);
-                  return fileRange === range;
-                });
-
-                // File source filter (upload vs merged)
-                const fileSourceMatch = selectedFileSources.length === 0 || selectedFileSources.includes(file.fileSource);
-
-                return pinMatch && typeMatch && suffixMatch && dateRangeMatch && fileSourceMatch;
-              });
-
-              // Calculate unique values for cascading filters
-              // Each unique* array shows options available given OTHER active filters
-
-              // For pins: show pins available after applying type, suffix, and dateRange filters
-              const filesForPinOptions = allFiles.filter(file => {
-                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
-                const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
-                  const fileSuffix = extractSuffix(file.fileName);
-                  return fileSuffix === suffix;
-                });
-                const dateRangeMatch = selectedDateRanges.length === 0 || selectedDateRanges.some(range => {
-                  const fileRange = extractDateRange(file.fileName);
-                  return fileRange === range;
-                });
-                return typeMatch && suffixMatch && dateRangeMatch;
-              });
-              const uniquePins = Array.from(new Set(filesForPinOptions.map(file => file.pinLabel))).sort();
-
-              // For types: show types available after applying pin, suffix, and dateRange filters
-              const filesForTypeOptions = allFiles.filter(file => {
-                const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
-                const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
-                  const fileSuffix = extractSuffix(file.fileName);
-                  return fileSuffix === suffix;
-                });
-                const dateRangeMatch = selectedDateRanges.length === 0 || selectedDateRanges.some(range => {
-                  const fileRange = extractDateRange(file.fileName);
-                  return fileRange === range;
-                });
-                return pinMatch && suffixMatch && dateRangeMatch;
-              });
-              // Build type list from filesForTypeOptions
-              const typeMap = new Map<string, any[]>();
-              filesForTypeOptions.forEach(file => {
-                const fileName = file.fileName.toLowerCase();
-                if (fileName.includes('subcam')) {
-                  if (!typeMap.has('SubCam')) typeMap.set('SubCam', []);
-                  typeMap.get('SubCam')!.push(file);
-                }
-                if (fileName.includes('gp')) {
-                  if (!typeMap.has('GP')) typeMap.set('GP', []);
-                  typeMap.get('GP')!.push(file);
-                }
-                if (fileName.includes('fpod')) {
-                  if (!typeMap.has('FPOD')) typeMap.set('FPOD', []);
-                  typeMap.get('FPOD')!.push(file);
-                }
-              });
-              const uniqueTypes = Array.from(typeMap.keys()).sort();
-
-              // For suffixes: show suffixes available after applying pin, type, and dateRange filters
-              const filesForSuffixOptions = allFiles.filter(file => {
-                const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
-                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
-                const dateRangeMatch = selectedDateRanges.length === 0 || selectedDateRanges.some(range => {
-                  const fileRange = extractDateRange(file.fileName);
-                  return fileRange === range;
-                });
-                return pinMatch && typeMatch && dateRangeMatch;
-              });
-              const uniqueSuffixes = Array.from(new Set(filesForSuffixOptions.map(file => {
-                return extractSuffix(file.fileName);
               }).filter(suffix => suffix !== ''))).sort();
 
-              // For date ranges: show date ranges available after applying pin, type, and suffix filters
-              const filesForDateRangeOptions = allFiles.filter(file => {
+              // Apply filters
+              const filteredFiles = allFiles.filter(file => {
                 const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
-                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
+                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => {
+                  const fileName = file.fileName.toLowerCase();
+                  if (type === 'SubCam') return fileName.includes('subcam');
+                  if (type === 'GP') return fileName.includes('gp');
+                  if (type === 'FPOD') return fileName.includes('fpod');
+                  return false;
+                });
+
+                // Suffix filter: check if file name contains the selected suffix
                 const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
-                  const fileSuffix = extractSuffix(file.fileName);
+                  const nameWithoutExt = file.fileName.replace(/\.[^/.]+$/, '');
+                  const parts = nameWithoutExt.split('_');
+                  const fileSuffix = parts.length > 0 ? parts[parts.length - 1] : '';
                   return fileSuffix === suffix;
                 });
+
                 return pinMatch && typeMatch && suffixMatch;
               });
-              const uniqueDateRanges = Array.from(new Set(filesForDateRangeOptions.map(file => {
-                return extractDateRange(file.fileName);
-              }).filter(range => range !== null))).sort() as string[];
-
-
 
               // Calculate project summary statistics
               const projectStats = {
@@ -7010,7 +6328,7 @@ function MapDrawingPageContent() {
                 uniquePins: uniquePins.length
               };
 
-              const hasActiveFilters = selectedPins.length > 0 || selectedTypes.length > 0 || selectedSuffixes.length > 0 || selectedDateRanges.length > 0 || selectedFileSources.length < 2;
+              const hasActiveFilters = selectedPins.length > 0 || selectedTypes.length > 0 || selectedSuffixes.length > 0;
 
               return (
                 <div className="space-y-2">
@@ -7030,8 +6348,6 @@ function MapDrawingPageContent() {
                               setSelectedPins([]);
                               setSelectedTypes([]);
                               setSelectedSuffixes([]);
-                              setSelectedDateRanges([]);
-                              setSelectedFileSources(['upload', 'merged']);
                             }}
                             className="ml-1 text-primary hover:text-primary/80"
                             title="Clear all filters"
@@ -7091,65 +6407,6 @@ function MapDrawingPageContent() {
                         <span className="font-semibold">{(projectStats.totalSize / (1024 * 1024)).toFixed(1)}</span>
                         <span className="text-muted-foreground">MB</span>
                       </div>
-
-                      {/* File Source Filter - Uploaded vs Merged */}
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedFileSources.length < 2 ? 'bg-indigo-500/20 border border-indigo-500/50' : ''}`}>
-                            <Cloud className="h-3 w-3 text-indigo-500" />
-                            <span className="font-semibold">{selectedFileSources.length === 2 ? 'All' : selectedFileSources.length === 1 ? '1' : '0'}</span>
-                            <span className="text-muted-foreground">Source</span>
-                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-56 p-2" align="start">
-                          <div className="space-y-1">
-                            <div className="text-xs font-semibold mb-2 flex items-center justify-between">
-                              <span>Filter by Source</span>
-                              {selectedFileSources.length < 2 && (
-                                <button
-                                  onClick={() => setSelectedFileSources(['upload', 'merged'])}
-                                  className="text-primary hover:text-primary/80 text-[10px]"
-                                >
-                                  Show All
-                                </button>
-                              )}
-                            </div>
-                            <label className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={selectedFileSources.includes('upload')}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedFileSources([...selectedFileSources, 'upload']);
-                                  } else {
-                                    setSelectedFileSources(selectedFileSources.filter(s => s !== 'upload'));
-                                  }
-                                }}
-                                className="h-3 w-3"
-                              />
-                              <Upload className="h-3 w-3 text-blue-500" />
-                              <span>Upload Files</span>
-                            </label>
-                            <label className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={selectedFileSources.includes('merged')}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedFileSources([...selectedFileSources, 'merged']);
-                                  } else {
-                                    setSelectedFileSources(selectedFileSources.filter(s => s !== 'merged'));
-                                  }
-                                }}
-                                className="h-3 w-3"
-                              />
-                              <FileCode className="h-3 w-3 text-green-500" />
-                              <span>Merged Files</span>
-                            </label>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
 
                       {/* File Types - Filterable */}
                       <Popover>
@@ -7239,51 +6496,6 @@ function MapDrawingPageContent() {
                         </PopoverContent>
                       </Popover>
 
-                      {/* Date Ranges - Filterable */}
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedDateRanges.length > 0 ? 'bg-cyan-500/20 border border-cyan-500/50' : ''}`}>
-                            <Calendar className="h-3 w-3 text-cyan-500" />
-                            <span className="font-semibold">{selectedDateRanges.length > 0 ? selectedDateRanges.length : uniqueDateRanges.length}</span>
-                            <span className="text-muted-foreground">Date Ranges</span>
-                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-56 p-2" align="start">
-                          <div className="space-y-1">
-                            <div className="text-xs font-semibold mb-2 flex items-center justify-between">
-                              <span>Filter by Date Range</span>
-                              {selectedDateRanges.length > 0 && (
-                                <button
-                                  onClick={() => setSelectedDateRanges([])}
-                                  className="text-primary hover:text-primary/80 text-[10px]"
-                                >
-                                  Clear
-                                </button>
-                              )}
-                            </div>
-                            {uniqueDateRanges.map(range => (
-                              <label key={range} className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedDateRanges.includes(range)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedDateRanges([...selectedDateRanges, range]);
-                                    } else {
-                                      setSelectedDateRanges(selectedDateRanges.filter(r => r !== range));
-                                    }
-                                  }}
-                                  className="h-3 w-3"
-                                />
-                                <span className="font-mono">{range}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-
-
                       {/* File Type Distribution - Inline */}
                       {projectStats.fileTypes.length > 0 && (
                         <div className="flex items-center gap-1.5 ml-auto">
@@ -7297,12 +6509,8 @@ function MapDrawingPageContent() {
                     </div>
                   </div>
 
-                  {/* Show skeleton while loading initial data */}
-                  {isLoadingMergedFiles || (isPageLoading && isInitialLoad) ? (
-                    <DataTimelineSkeleton />
-                  ) : (
-                    <DataTimeline
-                      files={filteredFiles}
+                  <DataTimeline
+                    files={filteredFiles}
                     getFileDateRange={getFileDateRange}
                     onFileClick={handleTimelineFileClick}
                     onRenameFile={async (file, newName) => {
@@ -7357,56 +6565,35 @@ function MapDrawingPageContent() {
                       console.log('Timeline delete request for file:', file.id, file.fileName);
 
                       try {
-                        // Check if this is a merged file
-                        const isMergedFile = (file as any).fileSource === 'merged';
+                        console.log('Calling deleteFileSimple with ID:', file.id);
+                        const success = await fileStorageService.deleteFileSimple(file.id);
+                        console.log('Delete result from service:', success);
 
-                        if (isMergedFile) {
-                          console.log('Deleting merged file with ID:', file.id);
-                          const { deleteMergedFileAction } = await import('@/app/api/merged-files/actions');
-                          const result = await deleteMergedFileAction(file.id);
+                        if (success) {
+                          console.log('Delete successful, updating UI...');
+                          // Find which pin this file belongs to and update that pin's metadata
+                          const pinId = Object.keys(pinFileMetadata).find(pinId =>
+                            pinFileMetadata[pinId]?.some(f => f.id === file.id)
+                          );
 
-                          if (result.success) {
-                            console.log('Merged file deleted successfully');
-
-                            // Reload all project files to ensure timeline updates immediately
-                            console.log('🔄 Triggering full project files reload after merged file delete...');
-                            await reloadProjectFiles();
-
-                            toast({
-                              title: "Merged File Deleted",
-                              description: `${file.fileName} has been deleted.`
-                            });
-                          } else {
-                            toast({
-                              variant: "destructive",
-                              title: "Delete Failed",
-                              description: result.error || "Failed to delete the merged file."
-                            });
+                          if (pinId) {
+                            // Update the state immediately to remove the file from UI
+                            setPinFileMetadata(prev => ({
+                              ...prev,
+                              [pinId]: prev[pinId]?.filter(f => f.id !== file.id) || []
+                            }));
                           }
+
+                          toast({
+                            title: "File Deleted",
+                            description: `${file.fileName} has been deleted.`
+                          });
                         } else {
-                          // Regular uploaded file
-                          console.log('Calling deleteFileSimple with ID:', file.id);
-                          const success = await fileStorageService.deleteFileSimple(file.id);
-                          console.log('Delete result from service:', success);
-
-                          if (success) {
-                            console.log('Delete successful, reloading files...');
-
-                            // Reload all project files to ensure timeline updates immediately
-                            console.log('🔄 Triggering full project files reload after delete...');
-                            await reloadProjectFiles();
-
-                            toast({
-                              title: "File Deleted",
-                              description: `${file.fileName} has been deleted.`
-                            });
-                          } else {
-                            toast({
-                              variant: "destructive",
-                              title: "Delete Failed",
-                              description: "Failed to delete the file. Please try again."
-                            });
-                          }
+                          toast({
+                            variant: "destructive",
+                            title: "Delete Failed",
+                            description: "Failed to delete the file. Please try again."
+                          });
                         }
                       } catch (error) {
                         console.error('Delete file error:', error);
@@ -7437,154 +6624,7 @@ function MapDrawingPageContent() {
                       console.log('✅ Files reloaded with updated dates');
                       setPinFileMetadata(fileMetadata);
                     }}
-                    onSelectMultipleFiles={async (selectedFiles) => {
-                      try {
-                        console.log('🔄 Multi-file selection:', selectedFiles.map(f => f.fileName));
-
-                        // Determine file type from first file
-                        const firstFile = selectedFiles[0];
-                        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' = 'GP';
-
-                        const parts = firstFile.fileName.split('_');
-                        const position0 = parts[0]?.toLowerCase() || '';
-                        const position1 = parts[1]?.toLowerCase() || '';
-                        const fileNameLower = firstFile.fileName.toLowerCase();
-
-                        if (position0.includes('crop') || position1.includes('crop')) {
-                          fileType = 'CROP';
-                        } else if (position0.includes('chemsw') || position1.includes('chemsw')) {
-                          fileType = 'CHEMSW';
-                        } else if (position0.includes('chemwq') || position1.includes('chemwq')) {
-                          fileType = 'CHEMWQ';
-                        } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
-                          fileType = 'CHEM';
-                        } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
-                          fileType = 'WQ';
-                        } else if (position0.includes('fpod') || position1.includes('fpod')) {
-                          fileType = 'FPOD';
-                        } else if (position0.includes('subcam') || position1.includes('subcam')) {
-                          fileType = 'Subcam';
-                        } else if (position0.includes('gp') || position1.includes('gp')) {
-                          fileType = 'GP';
-                        }
-
-                        // Download all files
-                        const downloadedFiles: File[] = [];
-                        for (const file of selectedFiles) {
-                          const fileContent = await fileStorageService.downloadFile(file.filePath);
-                          if (fileContent) {
-                            const actualFile = new File([fileContent], file.fileName, {
-                              type: file.fileType || 'text/csv'
-                            });
-                            downloadedFiles.push(actualFile);
-                          } else {
-                            toast({
-                              variant: "destructive",
-                              title: "Download Failed",
-                              description: `Failed to download ${file.fileName}`
-                            });
-                            return;
-                          }
-                        }
-
-                        // Import multiFileValidator
-                        const { parseFile, validateFilesCompatibility } = await import('@/lib/multiFileValidator');
-
-                        // Parse all files with file IDs
-                        const parsedFiles = await Promise.all(
-                          downloadedFiles.map(async (file, idx) => {
-                            const parsed = await parseFile(file);
-                            return {
-                              ...parsed,
-                              fileId: selectedFiles[idx].id // Add file ID for tracking
-                            };
-                          })
-                        );
-
-                        // Validate compatibility
-                        const validation = validateFilesCompatibility(parsedFiles);
-
-                        // Store data and show confirmation dialog
-                        setMultiFileConfirmData({
-                          parsedFiles,
-                          validation,
-                          downloadedFiles,
-                          fileType,
-                          selectedFiles // Add selectedFiles with pin metadata
-                        });
-                        setShowMultiFileConfirmDialog(true);
-                      } catch (error) {
-                        console.error('Multi-file selection error:', error);
-                        toast({
-                          variant: "destructive",
-                          title: "Error",
-                          description: error instanceof Error ? error.message : 'Failed to process multiple files'
-                        });
-                      }
-                    }}
-                    projectId={activeProjectId}
-                    onMergedFileClick={async (mergedFile) => {
-                      try {
-                        console.log('🔄 Opening merged file:', mergedFile.fileName);
-
-                        // Download the merged file
-                        const { downloadMergedFileAction } = await import('@/app/api/merged-files/actions');
-                        const result = await downloadMergedFileAction(mergedFile.filePath);
-
-                        if (!result.success || !result.data) {
-                          throw new Error(result.error || 'Failed to download merged file');
-                        }
-
-                        // Convert the CSV text back to a File object
-                        const file = new File([result.data], mergedFile.fileName, { type: 'text/csv' });
-
-                        // Determine file type
-                        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' = 'GP';
-                        const parts = mergedFile.fileName.split('_');
-                        const position0 = parts[0]?.toLowerCase() || '';
-                        const position1 = parts[1]?.toLowerCase() || '';
-                        const fileNameLower = mergedFile.fileName.toLowerCase();
-
-                        if (position0.includes('crop') || position1.includes('crop')) {
-                          fileType = 'CROP';
-                        } else if (position0.includes('chemsw') || position1.includes('chemsw')) {
-                          fileType = 'CHEMSW';
-                        } else if (position0.includes('chemwq') || position1.includes('chemwq')) {
-                          fileType = 'CHEMWQ';
-                        } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
-                          fileType = 'CHEM';
-                        } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
-                          fileType = 'WQ';
-                        } else if (position0.includes('fpod') || position1.includes('fpod')) {
-                          fileType = 'FPOD';
-                        } else if (position0.includes('subcam') || position1.includes('subcam')) {
-                          fileType = 'Subcam';
-                        } else if (position0.includes('gp') || position1.includes('gp')) {
-                          fileType = 'GP';
-                        }
-
-                        // Open in modal
-                        openMarineDeviceModal(fileType, [file]);
-                      } catch (error) {
-                        console.error('Error opening merged file:', error);
-                        toast({
-                          variant: "destructive",
-                          title: "Error",
-                          description: error instanceof Error ? error.message : 'Failed to open merged file'
-                        });
-                      }
-                    }}
-                    onAddFilesToMergedFile={async (mergedFile) => {
-                      toast({
-                        title: "Add Files Feature",
-                        description: "This feature is coming soon! You'll be able to add more files to this merge."
-                      });
-                      // TODO: Implement add files to merged file dialog
-                    }}
-                    multiFileMergeMode={multiFileMergeMode}
-                    onMultiFileMergeModeChange={setMultiFileMergeMode}
                   />
-                  )}
                 </div>
               );
             })()}
@@ -7598,18 +6638,16 @@ function MapDrawingPageContent() {
           setShowUploadPinSelector(false);
           setPendingUploadFiles([]);
           setSelectedUploadPinId('');
-          setSelectedUploadAreaId('');
-          setUploadTargetType('pin');
         }
       }}>
         <DialogContent className="sm:max-w-md z-[9999]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="h-5 w-5" />
-              Assign Files
+              Assign Files to Pin
             </DialogTitle>
             <DialogDescription>
-              {pendingUploadFiles.length} file{pendingUploadFiles.length > 1 ? 's' : ''} selected. Choose where to upload them.
+              {pendingUploadFiles.length} file{pendingUploadFiles.length > 1 ? 's' : ''} selected. Choose which pin to assign them to.
             </DialogDescription>
           </DialogHeader>
 
@@ -7626,97 +6664,39 @@ function MapDrawingPageContent() {
               </div>
             </div>
 
-            {/* Target type selector (Pin vs Area) */}
+            {/* Pin selector */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Upload to:</label>
-              <RadioGroup value={uploadTargetType} onValueChange={(value: 'pin' | 'area') => {
-                setUploadTargetType(value);
-                setSelectedUploadPinId('');
-                setSelectedUploadAreaId('');
-              }}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="pin" id="target-pin" />
-                  <Label htmlFor="target-pin" className="flex items-center gap-2 cursor-pointer">
-                    <MapPin className="h-4 w-4 text-blue-500" />
-                    Pin (Single Location)
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="area" id="target-area" />
-                  <Label htmlFor="target-area" className="flex items-center gap-2 cursor-pointer">
-                    <Square className="h-4 w-4 text-purple-500" />
-                    Area (Region/Multi-Site)
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
+              <label className="text-sm font-medium">Assign to Pin:</label>
+              <Select value={selectedUploadPinId} onValueChange={setSelectedUploadPinId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a pin..." />
+                </SelectTrigger>
+                <SelectContent className="z-[99999]">
+                  {(() => {
+                    const projectPins = pins.filter(pin => pin.projectId === (currentProjectContext || activeProjectId));
 
-            {/* Pin/Area selector */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                {uploadTargetType === 'pin' ? 'Assign to Pin:' : 'Assign to Area:'}
-              </label>
-              {uploadTargetType === 'pin' ? (
-                <Select value={selectedUploadPinId} onValueChange={setSelectedUploadPinId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select a pin..." />
-                  </SelectTrigger>
-                  <SelectContent className="z-[99999]">
-                    {(() => {
-                      const projectPins = pins.filter(pin => pin.projectId === (currentProjectContext || activeProjectId));
+                    if (projectPins.length === 0) {
+                      return (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          No pins found in this project. Create a pin first.
+                        </div>
+                      );
+                    }
 
-                      if (projectPins.length === 0) {
-                        return (
-                          <div className="p-4 text-center text-sm text-muted-foreground">
-                            No pins found in this project.
-                          </div>
-                        );
-                      }
-
-                      return projectPins.map(pin => (
-                        <SelectItem key={pin.id} value={pin.id}>
-                          <div className="flex items-center gap-2">
-                            <MapPin className="h-3 w-3 text-blue-500" />
-                            <div
-                              className="w-3 h-3 rounded-full"
-                              style={{ backgroundColor: pin.color }}
-                            />
-                            <span>{pin.label || 'Unnamed Pin'}</span>
-                          </div>
-                        </SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Select value={selectedUploadAreaId} onValueChange={setSelectedUploadAreaId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select an area..." />
-                  </SelectTrigger>
-                  <SelectContent className="z-[99999]">
-                    {(() => {
-                      const projectAreas = areas.filter(area => area.projectId === (currentProjectContext || activeProjectId));
-
-                      if (projectAreas.length === 0) {
-                        return (
-                          <div className="p-4 text-center text-sm text-muted-foreground">
-                            No areas found in this project.
-                          </div>
-                        );
-                      }
-
-                      return projectAreas.map(area => (
-                        <SelectItem key={area.id} value={area.id}>
-                          <div className="flex items-center gap-2">
-                            <Square className="h-3 w-3 text-purple-500" />
-                            <span>{area.label || 'Unnamed Area'}</span>
-                          </div>
-                        </SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
-              )}
+                    return projectPins.map(pin => (
+                      <SelectItem key={pin.id} value={pin.id}>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: pin.color }}
+                          />
+                          <span>{pin.label || 'Unnamed Pin'}</span>
+                        </div>
+                      </SelectItem>
+                    ));
+                  })()}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Action buttons */}
@@ -7728,8 +6708,6 @@ function MapDrawingPageContent() {
                   setShowUploadPinSelector(false);
                   setPendingUploadFiles([]);
                   setSelectedUploadPinId('');
-                  setSelectedUploadAreaId('');
-                  setUploadTargetType('pin');
                 }}
               >
                 Cancel
@@ -7737,19 +6715,18 @@ function MapDrawingPageContent() {
               <Button
                 size="sm"
                 onClick={() => {
-                  const targetId = uploadTargetType === 'pin' ? selectedUploadPinId : selectedUploadAreaId;
-                  if (targetId) {
+                  if (selectedUploadPinId) {
                     setShowUploadPinSelector(false);
-                    handleFileUpload(targetId, uploadTargetType);
+                    handleFileUpload(selectedUploadPinId);
                   } else {
                     toast({
                       variant: "destructive",
-                      title: `No ${uploadTargetType === 'pin' ? 'Pin' : 'Area'} Selected`,
-                      description: `Please select ${uploadTargetType === 'pin' ? 'a pin' : 'an area'} to upload files to.`
+                      title: "No Pin Selected",
+                      description: "Please select a pin to upload files to."
                     });
                   }
                 }}
-                disabled={(!selectedUploadPinId && !selectedUploadAreaId) || isUploadingFiles}
+                disabled={!selectedUploadPinId || isUploadingFiles}
               >
                 {isUploadingFiles ? (
                   <>
@@ -7842,23 +6819,6 @@ function MapDrawingPageContent() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Date Input Dialog - for files without time columns */}
-      <DateInputDialog
-        open={showDateInputDialog}
-        onOpenChange={setShowDateInputDialog}
-        fileName={pendingDateFile?.file.name || ''}
-        suggestedDate={
-          pendingDateFile && isEdnaMetaFile(pendingDateFile.file.name)
-            ? extractEdnaDate(pendingDateFile.file.name)
-            : null
-        }
-        onDateConfirm={handleDateConfirm}
-        onCancel={() => {
-          setShowDateInputDialog(false);
-          setPendingDateFile(null);
-        }}
-      />
 
       {/* Project Settings Dialog */}
       <Dialog open={showProjectSettingsDialog} onOpenChange={(open) => {
@@ -8132,235 +7092,8 @@ function MapDrawingPageContent() {
         </DialogContent>
       </Dialog>
 
-      {/* Merge Rules Dialog */}
-      {multiFileConfirmData && (
-        <MergeRulesDialog
-          open={showMultiFileConfirmDialog}
-          onOpenChange={setShowMultiFileConfirmDialog}
-          parsedFiles={multiFileConfirmData.parsedFiles}
-          mergeRules={mergeRules}
-          onMergeRuleToggle={handleMergeRuleToggle}
-          onConfirm={async (mode) => {
-            try {
-              // Store the merge mode
-              setMultiFileMergeMode(mode);
-
-              // Import merge utilities
-              const { mergeFiles } = await import('@/lib/multiFileValidator');
-              const Papa = await import('papaparse');
-              const { createMergedFileAction } = await import('@/app/api/merged-files/actions');
-
-              // Perform the merge
-              const mergedData = mergeFiles(multiFileConfirmData.parsedFiles, mode);
-
-              // Convert merged data to CSV
-              const csvContent = Papa.unparse({
-                fields: mergedData.headers,
-                data: mergedData.data.map(row =>
-                  mergedData.headers.map(header => row[header])
-                )
-              });
-
-              // Generate smart merged filename
-              const fileNames = multiFileConfirmData.parsedFiles.map(f => f.fileName);
-
-              // Function to generate smart merged filename
-              const generateMergedFileName = (fileNames: string[]): string => {
-                if (fileNames.length === 0) return `merged_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv`;
-
-                // Remove file extensions and split by underscore
-                const nameParts = fileNames.map(name =>
-                  name.replace(/\.(csv|txt)$/i, '').split('_')
-                );
-
-                // Find the minimum number of parts (in case files have different structures)
-                const minParts = Math.min(...nameParts.map(parts => parts.length));
-
-                // Check if this is a 24hr merge with same dates but different stations
-                // Expected format: PROJECTNAME_DATATYPE_STATION_DIRECTION_DATE1_DATE2_24hr
-                const is24hrMerge = nameParts.every(parts =>
-                  parts.length >= 7 && parts[parts.length - 1] === '24hr'
-                );
-
-                if (is24hrMerge) {
-                  // Extract station names (positions 2 and 3 combined, e.g., "C_S") and date ranges (positions 4-5)
-                  const stations = nameParts.map(parts => `${parts[2]}_${parts[3]}`);
-                  const dateRanges = nameParts.map(parts => `${parts[4]}_${parts[5]}`);
-
-                  // Check if all files have the same date range
-                  const sameDates = dateRanges.every(range => range === dateRanges[0]);
-
-                  // Check if files have different stations
-                  const differentStations = !stations.every(station => station === stations[0]);
-
-                  // Check if files have different date ranges
-                  const differentDates = !dateRanges.every(range => range === dateRanges[0]);
-
-                  if (differentDates && differentStations) {
-                    // MERGE_MERGE case: Different dates AND different stations
-                    // Build filename: PROJECTNAME_DATATYPE_merge_merge_24hr
-                    const mergedParts = [
-                      nameParts[0][0],  // Project name
-                      nameParts[0][1],  // Data type
-                      'merge',          // First merge (for dates)
-                      'merge',          // Second merge (for stations)
-                      '24hr'
-                    ];
-
-                    console.log('📝 24hr MERGE_MERGE with different dates AND stations:', {
-                      stations,
-                      dateRanges,
-                      mergedFileName: `${mergedParts.join('_')}.csv`
-                    });
-
-                    return `${mergedParts.join('_')}.csv`;
-                  } else if (sameDates && differentStations) {
-                    // Same dates, different stations only
-                    // Combine unique station names and put in brackets
-                    const uniqueStations = Array.from(new Set(stations)).sort().join('_');
-
-                    // Build filename: PROJECTNAME_DATATYPE_[STATIONS]_DATE1_DATE2_24hr
-                    // Note: [STATIONS] replaces both the station and direction fields
-                    const mergedParts = [
-                      nameParts[0][0],  // Project name
-                      nameParts[0][1],  // Data type
-                      `[${uniqueStations}]`,  // Station names in brackets (e.g., [C_S_C_W_F_L])
-                      nameParts[0][4],  // Date start
-                      nameParts[0][5],  // Date end
-                      '24hr'
-                    ];
-
-                    console.log('📝 24hr merge with same dates, different stations:', {
-                      stations,
-                      dateRanges,
-                      mergedFileName: `${mergedParts.join('_')}.csv`
-                    });
-
-                    return `${mergedParts.join('_')}.csv`;
-                  }
-                }
-
-                // Build merged name part by part (default behavior)
-                const mergedParts: string[] = [];
-                for (let i = 0; i < minParts; i++) {
-                  const partsAtPosition = nameParts.map(parts => parts[i]);
-                  const firstPart = partsAtPosition[0];
-
-                  // Check if all files have the same value at this position
-                  const allSame = partsAtPosition.every(part => part === firstPart);
-
-                  if (allSame) {
-                    mergedParts.push(firstPart);
-                  } else {
-                    // Only add 'merge' if it's not already in the merged parts
-                    if (!mergedParts.includes('merge')) {
-                      mergedParts.push('merge');
-                    }
-                  }
-                }
-
-                return `${mergedParts.join('_')}.csv`;
-              };
-
-              const mergedFileName = generateMergedFileName(fileNames);
-
-              // Get date range from merged data
-              const timeColumn = mergedData.headers[0];
-              const dates = mergedData.data
-                .map(row => row[timeColumn])
-                .filter(d => d)
-                .map(d => new Date(d));
-
-              const startDate = dates.length > 0 ? format(new Date(Math.min(...dates.map(d => d.getTime()))), 'yyyy-MM-dd') : undefined;
-              const endDate = dates.length > 0 ? format(new Date(Math.max(...dates.map(d => d.getTime()))), 'yyyy-MM-dd') : undefined;
-
-              // Get source file IDs and metadata
-              const sourceFileIds = multiFileConfirmData.parsedFiles.map(f => f.fileId).filter(Boolean);
-              const sourceFilesMetadata = multiFileConfirmData.parsedFiles.reduce((acc, f) => {
-                if (f.fileId) {
-                  acc[f.fileId] = {
-                    fileName: f.fileName,
-                    rowCount: f.data.length,
-                    headers: f.headers
-                  };
-                }
-                return acc;
-              }, {} as Record<string, any>);
-
-              // Get pin ID from selected files
-              const pinId = multiFileConfirmData.selectedFiles[0]?.pinId;
-              if (!pinId) {
-                throw new Error('Could not determine pin ID');
-              }
-
-              // Save merged file
-              const result = await createMergedFileAction({
-                pinId,
-                fileName: mergedFileName,
-                csvContent,
-                mergeMode: mode,
-                mergeRules: mergeRules.filter(r => r.enabled),
-                sourceFileIds,
-                sourceFilesMetadata,
-                startDate,
-                endDate,
-                projectId: activeProjectId
-              });
-
-              if (!result.success) {
-                throw new Error(result.error || 'Failed to create merged file');
-              }
-
-              toast({
-                title: "Merged File Created",
-                description: `Successfully created ${mergedFileName}`
-              });
-
-              // Reload files to show the newly created merged file
-              console.log('🔄 Reloading files after merge...');
-              const updatedFileMetadata: Record<string, PinFile[]> = {};
-
-              for (const pin of pins) {
-                try {
-                  const files = await fileStorageService.getPinFiles(pin.id);
-                  if (files.length > 0) {
-                    updatedFileMetadata[pin.id] = files;
-                  }
-                } catch (error) {
-                  console.error(`Error reloading files for pin ${pin.id}:`, error);
-                }
-              }
-
-              console.log('✅ Files reloaded, merged file should now be visible');
-              setPinFileMetadata(updatedFileMetadata);
-
-              // Reload merged files to show the newly created merged file
-              console.log('🔄 Reloading merged files list...');
-              await fetchMergedFiles();
-              console.log('✅ Merged files list updated');
-
-              // Close dialog and reset state
-              setShowMultiFileConfirmDialog(false);
-              setMultiFileConfirmData(null);
-              setMultiFileMergeMode(false); // Reset merge mode to show "+ Merge" button again
-            } catch (error) {
-              console.error('Error creating merged file:', error);
-              toast({
-                variant: "destructive",
-                title: "Merge Failed",
-                description: error instanceof Error ? error.message : 'Failed to create merged file'
-              });
-            }
-          }}
-          onCancel={() => {
-            setShowMultiFileConfirmDialog(false);
-            setMultiFileConfirmData(null);
-          }}
-        />
-      )}
-
       {/* Data Restore Notifications */}
-      <DataRestoreNotifications
+      <DataRestoreNotifications 
         isActive={showDataRestore}
         onComplete={() => {
           setShowDataRestore(false);
@@ -8370,13 +7103,5 @@ function MapDrawingPageContent() {
       />
 
     </>
-  );
-}
-
-export default function MapDrawingPage() {
-  return (
-    <Suspense fallback={<div className="flex items-center justify-center h-screen">Loading...</div>}>
-      <MapDrawingPageContent />
-    </Suspense>
   );
 }

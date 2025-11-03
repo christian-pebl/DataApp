@@ -72,6 +72,10 @@ export interface StyleProperties {
     xAxisLabelRotation?: number; // Rotation angle in degrees (default: -45)
     xAxisLabelFontSize?: number; // Font size for X-axis labels (default: 11)
     xAxisLabelSecondLineOffset?: number; // Horizontal offset for second line of X-axis label (default: 0, range: -20 to 20)
+    // X-axis label component toggles (for _indiv files)
+    xAxisShowDate?: boolean; // Show date in X-axis label (default: true)
+    xAxisShowStationName?: boolean; // Show station name in X-axis label (default: true)
+    xAxisShowSampleId?: boolean; // Show sample ID in X-axis label (default: true)
     // Y-axis label styling
     yAxisLabelFontSize?: number; // Font size for Y-axis labels (default: 12)
     // Y-axis title styling
@@ -97,7 +101,7 @@ export interface StyleRule {
 }
 
 // Version for style rules - increment when defaults change
-export const STYLE_RULES_VERSION = 17;
+export const STYLE_RULES_VERSION = 19;
 
 // Default styling rules - can be expanded
 // IMPORTANT: Order matters! More specific patterns must come BEFORE more general patterns
@@ -237,7 +241,7 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
         // Chart margins
         chartMarginTop: 20,
         chartMarginRight: 30,
-        chartMarginLeft: 40,
+        chartMarginLeft: 60, // Extra space for Y-axis title
         chartMarginBottom: 80, // Extra space for rotated X-axis labels
 
         // Error bar styling
@@ -249,8 +253,18 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
         xAxisLabelFontSize: 11, // Font size for labels
         xAxisLabelSecondLineOffset: 10, // Horizontal offset for second line (aligns to right)
 
+        // X-axis label component toggles
+        xAxisShowDate: true, // Show date in X-axis label
+        xAxisShowStationName: true, // Show station name in X-axis label
+        xAxisShowSampleId: true, // Show sample ID in X-axis label
+
         // Y-axis label styling
         yAxisLabelFontSize: 12,
+
+        // Y-axis title styling (matches the chart title appearance)
+        yAxisTitleFontSize: 14, // Font size for Y-axis title (matches h3 text-sm)
+        yAxisTitleFontWeight: 600, // Font weight for Y-axis title (matches font-semibold)
+        yAxisTitleAlign: 'center', // Center align Y-axis title
 
         // Chart dimensions
         chartHeight: 350, // Height of each parameter chart
@@ -959,6 +973,46 @@ export function StylingRulesDialog({
                     className="w-full"
                   />
                 </div>
+
+                {/* X-axis Label Components - only show for _indiv files */}
+                {selectedRule.suffix === "_indiv.csv" && (
+                  <div className="space-y-2 p-3 bg-muted/30 rounded-md">
+                    <Label className="text-xs font-semibold">X-Axis Label Components</Label>
+                    <p className="text-xs text-muted-foreground">Show/hide parts of the X-axis labels</p>
+
+                    <div className="space-y-3">
+                      {/* Show Date Toggle */}
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="show-date" className="text-xs cursor-pointer">Show Date</Label>
+                        <Switch
+                          id="show-date"
+                          checked={selectedRule.properties.spotSample?.xAxisShowDate ?? true}
+                          onCheckedChange={(checked) => handleSpotSamplePropertyChange('xAxisShowDate', checked)}
+                        />
+                      </div>
+
+                      {/* Show Station Name Toggle */}
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="show-station" className="text-xs cursor-pointer">Show Station Name</Label>
+                        <Switch
+                          id="show-station"
+                          checked={selectedRule.properties.spotSample?.xAxisShowStationName ?? true}
+                          onCheckedChange={(checked) => handleSpotSamplePropertyChange('xAxisShowStationName', checked)}
+                        />
+                      </div>
+
+                      {/* Show Sample ID Toggle */}
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="show-sample-id" className="text-xs cursor-pointer">Show Sample ID</Label>
+                        <Switch
+                          id="show-sample-id"
+                          checked={selectedRule.properties.spotSample?.xAxisShowSampleId ?? true}
+                          onCheckedChange={(checked) => handleSpotSamplePropertyChange('xAxisShowSampleId', checked)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* More controls button */}
                 <Button

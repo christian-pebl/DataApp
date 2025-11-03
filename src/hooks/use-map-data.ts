@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useToast } from './use-toast'
 import { mapDataService } from '@/lib/supabase/map-data-service'
 import { Project, Tag, Pin, Line, Area } from '@/lib/supabase/types'
@@ -25,12 +25,36 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
     { id: 'tag3', name: 'Planning', color: '#10b981', projectId: 'default' }
   ])
   const [pins, setPins] = useState<Pin[]>([])
-  const [lines, setLines] = useState<Line[]>([])
+  const [lines, setLinesInternal] = useState<Line[]>([])
   const [areas, setAreas] = useState<Area[]>([])
+
+  // Wrapper around setLines to check for issues
+  const setLines = useCallback((newLines: Line[] | ((prev: Line[]) => Line[])) => {
+    setLinesInternal(prev => {
+      const resolvedLines = typeof newLines === 'function' ? newLines(prev) : newLines
+
+      // Only log if there are actual issues (in development)
+      if (process.env.NODE_ENV === 'development') {
+        const labelCounts: Record<string, number> = {}
+        resolvedLines.forEach(line => {
+          labelCounts[line.label] = (labelCounts[line.label] || 0) + 1
+        })
+        const duplicates = Object.entries(labelCounts).filter(([_, count]) => count > 1)
+        if (duplicates.length > 0) {
+          console.info('ℹ️ Lines with duplicate labels:', duplicates.map(([label]) => label).join(', '))
+        }
+      }
+
+      return resolvedLines
+    })
+  }, [])
 
   // Check if user is authenticated
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [hasInitiallyLoaded, setHasInitiallyLoaded] = useState(false)
+  const [authCheckComplete, setAuthCheckComplete] = useState(false)
+
+  // Use ref instead of state to prevent re-renders and ensure synchronous check
+  const hasInitiallyLoadedRef = useRef(false)
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -39,13 +63,17 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
         // Use getSession instead of getUser to avoid auth errors when not logged in
         const { data: { session }, error } = await supabase.auth.getSession()
         if (error) {
+          console.log('🔒 Auth check: Not authenticated (error)')
           setIsAuthenticated(false)
         } else {
+          console.log('🔒 Auth check:', session?.user ? 'Authenticated' : 'Not authenticated')
           setIsAuthenticated(!!session?.user)
         }
       } catch (error) {
         console.error('Error checking authentication:', error)
         setIsAuthenticated(false)
+      } finally {
+        setAuthCheckComplete(true)
       }
     }
     checkAuth()
@@ -53,7 +81,9 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
     // Listen for auth changes
     const supabase = createClient()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('🔒 Auth state changed:', event, session?.user ? 'Authenticated' : 'Not authenticated')
       setIsAuthenticated(!!session?.user)
+      setAuthCheckComplete(true)
     })
 
     return () => subscription.unsubscribe()
@@ -139,7 +169,20 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
 
       try {
         linesData = await mapDataService.getLines(projectId === 'default' ? undefined : projectId)
+
+        // Only log duplicates in development mode
+        if (process.env.NODE_ENV === 'development' && linesData.length > 0) {
+          const lineLabelCounts: Record<string, number> = {}
+          linesData.forEach(line => {
+            lineLabelCounts[line.label] = (lineLabelCounts[line.label] || 0) + 1
+          })
+          const duplicates = Object.entries(lineLabelCounts).filter(([_, count]) => count > 1)
+          if (duplicates.length > 0) {
+            console.info('ℹ️ Loaded lines with duplicate labels:', duplicates.map(([label]) => label).join(', '))
+          }
+        }
       } catch (error) {
+        console.error('❌ Error loading lines from database:', error)
         linesData = []
       }
 
@@ -182,19 +225,30 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
 
   // Initial data load - only run once when auth state is determined
   useEffect(() => {
-    // Skip if already loaded
-    if (hasInitiallyLoaded) return
+    // Wait for auth check to complete before loading data
+    if (!authCheckComplete) {
+      return
+    }
+
+    // Skip if already loaded - use ref to ensure synchronous check
+    if (hasInitiallyLoadedRef.current) {
+      return
+    }
 
     if (enableSync && isAuthenticated) {
+      // Mark as loaded immediately to prevent duplicate calls
+      hasInitiallyLoadedRef.current = true
       // If authenticated, load from database (don't load from localStorage first)
-      loadFromDatabase().finally(() => setHasInitiallyLoaded(true))
+      loadFromDatabase()
     } else if (!enableSync || isAuthenticated === false) {
+      // Mark as loaded immediately
+      hasInitiallyLoadedRef.current = true
       // Only load from localStorage if not authenticated or sync is disabled
       loadFromLocalStorage()
-      setHasInitiallyLoaded(true)
     }
-    // Wait for isAuthenticated to be determined before loading
-  }, [isAuthenticated, enableSync])
+    // Wait for authCheckComplete before loading
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, enableSync, authCheckComplete])
 
   // Migrate localStorage data to database
   const migrateToDatabase = useCallback(async () => {
