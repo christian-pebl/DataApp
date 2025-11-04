@@ -21,6 +21,9 @@ const roboto = Roboto({
 // Note: Futura is not available in Google Fonts, so we'll use a system fallback
 // In production, you would load Futura from a custom font file
 
+// Force dynamic rendering since we use cookies() for authentication
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'),
   title: 'PEBL Ocean Data Platform',
