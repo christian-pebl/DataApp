@@ -55,8 +55,17 @@ export function HaplotypeHeatmap({
   // Hide empty rows toggle (enabled by default - hides species with zero values across all sites)
   const [hideEmptyRows, setHideEmptyRows] = useState(true);
 
-  const margin = { top: 20, right: 20, bottom: 80, left: 250 };
-  const FILTER_PANEL_HEIGHT = 60;
+  // Hide Red List Status column toggle
+  const [showRedListColumn, setShowRedListColumn] = useState(true);
+
+  // Adjustable cell width
+  const [adjustableCellWidth, setAdjustableCellWidth] = useState(cellWidth);
+
+  const RED_LIST_COLUMN_WIDTH = 120; // Width for Red List Status column
+  const SPECIES_NAME_WIDTH = 200; // Width for Species Name column
+  const leftMargin = showRedListColumn ? 350 : (SPECIES_NAME_WIDTH + 20);
+  const margin = { top: 120, right: 20, bottom: 20, left: leftMargin };
+  const FILTER_PANEL_HEIGHT = 100;
   const heatmapHeight = containerHeight - FILTER_PANEL_HEIGHT;
 
   useEffect(() => {
@@ -154,7 +163,96 @@ export function HaplotypeHeatmap({
     return (
       <div style={{ height: `${containerHeight}px` }} className="flex flex-col gap-4">
         {/* Filter Panel */}
-        <div className="flex items-center gap-6 p-3 border rounded-md bg-card shadow-sm">
+        <div className="flex flex-col gap-3 p-3 border rounded-md bg-card shadow-sm">
+          <div className="flex items-center gap-6">
+            <span className="text-sm font-medium">Credibility Filters:</span>
+            <div className="flex items-center gap-2">
+              <Checkbox id="high-empty" checked={showHigh} onCheckedChange={setShowHigh} />
+              <Label htmlFor="high-empty" className="text-sm cursor-pointer">High</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox id="moderate-empty" checked={showModerate} onCheckedChange={setShowModerate} />
+              <Label htmlFor="moderate-empty" className="text-sm cursor-pointer">Moderate</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox id="low-empty" checked={showLow} onCheckedChange={setShowLow} />
+              <Label htmlFor="low-empty" className="text-sm cursor-pointer">Low</Label>
+            </div>
+            <div className="flex items-center gap-2 pl-6 border-l">
+              <Checkbox id="hideEmpty-empty" checked={hideEmptyRows} onCheckedChange={setHideEmptyRows} />
+              <Label htmlFor="hideEmpty-empty" className="text-sm cursor-pointer">Hide Empty Rows</Label>
+            </div>
+            <div className="flex items-center gap-2 pl-6 border-l">
+              <Checkbox id="showRedList-empty" checked={showRedListColumn} onCheckedChange={setShowRedListColumn} />
+              <Label htmlFor="showRedList-empty" className="text-sm cursor-pointer">Show RedList Status</Label>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <Label htmlFor="cellWidth-empty" className="text-sm font-medium whitespace-nowrap">Cell Width:</Label>
+            <input
+              id="cellWidth-empty"
+              type="range"
+              min="5"
+              max="150"
+              value={adjustableCellWidth}
+              onChange={(e) => setAdjustableCellWidth(Number(e.target.value))}
+              className="w-48 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+            />
+            <span className="text-sm text-muted-foreground min-w-[40px]">{adjustableCellWidth}px</span>
+          </div>
+        </div>
+
+        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-muted/20">
+          No species match the selected filters
+        </div>
+      </div>
+    );
+  }
+
+  const { width } = svgDimensions;
+
+  // Calculate plot dimensions based on adjustable cell width and row height
+  const plotWidth = sites.length * adjustableCellWidth;
+  const plotHeight = filteredSpecies.length * rowHeight;
+
+  // Use fixed bandwidth for xScale based on adjustable cellWidth
+  const xScale = scaleBand<string>()
+    .domain(sites)
+    .range([0, plotWidth])
+    .paddingInner(0.05)
+    .paddingOuter(0.05);
+
+  const yScale = scaleBand<string>()
+    .domain(filteredSpecies)
+    .range([0, plotHeight])
+    .paddingInner(0.05)
+    .paddingOuter(0.05);
+
+  // Get Red List Status for a species from the first available cell
+  const getRedListStatus = (species: string): string => {
+    const cell = filteredCells.find(c => c.species === species);
+    return cell?.metadata?.redListStatus || 'Not Evaluated';
+  };
+
+  // Shorten Red List Status for display
+  const shortenRedListStatus = (status: string): string => {
+    const statusMap: Record<string, string> = {
+      'Critically Endangered': 'Crit. Endang.',
+      'Endangered': 'Endangered',
+      'Vulnerable': 'Vulnerable',
+      'Near Threatened': 'Near Threat.',
+      'Least Concern': 'Least Conc.',
+      'Data Deficient': 'Data Defic.',
+      'Not Evaluated': 'N/A'
+    };
+    return statusMap[status] || status;
+  };
+
+  return (
+    <div className="w-full h-full flex flex-col gap-2">
+      {/* Filter Panel */}
+      <div className="flex flex-col gap-3 p-3 border rounded-md bg-card shadow-sm">
+        <div className="flex items-center gap-6">
           <span className="text-sm font-medium">Credibility Filters:</span>
           <div className="flex items-center gap-2">
             <Checkbox id="high" checked={showHigh} onCheckedChange={setShowHigh} />
@@ -172,68 +270,26 @@ export function HaplotypeHeatmap({
             <Checkbox id="hideEmpty" checked={hideEmptyRows} onCheckedChange={setHideEmptyRows} />
             <Label htmlFor="hideEmpty" className="text-sm cursor-pointer">Hide Empty Rows</Label>
           </div>
+          <div className="flex items-center gap-2 pl-6 border-l">
+            <Checkbox id="showRedList" checked={showRedListColumn} onCheckedChange={setShowRedListColumn} />
+            <Label htmlFor="showRedList" className="text-sm cursor-pointer">Show RedList Status</Label>
+          </div>
+          <div className="ml-auto text-xs text-muted-foreground">
+            {filteredSpecies.length} species • {sites.length} sites
+          </div>
         </div>
-
-        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-muted/20">
-          No species match the selected filters
-        </div>
-      </div>
-    );
-  }
-
-  const { width } = svgDimensions;
-
-  // Calculate plot dimensions based on cell width and row height
-  const plotWidth = sites.length * cellWidth;
-  const plotHeight = filteredSpecies.length * rowHeight;
-
-  // Use fixed bandwidth for xScale based on cellWidth
-  const xScale = scaleBand<string>()
-    .domain(sites)
-    .range([0, plotWidth])
-    .paddingInner(0.05)
-    .paddingOuter(0.05);
-
-  const yScale = scaleBand<string>()
-    .domain(filteredSpecies)
-    .range([0, plotHeight])
-    .paddingInner(0.05)
-    .paddingOuter(0.05);
-
-  // Helper function to check if species is threatened
-  const isThreatened = (redListStatus: string): boolean => {
-    const status = redListStatus.toLowerCase();
-    return status !== 'not evaluated' && status !== 'na' && status !== '';
-  };
-
-  // Helper function to check if species is invasive
-  const isInvasive = (nnsValue: string): boolean => {
-    return nnsValue !== 'NA' && nnsValue !== '' && nnsValue !== null;
-  };
-
-  return (
-    <div className="w-full h-full flex flex-col gap-2">
-      {/* Filter Panel */}
-      <div className="flex items-center gap-6 p-3 border rounded-md bg-card shadow-sm">
-        <span className="text-sm font-medium">Credibility Filters:</span>
-        <div className="flex items-center gap-2">
-          <Checkbox id="high" checked={showHigh} onCheckedChange={setShowHigh} />
-          <Label htmlFor="high" className="text-sm cursor-pointer">High</Label>
-        </div>
-        <div className="flex items-center gap-2">
-          <Checkbox id="moderate" checked={showModerate} onCheckedChange={setShowModerate} />
-          <Label htmlFor="moderate" className="text-sm cursor-pointer">Moderate</Label>
-        </div>
-        <div className="flex items-center gap-2">
-          <Checkbox id="low" checked={showLow} onCheckedChange={setShowLow} />
-          <Label htmlFor="low" className="text-sm cursor-pointer">Low</Label>
-        </div>
-        <div className="flex items-center gap-2 pl-6 border-l">
-          <Checkbox id="hideEmpty" checked={hideEmptyRows} onCheckedChange={setHideEmptyRows} />
-          <Label htmlFor="hideEmpty" className="text-sm cursor-pointer">Hide Empty Rows</Label>
-        </div>
-        <div className="ml-auto text-xs text-muted-foreground">
-          {filteredSpecies.length} species • {sites.length} sites
+        <div className="flex items-center gap-4">
+          <Label htmlFor="cellWidth" className="text-sm font-medium whitespace-nowrap">Cell Width:</Label>
+          <input
+            id="cellWidth"
+            type="range"
+            min="5"
+            max="150"
+            value={adjustableCellWidth}
+            onChange={(e) => setAdjustableCellWidth(Number(e.target.value))}
+            className="w-48 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+          />
+          <span className="text-sm text-muted-foreground min-w-[40px]">{adjustableCellWidth}px</span>
         </div>
       </div>
 
@@ -247,19 +303,74 @@ export function HaplotypeHeatmap({
           <svg width="100%" height={Math.max(plotHeight + margin.top + margin.bottom, 400)}>
             {plotWidth > 0 && plotHeight > 0 && (
               <g transform={`translate(${margin.left},${margin.top})`}>
+                {/* Column Headers */}
+                <g className="column-headers">
+                  {/* Species Name header */}
+                  <text
+                    x={-RED_LIST_COLUMN_WIDTH - SPECIES_NAME_WIDTH}
+                    y={-10}
+                    textAnchor="start"
+                    dominantBaseline="middle"
+                    className="font-bold"
+                    style={{
+                      fontSize: `${styles.yAxisLabelFontSize}px`,
+                      fill: '#4b5563'
+                    }}
+                  >
+                    Species Name
+                  </text>
+
+                  {/* Red List Status header */}
+                  {showRedListColumn && (
+                    <text
+                      x={-RED_LIST_COLUMN_WIDTH + 5}
+                      y={-10}
+                      textAnchor="start"
+                      dominantBaseline="middle"
+                      className="font-bold"
+                      style={{
+                        fontSize: `${styles.yAxisLabelFontSize}px`,
+                        fill: '#4b5563'
+                      }}
+                    >
+                      RedList Status
+                    </text>
+                  )}
+
+                  {/* Sample names (site headers) - 90 degree rotated (vertical) */}
+                  {sites.map(site => (
+                    <g key={site} transform={`translate(${(xScale(site) ?? 0) + xScale.bandwidth() / 2}, -84)`}>
+                      <text
+                        transform="rotate(-90)"
+                        x={0}
+                        y={5}
+                        textAnchor="end"
+                        dominantBaseline="middle"
+                        className="font-bold"
+                        style={{
+                          fontSize: `${styles.yAxisLabelFontSize}px`,
+                          fill: '#4b5563'
+                        }}
+                      >
+                        {site}
+                      </text>
+                    </g>
+                  ))}
+                </g>
+
                 {/* Y-axis (Species names on left) */}
                 <g className="y-axis">
                   {yScale.domain().map(speciesName => (
                     <text
                       key={speciesName}
-                      x={-10}
+                      x={-RED_LIST_COLUMN_WIDTH - SPECIES_NAME_WIDTH}
                       y={(yScale(speciesName) ?? 0) + yScale.bandwidth() / 2}
-                      textAnchor="end"
+                      textAnchor="start"
                       dominantBaseline="middle"
-                      className="fill-current text-muted-foreground"
                       style={{
                         fontSize: `${styles.yAxisLabelFontSize}px`,
-                        fontWeight: styles.yAxisTitleFontWeight
+                        fontWeight: styles.yAxisTitleFontWeight,
+                        fill: '#4b5563'
                       }}
                       title={speciesName}
                     >
@@ -268,24 +379,31 @@ export function HaplotypeHeatmap({
                   ))}
                 </g>
 
-                {/* X-axis (Site names at bottom) */}
-                <g className="x-axis" transform={`translate(0, ${plotHeight})`}>
-                  {sites.map(site => (
-                    <g key={site} transform={`translate(${(xScale(site) ?? 0) + xScale.bandwidth() / 2}, 0)`}>
-                      <text
-                        transform={`rotate(${styles.xAxisLabelRotation})`}
-                        y={10}
-                        x={-5}
-                        textAnchor="end"
-                        dominantBaseline="middle"
-                        className="fill-current text-muted-foreground"
-                        style={{ fontSize: `${styles.xAxisLabelFontSize}px` }}
-                      >
-                        {site}
-                      </text>
-                    </g>
-                  ))}
-                </g>
+                {/* Red List Status column */}
+                {showRedListColumn && (
+                  <g className="red-list-column" transform={`translate(${-RED_LIST_COLUMN_WIDTH}, 0)`}>
+                    {filteredSpecies.map(species => {
+                      const redListStatus = getRedListStatus(species);
+                      const shortStatus = shortenRedListStatus(redListStatus);
+                      const isNotEvaluated = redListStatus === 'Not Evaluated';
+                      return (
+                        <text
+                          key={species}
+                          x={5}
+                          y={(yScale(species) ?? 0) + yScale.bandwidth() / 2}
+                          textAnchor="start"
+                          dominantBaseline="middle"
+                          style={{
+                            fontSize: `${styles.yAxisLabelFontSize}px`,
+                            fill: isNotEvaluated ? '#d1d5db' : '#4b5563'
+                          }}
+                        >
+                          {shortStatus}
+                        </text>
+                      );
+                    })}
+                  </g>
+                )}
 
                 {/* Heatmap Cells */}
                 <g className="cells">
@@ -296,10 +414,8 @@ export function HaplotypeHeatmap({
                         const cellValue = cell?.count ?? 0;
                         const fillColor = cellValue > 0 ? colorScale(cellValue) : 'hsl(var(--muted)/0.3)';
 
-                        // Get metadata for badges
+                        // Get metadata for tooltip
                         const metadata = cell?.metadata;
-                        const showThreatened = metadata && isThreatened(metadata.redListStatus);
-                        const showInvasiveBadge = metadata && isInvasive(metadata.invasiveSpeciesName || 'NA');
 
                         return (
                           <Tooltip key={`${species}-${site}`} delayDuration={100}>
@@ -324,32 +440,6 @@ export function HaplotypeHeatmap({
                                     className="text-xs font-semibold fill-white pointer-events-none"
                                   >
                                     {cell.displayValue}
-                                  </text>
-                                )}
-
-                                {/* Threatened badge (red T in top-right corner) */}
-                                {showThreatened && xScale.bandwidth() > 20 && (
-                                  <text
-                                    x={xScale.bandwidth() - 4}
-                                    y={8}
-                                    textAnchor="end"
-                                    className="text-[0.6rem] font-bold fill-red-600 pointer-events-none"
-                                    style={{ textShadow: '0 0 2px white' }}
-                                  >
-                                    T
-                                  </text>
-                                )}
-
-                                {/* Invasive badge (red I in top-left corner) */}
-                                {showInvasiveBadge && xScale.bandwidth() > 20 && (
-                                  <text
-                                    x={4}
-                                    y={8}
-                                    textAnchor="start"
-                                    className="text-[0.6rem] font-bold fill-red-600 pointer-events-none"
-                                    style={{ textShadow: '0 0 2px white' }}
-                                  >
-                                    I
                                   </text>
                                 )}
                               </g>
