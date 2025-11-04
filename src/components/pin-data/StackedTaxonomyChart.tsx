@@ -71,11 +71,11 @@ function generatePhylumColor(phylum: string): string {
  * Map phylum names to common descriptions for better user understanding
  */
 const PHYLUM_COMMON_NAMES: { [key: string]: string } = {
-  'Ochrophyta': 'Diatoms & Brown Algae',
+  'Ochrophyta': 'Diatoms & Brown Alg',
   'Annelida': 'Segmented Worms',
   'Myzozoa': 'Dinoflagellates',
   'Arthropoda': 'Crustaceans',
-  'Echinodermata': 'Sea Stars & Urchins',
+  'Echinodermata': 'Sea Stars & Urch',
   'Mollusca': 'Clams & Snails',
   'Chlorophyta': 'Green Algae',
   'Nematoda': 'Roundworms',
@@ -168,10 +168,27 @@ export function StackedTaxonomyChart({
     return sampleData;
   });
 
+  // Calculate total abundance for each phylum across all samples for stacking order
+  const phylumTotalAbundance: { [phylum: string]: number } = {};
+  data.allPhyla.forEach(phylum => {
+    phylumTotalAbundance[phylum] = data.samples.reduce((sum, sample) => {
+      return sum + (data.phylumPercentages[phylum][sample] || 0);
+    }, 0);
+  });
+
+  // Sort phyla by total abundance (descending) for stacking - most abundant at bottom
+  const phylaSortedByAbundance = [...data.allPhyla].sort((a, b) =>
+    phylumTotalAbundance[b] - phylumTotalAbundance[a]
+  );
+
+  // Sort phyla alphabetically for legend
+  const phylaSortedAlphabetically = [...data.allPhyla].sort();
+
   console.log('[STACKED-TAXONOMY-CHART] Rendering for file:', fileName);
   console.log('[STACKED-TAXONOMY-CHART] Samples:', data.samples);
   console.log('[STACKED-TAXONOMY-CHART] Phyla:', data.allPhyla);
   console.log('[STACKED-TAXONOMY-CHART] Chart data:', chartData);
+  console.log('[STACKED-TAXONOMY-CHART] Phyla by abundance:', phylaSortedByAbundance.map(p => `${p}: ${phylumTotalAbundance[p].toFixed(1)}`));
 
   // Custom tooltip showing detailed breakdown
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -282,10 +299,12 @@ export function StackedTaxonomyChart({
 
           <YAxis
             domain={[0, 100]}
+            ticks={[0, 20, 40, 60, 80, 100]}
             label={{
               value: customYAxisLabel,
               angle: -90,
               position: 'insideLeft',
+              offset: 15,
               style: {
                 fontSize: `${styles.yAxisTitleFontSize}px`,
                 fontWeight: styles.yAxisTitleFontWeight,
@@ -307,10 +326,16 @@ export function StackedTaxonomyChart({
             }}
             iconType="square"
             formatter={(value) => <span style={{ fontSize: '11px' }}>{value}</span>}
+            payload={phylaSortedAlphabetically.map(phylum => ({
+              value: getPhylumDisplayName(phylum),
+              type: 'square',
+              color: getPhylumColor(phylum),
+              id: phylum
+            }))}
           />
 
-          {/* Create a Bar component for each phylum */}
-          {data.allPhyla.map((phylum, index) => {
+          {/* Create a Bar component for each phylum - sorted by abundance (most abundant at bottom) */}
+          {phylaSortedByAbundance.map((phylum, index) => {
             const displayName = getPhylumDisplayName(phylum);
             return (
               <Bar
@@ -319,13 +344,13 @@ export function StackedTaxonomyChart({
                 name={displayName}
                 stackId="a"
                 fill={getPhylumColor(phylum)}
-                radius={index === data.allPhyla.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                radius={index === phylaSortedByAbundance.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
               >
                 <LabelList
                   dataKey={displayName}
                   position="center"
-                  formatter={(value: number) => value > 5 ? `${value.toFixed(1)}%` : ''}
-                  style={{ fontSize: 10, fill: '#fff', fontWeight: 600 }}
+                  formatter={(value: number) => value > 5 ? `${Math.round(value)}%` : ''}
+                  style={{ fontSize: 10, fill: '#fff', fontWeight: 400 }}
                 />
               </Bar>
             );
