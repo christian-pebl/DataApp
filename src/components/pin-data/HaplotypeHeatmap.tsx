@@ -153,7 +153,7 @@ export function HaplotypeHeatmap({
 
   if (!haplotypeData || haplotypeData.species.length === 0) {
     return (
-      <div style={{ height: `${containerHeight}px` }} className="flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-muted/20">
+      <div style={{ height: `${containerHeight}px` }} className="flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-white">
         No haplotype data available
       </div>
     );
@@ -202,7 +202,7 @@ export function HaplotypeHeatmap({
           </div>
         </div>
 
-        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-muted/20">
+        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-white">
           No species match the selected filters
         </div>
       </div>
@@ -297,7 +297,7 @@ export function HaplotypeHeatmap({
       <div
         ref={containerRef}
         style={{ height: `${heatmapHeight}px` }}
-        className="flex-1 w-full border rounded-md p-2 bg-muted/20 overflow-auto"
+        className="flex-1 w-full border rounded-md p-2 bg-white overflow-auto"
       >
         <TooltipProvider>
           <svg width="100%" height={Math.max(plotHeight + margin.top + margin.bottom, 400)}>
@@ -307,7 +307,7 @@ export function HaplotypeHeatmap({
                 <g className="column-headers">
                   {/* Species Name header */}
                   <text
-                    x={-RED_LIST_COLUMN_WIDTH - SPECIES_NAME_WIDTH}
+                    x={showRedListColumn ? -RED_LIST_COLUMN_WIDTH - SPECIES_NAME_WIDTH : -SPECIES_NAME_WIDTH}
                     y={-10}
                     textAnchor="start"
                     dominantBaseline="middle"
@@ -339,12 +339,12 @@ export function HaplotypeHeatmap({
 
                   {/* Sample names (site headers) - 90 degree rotated (vertical) */}
                   {sites.map(site => (
-                    <g key={site} transform={`translate(${(xScale(site) ?? 0) + xScale.bandwidth() / 2}, -84)`}>
+                    <g key={site} transform={`translate(${(xScale(site) ?? 0) + xScale.bandwidth() / 2}, -15)`}>
                       <text
                         transform="rotate(-90)"
                         x={0}
                         y={5}
-                        textAnchor="end"
+                        textAnchor="start"
                         dominantBaseline="middle"
                         className="font-bold"
                         style={{
@@ -363,7 +363,7 @@ export function HaplotypeHeatmap({
                   {yScale.domain().map(speciesName => (
                     <text
                       key={speciesName}
-                      x={-RED_LIST_COLUMN_WIDTH - SPECIES_NAME_WIDTH}
+                      x={showRedListColumn ? -RED_LIST_COLUMN_WIDTH - SPECIES_NAME_WIDTH : -SPECIES_NAME_WIDTH}
                       y={(yScale(speciesName) ?? 0) + yScale.bandwidth() / 2}
                       textAnchor="start"
                       dominantBaseline="middle"

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map as MapIcon, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X, Search, CheckCircle2, XCircle, ChevronUp, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle, Move3D, Copy, FileCode } from 'lucide-react';
+import { Loader2, MapPin, Minus, Square, Home, RotateCcw, Save, Trash2, Navigation, Settings, Plus, Minus as MinusIcon, ZoomIn, ZoomOut, Map as MapIcon, Crosshair, FolderOpen, Bookmark, Eye, EyeOff, Target, Menu, ChevronDown, ChevronRight, Info, Edit3, Check, Database, BarChart3, Upload, Cloud, Calendar, RotateCw, Share, Share2, Users, Lock, Globe, X, Search, CheckCircle2, XCircle, ChevronUp, Thermometer, Wind as WindIcon, CloudSun, Compass as CompassIcon, Waves, Sailboat, Timer as TimerIcon, Sun as SunIcon, AlertCircle, AlertTriangle, Move3D, Copy, FileCode } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line as RechartsLine, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, Brush, LabelList, ReferenceLine } from 'recharts';
 import type { LucideIcon } from "lucide-react";
 import { Checkbox } from '@/components/ui/checkbox';
@@ -30,6 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  SettingsDialogContent,
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -585,18 +586,10 @@ function MapDrawingPageContent() {
   const allProjectFilesForTimeline = React.useMemo(() => {
     const result: (PinFile & { pinLabel: string })[] = [];
 
-    console.log('[map-drawing] Computing allProjectFilesForTimeline');
-    console.log('[map-drawing] pinFileMetadata keys:', Object.keys(pinFileMetadata));
-    console.log('[map-drawing] areaFileMetadata keys:', Object.keys(areaFileMetadata));
-    console.log('[map-drawing] Total pins with files:', Object.keys(pinFileMetadata).length);
-    console.log('[map-drawing] Total areas with files:', Object.keys(areaFileMetadata).length);
-
     // Add pin files
     for (const [pinId, files] of Object.entries(pinFileMetadata)) {
       const pin = pins.find(p => p.id === pinId);
       const pinLabel = pin?.label || `Pin ${pinId.substring(0, 8)}...`;
-
-      console.log(`[map-drawing] Pin ${pinLabel}: ${files.length} files`);
 
       files.forEach(file => {
         result.push({
@@ -610,8 +603,6 @@ function MapDrawingPageContent() {
     for (const [areaId, files] of Object.entries(areaFileMetadata)) {
       const area = areas.find(a => a.id === areaId);
       const areaLabel = area?.name || `Area ${areaId.substring(0, 8)}...`;
-
-      console.log(`[map-drawing] Area ${areaLabel}: ${files.length} files`);
 
       files.forEach(file => {
         result.push({
@@ -640,15 +631,6 @@ function MapDrawingPageContent() {
       } as PinFile & { pinLabel: string; fileSource: 'merged' });
     });
 
-    console.log('[map-drawing] Total files for timeline:', result.length);
-    console.log('[map-drawing] All file names:', result.map(f => f.fileName));
-
-    // Log EDNA and CHEM files specifically
-    const ednaFiles = result.filter(f => f.fileName.toLowerCase().includes('edna'));
-    const chemFiles = result.filter(f => f.fileName.toLowerCase().includes('chem'));
-    console.log('[map-drawing] EDNA files in timeline:', ednaFiles.length, ednaFiles.map(f => f.fileName));
-    console.log('[map-drawing] CHEM files in timeline:', chemFiles.length, chemFiles.map(f => f.fileName));
-
     return result;
   }, [pinFileMetadata, areaFileMetadata, pins, areas, mergedFiles]);
 
@@ -663,6 +645,10 @@ function MapDrawingPageContent() {
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
   const [currentProjectContext, setCurrentProjectContext] = useState<string>('');
   const [showAddProjectDialog, setShowAddProjectDialog] = useState(false);
+
+  // Multi-selection state for batch operations
+  const [selectedObjectIds, setSelectedObjectIds] = useState<Set<string>>(new Set());
+  const [showBatchDeleteConfirmDialog, setShowBatchDeleteConfirmDialog] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDescription, setNewProjectDescription] = useState('');
   const [showUploadPinSelector, setShowUploadPinSelector] = useState(false);
@@ -965,8 +951,7 @@ function MapDrawingPageContent() {
     }
   }, [searchParams, pins, mapRef, toast]);
   
-  // Show migration prompt for existing localStorage data
-  const [showMigrationPrompt, setShowMigrationPrompt] = useState(false);
+  // REMOVED: Migration prompt - authentication-only mode means no legacy localStorage data exists
   
   // Check for existing localStorage data on mount
   // IMPORTANT: Only check after initial data load completes to avoid race conditions
@@ -978,21 +963,16 @@ function MapDrawingPageContent() {
         localStorage.getItem('map-drawing-lines') ||
         localStorage.getItem('map-drawing-areas');
 
-      // Only show migration prompt if there's localStorage data AND no database data
-      // This prevents showing the prompt when restoreUserData hasn't run yet
-      if (hasLocalData && pins.length === 0 && lines.length === 0 && areas.length === 0) {
-        console.log('📦 Found localStorage data without database data - showing migration prompt');
-        setShowMigrationPrompt(true);
-      } else if (hasLocalData && (pins.length > 0 || lines.length > 0 || areas.length > 0)) {
-        // If we have both localStorage and database data, clear localStorage
-        // (this shouldn't happen with the new code, but just in case)
-        console.log('🧹 Clearing stale localStorage data (database already has data)');
+      // DISABLED: Migration prompt removed - only logged-in users can draw, so no legacy data should exist
+      // Just silently clear any stale localStorage data if it exists
+      if (hasLocalData) {
+        console.log('🧹 Clearing legacy localStorage data (authentication-only mode)');
         localStorage.removeItem('map-drawing-pins');
         localStorage.removeItem('map-drawing-lines');
         localStorage.removeItem('map-drawing-areas');
       }
     }
-  }, [isAuthenticated, isDataLoading, pins.length, lines.length, areas.length]);
+  }, [isAuthenticated, isDataLoading]);
 
   // Check for authentication and show restore dialog on login
   useEffect(() => {
@@ -1021,12 +1001,7 @@ function MapDrawingPageContent() {
     checkAuthAndRestore();
   }, [isAuthenticated, hasCheckedAuth]);
   
-  const handleMigration = async () => {
-    const success = await migrateToDatabase();
-    if (success) {
-      setShowMigrationPrompt(false);
-    }
-  };
+  // REMOVED: handleMigration - authentication-only mode means no legacy localStorage data exists
 
   // Load ALL pin files from Supabase for the current project
   // This ensures the file selector shows ALL files, not just files from currently drawn pins
@@ -1240,7 +1215,15 @@ function MapDrawingPageContent() {
     setIsLoadingMergedFiles(true);
     try {
       const result = await getMergedFilesByProjectAction(projectId);
-      if (result && result.success && result.data) {
+
+      // Handle undefined or null result (defensive check)
+      if (!result) {
+        console.warn('getMergedFilesByProjectAction returned undefined/null');
+        setMergedFiles([]);
+        return;
+      }
+
+      if (result.success && result.data) {
         // Convert MergedFile to PinFile format for compatibility
         const mergedFilesWithLabel = result.data.map(mf => ({
           id: mf.id,
@@ -1258,7 +1241,7 @@ function MapDrawingPageContent() {
         }));
         setMergedFiles(mergedFilesWithLabel);
       } else {
-        console.error('Failed to fetch merged files:', result?.error || 'No result returned');
+        console.error('Failed to fetch merged files:', result.error || 'No result returned');
         setMergedFiles([]);
       }
     } catch (error) {
@@ -1652,12 +1635,103 @@ function MapDrawingPageContent() {
       toast({ title: "Area Deleted", description: "Area has been deleted from the map." });
     } catch (error) {
       console.error('Error deleting area:', error);
-      toast({ 
+      toast({
         variant: "destructive",
-        title: "Error", 
-        description: "Failed to delete area. Please try again." 
+        title: "Error",
+        description: "Failed to delete area. Please try again."
       });
     }
+  };
+
+  // Multi-selection helper functions
+  const toggleObjectSelection = (objectId: string) => {
+    setSelectedObjectIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(objectId)) {
+        newSet.delete(objectId);
+      } else {
+        newSet.add(objectId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllFilteredObjects = () => {
+    const allObjects = [
+      ...projectPins.map(p => ({ id: p.id, type: 'pin' as const })),
+      ...projectLines.map(l => ({ id: l.id, type: 'line' as const })),
+      ...projectAreas.map(a => ({ id: a.id, type: 'area' as const }))
+    ].filter(obj => {
+      if (objectTypeFilter === 'all') return true;
+      return obj.type === objectTypeFilter;
+    });
+
+    setSelectedObjectIds(new Set(allObjects.map(o => o.id)));
+  };
+
+  const clearObjectSelection = () => {
+    setSelectedObjectIds(new Set());
+  };
+
+  const getSelectedObjects = (): Array<{ id: string; type: 'pin' | 'line' | 'area'; label: string }> => {
+    // Get all objects across all projects (since selections can span projects)
+    return [
+      ...pins.map(pin => ({ ...pin, type: 'pin' as const })),
+      ...lines.map(line => ({ ...line, type: 'line' as const })),
+      ...areas.map(area => ({ ...area, type: 'area' as const }))
+    ].filter(obj => selectedObjectIds.has(obj.id));
+  };
+
+  // Batch delete handler
+  const handleBatchDelete = async () => {
+    const objectsToDelete = getSelectedObjects();
+    const totalCount = objectsToDelete.length;
+    let successCount = 0;
+    let errorCount = 0;
+
+    // Show loading toast
+    toast({
+      title: "Deleting Objects...",
+      description: `Deleting ${totalCount} object${totalCount !== 1 ? 's' : ''}...`,
+      duration: 3000,
+    });
+
+    // Delete each object sequentially
+    for (const obj of objectsToDelete) {
+      try {
+        if (obj.type === 'pin') {
+          await deletePinData(obj.id);
+        } else if (obj.type === 'line') {
+          await deleteLineData(obj.id);
+        } else if (obj.type === 'area') {
+          await deleteAreaData(obj.id);
+        }
+        successCount++;
+      } catch (error) {
+        console.error(`Error deleting ${obj.type} ${obj.id}:`, error);
+        errorCount++;
+      }
+    }
+
+    // Show result toast
+    if (errorCount === 0) {
+      toast({
+        title: "Batch Delete Complete",
+        description: `Successfully deleted ${successCount} object${successCount !== 1 ? 's' : ''}.`,
+        duration: 5000,
+      });
+    } else {
+      toast({
+        variant: errorCount === totalCount ? "destructive" : "default",
+        title: "Batch Delete Complete with Errors",
+        description: `Deleted ${successCount} object${successCount !== 1 ? 's' : ''}, ${errorCount} failed.`,
+        duration: 7000,
+      });
+    }
+
+    // Clear selections and close dialog
+    clearObjectSelection();
+    setShowBatchDeleteConfirmDialog(false);
   };
 
   const handleToggleLabel = async (id: string, type: 'pin' | 'line' | 'area') => {
@@ -2111,13 +2185,6 @@ function MapDrawingPageContent() {
     error?: string;
   }> => {
     try {
-      console.log('🔍 Analyzing CSV date range for file:', {
-        fileName: file.fileName,
-        fileId: file.id,
-        filePath: file.filePath,
-        fileKeys: Object.keys(file)
-      });
-
       // Use the correct property name for file path
       const storagePath = file.filePath || (file as any).storagePath || (file as any).storage_path;
 
@@ -2130,10 +2197,7 @@ function MapDrawingPageContent() {
         };
       }
 
-      console.log('📁 Using storage path:', storagePath);
-
       // Download file content from Supabase Storage with timeout
-      console.log('⏱️  Starting file download with 30s timeout...');
       const downloadPromise = supabase.storage
         .from('pin-files')
         .download(storagePath);
@@ -2193,24 +2257,11 @@ function MapDrawingPageContent() {
         };
       }
 
-      console.log('✅ File downloaded successfully:', file.fileName, 'Size:', fileData.size, 'bytes');
-
       // Detect if this is a discrete sampling file (CROP, CHEM, CHEMSW, CHEMWQ, WQ, EDNA)
       const fileName = file.fileName.toLowerCase();
       const isDiscreteFile = fileName.includes('crop') || fileName.includes('chem') ||
                              fileName.includes('chemsw') || fileName.includes('chemwq') ||
                              fileName.includes('wq') || fileName.includes('edna');
-
-      console.log('🔍 File type detection:', {
-        fileName: file.fileName,
-        isDiscreteFile,
-        detectionReason: fileName.includes('crop') ? 'CROP' :
-                        fileName.includes('chemsw') ? 'CHEMSW' :
-                        fileName.includes('chemwq') ? 'CHEMWQ' :
-                        fileName.includes('chem') ? 'CHEM' :
-                        fileName.includes('wq') ? 'WQ' :
-                        fileName.includes('edna') ? 'EDNA' : 'continuous'
-      });
 
       // Convert Blob to File object for csvParser
       const fileObject = new File([fileData], file.fileName, { type: 'text/csv' });
@@ -2218,8 +2269,6 @@ function MapDrawingPageContent() {
       // Use the intelligent csvParser with auto-detection (supports DD/MM/YYYY, MM/DD/YYYY, and YYYY-MM-DD formats)
       const { parseCSVFile } = await import('@/components/pin-data/csvParser');
       const dateFormatOverride = undefined; // Let csvParser auto-detect the format
-
-      console.log('📅 Using csvParser with dateFormat:', dateFormatOverride || 'auto-detect');
 
       const parseResult = await parseCSVFile(fileObject, 'GP', dateFormatOverride);
 
@@ -2235,13 +2284,6 @@ function MapDrawingPageContent() {
           error: 'No valid dates could be parsed'
         };
       }
-
-      console.log('📊 Parsed data from csvParser:', {
-        fileName: file.fileName,
-        totalValidRows: parseResult.data.length,
-        firstFewTimes: parseResult.data.slice(0, 5).map(d => d.time),
-        lastFewTimes: parseResult.data.slice(-5).map(d => d.time)
-      });
 
       // Convert time strings to Date objects
       const dates: Date[] = parseResult.data
@@ -2264,15 +2306,6 @@ function MapDrawingPageContent() {
         const expectedStartYear = 2000 + parseInt(startYY);
         const expectedEndYear = 2000 + parseInt(endYY);
 
-        console.log('🔍 SANITY CHECK - Expected date range from filename:', {
-          fileName: file.fileName,
-          expectedRange: `${startMM}/${expectedStartYear} - ${endMM}/${expectedEndYear}`,
-          expectedStartMonth,
-          expectedEndMonth,
-          expectedStartYear,
-          expectedEndYear
-        });
-
         // Validate each parsed date against expected range
         const invalidDates: Date[] = [];
         dates.forEach(date => {
@@ -2291,25 +2324,7 @@ function MapDrawingPageContent() {
         });
 
         if (invalidDates.length > 0) {
-          console.error('❌ SANITY CHECK FAILED - Dates outside expected range:', {
-            fileName: file.fileName,
-            expectedRange: `${expectedStartMonth}/${expectedStartYear} - ${expectedEndMonth}/${expectedEndYear}`,
-            invalidDates: invalidDates.map(d => ({
-              parsed: d.toISOString(),
-              month: d.getMonth() + 1,
-              year: d.getFullYear()
-            })),
-            allParsedDates: dates.map(d => ({
-              date: d.toISOString(),
-              month: d.getMonth() + 1,
-              year: d.getFullYear()
-            }))
-          });
-
-          console.warn('⚠️ This indicates the date format was parsed incorrectly!');
-          console.warn('⚠️ Check that DD/MM/YYYY format is being used (not MM/DD/YYYY)');
-        } else {
-          console.log('✅ SANITY CHECK PASSED - All dates within expected range');
+          console.warn(`⚠️ Date format may be incorrect for ${file.fileName}: ${invalidDates.length} dates outside expected range ${expectedStartMonth}/${expectedStartYear}-${expectedEndMonth}/${expectedEndYear}`);
         }
       }
 
@@ -2327,13 +2342,6 @@ function MapDrawingPageContent() {
       const startDate = dates[0];
       const endDate = dates[dates.length - 1];
 
-      console.log('📈 Date range calculated:', {
-        fileName: file.fileName,
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        totalDatesParsed: dates.length
-      });
-
       // Format dates in DD/MM/YYYY format for CSV files
       const formatDateForCSV = (date: Date): string => {
         const day = String(date.getDate()).padStart(2, '0');
@@ -2344,17 +2352,6 @@ function MapDrawingPageContent() {
 
       // Use the discrete file detection from earlier (already determined above)
       const isDiscrete = isDiscreteFile;
-
-      console.log('🔍 File type detection:', {
-        fileName: file.fileName,
-        isDiscrete,
-        detectionReason: fileName.includes('crop') ? 'CROP' :
-                        fileName.includes('chemsw') ? 'CHEMSW' :
-                        fileName.includes('chemwq') ? 'CHEMWQ' :
-                        fileName.includes('chem') ? 'CHEM' :
-                        fileName.includes('wq') ? 'WQ' :
-                        fileName.includes('edna') ? 'EDNA' : 'continuous'
-      });
 
       // For discrete files, count unique days; for others, calculate continuous range
       let totalDays: number;
@@ -2376,13 +2373,6 @@ function MapDrawingPageContent() {
           return dateA.getTime() - dateB.getTime();
         });
         totalDays = uniqueDates.length; // Number of unique sampling days
-
-        console.log('📅 DISCRETE file - Unique sampling days:', {
-          fileName: file.fileName,
-          totalUniqueDays: totalDays,
-          uniqueDates: uniqueDates,
-          allDatesCount: dates.length
-        });
       } else {
         // Continuous data: calculate range
         totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -2391,28 +2381,9 @@ function MapDrawingPageContent() {
       const formattedStartDate = formatDateForCSV(startDate);
       const formattedEndDate = formatDateForCSV(endDate);
 
-      // Debug logging for ALGA file
-      if (file.fileName.includes('ALGA')) {
-        console.log('📊 CSV Date Analysis for ALGA:', {
-          fileName: file.fileName,
-          rawStart: startDate.toISOString(),
-          rawEnd: endDate.toISOString(),
-          formattedStart: formattedStartDate,
-          formattedEnd: formattedEndDate,
-          totalDays
-        });
-      }
-
-      // Minimal debugging - only log if there seems to be an issue
+      // Only log if there seems to be an issue
       if (totalDays > 365 || totalDays < 1) {
-        console.warn('⚠️ Unusual duration detected:', {
-          fileName: file.fileName,
-          startDate: formattedStartDate,
-          endDate: formattedEndDate,
-          totalDays,
-          rawStart: startDate.toISOString(),
-          rawEnd: endDate.toISOString()
-        });
+        console.warn(`⚠️ Unusual duration for ${file.fileName}: ${totalDays} days (${formattedStartDate} to ${formattedEndDate})`);
       }
 
       const result = {
@@ -2422,14 +2393,6 @@ function MapDrawingPageContent() {
         uniqueDates,
         isCrop: isDiscrete, // Renamed for compatibility
       };
-
-      console.log('✅ FINAL RESULT for', file.fileName, ':', {
-        startDate: result.startDate,
-        endDate: result.endDate,
-        totalDays: result.totalDays,
-        isDiscrete: result.isCrop,
-        uniqueDatesCount: result.uniqueDates?.length || 0
-      });
 
       return result;
 
@@ -2892,8 +2855,6 @@ function MapDrawingPageContent() {
   const handleLinePointDrag = (pointIndex: number, newPosition: LatLng) => {
     if (!tempLinePath) return;
 
-    console.log(`📍 handleLinePointDrag: Updating point ${pointIndex} to:`, newPosition);
-
     setTempLinePath(prevPath => {
       if (!prevPath) return prevPath;
       const updatedPath = [...prevPath];
@@ -2901,7 +2862,6 @@ function MapDrawingPageContent() {
         lat: newPosition.lat,
         lng: newPosition.lng
       };
-      console.log(`📍 Updated path:`, updatedPath);
       return updatedPath;
     });
   };
@@ -2909,13 +2869,9 @@ function MapDrawingPageContent() {
   const handleLineEditComplete = async () => {
     if (!editingLineId || !tempLinePath) return;
 
-    console.log('💾 Saving line with new path:', tempLinePath);
-    console.log('💾 Line ID:', editingLineId);
-
     try {
       // Update the line with new path
       const updateData = { path: tempLinePath };
-      console.log('💾 Update data being sent:', updateData);
 
       await updateLineData(editingLineId, updateData);
 
@@ -2951,13 +2907,11 @@ function MapDrawingPageContent() {
   const handleMovePinToCenter = async () => {
     if (itemToEdit && 'lat' in itemToEdit && mapRef.current) {
       const mapCenter = mapRef.current.getCenter();
-      console.log('DEBUG: Moving pin to map center (crosshair position):', mapCenter.lat, mapCenter.lng);
-      console.log('DEBUG: Map center coordinates should match exactly where crosshairs are positioned');
-      
+
       // Update the editing coordinates to the map center
       setEditingLat(mapCenter.lat.toString());
       setEditingLng(mapCenter.lng.toString());
-      
+
       // Immediately update the pin in the database/state
       const updatedObject = {
         ...itemToEdit,
@@ -2965,12 +2919,10 @@ function MapDrawingPageContent() {
         lng: mapCenter.lng,
       };
 
-      console.log('DEBUG: Updating pin with new coordinates:', updatedObject);
       try {
         await updatePinData(itemToEdit.id, updatedObject);
-        console.log('DEBUG: Pin update successful');
       } catch (error) {
-        console.error('DEBUG: Pin update failed:', error);
+        console.error('Pin update failed:', error);
         toast({
           variant: "destructive",
           title: "Error Moving Pin",
@@ -3936,11 +3888,13 @@ function MapDrawingPageContent() {
 
   // Handle on-demand file download for plots
   const handleDownloadFileForPlot = useCallback(async (
-    pinId: string,
-    fileName: string
+    pinId: string | null,
+    fileName: string,
+    areaId?: string | null,
+    providedMetadata?: PinFile
   ): Promise<File | null> => {
     try {
-      console.log(`📥 Downloading file for plot: ${fileName} (pin: ${pinId})`);
+      console.log(`📥 Downloading file for plot: ${fileName} (pin: ${pinId}, area: ${areaId})`);
 
       // Handle merged files separately
       if (pinId === 'merged') {
@@ -3995,12 +3949,46 @@ function MapDrawingPageContent() {
       }
 
       // Get file metadata for regular (uploaded) files
-      const fileMetadata = pinFileMetadata[pinId]?.find(
-        f => f.fileName === fileName
-      );
+      // Try pin files first, then area files, or use provided metadata
+      let fileMetadata: PinFile | undefined = providedMetadata;
+      let objectType: 'pin' | 'area' | null = null;
+      let objectId: string | null = null;
+
+      if (!fileMetadata && pinId) {
+        fileMetadata = pinFileMetadata[pinId]?.find(
+          f => f.fileName === fileName
+        );
+        if (fileMetadata) {
+          objectType = 'pin';
+          objectId = pinId;
+        }
+      }
+
+      if (!fileMetadata && areaId) {
+        fileMetadata = areaFileMetadata[areaId]?.find(
+          f => f.fileName === fileName
+        );
+        if (fileMetadata) {
+          objectType = 'area';
+          objectId = areaId;
+        }
+      }
+
+      // If we still don't have metadata, try to determine objectType from provided metadata
+      if (fileMetadata && !objectType) {
+        if (fileMetadata.pinId) {
+          objectType = 'pin';
+          objectId = fileMetadata.pinId;
+        } else if (fileMetadata.areaId) {
+          objectType = 'area';
+          objectId = fileMetadata.areaId;
+        }
+      }
 
       if (!fileMetadata) {
-        console.error('❌ File metadata not found:', { pinId, fileName });
+        console.error('❌ File metadata not found:', { pinId, areaId, fileName });
+        console.error('Available pinFileMetadata keys:', Object.keys(pinFileMetadata));
+        console.error('Available areaFileMetadata keys:', Object.keys(areaFileMetadata));
         toast({
           variant: "destructive",
           title: "Download Failed",
@@ -4010,7 +3998,7 @@ function MapDrawingPageContent() {
       }
 
       // Download from storage using fileStorageService.downloadFile()
-      console.log(`📦 Downloading from storage: ${fileMetadata.filePath}`);
+      console.log(`📦 Downloading ${objectType || 'cross-project'} file from storage: ${fileMetadata.filePath}`);
       const blob = await fileStorageService.downloadPinFile(fileMetadata.filePath);
 
       if (!blob) {
@@ -4030,11 +4018,13 @@ function MapDrawingPageContent() {
 
       console.log(`✅ File downloaded successfully: ${fileName} (${(file.size / 1024).toFixed(2)} KB)`);
 
-      // Cache it in pinFiles state
-      setPinFiles(prev => ({
-        ...prev,
-        [pinId]: [...(prev[pinId] || []), file]
-      }));
+      // Cache it in pinFiles state using the objectId
+      if (objectId) {
+        setPinFiles(prev => ({
+          ...prev,
+          [objectId]: [...(prev[objectId] || []), file]
+        }));
+      }
 
       toast({
         title: "File Downloaded",
@@ -4051,7 +4041,7 @@ function MapDrawingPageContent() {
       });
       return null;
     }
-  }, [pinFileMetadata, mergedFiles, toast]);
+  }, [pinFileMetadata, areaFileMetadata, mergedFiles, toast]);
 
   // Handle file type selection
   const handleFileTypeSelection = async (fileType: 'GP' | 'FPOD' | 'Subcam') => {
@@ -5715,7 +5705,7 @@ function MapDrawingPageContent() {
           {/* Sidebar Menu - Always rendered for animation */}
           <>
             {/* Sidebar - always present but translated off-screen when closed */}
-            <div 
+            <div
               className={`fixed left-0 bg-background border-r shadow-xl z-[1600] transform transition-transform duration-300 ease-in-out ${
                 showMainMenu ? 'translate-x-0' : '-translate-x-full'
               }`}
@@ -5726,6 +5716,7 @@ function MapDrawingPageContent() {
                 transition: 'width 0.3s ease-out' // Smooth width transitions
               }}
               data-menu-dropdown
+              data-sidebar
             >
               {/* Resize handle and collapse button - only show when sidebar is open */}
               {showMainMenu && (
@@ -6102,12 +6093,47 @@ function MapDrawingPageContent() {
                                 </div>
                               )}
 
+                              {/* Bulk selection controls - show when objects are selected */}
+                              {selectedObjectIds.size > 0 && (
+                                <div className="flex items-center justify-between p-2 bg-blue-100 dark:bg-blue-900/20 rounded text-xs border border-blue-400 mb-2">
+                                  <span className="font-medium">
+                                    {selectedObjectIds.size} object{selectedObjectIds.size !== 1 ? 's' : ''} selected
+                                  </span>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={clearObjectSelection}
+                                    className="h-6 px-2 text-xs"
+                                  >
+                                    Clear
+                                  </Button>
+                                </div>
+                              )}
+
+                              {/* Select All / Clear All button - show when settings dialog is open */}
+                              {totalObjects > 0 && showProjectSettingsDialog && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (selectedObjectIds.size > 0) {
+                                      clearObjectSelection();
+                                    } else {
+                                      selectAllFilteredObjects();
+                                    }
+                                  }}
+                                  className="w-full text-xs mb-2"
+                                >
+                                  {selectedObjectIds.size > 0 ? 'Deselect All' : 'Select All'}
+                                </Button>
+                              )}
+
                               {totalObjects === 0 ? (
                                 <div className="text-xs text-muted-foreground text-center py-4">
                                   No objects in this project
                                 </div>
                               ) : (
-                                <div className="space-y-1">
+                                <div className="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
                                   {/* All objects in one list */}
                                   {[
                                     ...projectPins.map(pin => ({ ...pin, type: 'pin' as const })),
@@ -6120,11 +6146,23 @@ function MapDrawingPageContent() {
                                     <div
                                       key={object.id}
                                       className={`w-full flex items-center gap-2 p-2 rounded text-xs transition-all ${
-                                        selectedObjectId === object.id
-                                          ? 'bg-accent/20 border border-accent/40'
-                                          : 'bg-muted/30'
+                                        selectedObjectIds.has(object.id)
+                                          ? 'bg-blue-100 dark:bg-blue-900/30 border border-blue-400'
+                                          : selectedObjectId === object.id
+                                            ? 'bg-accent/20 border border-accent/40'
+                                            : 'bg-muted/30'
                                       }`}
                                     >
+                                      {/* Checkbox for multi-selection - show when settings dialog is open */}
+                                      {showProjectSettingsDialog && (
+                                        <Checkbox
+                                          checked={selectedObjectIds.has(object.id)}
+                                          onCheckedChange={() => toggleObjectSelection(object.id)}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="flex-shrink-0"
+                                        />
+                                      )}
+
                                       {object.type === 'pin' && (
                                         <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></div>
                                       )}
@@ -6136,21 +6174,26 @@ function MapDrawingPageContent() {
                                       )}
                                       <button
                                         onClick={() => {
-                                          setSelectedObjectId(selectedObjectId === object.id ? null : object.id);
-                                          setItemToEdit(object);
+                                          if (!showProjectSettingsDialog) {
+                                            setSelectedObjectId(selectedObjectId === object.id ? null : object.id);
+                                            setItemToEdit(object);
+                                          }
                                         }}
-                                        className="truncate flex-1 text-left hover:text-accent"
+                                        className={`truncate flex-1 text-left ${!showProjectSettingsDialog ? 'hover:text-accent cursor-pointer' : 'cursor-default'}`}
                                       >
                                         {object.label || `Unnamed ${object.type.charAt(0).toUpperCase() + object.type.slice(1)}`}
                                       </button>
 
                                       <div className="flex items-center gap-1 ml-auto">
-                                        {/* Data indicator for pins with uploaded files */}
-                                        {object.type === 'pin' && (pinFiles[object.id]?.length > 0 || pinFileMetadata[object.id]?.length > 0) && (
+                                        {/* Data indicator for pins and areas with uploaded files */}
+                                        {((object.type === 'pin' && (pinFiles[object.id]?.length > 0 || pinFileMetadata[object.id]?.length > 0)) ||
+                                          (object.type === 'area' && areaFileMetadata[object.id]?.length > 0)) && (
                                           <div className="flex items-center gap-1">
                                             <Database className="h-3 w-3 text-accent" />
                                             <span className="text-xs text-accent font-medium">
-                                              {pinFileMetadata[object.id]?.length || pinFiles[object.id]?.length || 0}
+                                              {object.type === 'pin'
+                                                ? (pinFileMetadata[object.id]?.length || pinFiles[object.id]?.length || 0)
+                                                : (areaFileMetadata[object.id]?.length || 0)}
                                             </span>
                                           </div>
                                         )}
@@ -6737,7 +6780,17 @@ function MapDrawingPageContent() {
                                 {projectAreas.map(area => (
                                   <div key={area.id} className="flex items-center gap-2 py-1">
                                     <div className="w-3 h-3 bg-red-500/30 border border-red-500"></div>
-                                    <span>{area.label || 'Unnamed Area'}</span>
+                                    <span className="flex-1">{area.label || 'Unnamed Area'}</span>
+
+                                    {/* Data indicator for areas with uploaded files */}
+                                    {areaFileMetadata[area.id]?.length > 0 && (
+                                      <div className="flex items-center gap-1 ml-auto">
+                                        <Database className="h-3 w-3 text-accent" />
+                                        <span className="text-xs text-accent font-medium">
+                                          {areaFileMetadata[area.id]?.length || 0}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
                               </div>
@@ -6785,41 +6838,7 @@ function MapDrawingPageContent() {
         </DialogContent>
       </Dialog>
 
-      {/* Migration Dialog */}
-      <Dialog open={showMigrationPrompt} onOpenChange={setShowMigrationPrompt}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Migrate Local Data</DialogTitle>
-            <DialogDescription>
-              We found existing map data stored locally. Would you like to migrate it to your account for backup and sync across devices?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-3 py-4">
-            <div className="text-sm text-muted-foreground">
-              <p>Local data found:</p>
-              <ul className="list-disc list-inside mt-1 space-y-1">
-                {localStorage.getItem('map-drawing-pins') && (
-                  <li>{JSON.parse(localStorage.getItem('map-drawing-pins') || '[]').length} pins</li>
-                )}
-                {localStorage.getItem('map-drawing-lines') && (
-                  <li>{JSON.parse(localStorage.getItem('map-drawing-lines') || '[]').length} lines</li>
-                )}
-                {localStorage.getItem('map-drawing-areas') && (
-                  <li>{JSON.parse(localStorage.getItem('map-drawing-areas') || '[]').length} areas</li>
-                )}
-              </ul>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setShowMigrationPrompt(false)}>
-                Keep Local Only
-              </Button>
-              <Button onClick={handleMigration}>
-                Migrate to Account
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* REMOVED: Migration Dialog - authentication-only mode means no legacy localStorage data exists */}
 
       {/* Marine Device Data Modal */}
       <Dialog 
@@ -7467,10 +7486,27 @@ function MapDrawingPageContent() {
                           );
 
                           if (pinId) {
+                            console.log('Found file in pin metadata, updating pinId:', pinId);
                             // Update the state immediately to reflect the new name
                             setPinFileMetadata(prev => ({
                               ...prev,
                               [pinId]: prev[pinId]?.map(f =>
+                                f.id === file.id ? { ...f, fileName: newName } : f
+                              ) || []
+                            }));
+                          }
+
+                          // Also check if this file belongs to an area
+                          const areaId = Object.keys(areaFileMetadata).find(areaId =>
+                            areaFileMetadata[areaId]?.some(f => f.id === file.id)
+                          );
+
+                          if (areaId) {
+                            console.log('Found file in area metadata, updating areaId:', areaId);
+                            // Update the area file metadata
+                            setAreaFileMetadata(prev => ({
+                              ...prev,
+                              [areaId]: prev[areaId]?.map(f =>
                                 f.id === file.id ? { ...f, fileName: newName } : f
                               ) || []
                             }));
@@ -8023,10 +8059,13 @@ function MapDrawingPageContent() {
 
       {/* Project Settings Dialog */}
       <Dialog open={showProjectSettingsDialog} onOpenChange={(open) => {
-        if (!open) setCurrentProjectContext('');
+        if (!open) {
+          setCurrentProjectContext('');
+          clearObjectSelection(); // Clear selections when closing
+        }
         setShowProjectSettingsDialog(open);
       }}>
-        <DialogContent className="sm:max-w-md z-[9999]">
+        <SettingsDialogContent className="sm:max-w-md z-[9999]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Settings className="h-5 w-5" />
@@ -8036,7 +8075,7 @@ function MapDrawingPageContent() {
               Manage settings for {dynamicProjects[currentProjectContext || activeProjectId]?.name}
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             {/* Project Name */}
             <div className="space-y-2">
@@ -8051,6 +8090,42 @@ function MapDrawingPageContent() {
               </p>
             </div>
 
+            {/* BATCH DELETE SECTION - Show when objects selected */}
+            {selectedObjectIds.size > 0 && (
+              <div className="p-4 border border-orange-500 rounded bg-orange-50 dark:bg-orange-950/20">
+                <h3 className="text-sm font-semibold mb-2 text-orange-900 dark:text-orange-200">
+                  Batch Delete
+                </h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  You have selected {selectedObjectIds.size} object{selectedObjectIds.size !== 1 ? 's' : ''} to delete
+                </p>
+
+                {/* List selected objects */}
+                <div className="space-y-1 max-h-32 overflow-y-auto mb-3 text-xs">
+                  {getSelectedObjects().map(obj => (
+                    <div key={obj.id} className="flex items-center gap-2">
+                      {obj.type === 'pin' && <div className="w-2 h-2 rounded-full bg-blue-500"></div>}
+                      {obj.type === 'line' && <div className="w-3 h-0.5 bg-green-500"></div>}
+                      {obj.type === 'area' && <div className="w-2 h-2 bg-red-500/30 border border-red-500"></div>}
+                      <span>{obj.label || `Unnamed ${obj.type}`}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    setShowProjectSettingsDialog(false);
+                    setShowBatchDeleteConfirmDialog(true);
+                  }}
+                  className="w-full flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete Selected Objects ({selectedObjectIds.size})
+                </Button>
+              </div>
+            )}
+
             {/* Actions */}
             <div className="flex justify-between pt-4 border-t">
               <Button
@@ -8060,11 +8135,12 @@ function MapDrawingPageContent() {
                   setShowDeleteConfirmDialog(true);
                 }}
                 className="flex items-center gap-2"
+                disabled={selectedObjectIds.size > 0} // Disable if batch mode active
               >
                 <Trash2 className="h-4 w-4" />
                 Delete Project
               </Button>
-              
+
               <div className="flex gap-2">
                 <Button
                   variant="outline"
@@ -8088,7 +8164,7 @@ function MapDrawingPageContent() {
               </div>
             </div>
           </div>
-        </DialogContent>
+        </SettingsDialogContent>
       </Dialog>
 
       {/* Delete Project Confirmation Dialog */}
@@ -8181,6 +8257,65 @@ function MapDrawingPageContent() {
                 {isDeletingProject ? 'Deleting...' : 'Delete Project'}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Batch Delete Confirmation Dialog */}
+      <Dialog open={showBatchDeleteConfirmDialog} onOpenChange={setShowBatchDeleteConfirmDialog}>
+        <DialogContent className="sm:max-w-md z-[9999]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Confirm Batch Deletion
+            </DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. The following {selectedObjectIds.size} object{selectedObjectIds.size !== 1 ? 's' : ''} will be permanently deleted:
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* List of objects to delete */}
+          <div className="max-h-48 overflow-y-auto border rounded p-3 space-y-2">
+            {getSelectedObjects().map(obj => {
+              const fileCount = obj.type === 'pin'
+                ? (pinFileMetadata[obj.id]?.length || pinFiles[obj.id]?.length || 0)
+                : obj.type === 'area'
+                ? (areaFileMetadata[obj.id]?.length || 0)
+                : 0;
+
+              return (
+                <div key={obj.id} className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    {obj.type === 'pin' && <div className="w-2 h-2 rounded-full bg-blue-500"></div>}
+                    {obj.type === 'line' && <div className="w-3 h-0.5 bg-green-500"></div>}
+                    {obj.type === 'area' && <div className="w-2 h-2 bg-red-500/30 border border-red-500"></div>}
+                    <span className="font-medium">{obj.label || `Unnamed ${obj.type}`}</span>
+                  </div>
+                  {fileCount > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {fileCount} file{fileCount !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowBatchDeleteConfirmDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleBatchDelete}
+              className="flex items-center gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete {selectedObjectIds.size} Object{selectedObjectIds.size !== 1 ? 's' : ''}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

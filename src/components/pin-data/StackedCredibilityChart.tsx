@@ -26,8 +26,8 @@ export function StackedCredibilityChart({
   fileName,
   customTitle = 'Detection Credibility Score',
   customYAxisLabel = 'Species Count',
-  gbifTrueColor = '#4CAF50', // Green for verified
-  gbifFalseColor = '#FF9800', // Orange for unverified
+  gbifTrueColor = '#2D5F8D', // Dark blue for verified (colorblind-friendly)
+  gbifFalseColor = '#7FB3D5', // Light blue for unverified (colorblind-friendly)
   width = "100%",
   height = 400
 }: StackedCredibilityChartProps) {
@@ -65,11 +65,11 @@ export function StackedCredibilityChart({
       return (
         <div className="bg-white border border-gray-300 rounded shadow-lg p-3">
           <p className="font-semibold text-sm mb-1">{label} Credibility</p>
-          <p className="text-sm text-green-700">
+          <p className="text-sm text-blue-700">
             <span className="inline-block w-3 h-3 mr-1 rounded" style={{ backgroundColor: gbifTrueColor }}></span>
             GBIF Verified: {verified}
           </p>
-          <p className="text-sm text-orange-700">
+          <p className="text-sm text-orange-600">
             <span className="inline-block w-3 h-3 mr-1 rounded" style={{ backgroundColor: gbifFalseColor }}></span>
             GBIF Unverified: {unverified}
           </p>
@@ -83,84 +83,86 @@ export function StackedCredibilityChart({
   };
 
   return (
-    <div className="relative w-full" style={{ height }}>
-      {/* Summary Overlay Box */}
-      <div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-10 bg-white/90 border border-gray-300 rounded-lg shadow-md px-4 py-2">
-        <p className="text-sm font-semibold text-gray-700">
-          Total Unique Species Detected = {data.totalUniqueSpecies}
-        </p>
-      </div>
-
+    <div className="relative w-full flex flex-col items-center" style={{ height }}>
       {/* Chart Title */}
       <div className="text-center mb-2">
         <h3 className="text-lg font-semibold text-gray-800">{customTitle}</h3>
       </div>
 
-      {/* Stacked Bar Chart */}
-      <ResponsiveContainer width={width} height={height - 80}>
-        <BarChart
-          data={chartData}
-          margin={{ top: 60, right: 30, left: 50, bottom: 60 }}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis
-            dataKey="category"
-            label={{
-              value: 'False Detection Frequency Category',
-              position: 'insideBottom',
-              offset: -10,
-              style: { fontSize: '12px', fontWeight: 'normal' }
-            }}
-            tick={{ fontSize: 12 }}
-          />
-          <YAxis
-            label={{
-              value: customYAxisLabel,
-              angle: -90,
-              position: 'insideLeft',
-              style: { fontSize: '14px', fontWeight: 'bold', textAnchor: 'middle' }
-            }}
-            tick={{ fontSize: 12 }}
-          />
-          <Tooltip content={<CustomTooltip />} />
-          <Legend
-            verticalAlign="bottom"
-            height={36}
-            wrapperStyle={{ paddingTop: '20px' }}
-            iconType="square"
-          />
+      {/* Chart Container - Narrow fixed width for 3 columns */}
+      <div className="relative" style={{ width: '30%', minWidth: '300px', height: height - 40 }}>
+        {/* Info Box - Combined legend and total species, left-aligned with chart start */}
+        <div className="absolute top-6 left-[110px] z-10 bg-white/50 border border-gray-300 rounded shadow-sm px-3 py-2">
+          <p className="text-xs font-medium text-gray-700 mb-2">
+            Total Unique Species = {data.totalUniqueSpecies}
+          </p>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: gbifTrueColor }}></span>
+              <span className="text-xs text-gray-700">GBIF Verified</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: gbifFalseColor }}></span>
+              <span className="text-xs text-gray-700">GBIF Unverified</span>
+            </div>
+          </div>
+        </div>
 
-          {/* GBIF Verified (Bottom of stack - Green) */}
-          <Bar
-            dataKey="GBIF Verified"
-            stackId="a"
-            fill={gbifTrueColor}
-            radius={[0, 0, 0, 0]}
+        {/* Stacked Bar Chart */}
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={chartData}
+            margin={{ top: 60, right: 30, left: 50, bottom: 40 }}
+            barCategoryGap="20%"
           >
-            <LabelList
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis
+              dataKey="category"
+              tick={{ fontSize: 12 }}
+            />
+            <YAxis
+              label={{
+                value: customYAxisLabel,
+                angle: -90,
+                position: 'insideLeft',
+                style: { fontSize: '12px', fontWeight: 'normal', textAnchor: 'middle' }
+              }}
+              tick={{ fontSize: 12 }}
+            />
+            <Tooltip content={<CustomTooltip />} />
+
+            {/* GBIF Verified (Bottom of stack - Dark Blue) */}
+            <Bar
               dataKey="GBIF Verified"
-              position="center"
-              formatter={(value: number) => value > 0 ? value : ''}
-              style={{ fontSize: 11, fill: '#fff', fontWeight: 600 }}
-            />
-          </Bar>
+              stackId="a"
+              fill={gbifTrueColor}
+              radius={[0, 0, 0, 0]}
+            >
+              <LabelList
+                dataKey="GBIF Verified"
+                position="center"
+                formatter={(value: number) => value > 0 ? value : ''}
+                style={{ fontSize: 11, fill: '#fff', fontWeight: 600 }}
+              />
+            </Bar>
 
-          {/* GBIF Unverified (Top of stack - Orange) */}
-          <Bar
-            dataKey="GBIF Unverified"
-            stackId="a"
-            fill={gbifFalseColor}
-            radius={[4, 4, 0, 0]}
-          >
-            <LabelList
+            {/* GBIF Unverified (Top of stack - Light Blue) */}
+            <Bar
               dataKey="GBIF Unverified"
-              position="center"
-              formatter={(value: number) => value > 0 ? value : ''}
-              style={{ fontSize: 11, fill: '#fff', fontWeight: 600 }}
-            />
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+              stackId="a"
+              fill={gbifFalseColor}
+              radius={[4, 4, 0, 0]}
+            >
+              <LabelList
+                dataKey="GBIF Unverified"
+                position="center"
+                formatter={(value: number) => value > 0 ? value : ''}
+                style={{ fontSize: 11, fill: '#fff', fontWeight: 600 }}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

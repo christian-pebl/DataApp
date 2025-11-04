@@ -1,6 +1,6 @@
 "use client";
 // Force reload - fixed FileIcon import
-import React, { useState, useEffect, useId } from "react";
+import React, { useState, useEffect, useId, useMemo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,25 +105,8 @@ export function PinPlotInstance({
   const [showMergeInfo, setShowMergeInfo] = useState(false);
   const [dateFormat, setDateFormat] = useState<'DD/MM/YYYY' | 'MM/DD/YYYY' | undefined>(undefined);
 
-  // Handle pre-parsed data (for merged plots) or process CSV files
-  useEffect(() => {
-    // console.log('[PLOT INSTANCE] useEffect triggered. dateFormat:', dateFormat, 'files:', files.length, 'preParsedData:', !!preParsedData);
-
-    if (preParsedData) {
-      // Use pre-parsed data directly (merged plot scenario)
-      setParseResult(preParsedData);
-      if (onDataParsed) {
-        onDataParsed(instanceId, preParsedData);
-      }
-      setIsProcessingFiles(false);
-    } else if (files.length > 0) {
-      // Normal flow: process CSV files
-      // console.log('[PLOT INSTANCE] Calling processCSVFiles with format override:', dateFormat);
-      processCSVFiles(files, dateFormat);
-    }
-  }, [files, preParsedData, instanceId, onDataParsed, dateFormat]);
-
-  const processCSVFiles = async (csvFiles: File[], formatOverride?: 'DD/MM/YYYY' | 'MM/DD/YYYY') => {
+  // Memoize file processing to prevent duplicate parsing
+  const processCSVFiles = useCallback(async (csvFiles: File[], formatOverride?: 'DD/MM/YYYY' | 'MM/DD/YYYY') => {
     // console.log('[PLOT INSTANCE] processCSVFiles called with formatOverride:', formatOverride);
     setIsProcessingFiles(true);
     setParseResult(null);
@@ -135,7 +118,6 @@ export function PinPlotInstance({
 
       if (isHaplFile) {
         // Parse as haplotype data
-        console.log('🧬 [PLOT INSTANCE] Detected haplotype file, using parseHaplotypeCsv');
         const haplotypeResult = await parseHaplotypeCsv(csvFiles[0]);
         setHaplotypeData(haplotypeResult);
 
@@ -206,7 +188,31 @@ export function PinPlotInstance({
     } finally {
       setIsProcessingFiles(false);
     }
-  };
+  }, [fileType, toast, onDataParsed, instanceId]);
+
+  // Handle pre-parsed data (for merged plots) or process CSV files
+  // Use a ref to track if we've already processed these files
+  const processedFilesRef = React.useRef<string>('');
+
+  useEffect(() => {
+    if (preParsedData) {
+      // Use pre-parsed data directly (merged plot scenario)
+      setParseResult(preParsedData);
+      if (onDataParsed) {
+        onDataParsed(instanceId, preParsedData);
+      }
+      setIsProcessingFiles(false);
+    } else if (files.length > 0) {
+      // Create a unique key for the current files
+      const filesKey = files.map(f => `${f.name}-${f.size}-${f.lastModified}`).join('|') + `|${dateFormat}`;
+
+      // Only process if files changed
+      if (processedFilesRef.current !== filesKey) {
+        processedFilesRef.current = filesKey;
+        processCSVFiles(files, dateFormat);
+      }
+    }
+  }, [files, preParsedData, instanceId, onDataParsed, dateFormat, processCSVFiles]);
 
   return (
     <Card className="shadow-sm relative">

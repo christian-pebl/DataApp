@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { ParseResult } from "./csvParser";
 import type { CombinedDataPoint } from "@/app/om-marine-explorer/shared";
 import type { SavedPlotViewConfig, SavedPlotView, PlotViewValidationResult } from "@/lib/supabase/plot-view-types";
+import type { PinFile } from "@/lib/supabase/file-storage-service";
 
 interface ParameterSettings {
   timeFilter?: {
@@ -117,7 +118,7 @@ interface PinMarineDeviceDataProps {
   onRequestFileSelection?: () => void; // Callback to open file selector
   // Props for multi-file support
   availableFiles?: FileOption[];
-  onDownloadFile?: (pinId: string, fileName: string) => Promise<File | null>; // Callback to download file on-demand
+  onDownloadFile?: (pinId: string | null, fileName: string, areaId?: string | null, metadata?: PinFile) => Promise<File | null>; // Callback to download file on-demand
   multiFileMergeMode?: 'sequential' | 'stack-parameters'; // Merge mode for multi-file selection
   // Props for marine/meteo integration
   objectLocation?: { lat: number; lng: number };
@@ -2507,7 +2508,8 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
           onFileSelected={async (file) => {
             // Map the file to FileOption format for download handling
             const fileOption = {
-              pinId: file.pinId,
+              pinId: file.pinId || null,
+              areaId: file.areaId || null,
               pinName: file.pinLabel,
               fileType: 'GP' as 'GP' | 'FPOD' | 'Subcam', // Will detect properly from filename
               files: [], // No files loaded yet
@@ -2518,14 +2520,18 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             // Check if files need to be downloaded
             if (fileOption.files.length === 0 && onDownloadFile && fileOption.metadata) {
               console.log('📥 File not loaded, downloading...', fileOption.fileName);
-              const downloadedFile = await onDownloadFile(fileOption.pinId, fileOption.fileName);
+              console.log('📥 File IDs:', { pinId: fileOption.pinId, areaId: fileOption.areaId });
+              console.log('📥 Passing metadata for cross-project support:', fileOption.metadata);
+              const downloadedFile = await onDownloadFile(fileOption.pinId, fileOption.fileName, fileOption.areaId, fileOption.metadata);
 
               if (downloadedFile) {
                 // Add plot with downloaded file AND its database ID
+                // Use pinId if available, otherwise use areaId for tracking
+                const objectId = fileOption.pinId || fileOption.areaId;
                 addPlot('device', [downloadedFile], {
                   fileType: fileOption.fileType,
                   customTitle: fileOption.fileName,
-                  pinId: fileOption.pinId,
+                  pinId: objectId,
                   fileId: file.id // Store the database file ID for restoration
                 });
               } else {
@@ -2539,10 +2545,11 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             } else {
               // Files already loaded, add plot directly
               if (fileOption.files.length > 0) {
+                const objectId = fileOption.pinId || fileOption.areaId;
                 addPlot('device', fileOption.files, {
                   fileType: fileOption.fileType,
                   customTitle: fileOption.fileName,
-                  pinId: fileOption.pinId,
+                  pinId: objectId,
                   fileId: file.id // Store the database file ID for restoration
                 });
               } else {

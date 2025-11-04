@@ -28,12 +28,15 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
   const [lines, setLinesInternal] = useState<Line[]>([])
   const [areas, setAreas] = useState<Area[]>([])
 
+  // Track logged duplicate warnings to avoid spam
+  const loggedDuplicatesRef = useRef<string>('')
+
   // Wrapper around setLines to check for issues
   const setLines = useCallback((newLines: Line[] | ((prev: Line[]) => Line[])) => {
     setLinesInternal(prev => {
       const resolvedLines = typeof newLines === 'function' ? newLines(prev) : newLines
 
-      // Only log if there are actual issues (in development)
+      // Only log once per unique set of duplicates (in development)
       if (process.env.NODE_ENV === 'development') {
         const labelCounts: Record<string, number> = {}
         resolvedLines.forEach(line => {
@@ -41,7 +44,11 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
         })
         const duplicates = Object.entries(labelCounts).filter(([_, count]) => count > 1)
         if (duplicates.length > 0) {
-          console.info('ℹ️ Lines with duplicate labels:', duplicates.map(([label]) => label).join(', '))
+          const duplicateKey = duplicates.map(([label]) => label).sort().join(',')
+          if (loggedDuplicatesRef.current !== duplicateKey) {
+            console.info('ℹ️ Lines with duplicate labels:', duplicates.map(([label]) => label).join(', '))
+            loggedDuplicatesRef.current = duplicateKey
+          }
         }
       }
 
@@ -193,17 +200,8 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
       try {
         linesData = await mapDataService.getLines(projectId === 'default' ? undefined : projectId)
 
-        // Only log duplicates in development mode
-        if (process.env.NODE_ENV === 'development' && linesData.length > 0) {
-          const lineLabelCounts: Record<string, number> = {}
-          linesData.forEach(line => {
-            lineLabelCounts[line.label] = (lineLabelCounts[line.label] || 0) + 1
-          })
-          const duplicates = Object.entries(lineLabelCounts).filter(([_, count]) => count > 1)
-          if (duplicates.length > 0) {
-            console.info('ℹ️ Loaded lines with duplicate labels:', duplicates.map(([label]) => label).join(', '))
-          }
-        }
+        // Deduplicate warning already handled in setLines wrapper
+        // No need to log here to avoid spam
       } catch (error) {
         console.error('❌ Error loading lines from database:', error)
         linesData = []

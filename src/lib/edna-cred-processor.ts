@@ -25,10 +25,12 @@ export interface AggregatedCredData {
  * Normalizes credibility score values to standard format
  * Handles variations like "low", "LOW", "moderate", "MODERATE", etc.
  */
-function normalizeCredibilityScore(value: string): 'Low' | 'Moderate' | 'High' | null {
-  if (!value) return null;
+function normalizeCredibilityScore(value: any): 'Low' | 'Moderate' | 'High' | null {
+  if (!value || value === '') return null;
 
-  const normalized = value.trim().toLowerCase();
+  // Convert to string if not already
+  const stringValue = typeof value === 'string' ? value : String(value);
+  const normalized = stringValue.trim().toLowerCase();
 
   if (['low', 'l'].includes(normalized)) return 'Low';
   if (['moderate', 'medium', 'mod', 'm'].includes(normalized)) return 'Moderate';
@@ -43,6 +45,8 @@ function normalizeCredibilityScore(value: string): 'Low' | 'Moderate' | 'High' |
  * Handles TRUE/FALSE, true/false, YES/NO, 1/0, etc.
  */
 function normalizeGBIFStatus(value: any): boolean {
+  if (value === null || value === undefined) return false;
+
   if (typeof value === 'boolean') return value;
 
   if (typeof value === 'string') {
@@ -101,9 +105,27 @@ export function parseCredData(
   }
 
   const gbifColName = headers[gbifColIndex];
-  const scoreColName = headers[headers.length - 1]; // Last column is credibility score
 
-  console.log(`[eDNA Cred] Using columns - GBIF: "${gbifColName}", Score: "${scoreColName}"`);
+  // Find score column - could be "score", "credibility", or similar
+  const scoreColIndex = headers.findIndex(h =>
+    h.toLowerCase().includes('score') ||
+    h.toLowerCase().includes('credibility') ||
+    h.toLowerCase() === 'low' ||
+    h.toLowerCase() === 'moderate' ||
+    h.toLowerCase() === 'high'
+  );
+
+  // Fallback to last column if no score column found
+  const scoreColName = scoreColIndex >= 0 ? headers[scoreColIndex] : headers[headers.length - 1];
+
+  console.log(`[eDNA Cred] All headers:`, headers);
+  console.log(`[eDNA Cred] Using columns - GBIF: "${gbifColName}" (index: ${gbifColIndex}), Score: "${scoreColName}" (index: ${scoreColIndex >= 0 ? scoreColIndex : headers.length - 1})`);
+  console.log(`[eDNA Cred] Processing ${data.length} rows`);
+  console.log(`[eDNA Cred] First row sample:`, data[0]);
+  if (data.length > 0) {
+    console.log(`[eDNA Cred] First row GBIF value:`, data[0][gbifColName]);
+    console.log(`[eDNA Cred] First row Score value:`, data[0][scoreColName]);
+  }
 
   for (const row of data) {
     // Skip empty rows
@@ -122,7 +144,7 @@ export function parseCredData(
     const scoreValue = row[scoreColName];
     const credibilityScore = normalizeCredibilityScore(scoreValue);
     if (!credibilityScore) {
-      console.warn(`[eDNA Cred] Skipping row - invalid credibility score: "${scoreValue}" for species: ${speciesName}`);
+      console.warn(`[eDNA Cred] Skipping row - invalid credibility score: "${scoreValue}" (type: ${typeof scoreValue}) for species: ${speciesName}`);
       skippedCount++;
       continue;
     }

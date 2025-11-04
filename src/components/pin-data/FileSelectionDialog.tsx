@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -56,13 +56,6 @@ export function FileSelectionDialog({
 }: FileSelectionDialogProps) {
   const { toast } = useToast();
 
-  console.log('[FileSelectionDialog] Render - Props:', {
-    enableProjectSelector,
-    projectId,
-    availableProjects: availableProjects.length,
-    filesCount: files.length
-  });
-
   // Project selector state
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(projectId);
   const [allProjects, setAllProjects] = useState<Array<{ id: string; name: string }>>(availableProjects);
@@ -78,15 +71,13 @@ export function FileSelectionDialog({
 
   // Update projects when availableProjects prop changes
   useEffect(() => {
-    console.log('[FileSelectionDialog] availableProjects changed:', availableProjects);
     if (availableProjects && availableProjects.length > 0) {
       setAllProjects(availableProjects);
-      console.log('[FileSelectionDialog] Set allProjects:', availableProjects);
     }
   }, [availableProjects]);
 
-  // Load files for selected project
-  const loadProjectFiles = async (projectId: string) => {
+  // Load files for selected project (memoized to prevent unnecessary re-renders)
+  const loadProjectFiles = useCallback(async (projectId: string) => {
     setLoadingFiles(true);
     try {
       // Get pins and areas for labels
@@ -120,7 +111,7 @@ export function FileSelectionDialog({
     } finally {
       setLoadingFiles(false);
     }
-  };
+  }, [toast]);
 
   // Sync selectedProjectId with projectId prop
   useEffect(() => {
@@ -138,13 +129,17 @@ export function FileSelectionDialog({
     }
   }, [allProjects, enableProjectSelector, projectId]);
 
+  // Track the last loaded project to prevent duplicate loads
+  const lastLoadedProjectRef = useRef<string | undefined>(undefined);
+
   // Load files when project changes
   useEffect(() => {
-    if (selectedProjectId && enableProjectSelector) {
+    if (selectedProjectId && enableProjectSelector && lastLoadedProjectRef.current !== selectedProjectId) {
+      lastLoadedProjectRef.current = selectedProjectId;
       loadProjectFiles(selectedProjectId);
       onProjectChange?.(selectedProjectId);
     }
-  }, [selectedProjectId, enableProjectSelector]);
+  }, [selectedProjectId, enableProjectSelector, loadProjectFiles, onProjectChange]);
 
   // Use provided files if project selector disabled
   useEffect(() => {
@@ -350,26 +345,13 @@ export function FileSelectionDialog({
               <Select
                 value={selectedProjectId}
                 onValueChange={(value) => {
-                  console.log('[FileSelectionDialog] Project dropdown changed:', value);
                   setSelectedProjectId(value);
                 }}
                 disabled={loadingProjects}
-                onOpenChange={(isOpen) => {
-                  console.log('[FileSelectionDialog] Dropdown onOpenChange:', isOpen);
-                  console.log('[FileSelectionDialog] Current state:', {
-                    allProjects: allProjects.length,
-                    selectedProjectId,
-                    loadingProjects
-                  });
-                }}
               >
                 <SelectTrigger
                   id="project-selector"
                   className="w-[300px]"
-                  onClick={() => {
-                    console.log('[FileSelectionDialog] SelectTrigger clicked!');
-                    console.log('[FileSelectionDialog] allProjects:', allProjects);
-                  }}
                 >
                   <SelectValue placeholder="Select a project..." />
                 </SelectTrigger>

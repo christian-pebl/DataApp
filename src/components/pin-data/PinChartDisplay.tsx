@@ -444,6 +444,13 @@ export function PinChartDisplay({
   // Haplotype heatmap view state - for EDNA hapl files (default to true for hapl files)
   const [showHaplotypeHeatmap, setShowHaplotypeHeatmap] = useState(isHaplotypeFile && !!haplotypeData);
 
+  // Update showHaplotypeHeatmap when haplotypeData becomes available
+  React.useEffect(() => {
+    if (isHaplotypeFile && haplotypeData && !showHaplotypeHeatmap) {
+      setShowHaplotypeHeatmap(true);
+    }
+  }, [isHaplotypeFile, haplotypeData, showHaplotypeHeatmap]);
+
   // Compact view state - shows only selected parameters without borders
   const [compactView, setCompactView] = useState(initialCompactView ?? false);
 

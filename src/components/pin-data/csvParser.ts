@@ -4,6 +4,7 @@
  */
 
 import { detectSampleIdColumn } from '@/lib/statistical-utils';
+import { extractEdnaDate } from '@/lib/edna-utils';
 
 export interface ParsedDataPoint {
   time: string;
@@ -362,7 +363,22 @@ export async function parseCSVFile(
     }
 
     // Detect sample ID column (for spot-sample data like CROP, CHEM, WQ, EDNA)
-    result.detectedSampleIdColumn = detectSampleIdColumn(rawHeaders);
+    // Special handling for eDNA Meta files: use "Sample Name" column which includes control samples
+    const isEdnaMetaFile = file.name.toLowerCase().includes('edna') &&
+      (file.name.toLowerCase().includes('_meta') || file.name.toLowerCase().includes('_metadata'));
+
+    if (isEdnaMetaFile) {
+      // For eDNA Meta files, prioritize "Sample Name" column which includes all samples including controls
+      const sampleNameCol = rawHeaders.find(h => h.toLowerCase() === 'sample name');
+      result.detectedSampleIdColumn = sampleNameCol || detectSampleIdColumn(rawHeaders);
+      if (sampleNameCol) {
+        diagnosticLogs.push(`🏷️ eDNA Meta file: Using "Sample Name" column for sample IDs`);
+        console.log('[CSV PARSER] eDNA Meta file: Using "Sample Name" column:', sampleNameCol);
+      }
+    } else {
+      result.detectedSampleIdColumn = detectSampleIdColumn(rawHeaders);
+    }
+
     if (result.detectedSampleIdColumn) {
       diagnosticLogs.push(`🏷️ Sample ID column detected: "${result.detectedSampleIdColumn}"`);
       console.log('[CSV PARSER] Detected sample ID column:', result.detectedSampleIdColumn);
@@ -386,7 +402,7 @@ export async function parseCSVFile(
 
     for (let i = dataStartRow; i < lines.length; i++) {
       try {
-        const rowData = parseDataRow(lines[i], rawHeaders, timeColumnIndex, fileType, dateFormat);
+        const rowData = parseDataRow(lines[i], rawHeaders, timeColumnIndex, fileType, dateFormat, file.name);
         if (rowData) {
           result.data.push(rowData);
           result.summary.validRows++;
@@ -501,11 +517,12 @@ function parseDataRow(
   headers: string[],
   timeColumnIndex: number,
   fileType: FileType,
-  dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD'
+  dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD',
+  fileName?: string
 ): ParsedDataPoint | null {
   // Handle CSV with potential quoted values and commas within quotes
   const values = parseCSVLine(line);
-  
+
   if (values.length !== headers.length) {
     // Try to handle mismatched columns gracefully
     if (values.length < headers.length) {
@@ -536,6 +553,22 @@ function parseDataRow(
       dataPoint[header] = processedValue;
     }
   });
+
+  // Special handling for eDNA Meta files without time columns
+  // These files have concentration data but no timestamps - use filename date instead
+  const isEdnaMetaFile = fileName &&
+    fileName.toLowerCase().includes('edna') &&
+    (fileName.toLowerCase().includes('_meta') || fileName.toLowerCase().includes('_metadata'));
+
+  if (!hasValidTime && isEdnaMetaFile && fileName) {
+    // Extract date from filename (e.g., "NORF_EDNAS_ALL_2507" → "2025-07-01")
+    const extractedDate = extractEdnaDate(fileName);
+    if (extractedDate) {
+      dataPoint.time = extractedDate.toISOString();
+      hasValidTime = true;
+      // console.log('[CSV PARSER] eDNA Meta file: Injected synthetic date from filename:', dataPoint.time);
+    }
+  }
 
   // Return null if we don't have a valid time value
   return hasValidTime ? dataPoint : null;
@@ -944,11 +977,10 @@ export async function parseHaplotypeCsv(file: File): Promise<HaplotypeParseResul
 
     // Parse header row
     const headerValues = parseCSVLine(lines[0]);
-    console.log('🧬 HAPL_PARSER: Headers:', headerValues);
 
     // Identify column types
     const metadataColumns = ['score', 'phylum', 'nns', 'redlist_status', 'redlist'];
-    const taxonomyColumns = ['kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species', 'date'];
+    const taxonomyColumns = ['kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species', 'date', 'common'];
     const metadataIndices: Record<string, number> = {};
     const siteIndices: number[] = [];
     let speciesColumnIndex = -1;
@@ -989,8 +1021,6 @@ export async function parseHaplotypeCsv(file: File): Promise<HaplotypeParseResul
 
     // Extract site names
     result.sites = siteIndices.map(idx => headerValues[idx]);
-    console.log('🧬 HAPL_PARSER: Metadata columns:', metadataIndices);
-    console.log('🧬 HAPL_PARSER: Site columns:', result.sites);
 
     // Parse data rows
     for (let i = 1; i < lines.length; i++) {
@@ -1061,9 +1091,6 @@ export async function parseHaplotypeCsv(file: File): Promise<HaplotypeParseResul
 
     // Sort species alphabetically (as specified: 2A)
     result.species.sort((a, b) => a.localeCompare(b));
-
-    console.log('🧬 HAPL_PARSER: Parse complete -', result.summary);
-    console.log('🧬 HAPL_PARSER: First 3 cells:', result.data.slice(0, 3));
 
   } catch (error) {
     result.errors.push(`File parsing error: ${error instanceof Error ? error.message : 'Unknown error'}`);
