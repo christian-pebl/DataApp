@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, FileText, Info, Trash2, Wand2, Pencil, AlertCircle, Sparkles } from 'lucide-react';
+import { Loader2, FileText, Info, Trash2, Wand2, Pencil, AlertCircle, Sparkles, BarChart3, Table, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { logger } from '@/lib/logger';
 import { ColumnOutlierStats } from '@/lib/outlier-detection';
@@ -17,6 +17,12 @@ import { useToast } from '@/hooks/use-toast';
 const OutlierCleanupDialog = dynamic(
   () => import('./OutlierCleanupDialog').then(mod => ({ default: mod.OutlierCleanupDialog })),
   { ssr: false, loading: () => <div className="animate-pulse p-4">Loading outlier cleanup...</div> }
+);
+
+// Lazy load RawCsvViewer - only loads when user clicks "Open Raw"
+const RawCsvViewer = dynamic(
+  () => import('./RawCsvViewer').then(mod => ({ default: mod.RawCsvViewer })),
+  { ssr: false, loading: () => <div className="animate-pulse p-4">Loading CSV viewer...</div> }
 );
 
 interface FileActionsDialogProps {
@@ -60,6 +66,9 @@ export function FileActionsDialog({
   const [showOutlierCleanup, setShowOutlierCleanup] = useState(false);
   const [fileData, setFileData] = useState<Array<Record<string, any>> | null>(null);
   const [isFetchingData, setIsFetchingData] = useState(false);
+
+  // Raw CSV viewer state
+  const [showRawViewer, setShowRawViewer] = useState(false);
 
   // Reset state when dialog opens/closes
   const handleOpenChange = (isOpen: boolean) => {
@@ -273,15 +282,30 @@ export function FileActionsDialog({
           {isDownloading ? (
             <Loader2 className="mr-3 h-4 w-4 animate-spin" />
           ) : (
-            <FileText className="mr-3 h-4 w-4" />
+            <Download className="mr-3 h-4 w-4" />
           )}
           <div className="text-left">
             <div className="font-medium">
-              {isDownloading ? 'Downloading...' : 'Download File'}
+              {isDownloading ? 'Downloading...' : 'Open Plot'}
             </div>
             <div className="text-xs text-muted-foreground">
-              {isDownloading ? 'Please wait' : 'Download and open locally'}
+              {isDownloading ? 'Please wait' : 'View data plots'}
             </div>
+          </div>
+        </Button>
+
+        <Button
+          variant="outline"
+          className="justify-start h-auto py-3"
+          onClick={() => {
+            setShowRawViewer(true);
+            handleOpenChange(false);
+          }}
+        >
+          <Table className="mr-3 h-4 w-4" />
+          <div className="text-left">
+            <div className="font-medium">Open Raw</div>
+            <div className="text-xs text-muted-foreground">View raw CSV data</div>
           </div>
         </Button>
 
@@ -621,6 +645,16 @@ export function FileActionsDialog({
           fileName={file.fileName}
           fileData={fileData}
           onCleanComplete={handleCleanupComplete}
+        />
+      )}
+
+      {/* Raw CSV Viewer Dialog */}
+      {file && (
+        <RawCsvViewer
+          fileId={file.id}
+          fileName={file.fileName}
+          isOpen={showRawViewer}
+          onClose={() => setShowRawViewer(false)}
         />
       )}
     </>

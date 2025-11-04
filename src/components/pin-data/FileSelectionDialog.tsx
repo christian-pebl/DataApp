@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -9,9 +9,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { DataTimeline } from './DataTimeline';
 import { type PinFile } from '@/lib/supabase/file-storage-service';
-import { BarChart3, FileCode, Calendar, MapPin, ChevronDown, X } from 'lucide-react';
+import { fileStorageService } from '@/lib/supabase/file-storage-service';
+import { projectService } from '@/lib/supabase/project-service';
+import { pinAreaService } from '@/lib/supabase/pin-area-service';
+import { type Project, type Pin, type Area } from '@/lib/supabase/types';
+import { useToast } from '@/hooks/use-toast';
+import { BarChart3, FileCode, Calendar, MapPin, ChevronDown, X, Loader2 } from 'lucide-react';
 
 interface FileSelectionDialogProps {
   open: boolean;
@@ -28,6 +35,11 @@ interface FileSelectionDialogProps {
   }>;
   projectId?: string;
   excludeFileNames?: string[];
+  // NEW: Enable cross-project selection
+  enableProjectSelector?: boolean;
+  onProjectChange?: (projectId: string) => void;
+  // NEW: Pass available projects from parent
+  availableProjects?: Array<{ id: string; name: string }>;
 }
 
 export function FileSelectionDialog({
@@ -37,13 +49,119 @@ export function FileSelectionDialog({
   onFileSelected,
   getFileDateRange,
   projectId,
-  excludeFileNames = []
+  excludeFileNames = [],
+  enableProjectSelector = false,
+  onProjectChange,
+  availableProjects = []
 }: FileSelectionDialogProps) {
+  const { toast } = useToast();
+
+  console.log('[FileSelectionDialog] Render - Props:', {
+    enableProjectSelector,
+    projectId,
+    availableProjects: availableProjects.length,
+    filesCount: files.length
+  });
+
+  // Project selector state
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(projectId);
+  const [allProjects, setAllProjects] = useState<Array<{ id: string; name: string }>>(availableProjects);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [projectFiles, setProjectFiles] = useState<(PinFile & { pinLabel: string })[]>(files);
+
   // Filter state
   const [selectedPins, setSelectedPins] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedSuffixes, setSelectedSuffixes] = useState<string[]>([]);
   const [selectedDateRanges, setSelectedDateRanges] = useState<string[]>([]);
+
+  // Update projects when availableProjects prop changes
+  useEffect(() => {
+    console.log('[FileSelectionDialog] availableProjects changed:', availableProjects);
+    if (availableProjects && availableProjects.length > 0) {
+      setAllProjects(availableProjects);
+      console.log('[FileSelectionDialog] Set allProjects:', availableProjects);
+    }
+  }, [availableProjects]);
+
+  // Load files for selected project
+  const loadProjectFiles = async (projectId: string) => {
+    setLoadingFiles(true);
+    try {
+      // Get pins and areas for labels
+      const { pins, areas } = await pinAreaService.getProjectObjects(projectId);
+
+      // Get all files for the project
+      const files = await fileStorageService.getProjectFiles(projectId);
+
+      // Enrich with labels
+      const filesWithLabels = files.map(file => {
+        let label = 'Unknown';
+        if (file.pinId) {
+          const pin = pins.find(p => p.id === file.pinId);
+          label = pin?.label || 'Unknown Pin';
+        } else if (file.areaId) {
+          const area = areas.find(a => a.id === file.areaId);
+          label = area?.label || 'Unknown Area';
+        }
+        return { ...file, pinLabel: label };
+      });
+
+      setProjectFiles(filesWithLabels);
+    } catch (error) {
+      console.error('[FileSelectionDialog] Failed to load project files:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to load files',
+        description: 'Could not load files for this project. Please try again.'
+      });
+      setProjectFiles([]);
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  // Sync selectedProjectId with projectId prop
+  useEffect(() => {
+    if (enableProjectSelector && projectId && selectedProjectId !== projectId) {
+      setSelectedProjectId(projectId);
+    }
+  }, [projectId, enableProjectSelector]);
+
+  // Auto-select default project after projects load
+  useEffect(() => {
+    if (enableProjectSelector && allProjects.length > 0 && !selectedProjectId) {
+      // If projectId prop provided, use it; otherwise use first project
+      const defaultProjectId = projectId || allProjects[0].id;
+      setSelectedProjectId(defaultProjectId);
+    }
+  }, [allProjects, enableProjectSelector, projectId]);
+
+  // Load files when project changes
+  useEffect(() => {
+    if (selectedProjectId && enableProjectSelector) {
+      loadProjectFiles(selectedProjectId);
+      onProjectChange?.(selectedProjectId);
+    }
+  }, [selectedProjectId, enableProjectSelector]);
+
+  // Use provided files if project selector disabled
+  useEffect(() => {
+    if (!enableProjectSelector) {
+      setProjectFiles(files);
+    }
+  }, [files, enableProjectSelector]);
+
+  // Reset filters when project changes
+  useEffect(() => {
+    if (enableProjectSelector) {
+      setSelectedPins([]);
+      setSelectedTypes([]);
+      setSelectedSuffixes([]);
+      setSelectedDateRanges([]);
+    }
+  }, [selectedProjectId, enableProjectSelector]);
 
   // Helper function to check if file matches a type
   const matchesType = (file: PinFile & { pinLabel: string }, type: string): boolean => {
@@ -73,8 +191,8 @@ export function FileSelectionDialog({
 
   // Filter out files that are already in use
   const availableFiles = useMemo(() => {
-    return files.filter(file => !excludeFileNames.includes(file.fileName));
-  }, [files, excludeFileNames]);
+    return projectFiles.filter(file => !excludeFileNames.includes(file.fileName));
+  }, [projectFiles, excludeFileNames]);
 
   // Apply filters
   const filteredFiles = useMemo(() => {
@@ -222,6 +340,71 @@ export function FileSelectionDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* Project Selector */}
+        {enableProjectSelector && (
+          <div className="px-6 py-3 border-b bg-muted/5">
+            <div className="flex items-center gap-3">
+              <Label htmlFor="project-selector" className="text-sm font-semibold whitespace-nowrap">
+                Project:
+              </Label>
+              <Select
+                value={selectedProjectId}
+                onValueChange={(value) => {
+                  console.log('[FileSelectionDialog] Project dropdown changed:', value);
+                  setSelectedProjectId(value);
+                }}
+                disabled={loadingProjects}
+                onOpenChange={(isOpen) => {
+                  console.log('[FileSelectionDialog] Dropdown onOpenChange:', isOpen);
+                  console.log('[FileSelectionDialog] Current state:', {
+                    allProjects: allProjects.length,
+                    selectedProjectId,
+                    loadingProjects
+                  });
+                }}
+              >
+                <SelectTrigger
+                  id="project-selector"
+                  className="w-[300px]"
+                  onClick={() => {
+                    console.log('[FileSelectionDialog] SelectTrigger clicked!');
+                    console.log('[FileSelectionDialog] allProjects:', allProjects);
+                  }}
+                >
+                  <SelectValue placeholder="Select a project..." />
+                </SelectTrigger>
+                <SelectContent position="popper" sideOffset={5} className="z-[9999]">
+                  {loadingProjects && (
+                    <SelectItem value="loading" disabled>
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Loading projects...</span>
+                      </div>
+                    </SelectItem>
+                  )}
+                  {!loadingProjects && allProjects.length === 0 && (
+                    <SelectItem value="empty" disabled>
+                      No projects found
+                    </SelectItem>
+                  )}
+                  {!loadingProjects && allProjects.length > 0 && allProjects.map(project => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {loadingFiles && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>Loading files...</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Filter Bar */}
         <div className="px-6 py-2 border-b bg-muted/10">
           <div className="flex items-center gap-3 flex-wrap text-[11px]">
@@ -243,21 +426,21 @@ export function FileSelectionDialog({
               )}
             </div>
 
-            {/* Pins Filter */}
+            {/* Objects Filter (Pins & Areas) */}
             {uniquePins.length > 0 && (
               <Popover>
                 <PopoverTrigger asChild>
                   <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedPins.length > 0 ? 'bg-green-500/20 border border-green-500/50' : ''}`}>
                     <MapPin className="h-3 w-3 text-green-500" />
                     <span className="font-semibold">{selectedPins.length > 0 ? selectedPins.length : uniquePins.length}</span>
-                    <span className="text-muted-foreground">Pins</span>
+                    <span className="text-muted-foreground">Objects</span>
                     <ChevronDown className="h-3 w-3 text-muted-foreground" />
                   </button>
                 </PopoverTrigger>
                 <PopoverContent className="w-56 p-2" align="start">
                   <div className="space-y-1">
                     <div className="text-xs font-semibold mb-2 flex items-center justify-between">
-                      <span>Filter by Pin</span>
+                      <span>Filter by Object</span>
                       {selectedPins.length > 0 && (
                         <button
                           onClick={() => setSelectedPins([])}

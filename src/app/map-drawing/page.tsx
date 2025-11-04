@@ -83,6 +83,7 @@ import { usePageLoadingState } from '@/hooks/usePageLoadingState';
 import { TopProgressBar } from '@/components/loading/TopProgressBar';
 import { MapSkeleton, MarinePlotsSkeleton, DataTimelineSkeleton } from '@/components/loading/PageSkeletons';
 import { DateInputDialog } from '@/components/pin-data/DateInputDialog';
+import { BatchDateConfirmDialog } from '@/components/pin-data/BatchDateConfirmDialog';
 import { hasTimeColumn, createFileWithDateColumn } from '@/lib/csv-date-injector';
 import { extractEdnaDate, isEdnaMetaFile } from '@/lib/edna-utils';
 
@@ -458,11 +459,16 @@ function MapDrawingPageContent() {
   const [pinFileMetadata, setPinFileMetadata] = useState<Record<string, PinFile[]>>({});
   const [areaFileMetadata, setAreaFileMetadata] = useState<Record<string, PinFile[]>>({});
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
-  const [projectDataFilter, setProjectDataFilter] = useState<'all' | 'pins' | 'areas'>('all');
 
   // Date input dialog state (for files without time columns)
   const [showDateInputDialog, setShowDateInputDialog] = useState(false);
   const [pendingDateFile, setPendingDateFile] = useState<{file: File; targetId: string; targetType: 'pin' | 'area'} | null>(null);
+
+  // Batch date confirmation dialog state
+  const [showBatchDateConfirm, setShowBatchDateConfirm] = useState(false);
+  const [filesWithoutDates, setFilesWithoutDates] = useState<File[]>([]);
+  const [batchDateContext, setBatchDateContext] = useState<{targetId: string; targetType: 'pin' | 'area'} | null>(null);
+  const [isBatchDateMode, setIsBatchDateMode] = useState(false);
 
   // Merged files state (must be declared before availableFilesForPlots)
   // Store as PinFile format for compatibility with timeline and other components
@@ -579,14 +585,38 @@ function MapDrawingPageContent() {
   const allProjectFilesForTimeline = React.useMemo(() => {
     const result: (PinFile & { pinLabel: string })[] = [];
 
+    console.log('[map-drawing] Computing allProjectFilesForTimeline');
+    console.log('[map-drawing] pinFileMetadata keys:', Object.keys(pinFileMetadata));
+    console.log('[map-drawing] areaFileMetadata keys:', Object.keys(areaFileMetadata));
+    console.log('[map-drawing] Total pins with files:', Object.keys(pinFileMetadata).length);
+    console.log('[map-drawing] Total areas with files:', Object.keys(areaFileMetadata).length);
+
+    // Add pin files
     for (const [pinId, files] of Object.entries(pinFileMetadata)) {
       const pin = pins.find(p => p.id === pinId);
       const pinLabel = pin?.label || `Pin ${pinId.substring(0, 8)}...`;
+
+      console.log(`[map-drawing] Pin ${pinLabel}: ${files.length} files`);
 
       files.forEach(file => {
         result.push({
           ...file,
           pinLabel
+        });
+      });
+    }
+
+    // Add area files
+    for (const [areaId, files] of Object.entries(areaFileMetadata)) {
+      const area = areas.find(a => a.id === areaId);
+      const areaLabel = area?.name || `Area ${areaId.substring(0, 8)}...`;
+
+      console.log(`[map-drawing] Area ${areaLabel}: ${files.length} files`);
+
+      files.forEach(file => {
+        result.push({
+          ...file,
+          pinLabel: areaLabel // Using pinLabel field for consistency with interface
         });
       });
     }
@@ -610,8 +640,17 @@ function MapDrawingPageContent() {
       } as PinFile & { pinLabel: string; fileSource: 'merged' });
     });
 
+    console.log('[map-drawing] Total files for timeline:', result.length);
+    console.log('[map-drawing] All file names:', result.map(f => f.fileName));
+
+    // Log EDNA and CHEM files specifically
+    const ednaFiles = result.filter(f => f.fileName.toLowerCase().includes('edna'));
+    const chemFiles = result.filter(f => f.fileName.toLowerCase().includes('chem'));
+    console.log('[map-drawing] EDNA files in timeline:', ednaFiles.length, ednaFiles.map(f => f.fileName));
+    console.log('[map-drawing] CHEM files in timeline:', chemFiles.length, chemFiles.map(f => f.fileName));
+
     return result;
-  }, [pinFileMetadata, pins, mergedFiles]);
+  }, [pinFileMetadata, areaFileMetadata, pins, areas, mergedFiles]);
 
   const [showExploreDropdown, setShowExploreDropdown] = useState(false);
   const [selectedPinForExplore, setSelectedPinForExplore] = useState<string | null>(null);
@@ -930,18 +969,30 @@ function MapDrawingPageContent() {
   const [showMigrationPrompt, setShowMigrationPrompt] = useState(false);
   
   // Check for existing localStorage data on mount
+  // IMPORTANT: Only check after initial data load completes to avoid race conditions
   useEffect(() => {
-    if (typeof window !== 'undefined' && isAuthenticated) {
-      const hasLocalData = 
+    // Wait for initial data load to complete
+    if (typeof window !== 'undefined' && isAuthenticated && !isDataLoading) {
+      const hasLocalData =
         localStorage.getItem('map-drawing-pins') ||
         localStorage.getItem('map-drawing-lines') ||
         localStorage.getItem('map-drawing-areas');
-      
+
+      // Only show migration prompt if there's localStorage data AND no database data
+      // This prevents showing the prompt when restoreUserData hasn't run yet
       if (hasLocalData && pins.length === 0 && lines.length === 0 && areas.length === 0) {
+        console.log('📦 Found localStorage data without database data - showing migration prompt');
         setShowMigrationPrompt(true);
+      } else if (hasLocalData && (pins.length > 0 || lines.length > 0 || areas.length > 0)) {
+        // If we have both localStorage and database data, clear localStorage
+        // (this shouldn't happen with the new code, but just in case)
+        console.log('🧹 Clearing stale localStorage data (database already has data)');
+        localStorage.removeItem('map-drawing-pins');
+        localStorage.removeItem('map-drawing-lines');
+        localStorage.removeItem('map-drawing-areas');
       }
     }
-  }, [isAuthenticated, pins.length, lines.length, areas.length]);
+  }, [isAuthenticated, isDataLoading, pins.length, lines.length, areas.length]);
 
   // Check for authentication and show restore dialog on login
   useEffect(() => {
@@ -1189,7 +1240,7 @@ function MapDrawingPageContent() {
     setIsLoadingMergedFiles(true);
     try {
       const result = await getMergedFilesByProjectAction(projectId);
-      if (result.success && result.data) {
+      if (result && result.success && result.data) {
         // Convert MergedFile to PinFile format for compatibility
         const mergedFilesWithLabel = result.data.map(mf => ({
           id: mf.id,
@@ -1207,7 +1258,7 @@ function MapDrawingPageContent() {
         }));
         setMergedFiles(mergedFilesWithLabel);
       } else {
-        console.error('Failed to fetch merged files:', result.error);
+        console.error('Failed to fetch merged files:', result?.error || 'No result returned');
         setMergedFiles([]);
       }
     } catch (error) {
@@ -3456,39 +3507,149 @@ function MapDrawingPageContent() {
 
   // Handle date confirmation for files without time columns
   const handleDateConfirm = async (date: string) => {
-    if (!pendingDateFile) return;
-
     try {
-      console.log('[DATE-INPUT] User confirmed date:', date, 'for file:', pendingDateFile.file.name);
+      // Batch mode: Add date to all files that need it
+      if (isBatchDateMode && filesWithoutDates.length > 0 && batchDateContext) {
+        console.log('[DATE-INPUT] Batch mode: User confirmed date:', date, 'for', filesWithoutDates.length, 'files');
 
-      // Inject date into file
-      const modifiedFile = await createFileWithDateColumn(pendingDateFile.file, date);
+        // Create modified versions of all files that need dates
+        const modifiedFilesPromises = filesWithoutDates.map(file =>
+          createFileWithDateColumn(file, date)
+        );
+        const modifiedFiles = await Promise.all(modifiedFilesPromises);
 
-      console.log('[DATE-INPUT] Modified file created:', modifiedFile.name, 'Size:', modifiedFile.size);
+        console.log('[DATE-INPUT] Modified', modifiedFiles.length, 'files with date column');
 
-      // Replace the file in pendingUploadFiles
-      const updatedFiles = pendingUploadFiles.map(f =>
-        f.name === pendingDateFile.file.name ? modifiedFile : f
-      );
+        // Create a map for quick lookup
+        const modifiedFilesMap = new Map<string, File>();
+        modifiedFiles.forEach(modifiedFile => {
+          // Find the original file name (remove any potential modifications)
+          const originalFile = filesWithoutDates.find(f => f.name === modifiedFile.name.replace('_with_date', ''));
+          if (originalFile) {
+            modifiedFilesMap.set(originalFile.name, modifiedFile);
+          }
+        });
 
-      // Close dialog
-      setShowDateInputDialog(false);
-      const fileToProcess = pendingDateFile;
-      setPendingDateFile(null);
+        // Replace all files that were modified in pendingUploadFiles
+        const updatedFiles = pendingUploadFiles.map(f => {
+          const modified = modifiedFilesMap.get(f.name);
+          return modified || f;
+        });
 
-      // Continue with upload (skip duplicate check since we already did it)
-      console.log('[DATE-INPUT] Continuing upload with modified file');
-      await handleFileUpload(fileToProcess.targetId, fileToProcess.targetType, updatedFiles, true);
+        // Close dialog and reset batch state
+        setShowDateInputDialog(false);
+        setIsBatchDateMode(false);
+        const contextToProcess = batchDateContext;
+        setFilesWithoutDates([]);
+        setBatchDateContext(null);
+
+        // Continue with upload
+        console.log('[DATE-INPUT] Continuing batch upload with', updatedFiles.length, 'files');
+        await handleFileUpload(contextToProcess.targetId, contextToProcess.targetType, updatedFiles, true);
+      }
+      // Single file mode: Add date to one file
+      else if (pendingDateFile) {
+        console.log('[DATE-INPUT] Single mode: User confirmed date:', date, 'for file:', pendingDateFile.file.name);
+
+        // Inject date into file
+        const modifiedFile = await createFileWithDateColumn(pendingDateFile.file, date);
+
+        console.log('[DATE-INPUT] Modified file created:', modifiedFile.name, 'Size:', modifiedFile.size);
+
+        // Replace the file in pendingUploadFiles
+        const updatedFiles = pendingUploadFiles.map(f =>
+          f.name === pendingDateFile.file.name ? modifiedFile : f
+        );
+
+        // Close dialog
+        setShowDateInputDialog(false);
+        const fileToProcess = pendingDateFile;
+        setPendingDateFile(null);
+
+        // Check if there are more files waiting for dates (different dates mode)
+        if (filesWithoutDates.length > 0 && batchDateContext) {
+          console.log('[DATE-INPUT] More files need dates, showing dialog for next file');
+          // Update pendingUploadFiles to include the modified file
+          setPendingUploadFiles(updatedFiles);
+
+          // Show dialog for next file
+          setPendingDateFile({
+            file: filesWithoutDates[0],
+            targetId: batchDateContext.targetId,
+            targetType: batchDateContext.targetType
+          });
+          setFilesWithoutDates(filesWithoutDates.slice(1));
+          setShowDateInputDialog(true);
+          return; // Don't upload yet, still more files to process
+        }
+
+        // No more files need dates, continue with upload
+        console.log('[DATE-INPUT] Continuing upload with modified file(s)');
+        await handleFileUpload(fileToProcess.targetId, fileToProcess.targetType, updatedFiles, true);
+
+        // Clear batch context if it was set
+        setBatchDateContext(null);
+      }
     } catch (error) {
       console.error('[DATE-INPUT] Error processing date input:', error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Failed to add date column to file'
+        description: 'Failed to add date column to file(s)'
       });
       setShowDateInputDialog(false);
       setPendingDateFile(null);
+      setIsBatchDateMode(false);
+      setFilesWithoutDates([]);
+      setBatchDateContext(null);
     }
+  };
+
+  // Handle batch date confirmation - all files from same date
+  const handleBatchSameDate = () => {
+    console.log('[BATCH-DATE] User confirmed all files are from same date');
+    setShowBatchDateConfirm(false);
+    setIsBatchDateMode(true);
+
+    // Show date input dialog in batch mode
+    // Use first file name as representative
+    const firstFileName = filesWithoutDates[0]?.name || '';
+    setPendingDateFile(filesWithoutDates[0] ? {
+      file: filesWithoutDates[0],
+      targetId: batchDateContext?.targetId || '',
+      targetType: batchDateContext?.targetType || 'pin'
+    } : null);
+    setShowDateInputDialog(true);
+  };
+
+  // Handle batch date confirmation - files from different dates
+  const handleBatchDifferentDates = async () => {
+    console.log('[BATCH-DATE] User wants to add dates individually for', filesWithoutDates.length, 'files');
+    setShowBatchDateConfirm(false);
+
+    if (filesWithoutDates.length > 0 && batchDateContext) {
+      // Show date input dialog for the first file
+      setPendingDateFile({
+        file: filesWithoutDates[0],
+        targetId: batchDateContext.targetId,
+        targetType: batchDateContext.targetType
+      });
+
+      // Remove the first file from the list and keep the rest for later
+      setFilesWithoutDates(filesWithoutDates.slice(1));
+      setShowDateInputDialog(true);
+    }
+  };
+
+  // Handle cancelling batch date upload
+  const handleBatchDateCancel = () => {
+    console.log('[BATCH-DATE] User cancelled batch upload');
+    setShowBatchDateConfirm(false);
+    setFilesWithoutDates([]);
+    setBatchDateContext(null);
+    setPendingUploadFiles([]);
+    setSelectedUploadPinId('');
+    setSelectedUploadAreaId('');
   };
 
   // Handle file upload for pins or areas - now receives target (pin or area) and files
@@ -3550,18 +3711,35 @@ function MapDrawingPageContent() {
     if (!skipDuplicateCheck) {
       console.log('🔍 Checking files for time columns...');
 
+      // First, check ALL files for missing date columns
+      const filesNeedingDates: File[] = [];
       for (const file of csvFiles) {
         const hasTime = await hasTimeColumn(file);
 
         if (!hasTime) {
-          console.log(`⚠️  File "${file.name}" has no time column, requesting date input`);
-
-          // Show date input dialog for this file
-          setPendingDateFile({ file, targetId, targetType });
-          setShowDateInputDialog(true);
-          return; // Pause upload until user provides date
+          console.log(`⚠️  File "${file.name}" has no time column`);
+          filesNeedingDates.push(file);
         } else {
           console.log(`✅ File "${file.name}" has time column`);
+        }
+      }
+
+      // Handle files that need dates
+      if (filesNeedingDates.length > 0) {
+        // Multiple files without dates - show batch confirmation dialog
+        if (filesNeedingDates.length > 1) {
+          console.log(`⚠️  ${filesNeedingDates.length} files need date columns, showing batch confirmation`);
+          setFilesWithoutDates(filesNeedingDates);
+          setBatchDateContext({ targetId, targetType });
+          setShowBatchDateConfirm(true);
+          return; // Pause upload until user decides
+        }
+        // Single file without date - show date input dialog directly
+        else {
+          console.log(`⚠️  File "${filesNeedingDates[0].name}" has no time column, requesting date input`);
+          setPendingDateFile({ file: filesNeedingDates[0], targetId, targetType });
+          setShowDateInputDialog(true);
+          return; // Pause upload until user provides date
         }
       }
 
@@ -6684,6 +6862,7 @@ function MapDrawingPageContent() {
                     getFileDateRange={getFileDateRange}
                     projectId={currentProjectContext || activeProjectId}
                     onRefreshFiles={reloadProjectFiles}
+                    availableProjects={Object.entries(dynamicProjects).map(([id, project]) => ({ id, name: project.name }))}
                   />
                 );
               })()
@@ -6717,7 +6896,6 @@ function MapDrawingPageContent() {
           setShowUploadPinSelector(false);
           setSelectedUploadPinId('');
           setPendingUploadFiles([]);
-          setProjectDataFilter('all');
         }
         setShowProjectDataDialog(open);
       }}>
@@ -6763,48 +6941,9 @@ function MapDrawingPageContent() {
             </div>
           </DialogHeader>
 
-          {/* Filter Buttons */}
-          <div className="flex-shrink-0 px-6 py-3 border-b">
-            <div className="flex gap-2">
-              <Button
-                variant={projectDataFilter === 'all' ? 'default' : 'outline'}
-                size="sm"
-                className="h-7 text-xs px-3"
-                onClick={() => setProjectDataFilter('all')}
-              >
-                All Files
-              </Button>
-              <Button
-                variant={projectDataFilter === 'pins' ? 'default' : 'outline'}
-                size="sm"
-                className="h-7 text-xs px-3 flex items-center gap-1.5"
-                onClick={() => setProjectDataFilter('pins')}
-              >
-                <MapPin className="h-3 w-3 text-blue-500" />
-                Pin Files
-              </Button>
-              <Button
-                variant={projectDataFilter === 'areas' ? 'default' : 'outline'}
-                size="sm"
-                className="h-7 text-xs px-3 flex items-center gap-1.5"
-                onClick={() => setProjectDataFilter('areas')}
-              >
-                <Square className="h-3 w-3 text-red-500" />
-                Area Files
-              </Button>
-            </div>
-          </div>
-
           <div className="flex-1 overflow-y-auto">
             {(() => {
               let projectFiles = getProjectFiles(currentProjectContext || activeProjectId);
-
-              // Apply filter
-              if (projectDataFilter === 'pins') {
-                projectFiles = projectFiles.filter(file => file.pinId);
-              } else if (projectDataFilter === 'areas') {
-                projectFiles = projectFiles.filter(file => file.areaId);
-              }
 
               const groupedFiles = groupFilesByType(projectFiles);
 
@@ -7852,6 +7991,17 @@ function MapDrawingPageContent() {
       </Dialog>
 
       {/* Date Input Dialog - for files without time columns */}
+      {/* Batch Date Confirmation Dialog */}
+      <BatchDateConfirmDialog
+        open={showBatchDateConfirm}
+        onOpenChange={setShowBatchDateConfirm}
+        fileNames={filesWithoutDates.map(f => f.name)}
+        onConfirmSameDate={handleBatchSameDate}
+        onConfirmDifferentDates={handleBatchDifferentDates}
+        onCancel={handleBatchDateCancel}
+      />
+
+      {/* Date Input Dialog */}
       <DateInputDialog
         open={showDateInputDialog}
         onOpenChange={setShowDateInputDialog}
@@ -7865,7 +8015,10 @@ function MapDrawingPageContent() {
         onCancel={() => {
           setShowDateInputDialog(false);
           setPendingDateFile(null);
+          setIsBatchDateMode(false);
         }}
+        isBatchMode={isBatchDateMode}
+        batchFileCount={filesWithoutDates.length}
       />
 
       {/* Project Settings Dialog */}

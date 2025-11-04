@@ -482,6 +482,22 @@ export class MapDataService {
     const updatedPin = data[0]
     console.log('MapDataService: Pin updated successfully:', updatedPin)
 
+    // If project_id was updated, cascade the change to associated files
+    if (updates.projectId !== undefined) {
+      console.log('MapDataService: Cascading project_id update to pin files')
+      const { error: fileUpdateError } = await this.supabase
+        .from('pin_files')
+        .update({ project_id: updates.projectId || null })
+        .eq('pin_id', id)
+
+      if (fileUpdateError) {
+        console.error('MapDataService: Failed to cascade project_id to files:', fileUpdateError)
+        // Don't throw error - pin update succeeded, file update is supplementary
+      } else {
+        console.log('MapDataService: Successfully cascaded project_id to files')
+      }
+    }
+
     // Handle tag updates if provided
     if (updates.tagIds !== undefined) {
       // Delete existing tag associations
@@ -947,6 +963,22 @@ export class MapDataService {
 
     if (!data) {
       throw new Error('No data returned from update operation');
+    }
+
+    // If project_id was updated, cascade the change to associated files
+    if (updates.projectId !== undefined) {
+      console.log('MapDataService: Cascading project_id update to area files')
+      const { error: fileUpdateError } = await this.supabase
+        .from('pin_files')
+        .update({ project_id: updates.projectId || null })
+        .eq('area_id', id)
+
+      if (fileUpdateError) {
+        console.error('MapDataService: Failed to cascade project_id to files:', fileUpdateError)
+        // Don't throw error - area update succeeded, file update is supplementary
+      } else {
+        console.log('MapDataService: Successfully cascaded project_id to area files')
+      }
     }
 
     // Handle tag updates if provided

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { format, startOfMonth, endOfMonth, eachMonthOfInterval, differenceInDays, parseISO, isValid, getYear } from 'date-fns';
-import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText, Pencil, Clock, Loader2, Layers, Combine, Upload, AlertCircle, Plus, CheckCircle2 } from 'lucide-react';
+import { Info, Calendar, BarChart3, Trash2, Check, X, PlayCircle, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, FileText, Pencil, Clock, Loader2, Layers, Combine, Upload, AlertCircle, Plus, CheckCircle2, Table } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,12 @@ import type { MergedFile } from '@/lib/supabase/merged-files-service';
 const MergeFilesDialog = dynamic(
   () => import('./MergeFilesDialog').then(mod => ({ default: mod.MergeFilesDialog })),
   { ssr: false, loading: () => <div className="animate-pulse">Loading merge dialog...</div> }
+);
+
+// Lazy load RawCsvViewer - only loads when user clicks "Open Raw"
+const RawCsvViewer = dynamic(
+  () => import('@/components/data-explorer/RawCsvViewer').then(mod => ({ default: mod.RawCsvViewer })),
+  { ssr: false, loading: () => <div className="animate-pulse p-4">Loading CSV viewer...</div> }
 );
 
 interface DataTimelineProps {
@@ -226,6 +232,10 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
   const [mergeGroupKey, setMergeGroupKey] = useState<string | null>(null);
   const [mergeFiles, setMergeFiles] = useState<FileWithDateRange[]>([]);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
+
+  // Raw CSV viewer state
+  const [showRawViewer, setShowRawViewer] = useState(false);
+  const [selectedFileForRaw, setSelectedFileForRaw] = useState<{ id: string; name: string } | null>(null);
 
   // Toggle file selection for multi-file mode
   const toggleFileSelection = (fileId: string) => {
@@ -1002,16 +1012,58 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
 
                         {/* File name - Clickable with menu */}
                         <td className="pr-2 align-middle">
-                          <Popover open={openMenuFileId === file.id} onOpenChange={(open) => setOpenMenuFileId(open ? file.id : null)}>
-                            <PopoverTrigger asChild>
-                              <button
-                                className="font-mono truncate text-left hover:text-primary hover:underline transition-colors cursor-pointer w-full text-left"
-                                title={`Click for actions on ${file.fileName}`}
+                          {renamingFileId === file.id ? (
+                            // Show rename input field when renaming
+                            <div className="flex items-center gap-1">
+                              <Input
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleRenameFile(fileWithDate.file);
+                                  } else if (e.key === 'Escape') {
+                                    setRenamingFileId(null);
+                                  }
+                                }}
+                                className="h-7 text-xs font-mono"
+                                autoFocus
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 shrink-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRenameFile(fileWithDate.file);
+                                }}
                               >
-                                {file.fileName.replace(/^FPOD_/, '')}
-                              </button>
-                            </PopoverTrigger>
-                            <PopoverContent className="min-w-[400px] p-0" align="start">
+                                <Check className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 shrink-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setRenamingFileId(null);
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ) : (
+                            // Show file name with menu when not renaming
+                            <Popover open={openMenuFileId === file.id} onOpenChange={(open) => setOpenMenuFileId(open ? file.id : null)}>
+                              <PopoverTrigger asChild>
+                                <button
+                                  className="font-mono truncate text-left hover:text-primary hover:underline transition-colors cursor-pointer w-full text-left"
+                                  title={`Click for actions on ${file.fileName}`}
+                                >
+                                  {file.fileName.replace(/^FPOD_/, '')}
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent className="min-w-[400px] p-0" align="start">
                               <div className="flex flex-col">
                                 {/* Open option */}
                                 <button
@@ -1025,6 +1077,22 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                                   <div>
                                     <div className="font-medium">Open</div>
                                     <div className="text-xs text-muted-foreground">View data plots</div>
+                                  </div>
+                                </button>
+
+                                {/* Open Raw option */}
+                                <button
+                                  onClick={() => {
+                                    setOpenMenuFileId(null);
+                                    setSelectedFileForRaw({ id: file.id, name: file.fileName });
+                                    setShowRawViewer(true);
+                                  }}
+                                  className="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                                >
+                                  <Table className="h-4 w-4" />
+                                  <div>
+                                    <div className="font-medium">Open Raw</div>
+                                    <div className="text-xs text-muted-foreground">View raw CSV data</div>
                                   </div>
                                 </button>
 
@@ -1140,60 +1208,19 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
 
                                 {/* Rename option */}
                                 {onRenameFile && (
-                                  renamingFileId === file.id ? (
-                                    <div className="flex items-center gap-1 px-3 py-2.5">
-                                      <Input
-                                        value={renameValue}
-                                        onChange={(e) => setRenameValue(e.target.value)}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') {
-                                            handleRenameFile(fileWithDate.file);
-                                          } else if (e.key === 'Escape') {
-                                            setRenamingFileId(null);
-                                          }
-                                        }}
-                                        className="h-7 text-xs min-w-[320px]"
-                                        autoFocus
-                                        onClick={(e) => e.stopPropagation()}
-                                      />
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-7 w-7 p-0"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleRenameFile(fileWithDate.file);
-                                        }}
-                                      >
-                                        <Check className="h-3 w-3" />
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-7 w-7 p-0"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setRenamingFileId(null);
-                                        }}
-                                      >
-                                        <X className="h-3 w-3" />
-                                      </Button>
+                                  <button
+                                    onClick={() => {
+                                      setOpenMenuFileId(null);
+                                      startRename(fileWithDate.file);
+                                    }}
+                                    className="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                    <div>
+                                      <div className="font-medium">Rename</div>
+                                      <div className="text-xs text-muted-foreground">Change file name</div>
                                     </div>
-                                  ) : (
-                                    <button
-                                      onClick={() => {
-                                        setOpenMenuFileId(null);
-                                        startRename(fileWithDate.file);
-                                      }}
-                                      className="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                      <div>
-                                        <div className="font-medium">Rename</div>
-                                        <div className="text-xs text-muted-foreground">Change file name</div>
-                                      </div>
-                                    </button>
-                                  )
+                                  </button>
                                 )}
 
                                 <Separator />
@@ -1240,6 +1267,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                               </div>
                             </PopoverContent>
                           </Popover>
+                          )}
                         </td>
 
                         {/* Start Date */}
@@ -1558,13 +1586,55 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                         )}
 
                         {/* File name with popover menu */}
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <button className="text-xs font-mono flex-1 truncate text-left hover:text-primary hover:underline transition-colors cursor-pointer">
-                              {file.fileName.replace(/^FPOD_/, '')}
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent className="min-w-[400px] p-0" align="start">
+                        {renamingFileId === fileWithDate.file.id ? (
+                          // Show rename input field when renaming
+                          <div className="flex items-center gap-1 flex-1">
+                            <Input
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleRenameFile(fileWithDate.file);
+                                } else if (e.key === 'Escape') {
+                                  setRenamingFileId(null);
+                                }
+                              }}
+                              className="h-6 text-xs font-mono"
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 shrink-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRenameFile(fileWithDate.file);
+                              }}
+                            >
+                              <Check className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 shrink-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRenamingFileId(null);
+                              }}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          // Show file name with menu when not renaming
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button className="text-xs font-mono flex-1 truncate text-left hover:text-primary hover:underline transition-colors cursor-pointer">
+                                {file.fileName.replace(/^FPOD_/, '')}
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="min-w-[400px] p-0" align="start">
                             <div className="flex flex-col">
                               {/* Open option */}
                               <button
@@ -1577,57 +1647,16 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
 
                               {/* Rename option */}
                               {onRenameFile && (
-                                renamingFileId === fileWithDate.file.id ? (
-                                  <div className="flex items-center gap-1 px-3 py-2 border-b">
-                                    <Input
-                                      value={renameValue}
-                                      onChange={(e) => setRenameValue(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          handleRenameFile(fileWithDate.file);
-                                        } else if (e.key === 'Escape') {
-                                          setRenamingFileId(null);
-                                        }
-                                      }}
-                                      className="h-6 text-xs min-w-[320px]"
-                                      autoFocus
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-6 w-6 p-0"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleRenameFile(fileWithDate.file);
-                                      }}
-                                    >
-                                      <Check className="h-3 w-3" />
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-6 w-6 p-0"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setRenamingFileId(null);
-                                      }}
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      startRename(fileWithDate.file);
-                                    }}
-                                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                    <span>Rename</span>
-                                  </button>
-                                )
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startRename(fileWithDate.file);
+                                  }}
+                                  className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                  <span>Rename</span>
+                                </button>
                               )}
 
                               {/* Info option */}
@@ -1724,6 +1753,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                             </div>
                           </PopoverContent>
                         </Popover>
+                        )}
 
                         {/* Duration badge */}
                         {(() => {
@@ -1813,6 +1843,16 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
           if (onDatesUpdated) onDatesUpdated();
         }}
       />
+
+      {/* Raw CSV Viewer Dialog */}
+      {selectedFileForRaw && (
+        <RawCsvViewer
+          fileId={selectedFileForRaw.id}
+          fileName={selectedFileForRaw.name}
+          isOpen={showRawViewer}
+          onClose={() => setShowRawViewer(false)}
+        />
+      )}
     </div>
   );
 }

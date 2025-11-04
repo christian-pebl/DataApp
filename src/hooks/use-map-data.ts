@@ -336,10 +336,9 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
         // Use the database-generated pin with its ID
         newPin = createdPin
 
-        // Update local state with database pin
+        // Update local state with database pin (no localStorage for authenticated users)
         const updatedPins = [...pins, newPin]
         setPins(updatedPins)
-        saveToLocalStorage('map-drawing-pins', updatedPins)
       } catch (error) {
         console.error('Error syncing pin to database:', {
           error,
@@ -371,11 +370,15 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
 
   const updatePin = useCallback(async (id: string, updates: Partial<Omit<Pin, 'id'>>) => {
     // Update local state
-    const updatedPins = pins.map(pin => 
+    const updatedPins = pins.map(pin =>
       pin.id === id ? { ...pin, ...updates } : pin
     )
     setPins(updatedPins)
-    saveToLocalStorage('map-drawing-pins', updatedPins)
+
+    // Only save to localStorage if not authenticated
+    if (!isAuthenticated || !enableSync) {
+      saveToLocalStorage('map-drawing-pins', updatedPins)
+    }
 
     // Sync to database if online and authenticated
     if (enableSync && isAuthenticated && isOnline) {
@@ -422,7 +425,11 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
     // Update local state
     const updatedPins = pins.filter(pin => pin.id !== id)
     setPins(updatedPins)
-    saveToLocalStorage('map-drawing-pins', updatedPins)
+
+    // Only save to localStorage if not authenticated
+    if (!isAuthenticated || !enableSync) {
+      saveToLocalStorage('map-drawing-pins', updatedPins)
+    }
 
     // Sync to database if online and authenticated
     if (enableSync && isAuthenticated && isOnline) {
@@ -455,9 +462,9 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
         // Use the database-generated line with its ID
         newLine = createdLine
 
+        // Update local state (no localStorage for authenticated users)
         const updatedLines = [...lines, newLine]
         setLines(updatedLines)
-        saveToLocalStorage('map-drawing-lines', updatedLines)
       } catch (error) {
         console.error('Error syncing line to database:', error)
         // Fall back to local-only creation with UUID
@@ -485,11 +492,15 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
   }, [lines, enableSync, isAuthenticated, isOnline, saveToLocalStorage, toast])
 
   const updateLine = useCallback(async (id: string, updates: Partial<Omit<Line, 'id'>>) => {
-    const updatedLines = lines.map(line => 
+    const updatedLines = lines.map(line =>
       line.id === id ? { ...line, ...updates } : line
     )
     setLines(updatedLines)
-    saveToLocalStorage('map-drawing-lines', updatedLines)
+
+    // Only save to localStorage if not authenticated
+    if (!isAuthenticated || !enableSync) {
+      saveToLocalStorage('map-drawing-lines', updatedLines)
+    }
 
     if (enableSync && isAuthenticated && isOnline) {
       try {
@@ -508,7 +519,11 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
   const deleteLine = useCallback(async (id: string) => {
     const updatedLines = lines.filter(line => line.id !== id)
     setLines(updatedLines)
-    saveToLocalStorage('map-drawing-lines', updatedLines)
+
+    // Only save to localStorage if not authenticated
+    if (!isAuthenticated || !enableSync) {
+      saveToLocalStorage('map-drawing-lines', updatedLines)
+    }
 
     if (enableSync && isAuthenticated && isOnline) {
       try {
@@ -539,9 +554,9 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
         // Use the database-generated area with its ID
         newArea = createdArea
 
+        // Update local state (no localStorage for authenticated users)
         const updatedAreas = [...areas, newArea]
         setAreas(updatedAreas)
-        saveToLocalStorage('map-drawing-areas', updatedAreas)
       } catch (error) {
         console.error('Error syncing area to database:', error)
 
@@ -567,11 +582,15 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
   }, [areas, enableSync, isAuthenticated, isOnline, saveToLocalStorage, toast])
 
   const updateArea = useCallback(async (id: string, updates: Partial<Omit<Area, 'id'>>) => {
-    const updatedAreas = areas.map(area => 
+    const updatedAreas = areas.map(area =>
       area.id === id ? { ...area, ...updates } : area
     )
     setAreas(updatedAreas)
-    saveToLocalStorage('map-drawing-areas', updatedAreas)
+
+    // Only save to localStorage if not authenticated
+    if (!isAuthenticated || !enableSync) {
+      saveToLocalStorage('map-drawing-areas', updatedAreas)
+    }
 
     if (enableSync && isAuthenticated && isOnline) {
       try {
@@ -590,7 +609,11 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
   const deleteArea = useCallback(async (id: string) => {
     const updatedAreas = areas.filter(area => area.id !== id)
     setAreas(updatedAreas)
-    saveToLocalStorage('map-drawing-areas', updatedAreas)
+
+    // Only save to localStorage if not authenticated
+    if (!isAuthenticated || !enableSync) {
+      saveToLocalStorage('map-drawing-areas', updatedAreas)
+    }
 
     if (enableSync && isAuthenticated && isOnline) {
       try {
@@ -613,7 +636,11 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
       pinIds.includes(pin.id) ? { ...pin, ...updates } : pin
     )
     setPins(updatedPins)
-    saveToLocalStorage('map-drawing-pins', updatedPins)
+
+    // Only save to localStorage if not authenticated
+    if (!isAuthenticated || !enableSync) {
+      saveToLocalStorage('map-drawing-pins', updatedPins)
+    }
 
     // Sync to database if online and authenticated
     if (enableSync && isAuthenticated && isOnline) {
@@ -636,7 +663,11 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
       lineIds.includes(line.id) ? { ...line, ...updates } : line
     )
     setLines(updatedLines)
-    saveToLocalStorage('map-drawing-lines', updatedLines)
+
+    // Only save to localStorage if not authenticated
+    if (!isAuthenticated || !enableSync) {
+      saveToLocalStorage('map-drawing-lines', updatedLines)
+    }
 
     // Sync to database if online and authenticated
     if (enableSync && isAuthenticated && isOnline) {
@@ -659,7 +690,11 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
       areaIds.includes(area.id) ? { ...area, ...updates } : area
     )
     setAreas(updatedAreas)
-    saveToLocalStorage('map-drawing-areas', updatedAreas)
+
+    // Only save to localStorage if not authenticated
+    if (!isAuthenticated || !enableSync) {
+      saveToLocalStorage('map-drawing-areas', updatedAreas)
+    }
 
     // Sync to database if online and authenticated
     if (enableSync && isAuthenticated && isOnline) {

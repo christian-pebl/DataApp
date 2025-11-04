@@ -1035,3 +1035,144 @@ export async function uploadCleanedFileAction(
     };
   }
 }
+
+/**
+ * Fetch raw CSV data without any parsing or transformation
+ * Returns data as 2D array of strings for raw display
+ */
+export async function fetchRawCsvAction(fileId: string): Promise<{
+  success: boolean
+  data?: { headers: string[]; rows: string[][] }
+  error?: string
+}> {
+  try {
+    console.log('[Data Explorer Actions] Fetching raw CSV data:', fileId);
+
+    const supabase = await createClient();
+
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error('[Data Explorer Actions] Authentication error:', authError);
+      return {
+        success: false,
+        error: 'Authentication required'
+      };
+    }
+
+    // Get file metadata to verify ownership
+    const { data: fileData, error: getError } = await supabase
+      .from('pin_files')
+      .select('pin_id, area_id, file_path, file_name')
+      .eq('id', fileId)
+      .single();
+
+    if (getError || !fileData) {
+      console.error('[Data Explorer Actions] Error fetching file:', getError);
+      return {
+        success: false,
+        error: 'File not found'
+      };
+    }
+
+    console.log('[Data Explorer Actions] File to fetch raw data from:', fileData.file_name);
+
+    // Verify user owns the pin or area associated with this file
+    let ownershipVerified = false;
+
+    if (fileData.pin_id) {
+      const { data: pinData, error: pinError } = await supabase
+        .from('pins')
+        .select('user_id')
+        .eq('id', fileData.pin_id)
+        .single();
+
+      if (!pinError && pinData && pinData.user_id === user.id) {
+        ownershipVerified = true;
+      }
+    } else if (fileData.area_id) {
+      const { data: areaData, error: areaError } = await supabase
+        .from('areas')
+        .select('user_id')
+        .eq('id', fileData.area_id)
+        .single();
+
+      if (!areaError && areaData && areaData.user_id === user.id) {
+        ownershipVerified = true;
+      }
+    }
+
+    if (!ownershipVerified) {
+      console.error('[Data Explorer Actions] User does not own this file');
+      return {
+        success: false,
+        error: 'You do not have permission to access this file'
+      };
+    }
+
+    if (!fileData.file_path) {
+      console.error('[Data Explorer Actions] No file path found');
+      return {
+        success: false,
+        error: 'File path not found'
+      };
+    }
+
+    // Download file from storage
+    const { data: blob, error: downloadError } = await supabase.storage
+      .from('pin-files')
+      .download(fileData.file_path);
+
+    if (downloadError || !blob) {
+      console.error('[Data Explorer Actions] Error downloading file:', downloadError);
+      return {
+        success: false,
+        error: downloadError?.message || 'Failed to download file'
+      };
+    }
+
+    console.log('[Data Explorer Actions] File downloaded, parsing raw CSV...');
+
+    // Parse CSV with minimal processing - keep as strings
+    const Papa = (await import('papaparse')).default;
+    const text = await blob.text();
+
+    const parseResult = Papa.parse(text, {
+      header: false,           // Don't convert to objects
+      dynamicTyping: false,    // Keep everything as strings
+      skipEmptyLines: true,
+    });
+
+    if (parseResult.errors.length > 0) {
+      console.warn('[Data Explorer Actions] CSV parsing warnings:', parseResult.errors);
+      // Don't fail on warnings, continue with data
+    }
+
+    const allRows = parseResult.data as string[][];
+
+    if (allRows.length === 0) {
+      return {
+        success: false,
+        error: 'File is empty'
+      };
+    }
+
+    const headers = allRows[0];
+    const rows = allRows.slice(1);
+
+    console.log('[Data Explorer Actions] Raw CSV parsed successfully, rows:', rows.length);
+
+    return {
+      success: true,
+      data: { headers, rows }
+    };
+  } catch (error) {
+    console.error('[Data Explorer Actions] Error fetching raw CSV data:', error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch raw CSV data'
+    };
+  }
+}

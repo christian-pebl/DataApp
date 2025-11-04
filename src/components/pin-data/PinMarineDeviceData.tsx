@@ -134,11 +134,12 @@ interface PinMarineDeviceDataProps {
   }>;
   projectId?: string;
   onRefreshFiles?: () => Promise<void>; // Callback to refresh file list when dialog opens
+  availableProjects?: Array<{ id: string; name: string }>; // Available projects for cross-project selection
   // Auto-load saved plot view
   initialViewToLoad?: string; // Plot view ID to auto-load on mount
 }
 
-export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, multiFileMergeMode = 'sequential', objectLocation, objectName, allProjectFilesForTimeline, getFileDateRange, projectId, onRefreshFiles, initialViewToLoad }: PinMarineDeviceDataProps) {
+export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, multiFileMergeMode = 'sequential', objectLocation, objectName, allProjectFilesForTimeline, getFileDateRange, projectId, onRefreshFiles, availableProjects, initialViewToLoad }: PinMarineDeviceDataProps) {
   const { toast } = useToast();
 
   // State for managing plots with file data
@@ -2498,6 +2499,11 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
           getFileDateRange={getFileDateRange}
           projectId={projectId}
           excludeFileNames={plots.filter(p => p.type === 'device').map(p => p.fileName!)}
+          enableProjectSelector={true}
+          availableProjects={availableProjects}
+          onProjectChange={(newProjectId) => {
+            console.log('[PinMarineDeviceData] User selected project:', newProjectId);
+          }}
           onFileSelected={async (file) => {
             // Map the file to FileOption format for download handling
             const fileOption = {

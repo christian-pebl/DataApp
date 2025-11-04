@@ -323,13 +323,12 @@ export class DataSyncService {
         tags: tags.length
       })
 
-      // Save to localStorage for offline access
+      // DO NOT save to localStorage after restoring from database
+      // This was causing duplicate data issues - localStorage should only be used
+      // for truly offline/guest users, not authenticated users with database access
+
+      // Update last sync timestamp for reference
       if (typeof window !== 'undefined') {
-        localStorage.setItem('map-drawing-pins', JSON.stringify(pins))
-        localStorage.setItem('map-drawing-lines', JSON.stringify(lines))
-        localStorage.setItem('map-drawing-areas', JSON.stringify(areas))
-        localStorage.setItem('map-drawing-projects', JSON.stringify(projects))
-        localStorage.setItem('map-drawing-tags', JSON.stringify(tags))
         localStorage.setItem('map-drawing-last-sync', new Date().toISOString())
       }
 

@@ -163,6 +163,35 @@ const nextConfig: NextConfig = {
 
   // Security headers
   async headers() {
+    const isDev = process.env.NODE_ENV === 'development';
+
+    // Development CSP - more permissive for Turbopack/HMR
+    const devCSP = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "img-src 'self' data: https: blob:",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mapbox.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://*.basemaps.cartocdn.com ws://localhost:* ws://127.0.0.1:*",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; ');
+
+    // Production CSP - stricter security
+    const prodCSP = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'", // Only unsafe-inline for Next.js production
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "img-src 'self' data: https: blob:",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mapbox.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://*.basemaps.cartocdn.com",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "upgrade-insecure-requests",
+    ].join('; ');
+
     return [
       {
         source: '/:path*',
@@ -189,17 +218,7 @@ const nextConfig: NextConfig = {
           },
           {
             key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline'", // Next.js requires unsafe-eval and unsafe-inline
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' data: https://fonts.gstatic.com", // Added data: for data URI fonts
-              "img-src 'self' data: https: blob:",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mapbox.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://*.basemaps.cartocdn.com",
-              "frame-ancestors 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-            ].join('; '),
+            value: isDev ? devCSP : prodCSP,
           },
         ],
       },

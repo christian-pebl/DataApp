@@ -30,6 +30,11 @@ export interface AggregatedTaxonomyData {
  * Identifies sample columns (non-taxonomy columns and non-metadata columns)
  * Taxonomy columns: kingdom, phylum, class, order, family, genus, species
  * Metadata columns: date, time, sample, replicate, etc.
+ *
+ * Intelligently handles various naming conventions:
+ * - ALGA style: ALGA_C_S, ALGA_F_L (short abbreviations)
+ * - NORF style: NORF_Control_1, NORF_Farm_1 (full keywords)
+ * - Other patterns with Control/Farm or _C_/_F_ identifiers
  */
 function identifySampleColumns(headers: string[]): string[] {
   const taxonomyColumns = ['kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species'];
@@ -37,10 +42,33 @@ function identifySampleColumns(headers: string[]): string[] {
 
   const sampleColumns = headers.filter(h => {
     const normalized = h.toLowerCase().trim();
-    return !taxonomyColumns.includes(normalized) && !metadataColumns.includes(normalized);
+
+    // Exclude exact matches to taxonomy and metadata columns
+    if (taxonomyColumns.includes(normalized) || metadataColumns.includes(normalized)) {
+      return false;
+    }
+
+    // Include columns that look like sample identifiers
+    // Patterns: PROJECT_Category_ID, PROJECT_C_ID, PROJECT_F_ID, etc.
+    const hasSamplePattern = /^[A-Z]+_/.test(h); // Starts with capital letters and underscore
+
+    if (hasSamplePattern) {
+      console.log('[eDNA Taxonomy] Sample column detected:', h);
+      return true;
+    }
+
+    // Fallback: include if not explicitly excluded
+    return true;
   });
 
   console.log('[eDNA Taxonomy] Identified sample columns:', sampleColumns);
+  console.log('[eDNA Taxonomy] Total sample columns:', sampleColumns.length);
+
+  // Validation: warn if no sample columns found
+  if (sampleColumns.length === 0) {
+    console.warn('[eDNA Taxonomy] ⚠️  No sample columns found! Headers:', headers);
+  }
+
   return sampleColumns;
 }
 
@@ -98,6 +126,14 @@ export function parseTaxonomyData(
   const phylumColName = headers[phylumColIndex];
   console.log(`[eDNA Taxonomy] Using phylum column: "${phylumColName}"`);
   console.log(`[eDNA Taxonomy] Sample columns (${sampleColumns.length}):`, sampleColumns);
+
+  // Validate sample column naming conventions
+  const namingPatterns = {
+    algaStyle: sampleColumns.filter(s => /_C_|_F_/.test(s)).length,
+    norfStyle: sampleColumns.filter(s => /Control|Farm/i.test(s)).length,
+    other: sampleColumns.filter(s => !/_C_|_F_/.test(s) && !/Control|Farm/i.test(s)).length
+  };
+  console.log(`[eDNA Taxonomy] Naming pattern analysis:`, namingPatterns);
 
   for (const row of data) {
     // Skip empty rows
@@ -251,4 +287,54 @@ export function processTaxonomyFile(
  */
 export function isTaxonomyFile(fileName: string): boolean {
   return fileName.toLowerCase().endsWith('_taxo.csv');
+}
+
+/**
+ * Categorize a sample as Control or Farm based on naming convention
+ * Handles multiple patterns:
+ * - ALGA style: contains _C_ or _F_
+ * - NORF style: contains "Control" or "Farm" keywords
+ *
+ * @param sampleName - Sample column name
+ * @returns 'control', 'farm', or 'unknown'
+ */
+export function categorizeSample(sampleName: string): 'control' | 'farm' | 'unknown' {
+  const lower = sampleName.toLowerCase();
+
+  // Check for control patterns
+  if (lower.includes('_c_') || lower.includes('control')) {
+    return 'control';
+  }
+
+  // Check for farm patterns
+  if (lower.includes('_f_') || lower.includes('farm')) {
+    return 'farm';
+  }
+
+  return 'unknown';
+}
+
+/**
+ * Group samples by category (control vs farm)
+ *
+ * @param samples - Array of sample names
+ * @returns Object with control and farm sample arrays
+ */
+export function groupSamplesByCategory(samples: string[]): {
+  control: string[];
+  farm: string[];
+  unknown: string[];
+} {
+  const grouped = {
+    control: [] as string[],
+    farm: [] as string[],
+    unknown: [] as string[]
+  };
+
+  for (const sample of samples) {
+    const category = categorizeSample(sample);
+    grouped[category].push(sample);
+  }
+
+  return grouped;
 }

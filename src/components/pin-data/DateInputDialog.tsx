@@ -21,6 +21,9 @@ interface DateInputDialogProps {
   suggestedDate?: Date | null;
   onDateConfirm: (date: string) => void;
   onCancel: () => void;
+  // Batch mode props
+  isBatchMode?: boolean;
+  batchFileCount?: number;
 }
 
 export function DateInputDialog({
@@ -29,7 +32,9 @@ export function DateInputDialog({
   fileName,
   suggestedDate,
   onDateConfirm,
-  onCancel
+  onCancel,
+  isBatchMode = false,
+  batchFileCount = 1
 }: DateInputDialogProps) {
   // Format date as DD/MM/YYYY
   const formatDate = (date: Date): string => {
@@ -104,13 +109,28 @@ export function DateInputDialog({
             <Calendar className="h-5 w-5" />
             Date Required for Upload
           </DialogTitle>
-          <DialogDescription className="space-y-2">
-            <p>
-              The file <span className="font-semibold text-foreground">{fileName}</span> does not contain a date/time column.
-            </p>
-            <p>
-              Please enter the sampling date to add as the first column in the file.
-            </p>
+          <DialogDescription>
+            <div className="space-y-2">
+              {isBatchMode ? (
+                <>
+                  <div>
+                    <span className="font-semibold text-foreground">{batchFileCount} files</span> do not contain a date/time column.
+                  </div>
+                  <div>
+                    Please enter the sampling date to add as the first column in all {batchFileCount} files.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    The file <span className="font-semibold text-foreground">{fileName}</span> does not contain a date/time column.
+                  </div>
+                  <div>
+                    Please enter the sampling date to add as the first column in the file.
+                  </div>
+                </>
+              )}
+            </div>
           </DialogDescription>
         </DialogHeader>
 
@@ -163,7 +183,7 @@ export function DateInputDialog({
             Cancel Upload
           </Button>
           <Button onClick={handleConfirm}>
-            Add Date & Upload
+            {isBatchMode ? `Add Date to ${batchFileCount} Files & Upload` : 'Add Date & Upload'}
           </Button>
         </DialogFooter>
       </DialogContent>

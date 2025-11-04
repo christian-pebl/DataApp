@@ -3,6 +3,7 @@
 import React from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, LabelList } from 'recharts';
 import type { AggregatedTaxonomyData } from '@/lib/edna-taxonomy-processor';
+import { categorizeSample } from '@/lib/edna-taxonomy-processor';
 
 interface StackedTaxonomyChartProps {
   data: AggregatedTaxonomyData;
@@ -213,16 +214,35 @@ export function StackedTaxonomyChart({
     return null;
   };
 
-  // Identify Control vs Farm sites (if naming convention matches)
-  // ALGA_C_* = Control, ALGA_F_* = Farm
-  const hasControlFarmPattern = data.samples.some(s => s.includes('_C_')) &&
-                                 data.samples.some(s => s.includes('_F_'));
+  // Identify Control vs Farm sites using intelligent categorization
+  // Handles both naming conventions:
+  // - ALGA style: ALGA_C_S, ALGA_F_L (_C_ and _F_ patterns)
+  // - NORF style: NORF_Control_1, NORF_Farm_1 (Control and Farm keywords)
+  const sampleCategories = data.samples.map(sample => ({
+    sample,
+    category: categorizeSample(sample)
+  }));
+
+  const hasControlSites = sampleCategories.some(s => s.category === 'control');
+  const hasFarmSites = sampleCategories.some(s => s.category === 'farm');
+  const hasControlFarmPattern = hasControlSites && hasFarmSites;
 
   // Calculate separator position (midpoint between control and farm)
   let separatorX = null;
   if (hasControlFarmPattern) {
-    const controlSites = data.samples.filter(s => s.includes('_C_')).length;
-    separatorX = controlSites - 0.5; // Position between last control and first farm
+    const controlCount = sampleCategories.filter(s => s.category === 'control').length;
+    const farmCount = sampleCategories.filter(s => s.category === 'farm').length;
+    separatorX = controlCount - 0.5; // Position between last control and first farm
+
+    console.log('[STACKED-TAXONOMY-CHART] Detected Control/Farm pattern:', {
+      controlSites: sampleCategories.filter(s => s.category === 'control').map(s => s.sample),
+      farmSites: sampleCategories.filter(s => s.category === 'farm').map(s => s.sample),
+      controlCount,
+      farmCount,
+      separatorX
+    });
+  } else {
+    console.log('[STACKED-TAXONOMY-CHART] No Control/Farm pattern detected. Sample categories:', sampleCategories);
   }
 
   return (

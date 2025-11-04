@@ -541,10 +541,10 @@ class FileStorageService {
 
       console.log(`✅ Authenticated as user: ${user.id}`);
 
-      // Get file metadata to verify ownership
+      // Get file metadata to verify ownership (including both pin_id and area_id)
       const { data: fileData, error: getError } = await this.supabase
         .from('pin_files')
-        .select('pin_id, file_name')
+        .select('pin_id, area_id, file_name')
         .eq('id', fileId)
         .single();
 
@@ -554,23 +554,49 @@ class FileStorageService {
       }
 
       console.log('📄 Current file name:', fileData.file_name);
+      console.log('📍 File associations:', { pin_id: fileData.pin_id, area_id: fileData.area_id });
 
-      // Verify user owns the pin
-      const { data: pinData, error: pinError } = await this.supabase
-        .from('pins')
-        .select('user_id')
-        .eq('id', fileData.pin_id)
-        .single();
+      // Verify ownership based on whether file belongs to a pin or area
+      if (fileData.pin_id && fileData.pin_id !== 'null') {
+        // File belongs to a pin - verify user owns the pin
+        const { data: pinData, error: pinError } = await this.supabase
+          .from('pins')
+          .select('user_id')
+          .eq('id', fileData.pin_id)
+          .single();
 
-      if (pinError || !pinData) {
-        console.error('❌ Get pin data error:', pinError);
-        return false;
-      }
+        if (pinError || !pinData) {
+          console.error('❌ Get pin data error:', pinError);
+          return false;
+        }
 
-      // Check if user owns the pin associated with this file
-      if (pinData.user_id !== user.id) {
-        console.error('🚫 User does not have permission to rename this file');
-        return false;
+        if (pinData.user_id !== user.id) {
+          console.error('🚫 User does not have permission to rename this file (pin ownership)');
+          return false;
+        }
+        console.log('✅ Pin ownership verified');
+      } else if (fileData.area_id && fileData.area_id !== 'null') {
+        // File belongs to an area - verify user owns the area
+        const { data: areaData, error: areaError } = await this.supabase
+          .from('areas')
+          .select('user_id')
+          .eq('id', fileData.area_id)
+          .single();
+
+        if (areaError || !areaData) {
+          console.error('❌ Get area data error:', areaError);
+          return false;
+        }
+
+        if (areaData.user_id !== user.id) {
+          console.error('🚫 User does not have permission to rename this file (area ownership)');
+          return false;
+        }
+        console.log('✅ Area ownership verified');
+      } else {
+        // File doesn't belong to a pin or area - this is an orphaned file
+        // Allow rename but log a warning
+        console.warn('⚠️ File does not belong to a pin or area (orphaned file)');
       }
 
       // Update the file name in the database
