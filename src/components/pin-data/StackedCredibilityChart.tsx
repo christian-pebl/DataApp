@@ -92,7 +92,7 @@ export function StackedCredibilityChart({
       {/* Chart Container - Narrow fixed width for 3 columns */}
       <div className="relative" style={{ width: '30%', minWidth: '300px', height: height - 40 }}>
         {/* Info Box - Combined legend and total species, left-aligned with chart start */}
-        <div className="absolute top-6 left-[110px] z-10 bg-white/50 border border-gray-300 rounded shadow-sm px-3 py-2">
+        <div className="absolute top-[54px] left-[220px] z-10 bg-white/50 border border-gray-300 rounded shadow-sm px-3 py-2">
           <p className="text-xs font-medium text-gray-700 mb-2">
             Total Unique Species = {data.totalUniqueSpecies}
           </p>
@@ -125,6 +125,7 @@ export function StackedCredibilityChart({
                 value: customYAxisLabel,
                 angle: -90,
                 position: 'insideLeft',
+                offset: 20,
                 style: { fontSize: '12px', fontWeight: 'normal', textAnchor: 'middle' }
               }}
               tick={{ fontSize: 12 }}

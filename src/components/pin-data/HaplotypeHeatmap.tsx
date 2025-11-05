@@ -5,14 +5,18 @@ import { scaleLinear, scaleBand } from 'd3-scale';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Save } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type { HaplotypeCellData, HaplotypeParseResult } from './csvParser';
+import type { StyleProperties } from './StylingRulesDialog';
 
 interface HaplotypeHeatmapProps {
   haplotypeData: HaplotypeParseResult;
   containerHeight: number;
-  rowHeight?: number; // Height of each species row (default: 35)
-  cellWidth?: number; // Width of each cell/column (default: 85)
+  rowHeight?: number; // Height of each species row (default: 20)
+  cellWidth?: number; // Width of each cell/column (default: 30)
   spotSampleStyles?: {
     xAxisLabelRotation?: number;
     xAxisLabelFontSize?: number;
@@ -21,6 +25,7 @@ interface HaplotypeHeatmapProps {
     yAxisTitleFontWeight?: number | string;
     yAxisTitleAlign?: 'left' | 'center' | 'right';
   };
+  onStyleRuleUpdate?: (suffix: string, properties: Partial<StyleProperties>) => void;
 }
 
 interface ProcessedCell extends HaplotypeCellData {
@@ -30,12 +35,14 @@ interface ProcessedCell extends HaplotypeCellData {
 export function HaplotypeHeatmap({
   haplotypeData,
   containerHeight,
-  rowHeight = 35,
-  cellWidth = 85,
-  spotSampleStyles
+  rowHeight = 20,
+  cellWidth = 30,
+  spotSampleStyles,
+  onStyleRuleUpdate
 }: HaplotypeHeatmapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [svgDimensions, setSvgDimensions] = useState({ width: 0, height: 0 });
+  const { toast } = useToast();
 
   // Extract styling properties with defaults
   const styles = {
@@ -58,8 +65,23 @@ export function HaplotypeHeatmap({
   // Hide Red List Status column toggle
   const [showRedListColumn, setShowRedListColumn] = useState(true);
 
-  // Adjustable cell width
+  // Adjustable cell width and height
   const [adjustableCellWidth, setAdjustableCellWidth] = useState(cellWidth);
+  const [adjustableRowHeight, setAdjustableRowHeight] = useState(rowHeight);
+
+  // Handler to save current settings as style rule
+  const handleSaveSettings = () => {
+    if (onStyleRuleUpdate) {
+      onStyleRuleUpdate("_Hapl.csv", {
+        heatmapCellWidth: adjustableCellWidth,
+        heatmapRowHeight: adjustableRowHeight
+      });
+      toast({
+        title: "Settings Saved",
+        description: `Cell dimensions saved: ${adjustableCellWidth}px × ${adjustableRowHeight}px for _Hapl files`,
+      });
+    }
+  };
 
   const RED_LIST_COLUMN_WIDTH = 120; // Width for Red List Status column
   const SPECIES_NAME_WIDTH = 200; // Width for Species Name column
@@ -199,6 +221,30 @@ export function HaplotypeHeatmap({
               className="w-48 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
             />
             <span className="text-sm text-muted-foreground min-w-[40px]">{adjustableCellWidth}px</span>
+
+            <Label htmlFor="cellHeight-empty" className="text-sm font-medium whitespace-nowrap ml-6">Cell Height:</Label>
+            <input
+              id="cellHeight-empty"
+              type="range"
+              min="10"
+              max="100"
+              value={adjustableRowHeight}
+              onChange={(e) => setAdjustableRowHeight(Number(e.target.value))}
+              className="w-48 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+            />
+            <span className="text-sm text-muted-foreground min-w-[40px]">{adjustableRowHeight}px</span>
+
+            {onStyleRuleUpdate && (
+              <Button
+                onClick={handleSaveSettings}
+                size="sm"
+                className="ml-4 h-8 gap-2"
+                variant="outline"
+              >
+                <Save className="h-4 w-4" />
+                Save as _hapl Style
+              </Button>
+            )}
           </div>
         </div>
 
@@ -213,7 +259,7 @@ export function HaplotypeHeatmap({
 
   // Calculate plot dimensions based on adjustable cell width and row height
   const plotWidth = sites.length * adjustableCellWidth;
-  const plotHeight = filteredSpecies.length * rowHeight;
+  const plotHeight = filteredSpecies.length * adjustableRowHeight;
 
   // Use fixed bandwidth for xScale based on adjustable cellWidth
   const xScale = scaleBand<string>()
@@ -290,6 +336,30 @@ export function HaplotypeHeatmap({
             className="w-48 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
           />
           <span className="text-sm text-muted-foreground min-w-[40px]">{adjustableCellWidth}px</span>
+
+          <Label htmlFor="cellHeight" className="text-sm font-medium whitespace-nowrap ml-6">Cell Height:</Label>
+          <input
+            id="cellHeight"
+            type="range"
+            min="10"
+            max="100"
+            value={adjustableRowHeight}
+            onChange={(e) => setAdjustableRowHeight(Number(e.target.value))}
+            className="w-48 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+          />
+          <span className="text-sm text-muted-foreground min-w-[40px]">{adjustableRowHeight}px</span>
+
+          {onStyleRuleUpdate && (
+            <Button
+              onClick={handleSaveSettings}
+              size="sm"
+              className="ml-4 h-8 gap-2"
+              variant="outline"
+            >
+              <Save className="h-4 w-4" />
+              Save as _hapl Style
+            </Button>
+          )}
         </div>
       </div>
 

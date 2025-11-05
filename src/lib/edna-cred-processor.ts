@@ -26,10 +26,21 @@ export interface AggregatedCredData {
  * Handles variations like "low", "LOW", "moderate", "MODERATE", etc.
  */
 function normalizeCredibilityScore(value: any): 'Low' | 'Moderate' | 'High' | null {
-  if (!value || value === '') return null;
+  if (value === null || value === undefined || value === '') return null;
 
-  // Convert to string if not already
-  const stringValue = typeof value === 'string' ? value : String(value);
+  // Convert to string safely
+  let stringValue: string;
+  try {
+    stringValue = typeof value === 'string' ? value : String(value);
+    if (typeof stringValue !== 'string') {
+      console.warn(`[eDNA Cred] Could not convert value to string: "${value}"`);
+      return null;
+    }
+  } catch (error) {
+    console.warn(`[eDNA Cred] Error converting value to string: "${value}"`, error);
+    return null;
+  }
+
   const normalized = stringValue.trim().toLowerCase();
 
   if (['low', 'l'].includes(normalized)) return 'Low';

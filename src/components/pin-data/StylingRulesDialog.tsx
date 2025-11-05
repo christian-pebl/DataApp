@@ -529,8 +529,8 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
     description: "eDNA Haplotype data styling with configurable heatmap row height and cell width for species visualization",
     enabled: true,
     properties: {
-      heatmapRowHeight: 35, // Default heatmap row height in pixels
-      heatmapCellWidth: 85, // Default heatmap cell width in pixels
+      heatmapRowHeight: 20, // Default heatmap row height in pixels
+      heatmapCellWidth: 30, // Default heatmap cell width in pixels
       spotSample: {
         // X-axis label styling
         xAxisLabelRotation: -45,

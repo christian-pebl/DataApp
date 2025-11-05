@@ -17,9 +17,10 @@ import { StackedCredibilityChart } from './StackedCredibilityChart';
 import { StackedTaxonomyChart } from './StackedTaxonomyChart';
 import { format, parseISO } from 'date-fns';
 import { DEFAULT_STYLE_RULES, STYLE_RULES_VERSION, type StyleRule, type StyleProperties, StylingRulesDialog } from './StylingRulesDialog';
-import { isEdnaMetaFile, extractProjectPrefix, abbreviateStationLabel } from '@/lib/edna-utils';
+import { extractProjectPrefix, abbreviateStationLabel } from '@/lib/edna-utils';
 import { isCredFile, processCredibilityFile } from '@/lib/edna-cred-processor';
 import { isTaxonomyFile, processTaxonomyFile } from '@/lib/edna-taxonomy-processor';
+import { isEdnaMetaFile, processEdnaMetaFile } from '@/lib/edna-meta-processor';
 
 interface PinChartDisplaySpotSampleProps {
   data: ParsedDataPoint[];
@@ -484,12 +485,26 @@ export function PinChartDisplaySpotSample({
     // console.log('[SPOT-SAMPLE] Parameters to process:', parameterColumns);
     // console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
 
-    // Only pass stationIdColumn as blade ID if it's different from sample ID column
-    // This prevents duplicate labels like "Control-S Control-S" in CHEMWQ files
-    const bladeIdColumn = (stationIdColumn && stationIdColumn !== sampleIdColumn) ? stationIdColumn : undefined;
-    console.log('[SPOT-SAMPLE] Blade ID column (for grouping):', bladeIdColumn || 'none (same as sample ID)');
+    // Detect if this is an eDNA Meta file
+    const isMetaFile = fileName ? isEdnaMetaFile(fileName) : false;
+    console.log('[SPOT-SAMPLE] Is eDNA Meta file:', isMetaFile);
 
-    const result = groupBySampleAndDate(data, timeColumn, sampleIdColumn, parameterColumns, bladeIdColumn);
+    let result: SpotSampleGroup[];
+
+    if (isMetaFile) {
+      // Use specialized eDNA Meta processor (handles wide format with one row per sample)
+      console.log('[SPOT-SAMPLE] Using specialized eDNA Meta processor');
+      result = processEdnaMetaFile(data, sampleIdColumn, fileName || '');
+    } else {
+      // Use standard grouping for long format data (multiple rows per sample)
+      // Only pass stationIdColumn as blade ID if it's different from sample ID column
+      // This prevents duplicate labels like "Control-S Control-S" in CHEMWQ files
+      const bladeIdColumn = (stationIdColumn && stationIdColumn !== sampleIdColumn) ? stationIdColumn : undefined;
+      console.log('[SPOT-SAMPLE] Blade ID column (for grouping):', bladeIdColumn || 'none (same as sample ID)');
+      console.log('[SPOT-SAMPLE] Using standard groupBySampleAndDate');
+
+      result = groupBySampleAndDate(data, timeColumn, sampleIdColumn, parameterColumns, bladeIdColumn, false);
+    }
 
     // console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
     // console.log('[SPOT-SAMPLE] Grouping complete!');
@@ -498,16 +513,20 @@ export function PinChartDisplaySpotSample({
     // console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
 
     return result;
-  }, [data, timeColumn, sampleIdColumn, parameterColumns, stationIdColumn]);
+  }, [data, timeColumn, sampleIdColumn, parameterColumns, stationIdColumn, fileName]);
 
   // Post-process for eDNA files: abbreviate station labels
+  // NOTE: Skip this for Meta files as processEdnaMetaFile() already handles abbreviation
   const processedGroupedData = useMemo(() => {
-    if (!fileName || !isEdnaMetaFile(fileName)) {
+    const isMetaFile = fileName ? isEdnaMetaFile(fileName) : false;
+
+    // Skip post-processing for Meta files (already handled by processEdnaMetaFile)
+    if (!fileName || isMetaFile) {
       return groupedData;
     }
 
     console.log('[SPOT-SAMPLE] ═══════════════════════════════════════');
-    console.log('[SPOT-SAMPLE] eDNA Meta file detected, abbreviating station labels');
+    console.log('[SPOT-SAMPLE] eDNA file detected (non-Meta), abbreviating station labels');
 
     const projectPrefix = extractProjectPrefix(fileName);
     console.log('[SPOT-SAMPLE] Project prefix:', projectPrefix);

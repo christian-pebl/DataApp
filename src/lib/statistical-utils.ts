@@ -150,7 +150,8 @@ export function groupBySampleAndDate(
   dateColumn: string, // Not used - kept for backwards compatibility
   sampleIdColumn: string,
   parameterColumns: string[],
-  bladeIdColumn?: string
+  bladeIdColumn?: string,
+  filterNegativeControls: boolean = false // NEW: Option to filter out NEG samples
 ): SpotSampleGroup[] {
   const groups: Map<string, SpotSampleGroup> = new Map();
 
@@ -161,6 +162,7 @@ export function groupBySampleAndDate(
   // console.log('[STATISTICAL-UTILS] Blade ID column:', bladeIdColumn || 'none');
   // console.log('[STATISTICAL-UTILS] Parameters:', parameterColumns);
   // console.log('[STATISTICAL-UTILS] Data points:', data.length);
+  // console.log('[STATISTICAL-UTILS] Filter NEG controls:', filterNegativeControls);
 
   let skippedRows = 0;
   let processedRows = 0;
@@ -171,6 +173,16 @@ export function groupBySampleAndDate(
   for (const row of data) {
     const dateValue = row['time']; // Always use 'time' field from ParsedDataPoint
     const sampleId = row[sampleIdColumn];
+
+    // Filter out negative controls if requested
+    if (filterNegativeControls && sampleId) {
+      const sampleIdStr = String(sampleId);
+      if (/\b(NEG|NEGATIVE|CONTROL)\b/i.test(sampleIdStr)) {
+        skippedRows++;
+        skippedReasons['negative_control'] = (skippedReasons['negative_control'] || 0) + 1;
+        continue;
+      }
+    }
 
     // Get station ID from the column
     // For _indiv files, the "station ID" column contains the full identifier (e.g., "1-NE-3")
@@ -280,7 +292,13 @@ export function groupBySampleAndDate(
   // console.log('[STATISTICAL-UTILS] Skipped rows:', skippedRows);
   // console.log('[STATISTICAL-UTILS] Skip reasons:', skippedReasons);
   // console.log('[STATISTICAL-UTILS] Created groups:', result.length);
-  // console.log('[STATISTICAL-UTILS] Sample first 3 groups:', result.slice(0, 3));
+  // console.log('[STATISTICAL-UTILS] Groups by parameter:');
+  // const groupsByParam = result.reduce((acc, group) => {
+  //   acc[group.parameter] = (acc[group.parameter] || 0) + 1;
+  //   return acc;
+  // }, {} as Record<string, number>);
+  // console.log('[STATISTICAL-UTILS]', groupsByParam);
+  // console.log('[STATISTICAL-UTILS] Sample first 5 groups:', result.slice(0, 5));
   // console.log('[STATISTICAL-UTILS] ═══════════════════════════════════════');
 
   return result;

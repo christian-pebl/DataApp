@@ -154,3 +154,15 @@ export function getEdnaMetaConcentrationParams(): string[] {
     'COILB Marker Concentration (ng/µL)'
   ];
 }
+
+/**
+ * Check if a sample name is a negative control
+ * Negative controls contain keywords like "NEG", "NEGATIVE", "CONTROL" as whole words
+ *
+ * @param sampleName - Sample name to check
+ * @returns true if this is a negative control sample
+ */
+export function isNegativeControl(sampleName: string): boolean {
+  if (!sampleName || typeof sampleName !== 'string') return false;
+  return /\b(NEG|NEGATIVE|CONTROL)\b/i.test(sampleName.trim());
+}
