@@ -696,37 +696,12 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
     const minDate = new Date(Math.min(...allStartDates.map(d => d.getTime())));
     const maxDate = new Date(Math.max(...allEndDates.map(d => d.getTime())));
 
-    // Find all unique months that contain data
-    const dataMonthsSet = new Set<string>();
-
-    if (showMergedView) {
-      mergedGroups.forEach((group) => {
-        if (group.startDate && group.endDate) {
-          const start = parseCustomDate(group.startDate);
-          const end = parseCustomDate(group.endDate);
-          if (start && end) {
-            const monthsInRange = eachMonthOfInterval({ start: startOfMonth(start), end: endOfMonth(end) });
-            monthsInRange.forEach(month => dataMonthsSet.add(format(month, 'yyyy-MM')));
-          }
-        }
-      });
-    } else {
-      sortedFilesWithDates.forEach(({ dateRange }) => {
-        if (dateRange.startDate && dateRange.endDate) {
-          const start = parseCustomDate(dateRange.startDate);
-          const end = parseCustomDate(dateRange.endDate);
-          if (start && end) {
-            const monthsInRange = eachMonthOfInterval({ start: startOfMonth(start), end: endOfMonth(end) });
-            monthsInRange.forEach(month => dataMonthsSet.add(format(month, 'yyyy-MM')));
-          }
-        }
-      });
-    }
-
-    // Convert back to Date objects and sort
-    const months = Array.from(dataMonthsSet)
-      .sort()
-      .map(monthStr => parseISO(monthStr + '-01'));
+    // Generate ALL months between minDate and maxDate for proper alignment
+    // This ensures month headers align with the timeline bars
+    const months = eachMonthOfInterval({
+      start: startOfMonth(minDate),
+      end: endOfMonth(maxDate)
+    });
 
     // Generate year headers based on actual data months
     const years: Array<{year: number, startMonth: number, monthCount: number}> = [];
@@ -960,7 +935,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
         {viewMode === 'table' && (
         <div className="space-y-1">
           {sortedFilesWithDates.length > 0 && (
-            <div className="bg-muted/20 rounded p-3 transition-all duration-300">
+            <div className="bg-white rounded p-3 transition-all duration-300 border">
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-border/30 text-xs font-medium text-muted-foreground">
@@ -1326,7 +1301,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
 
         {/* TIMELINE VIEW: Table-Based Layout */}
         {viewMode === 'timeline' && timelineData.months.length > 0 && (
-        <div className="relative bg-muted/20 rounded p-3">
+        <div className="relative bg-white rounded p-3 border">
           <table className="w-full border-collapse">
             <thead>
               <tr>
@@ -1511,7 +1486,25 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                     </td>
 
                     {/* RIGHT CELL: Multiple Timeline Bars (one per file) */}
-                    <td className="align-middle">
+                    <td className="align-middle relative">
+                      {/* Month gridlines */}
+                      <div className="absolute inset-0 pointer-events-none">
+                        {timelineData.months.map((month, monthIdx) => {
+                          const monthStart = startOfMonth(month);
+                          const monthEnd = endOfMonth(month);
+                          const monthDuration = differenceInDays(monthEnd, monthStart) + 1;
+                          const daysFromTimelineStart = differenceInDays(monthStart, timelineData.minDate!);
+                          const left = (daysFromTimelineStart / timelineData.totalDays) * 100;
+
+                          return (
+                            <div
+                              key={monthIdx}
+                              className="absolute h-full border-l border-border/10"
+                              style={{ left: `${left}%` }}
+                            />
+                          );
+                        })}
+                      </div>
                       <div className="relative h-4 w-full bg-muted/30 rounded">
                         {/* Render a bar for each file in the group */}
                         {group.files.map((fileWithDate, fileIdx) => {
@@ -1768,7 +1761,25 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                     </td>
 
                     {/* RIGHT CELL: Timeline Bar */}
-                    <td className="align-middle">
+                    <td className="align-middle relative">
+                      {/* Month gridlines */}
+                      <div className="absolute inset-0 pointer-events-none">
+                        {timelineData.months.map((month, monthIdx) => {
+                          const monthStart = startOfMonth(month);
+                          const monthEnd = endOfMonth(month);
+                          const monthDuration = differenceInDays(monthEnd, monthStart) + 1;
+                          const daysFromTimelineStart = differenceInDays(monthStart, timelineData.minDate!);
+                          const left = (daysFromTimelineStart / timelineData.totalDays) * 100;
+
+                          return (
+                            <div
+                              key={monthIdx}
+                              className="absolute h-full border-l border-border/10"
+                              style={{ left: `${left}%` }}
+                            />
+                          );
+                        })}
+                      </div>
                       <div className="relative h-4 w-full bg-muted/30 rounded">
                         {dateRange.loading ? (
                           <div className="absolute inset-0 flex items-center justify-center">
