@@ -24,6 +24,7 @@ import { PinChartDisplaySpotSample } from './PinChartDisplaySpotSample';
 import { HeatmapDisplay } from '@/components/dataflow/HeatmapDisplay';
 import { HaplotypeHeatmap } from './HaplotypeHeatmap';
 import type { HaplotypeParseResult } from './csvParser';
+import { BrushPanHandle } from './BrushPanHandle';
 
 interface PinChartDisplayProps {
   data: ParsedDataPoint[];
@@ -74,6 +75,10 @@ interface PinChartDisplayProps {
   diagnosticLogs?: string[];
   // Haplotype data (for EDNA hapl files)
   haplotypeData?: HaplotypeParseResult;
+  // Subtracted plot settings (for computed/subtracted plots)
+  isSubtractedPlot?: boolean;
+  includeZeroValues?: boolean;
+  onIncludeZeroValuesChange?: (include: boolean) => void;
 }
 
 // Color palette matching the marine data theme
@@ -386,7 +391,10 @@ export function PinChartDisplay({
   detectedSampleIdColumn,
   headers,
   diagnosticLogs,
-  haplotypeData
+  haplotypeData,
+  isSubtractedPlot = false,
+  includeZeroValues = false,
+  onIncludeZeroValuesChange
 }: PinChartDisplayProps) {
   // 🧬 HAPL_DEBUG: Log incoming data for haplotype files
   const isHaplotypeFile = fileName?.toLowerCase().includes('hapl');
@@ -515,6 +523,9 @@ export function PinChartDisplay({
   const [yAxisRangeParameter, setYAxisRangeParameter] = useState<string | null>(null);
   const [yAxisRangeMin, setYAxisRangeMin] = useState<string>('');
   const [yAxisRangeMax, setYAxisRangeMax] = useState<string>('');
+
+  // Temporary Y-axis range state for pending changes (before Apply is clicked)
+  const [pendingYAxisRanges, setPendingYAxisRanges] = useState<Record<string, { min: string; max: string }>>({});
 
   // Raw CSV viewing state
   const [showRawCSV, setShowRawCSV] = useState(false);
@@ -770,10 +781,10 @@ export function PinChartDisplay({
 
             newState[maKey] = {
               visible: true, // MA parameters are always visible when enabled
-              color: lightenColor(state.color, 0.3), // Lighter shade of base color
-              opacity: savedMASettings.opacity ?? 0.8, // Use saved opacity if available
-              lineStyle: savedMASettings.lineStyle ?? 'dashed', // Use saved line style if available
-              lineWidth: savedMASettings.lineWidth // Use saved line width if available
+              color: savedMASettings.color ?? '#6b7280', // Dark grey by default (Tailwind gray-500)
+              opacity: savedMASettings.opacity ?? 1.0, // Full opacity by default
+              lineStyle: savedMASettings.lineStyle ?? 'solid', // Solid line by default
+              lineWidth: savedMASettings.lineWidth ?? 1 // 1px thickness by default
             };
           } else {
             // Update existing MA parameter to ensure visibility matches showLine
@@ -824,6 +835,11 @@ export function PinChartDisplay({
       return heatmapHeight;
     }
 
+    // For haplotype heatmap/rarefaction view, return a fixed larger height
+    if (showHaplotypeHeatmap && isHaplotypeFile && haplotypeData) {
+      return 800; // Sufficient height for heatmap and rarefaction chart
+    }
+
     const baseHeight = appliedStyleRule?.properties.chartHeight || 208;
     const visibleCount = visibleParameters.length;
     const hasExplicitHeight = appliedStyleRule?.properties.chartHeight !== undefined;
@@ -860,7 +876,7 @@ export function PinChartDisplay({
     // For 4+ parameters, use the full height
     // console.log('[CHART HEIGHT] Using full height for 4+ params:', baseHeight);
     return baseHeight;
-  }, [visibleParameters.length, appliedStyleRule?.properties.chartHeight, appliedStyleRule?.properties.heatmapRowHeight, fileName, appliedStyleRule?.styleName, showHeatmap, isSubcamNmaxFile, speciesColumns, parameterStates]);
+  }, [visibleParameters.length, appliedStyleRule?.properties.chartHeight, appliedStyleRule?.properties.heatmapRowHeight, fileName, appliedStyleRule?.styleName, showHeatmap, isSubcamNmaxFile, speciesColumns, parameterStates, showHaplotypeHeatmap, isHaplotypeFile, haplotypeData]);
 
   // Get moving average parameters (for display in parameter list)
   const movingAverageParameters = useMemo(() => {
@@ -1114,7 +1130,7 @@ export function PinChartDisplay({
       Object.keys(parameterStates).forEach(param => {
         const state = parameterStates[param];
         if (state?.movingAverage?.enabled) {
-          const windowDays = state.movingAverage.windowDays || 7;
+          const windowDays = state.movingAverage.windowDays || 1;
 
           // Calculate window size based on actual data frequency
           const windowSize = windowDays * pointsPerDay;
@@ -1176,28 +1192,66 @@ export function PinChartDisplay({
       return [0, 100]; // Default domain
     }
 
+    // Check if any visible parameters have custom Y-axis ranges
+    const customRanges = visibleParameters
+      .map(param => parameterStates[param]?.yAxisRange)
+      .filter(range => range?.min !== undefined && range?.max !== undefined);
+
+    console.log('[Y-AXIS DEBUG] yAxisDomain calculation:', {
+      visibleParameters,
+      customRanges,
+      parameterStates: Object.keys(parameterStates).reduce((acc, key) => {
+        if (visibleParameters.includes(key)) {
+          acc[key] = parameterStates[key]?.yAxisRange;
+        }
+        return acc;
+      }, {} as Record<string, any>)
+    });
+
+    // If all visible parameters have custom ranges, use them
+    if (customRanges.length === visibleParameters.length && customRanges.length > 0) {
+      const min = Math.min(...customRanges.map(r => r!.min!));
+      const max = Math.max(...customRanges.map(r => r!.max!));
+      console.log('[Y-AXIS DEBUG] Using all custom ranges:', { min, max });
+      return [min, max];
+    }
+
+    // Otherwise, calculate from data (may include parameters with custom ranges mixed with auto-scaled ones)
     let min = Infinity;
     let max = -Infinity;
 
-    displayData.forEach(point => {
-      visibleParameters.forEach(param => {
-        const value = point[param];
-        if (typeof value === 'number' && !isNaN(value)) {
-          min = Math.min(min, value);
-          max = Math.max(max, value);
-        }
-      });
+    visibleParameters.forEach(param => {
+      const customRange = parameterStates[param]?.yAxisRange;
+
+      // If this parameter has a custom range, include it in the calculation
+      if (customRange?.min !== undefined && customRange?.max !== undefined) {
+        console.log('[Y-AXIS DEBUG] Using custom range for param:', param, customRange);
+        min = Math.min(min, customRange.min);
+        max = Math.max(max, customRange.max);
+      } else {
+        // Otherwise, calculate from data
+        displayData.forEach(point => {
+          const value = point[param];
+          if (typeof value === 'number' && !isNaN(value)) {
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+          }
+        });
+      }
     });
 
     // Use nice round numbers for 24hr_style, std_style, and stddiff_style, otherwise add 5% padding
     if (appliedStyleRule?.styleName === '24hr_style' || appliedStyleRule?.styleName === 'std_style' || appliedStyleRule?.styleName === 'stddiff_style') {
       const { domain } = calculateNiceYAxisDomain(min, max);
+      console.log('[Y-AXIS DEBUG] Using nice domain (styled):', domain);
       return domain;
     } else {
       const padding = (max - min) * 0.05;
-      return [min - padding, max + padding];
+      const finalDomain = [min - padding, max + padding];
+      console.log('[Y-AXIS DEBUG] Using padded domain:', finalDomain);
+      return finalDomain;
     }
-  }, [displayData, visibleParameters, appliedStyleRule]);
+  }, [displayData, visibleParameters, appliedStyleRule, parameterStates]);
 
   // Calculate tick interval for 24hr_style, std_style, and stddiff_style
   const yAxisTickInterval = useMemo(() => {
@@ -1205,21 +1259,30 @@ export function PinChartDisplay({
       let min = Infinity;
       let max = -Infinity;
 
-      displayData.forEach(point => {
-        visibleParameters.forEach(param => {
-          const value = point[param];
-          if (typeof value === 'number' && !isNaN(value)) {
-            min = Math.min(min, value);
-            max = Math.max(max, value);
-          }
-        });
+      visibleParameters.forEach(param => {
+        const customRange = parameterStates[param]?.yAxisRange;
+
+        // If this parameter has a custom range, include it in the calculation
+        if (customRange?.min !== undefined && customRange?.max !== undefined) {
+          min = Math.min(min, customRange.min);
+          max = Math.max(max, customRange.max);
+        } else {
+          // Otherwise, calculate from data
+          displayData.forEach(point => {
+            const value = point[param];
+            if (typeof value === 'number' && !isNaN(value)) {
+              min = Math.min(min, value);
+              max = Math.max(max, value);
+            }
+          });
+        }
       });
 
       const { tickInterval } = calculateNiceYAxisDomain(min, max);
       return tickInterval;
     }
     return undefined;
-  }, [displayData, visibleParameters, appliedStyleRule]);
+  }, [displayData, visibleParameters, appliedStyleRule, parameterStates]);
 
   // Calculate data range and max for Y-axis formatting
   const dataRange = useMemo(() => {
@@ -1333,7 +1396,6 @@ export function PinChartDisplay({
   };
 
   const handleStyleRuleUpdate = (suffix: string, properties: Partial<import('./StylingRulesDialog').StyleProperties>) => {
-    console.log('🔧 handleStyleRuleUpdate called:', { suffix, properties });
     setStyleRules(prev => {
       const updated = prev.map(rule => {
         if (rule.suffix !== suffix) return rule;
@@ -1369,17 +1431,16 @@ export function PinChartDisplay({
         return { ...rule, properties: updatedProperties };
       });
 
-      console.log('📋 Updated style rules:', updated.find(r => r.suffix === suffix));
-
-      // Save to localStorage with version
+      // Save to localStorage asynchronously (use queueMicrotask to avoid blocking the main thread)
       if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('pinChartStyleRules', JSON.stringify(updated));
-          localStorage.setItem('pinChartStyleRulesVersion', String(STYLE_RULES_VERSION));
-          console.log('✅ Style rules saved to localStorage');
-        } catch (error) {
-          console.error('❌ Failed to save style rules to localStorage:', error);
-        }
+        queueMicrotask(() => {
+          try {
+            localStorage.setItem('pinChartStyleRules', JSON.stringify(updated));
+            localStorage.setItem('pinChartStyleRulesVersion', String(STYLE_RULES_VERSION));
+          } catch (error) {
+            console.error('Failed to save style rules:', error);
+          }
+        });
       }
 
       return updated;
@@ -1533,13 +1594,18 @@ export function PinChartDisplay({
   };
 
   const updateYAxisRange = (parameter: string, min?: number, max?: number) => {
-    setParameterStates(prev => ({
-      ...prev,
-      [parameter]: {
-        ...prev[parameter],
-        yAxisRange: (min !== undefined || max !== undefined) ? { min, max } : undefined
-      }
-    }));
+    console.log('[Y-AXIS DEBUG] updateYAxisRange called:', { parameter, min, max });
+    setParameterStates(prev => {
+      const updated = {
+        ...prev,
+        [parameter]: {
+          ...prev[parameter],
+          yAxisRange: (min !== undefined || max !== undefined) ? { min, max } : undefined
+        }
+      };
+      console.log('[Y-AXIS DEBUG] Updated parameterStates:', updated[parameter]);
+      return updated;
+    });
   };
 
   const updateMovingAverage = (parameter: string, enabled: boolean, windowDays?: number, showLine?: boolean) => {
@@ -2239,6 +2305,15 @@ export function PinChartDisplay({
 
   // Format parameter label with source
   const formatParameterWithSource = (parameter: string, includeSource: boolean = true): string => {
+    // Check if this is a moving average parameter
+    if (parameter.endsWith('_ma')) {
+      const baseParam = parameter.replace('_ma', '');
+      const baseParamState = parameterStates[baseParam];
+      const windowDays = baseParamState?.movingAverage?.windowDays || 1;
+      const daysText = windowDays === 1 ? '1day' : `${windowDays}days`;
+      return `Moving average (${daysText})`;
+    }
+
     const baseLabel = getParameterLabelWithUnit(parameter);
 
     // Check if parameter already has a source label (e.g., "IR [GP]")
@@ -2866,6 +2941,7 @@ export function PinChartDisplay({
                   stroke="hsl(var(--border))"
                   width={(showYAxisLabels || appliedStyleRule?.properties.yAxisTitle) ? (appliedStyleRule?.properties.yAxisWidth || 80) : 50}
                   domain={yAxisDomain}
+                  allowDataOverflow={true}
                   ticks={yAxisTickInterval ? (() => {
                     const ticks = [];
                     for (let i = yAxisDomain[0]; i <= yAxisDomain[1]; i += yAxisTickInterval) {
@@ -2918,6 +2994,7 @@ export function PinChartDisplay({
                       (yAxisDomain[0] / appliedStyleRule.properties.secondaryYAxis.divideBy) * 100,
                       (yAxisDomain[1] / appliedStyleRule.properties.secondaryYAxis.divideBy) * 100
                     ]}
+                    allowDataOverflow={true}
                     ticks={yAxisTickInterval ? (() => {
                       const ticks = [];
                       const divideBy = appliedStyleRule.properties.secondaryYAxis.divideBy;
@@ -3110,6 +3187,7 @@ export function PinChartDisplay({
                       tickFormatter={(value) => formatYAxisTick(value, paramRange, paramMax)}
                       label={labelConfig}
                       domain={domain}
+                      allowDataOverflow={true}
                     />
                   );
                 })}
@@ -3229,7 +3307,7 @@ export function PinChartDisplay({
 
       {/* Time Range Brush - only show in separate mode OR if last plot in common mode */}
       {data.length > 10 && (timeAxisMode === 'separate' || isLastPlot) && (
-        <div className="h-10 w-full border rounded-md bg-card p-1">
+        <div className="relative h-16 w-full border rounded-md bg-card p-1">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 2, right: 15, left: 15, bottom: 0 }}>
               <XAxis
@@ -3254,6 +3332,15 @@ export function PinChartDisplay({
               />
             </LineChart>
           </ResponsiveContainer>
+
+          {/* Pan Handle Overlay */}
+          <BrushPanHandle
+            dataLength={data.length}
+            startIndex={activeBrushStart}
+            endIndex={activeBrushEnd}
+            onChange={handleBrushChange}
+            containerMargin={15}
+          />
         </div>
       )}
 
@@ -3687,25 +3774,6 @@ export function PinChartDisplay({
                           />
                         )}
                       </div>
-
-                      {/* Y-axis settings button - only show for column charts */}
-                      {plotType === 'column' && !isMA && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-4 w-4 p-0 opacity-60 hover:opacity-100"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setYAxisRangeParameter(parameter);
-                            setYAxisRangeMin(state.yAxisRange?.min?.toString() || '');
-                            setYAxisRangeMax(state.yAxisRange?.max?.toString() || '');
-                            setShowYAxisRangeDialog(true);
-                          }}
-                          title="Set custom Y-axis range for column chart"
-                        >
-                          <Settings className="h-3 w-3" />
-                        </Button>
-                      )}
                     </div>
 
                     {/* Right side controls */}
@@ -4095,9 +4163,19 @@ export function PinChartDisplay({
                                     if (checked) {
                                       // Enable with current domain as defaults
                                       const currentDomain = parameterDomains[parameter] || [0, 100];
+                                      // Initialize pending values
+                                      setPendingYAxisRanges(prev => ({
+                                        ...prev,
+                                        [parameter]: { min: String(currentDomain[0]), max: String(currentDomain[1]) }
+                                      }));
                                       updateYAxisRange(parameter, currentDomain[0], currentDomain[1]);
                                     } else {
                                       // Disable by clearing range
+                                      setPendingYAxisRanges(prev => {
+                                        const updated = { ...prev };
+                                        delete updated[parameter];
+                                        return updated;
+                                      });
                                       updateYAxisRange(parameter, undefined, undefined);
                                     }
                                   }}
@@ -4114,12 +4192,15 @@ export function PinChartDisplay({
                                     <Input
                                       type="number"
                                       step="any"
-                                      value={state.yAxisRange?.min ?? ''}
+                                      value={pendingYAxisRanges[parameter]?.min ?? state.yAxisRange?.min ?? ''}
                                       onChange={(e) => {
-                                        const newMin = parseFloat(e.target.value);
-                                        if (!isNaN(newMin)) {
-                                          updateYAxisRange(parameter, newMin, state.yAxisRange?.max);
-                                        }
+                                        setPendingYAxisRanges(prev => ({
+                                          ...prev,
+                                          [parameter]: {
+                                            min: e.target.value,
+                                            max: prev[parameter]?.max ?? String(state.yAxisRange?.max ?? '')
+                                          }
+                                        }));
                                       }}
                                       className="h-7 text-xs"
                                       placeholder="Min value"
@@ -4130,19 +4211,116 @@ export function PinChartDisplay({
                                     <Input
                                       type="number"
                                       step="any"
-                                      value={state.yAxisRange?.max ?? ''}
+                                      value={pendingYAxisRanges[parameter]?.max ?? state.yAxisRange?.max ?? ''}
                                       onChange={(e) => {
-                                        const newMax = parseFloat(e.target.value);
-                                        if (!isNaN(newMax)) {
-                                          updateYAxisRange(parameter, state.yAxisRange?.min, newMax);
-                                        }
+                                        setPendingYAxisRanges(prev => ({
+                                          ...prev,
+                                          [parameter]: {
+                                            min: prev[parameter]?.min ?? String(state.yAxisRange?.min ?? ''),
+                                            max: e.target.value
+                                          }
+                                        }));
                                       }}
                                       className="h-7 text-xs"
                                       placeholder="Max value"
                                     />
                                   </div>
+                                  {pendingYAxisRanges[parameter] && (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const pending = pendingYAxisRanges[parameter];
+                                        const newMin = parseFloat(pending.min);
+                                        const newMax = parseFloat(pending.max);
+                                        if (!isNaN(newMin) && !isNaN(newMax)) {
+                                          updateYAxisRange(parameter, newMin, newMax);
+                                          // Clear pending state after applying
+                                          setPendingYAxisRanges(prev => {
+                                            const updated = { ...prev };
+                                            delete updated[parameter];
+                                            return updated;
+                                          });
+                                        }
+                                      }}
+                                      className="h-7 text-xs w-full"
+                                    >
+                                      Apply
+                                    </Button>
+                                  )}
                                 </div>
                               )}
+                            </div>
+
+                            {/* Include Zero Values Section - Only show for subtracted plots */}
+                            {isSubtractedPlot && (
+                              <div className="space-y-2 border-t pt-3">
+                                <div className="flex items-center gap-2">
+                                  <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <span className="text-xs font-medium">Data Filtering</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Checkbox
+                                    id="include-zero-values"
+                                    checked={includeZeroValues}
+                                    onCheckedChange={(checked) => {
+                                      if (onIncludeZeroValuesChange) {
+                                        onIncludeZeroValuesChange(checked as boolean);
+                                      }
+                                    }}
+                                    className="h-3 w-3"
+                                  />
+                                  <Label htmlFor="include-zero-values" className="text-xs cursor-pointer">
+                                    Include zero values
+                                  </Label>
+                                </div>
+                                <p className="text-[0.65rem] text-muted-foreground pl-5">
+                                  When unchecked, shows zero for data points where only one of the two source plots has data (the other is zero). This preserves the timeline.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Custom Parameter Name Section - available for all plots */}
+                            <div className="space-y-1.5 border-t pt-3">
+                              <Label htmlFor={`custom-name-${parameter}`} className="text-xs font-medium">
+                                Custom Display Name
+                              </Label>
+                              <div className="flex gap-1.5">
+                                <Input
+                                  id={`custom-name-${parameter}`}
+                                  type="text"
+                                  placeholder={getParameterLabelWithUnit(parameter)}
+                                  value={customParameterNames[parameter] || ''}
+                                  onChange={(e) => {
+                                    setCustomParameterNames(prev => ({
+                                      ...prev,
+                                      [parameter]: e.target.value
+                                    }));
+                                  }}
+                                  className="h-7 text-xs"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                                {customParameterNames[parameter] && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-xs"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCustomParameterNames(prev => {
+                                        const updated = { ...prev };
+                                        delete updated[parameter];
+                                        return updated;
+                                      });
+                                    }}
+                                    title="Reset to default"
+                                  >
+                                    Reset
+                                  </Button>
+                                )}
+                              </div>
+                              <p className="text-[0.65rem] text-muted-foreground">
+                                Leave empty to use auto-formatted name
+                              </p>
                             </div>
 
                             {/* Display Options Section - only show in compact view */}
@@ -4196,50 +4374,6 @@ export function PinChartDisplay({
                                     <Label htmlFor="hide-parameter-name" className="text-xs cursor-pointer">
                                       Hide parameter name (Dolphin, etc.)
                                     </Label>
-                                  </div>
-
-                                  {/* Custom parameter name input */}
-                                  <div className="space-y-1.5 pt-2 border-t">
-                                    <Label htmlFor={`custom-name-${parameter}`} className="text-xs font-medium">
-                                      Custom Display Name
-                                    </Label>
-                                    <div className="flex gap-1.5">
-                                      <Input
-                                        id={`custom-name-${parameter}`}
-                                        type="text"
-                                        placeholder={formatParameterName(parameter)}
-                                        value={customParameterNames[parameter] || ''}
-                                        onChange={(e) => {
-                                          setCustomParameterNames(prev => ({
-                                            ...prev,
-                                            [parameter]: e.target.value
-                                          }));
-                                        }}
-                                        className="h-7 text-xs"
-                                        onClick={(e) => e.stopPropagation()}
-                                      />
-                                      {customParameterNames[parameter] && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-7 px-2 text-xs"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setCustomParameterNames(prev => {
-                                              const updated = { ...prev };
-                                              delete updated[parameter];
-                                              return updated;
-                                            });
-                                          }}
-                                          title="Reset to default"
-                                        >
-                                          Reset
-                                        </Button>
-                                      )}
-                                    </div>
-                                    <p className="text-[0.65rem] text-muted-foreground">
-                                      Leave empty to use auto-formatted name
-                                    </p>
                                   </div>
                                 </div>
                               </div>
@@ -4590,7 +4724,7 @@ export function PinChartDisplay({
               Set Y-Axis Range
             </DialogTitle>
             <DialogDescription>
-              Customize the Y-axis range for <strong>{yAxisRangeParameter}</strong> in column chart view.
+              Customize the Y-axis range for <strong>{yAxisRangeParameter}</strong>.
               Leave blank for automatic scaling.
             </DialogDescription>
           </DialogHeader>
