@@ -511,6 +511,10 @@ export function PinChartDisplay({
   // X-axis year display toggle
   const [showYearInXAxis, setShowYearInXAxis] = useState(false);
 
+  // X-axis days from start toggle (for _nmax files)
+  const [showDaysFromStart, setShowDaysFromStart] = useState(false);
+  const [maxDaysToShow, setMaxDaysToShow] = useState<number | ''>(''); // Empty means show all
+
   // Custom Y-axis label
   const [customYAxisLabel, setCustomYAxisLabel] = useState<string>(initialCustomYAxisLabel || '');
 
@@ -603,12 +607,16 @@ export function PinChartDisplay({
   //   }
   // }, [data, currentDateFormat]);
 
-  // Apply styling rule defaults when rule changes
+  // Apply styling rule defaults when rule changes (only watch defaultAxisMode specifically)
   React.useEffect(() => {
     if (appliedStyleRule?.properties.defaultAxisMode) {
-      setAxisMode(appliedStyleRule.properties.defaultAxisMode);
+      // Only update if the value is different to prevent unnecessary re-renders
+      setAxisMode(prev => {
+        const newMode = appliedStyleRule.properties.defaultAxisMode;
+        return newMode && newMode !== prev ? newMode : prev;
+      });
     }
-  }, [appliedStyleRule]);
+  }, [appliedStyleRule?.properties.defaultAxisMode]);
 
   // Get all parameters (for table view)
   const allParameters = useMemo(() => {
@@ -670,13 +678,7 @@ export function PinChartDisplay({
     // Get species columns (all columns after metadata columns)
     const species = allParameters.slice(firstSpeciesIndex);
 
-    console.log('[SUBCAM HEATMAP] Detected nmax file:', {
-      fileName,
-      totalParams: allParameters.length,
-      firstSpeciesIndex,
-      speciesCount: species.length,
-      speciesColumns: species
-    });
+    console.log(`[SUBCAM HEATMAP] ${fileName}: ${species.length} species (${allParameters.length} total params)`);
 
     return { isSubcamNmaxFile: true, speciesColumns: species };
   }, [fileType, fileName, allParameters]);
@@ -737,6 +739,31 @@ export function PinChartDisplay({
   // Update parameter states when numericParameters changes (e.g., new data loaded)
   React.useEffect(() => {
     setParameterStates(prev => {
+      // Check if parameters have actually changed
+      const prevParams = Object.keys(prev).filter(k => !k.endsWith('_ma'));
+      const currentParams = numericParameters;
+
+      // If parameters haven't changed, return the same state object to prevent unnecessary re-renders
+      if (prevParams.length === currentParams.length &&
+          prevParams.every(p => currentParams.includes(p))) {
+        // Parameters are the same - check if we need to update any MA states
+        const needsUpdate = Object.keys(prev).some(param => {
+          const state = prev[param];
+          const maKey = `${param}_ma`;
+
+          // Check if MA state needs to be added or removed
+          if (state?.movingAverage?.enabled && state?.movingAverage?.showLine !== false) {
+            return !prev[maKey]; // Needs update if MA is enabled but state doesn't exist
+          } else {
+            return !!prev[maKey]; // Needs update if MA is disabled but state exists
+          }
+        });
+
+        if (!needsUpdate) {
+          return prev; // Return same object to prevent re-render
+        }
+      }
+
       const newState: Record<string, ParameterState> = {};
       // For merged plots (small number of params), show all by default
       const defaultVisibleCount = numericParameters.length <= 3 ? numericParameters.length :
@@ -827,11 +854,6 @@ export function PinChartDisplay({
       const rowHeight = appliedStyleRule?.properties.heatmapRowHeight || 35;
       // Calculate height: (rowHeight per species row) + margins (150px for margins/axes/brush)
       const heatmapHeight = Math.max(300, (visibleSpeciesCount * rowHeight) + 150);
-      console.log('[HEATMAP HEIGHT]', {
-        visibleSpeciesCount,
-        rowHeight,
-        calculatedHeight: heatmapHeight
-      });
       return heatmapHeight;
     }
 
@@ -1025,7 +1047,9 @@ export function PinChartDisplay({
 
   // Determine which brush indices to use based on mode
   const activeBrushStart = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.startIndex : brushStartIndex;
-  const activeBrushEnd = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.endIndex : brushEndIndex;
+  const activeBrushEnd = timeAxisMode === 'common' && globalBrushRange
+    ? (globalBrushRange.endIndex ?? data.length - 1)  // Fix: fallback for global brush range
+    : (brushEndIndex ?? data.length - 1);             // Fix: fallback for local brush index
 
   // Get data slice for current brush selection
   // Create a stable key for MA settings to track changes
@@ -1186,9 +1210,46 @@ export function PinChartDisplay({
     }
   }, [displayData]);
 
-  // Calculate Y-axis domain based on visible parameters in displayData (for single axis mode)
+  // Transform data for "days from start" mode (for _nmax files)
+  const finalDisplayData = useMemo(() => {
+    if (!showDaysFromStart || !isSubcamNmaxFile || displayData.length === 0) {
+      return displayData;
+    }
+
+    // Calculate day numbers from start date
+    const startDate = parseISO(displayData[0].time);
+    if (!isValid(startDate)) {
+      console.warn('[DAYS MODE] Invalid start date, falling back to regular display');
+      return displayData;
+    }
+
+    const dataWithDays = displayData.map((point) => {
+      const pointDate = parseISO(point.time);
+      if (!isValid(pointDate)) {
+        return { ...point, dayNumber: 0 };
+      }
+
+      // Calculate days from start (can be fractional)
+      const diffMs = pointDate.getTime() - startDate.getTime();
+      const dayNumber = diffMs / (1000 * 60 * 60 * 24);
+
+      return {
+        ...point,
+        dayNumber: Math.round(dayNumber * 100) / 100, // Round to 2 decimal places
+      };
+    });
+
+    // Filter by max days if specified
+    if (maxDaysToShow !== '' && maxDaysToShow > 0) {
+      return dataWithDays.filter(point => point.dayNumber <= maxDaysToShow);
+    }
+
+    return dataWithDays;
+  }, [displayData, showDaysFromStart, isSubcamNmaxFile, maxDaysToShow]);
+
+  // Calculate Y-axis domain based on visible parameters in finalDisplayData (for single axis mode)
   const yAxisDomain = useMemo(() => {
-    if (displayData.length === 0 || visibleParameters.length === 0) {
+    if (finalDisplayData.length === 0 || visibleParameters.length === 0) {
       return [0, 100]; // Default domain
     }
 
@@ -1197,22 +1258,22 @@ export function PinChartDisplay({
       .map(param => parameterStates[param]?.yAxisRange)
       .filter(range => range?.min !== undefined && range?.max !== undefined);
 
-    console.log('[Y-AXIS DEBUG] yAxisDomain calculation:', {
-      visibleParameters,
-      customRanges,
-      parameterStates: Object.keys(parameterStates).reduce((acc, key) => {
-        if (visibleParameters.includes(key)) {
-          acc[key] = parameterStates[key]?.yAxisRange;
-        }
-        return acc;
-      }, {} as Record<string, any>)
-    });
+    // console.log('[Y-AXIS DEBUG] yAxisDomain calculation:', {
+    //   visibleParameters,
+    //   customRanges,
+    //   parameterStates: Object.keys(parameterStates).reduce((acc, key) => {
+    //     if (visibleParameters.includes(key)) {
+    //       acc[key] = parameterStates[key]?.yAxisRange;
+    //     }
+    //     return acc;
+    //   }, {} as Record<string, any>)
+    // });
 
     // If all visible parameters have custom ranges, use them
     if (customRanges.length === visibleParameters.length && customRanges.length > 0) {
       const min = Math.min(...customRanges.map(r => r!.min!));
       const max = Math.max(...customRanges.map(r => r!.max!));
-      console.log('[Y-AXIS DEBUG] Using all custom ranges:', { min, max });
+      // console.log('[Y-AXIS DEBUG] Using all custom ranges:', { min, max });
       return [min, max];
     }
 
@@ -1225,12 +1286,12 @@ export function PinChartDisplay({
 
       // If this parameter has a custom range, include it in the calculation
       if (customRange?.min !== undefined && customRange?.max !== undefined) {
-        console.log('[Y-AXIS DEBUG] Using custom range for param:', param, customRange);
+        // console.log('[Y-AXIS DEBUG] Using custom range for param:', param, customRange);
         min = Math.min(min, customRange.min);
         max = Math.max(max, customRange.max);
       } else {
         // Otherwise, calculate from data
-        displayData.forEach(point => {
+        finalDisplayData.forEach(point => {
           const value = point[param];
           if (typeof value === 'number' && !isNaN(value)) {
             min = Math.min(min, value);
@@ -1243,19 +1304,19 @@ export function PinChartDisplay({
     // Use nice round numbers for 24hr_style, std_style, and stddiff_style, otherwise add 5% padding
     if (appliedStyleRule?.styleName === '24hr_style' || appliedStyleRule?.styleName === 'std_style' || appliedStyleRule?.styleName === 'stddiff_style') {
       const { domain } = calculateNiceYAxisDomain(min, max);
-      console.log('[Y-AXIS DEBUG] Using nice domain (styled):', domain);
+      // console.log('[Y-AXIS DEBUG] Using nice domain (styled):', domain);
       return domain;
     } else {
       const padding = (max - min) * 0.05;
       const finalDomain = [min - padding, max + padding];
-      console.log('[Y-AXIS DEBUG] Using padded domain:', finalDomain);
+      // console.log('[Y-AXIS DEBUG] Using padded domain:', finalDomain);
       return finalDomain;
     }
-  }, [displayData, visibleParameters, appliedStyleRule, parameterStates]);
+  }, [finalDisplayData, visibleParameters, appliedStyleRule, parameterStates]);
 
   // Calculate tick interval for 24hr_style, std_style, and stddiff_style
   const yAxisTickInterval = useMemo(() => {
-    if ((appliedStyleRule?.styleName === '24hr_style' || appliedStyleRule?.styleName === 'std_style' || appliedStyleRule?.styleName === 'stddiff_style') && displayData.length > 0 && visibleParameters.length > 0) {
+    if ((appliedStyleRule?.styleName === '24hr_style' || appliedStyleRule?.styleName === 'std_style' || appliedStyleRule?.styleName === 'stddiff_style') && finalDisplayData.length > 0 && visibleParameters.length > 0) {
       let min = Infinity;
       let max = -Infinity;
 
@@ -1268,7 +1329,7 @@ export function PinChartDisplay({
           max = Math.max(max, customRange.max);
         } else {
           // Otherwise, calculate from data
-          displayData.forEach(point => {
+          finalDisplayData.forEach(point => {
             const value = point[param];
             if (typeof value === 'number' && !isNaN(value)) {
               min = Math.min(min, value);
@@ -1282,7 +1343,7 @@ export function PinChartDisplay({
       return tickInterval;
     }
     return undefined;
-  }, [displayData, visibleParameters, appliedStyleRule, parameterStates]);
+  }, [finalDisplayData, visibleParameters, appliedStyleRule, parameterStates]);
 
   // Calculate data range and max for Y-axis formatting
   const dataRange = useMemo(() => {
@@ -1323,7 +1384,7 @@ export function PinChartDisplay({
   const parameterDomains = useMemo(() => {
     const domains: Record<string, [number, number]> = {};
 
-    if (displayData.length === 0) {
+    if (finalDisplayData.length === 0) {
       return domains;
     }
 
@@ -1340,7 +1401,7 @@ export function PinChartDisplay({
       let min = Infinity;
       let max = -Infinity;
 
-      displayData.forEach(point => {
+      finalDisplayData.forEach(point => {
         const value = point[param];
         if (typeof value === 'number' && !isNaN(value)) {
           min = Math.min(min, value);
@@ -1354,7 +1415,7 @@ export function PinChartDisplay({
     });
 
     return domains;
-  }, [displayData, visibleParameters, parameterStates]);
+  }, [finalDisplayData, visibleParameters, parameterStates]);
 
   // Set initial brush end index
   React.useEffect(() => {
@@ -2412,28 +2473,19 @@ export function PinChartDisplay({
   // Detect discrete/spot-sample files (CROP, CHEM, WQ, EDNA, _Cred)
   const isDiscreteFile = useMemo(() => {
     if (!fileName) return false;
-    const result = /(crop|chemsw|chemwq|edna|_cred)/i.test(fileName);
-    console.log('[PIN-CHART-DISPLAY] File pattern check:', fileName, '-> isDiscreteFile:', result);
-    return result;
+    return /(crop|chemsw|chemwq|edna|_cred)/i.test(fileName);
   }, [fileName]);
 
   // Check if this is a _Cred file (doesn't need Sample ID column)
   const isCredFile = useMemo(() => {
     if (!fileName) return false;
-    const result = /_cred\.csv$/i.test(fileName);
-    console.log('[PIN-CHART-DISPLAY] _Cred file check:', fileName, '-> isCredFile:', result);
-    return result;
+    return /_cred\.csv$/i.test(fileName);
   }, [fileName]);
 
   // If discrete file detected and we have the necessary data, use spot-sample component
   // _Cred files don't need detectedSampleIdColumn
   // Accept empty strings as valid sample ID columns (for files with unnamed columns)
   if (isDiscreteFile && headers && ((detectedSampleIdColumn !== null && detectedSampleIdColumn !== undefined) || isCredFile)) {
-    console.log('[PIN-CHART-DISPLAY] ✓ Routing to spot-sample component');
-    console.log('[PIN-CHART-DISPLAY]   - isDiscreteFile:', isDiscreteFile);
-    console.log('[PIN-CHART-DISPLAY]   - isCredFile:', isCredFile);
-    console.log('[PIN-CHART-DISPLAY]   - detectedSampleIdColumn:', detectedSampleIdColumn);
-    console.log('[PIN-CHART-DISPLAY]   - headers count:', headers?.length);
     return (
       <PinChartDisplaySpotSample
         data={data}
@@ -2445,12 +2497,6 @@ export function PinChartDisplay({
       />
     );
   }
-
-  console.log('[PIN-CHART-DISPLAY] ❌ Not routing to spot-sample - using timeseries instead');
-  console.log('[PIN-CHART-DISPLAY]   - isDiscreteFile:', isDiscreteFile);
-  console.log('[PIN-CHART-DISPLAY]   - isCredFile:', isCredFile);
-  console.log('[PIN-CHART-DISPLAY]   - detectedSampleIdColumn:', detectedSampleIdColumn);
-  console.log('[PIN-CHART-DISPLAY]   - headers:', headers ? 'exists' : 'missing');
 
   return (
     <div className="space-y-3">
@@ -2618,6 +2664,46 @@ export function PinChartDisplay({
                     <p className="text-[0.65rem] text-muted-foreground">
                       {showYearInXAxis ? 'Format: DD/MM/YY' : 'Format: DD/MM'}
                     </p>
+
+                    {/* Days from start toggle - only show for nmax files */}
+                    {isSubcamNmaxFile && (
+                      <>
+                        <div className="flex items-center justify-between pt-2 border-t">
+                          <Label htmlFor="show-days" className="text-xs cursor-pointer">
+                            Show days from start
+                          </Label>
+                          <Switch
+                            id="show-days"
+                            checked={showDaysFromStart}
+                            onCheckedChange={setShowDaysFromStart}
+                            className="h-4 w-7"
+                          />
+                        </div>
+                        <p className="text-[0.65rem] text-muted-foreground">
+                          {showDaysFromStart ? 'X-axis: Day 0, 1, 2...' : 'X-axis: Dates'}
+                        </p>
+                        {/* Max days input - only show when days from start is enabled */}
+                        {showDaysFromStart && (
+                          <div className="space-y-2">
+                            <Label htmlFor="max-days" className="text-xs font-medium">
+                              Max Days to Show
+                            </Label>
+                            <Input
+                              id="max-days"
+                              type="number"
+                              min="1"
+                              value={maxDaysToShow}
+                              onChange={(e) => setMaxDaysToShow(e.target.value === '' ? '' : Number(e.target.value))}
+                              placeholder="All days"
+                              className="h-8 text-xs"
+                            />
+                            <p className="text-[0.65rem] text-muted-foreground">
+                              Leave empty to show all days
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
 
                     {/* Custom Y-Axis Label */}
                     <div className="pt-2 border-t space-y-2">
@@ -2829,7 +2915,7 @@ export function PinChartDisplay({
           {/* Main Heatmap - Takes up most space */}
           <div className="flex-1">
             <HeatmapDisplay
-              data={displayData}
+              data={finalDisplayData}
               series={speciesColumns.filter(species => parameterStates[species]?.visible)}
               containerHeight={dynamicChartHeight}
               brushStartIndex={activeBrushStart}
@@ -2837,6 +2923,7 @@ export function PinChartDisplay({
               onBrushChange={timeAxisMode === 'separate' ? handleBrushChange : undefined}
               timeFormat={showYearInXAxis ? 'full' : 'short'}
               customColor={heatmapColor}
+              customMaxValue={appliedStyleRule?.properties.heatmapMaxValue}
             />
           </div>
 
@@ -2901,7 +2988,7 @@ export function PinChartDisplay({
           {axisMode === 'single' && (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
-                data={displayData}
+                data={finalDisplayData}
                 margin={{
                   top: 5,
                   right: axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled
@@ -2914,11 +3001,13 @@ export function PinChartDisplay({
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
 
                 <XAxis
-                  dataKey="time"
+                  dataKey={showDaysFromStart ? "dayNumber" : "time"}
                   tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 8 }}
                   stroke="hsl(var(--border))"
                   tickFormatter={(value) =>
-                    appliedStyleRule?.properties.xAxisRange
+                    showDaysFromStart
+                      ? `Day ${Math.round(value)}`
+                      : appliedStyleRule?.properties.xAxisRange
                       ? format24HourTick(value)
                       : formatDateTick(value, dataSource, showYearInXAxis)
                   }
@@ -3016,8 +3105,8 @@ export function PinChartDisplay({
 
                 {/* Frame lines - top and right edges */}
                 <ReferenceLine {...(axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? { yAxisId: "left" } : {})} y={yAxisDomain[1]} stroke="hsl(var(--border))" strokeWidth={1} strokeOpacity={0.3} />
-                {displayData.length > 0 && (
-                  <ReferenceLine {...(axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? { yAxisId: "left" } : {})} x={displayData[displayData.length - 1].time} stroke="hsl(var(--border))" strokeWidth={1} strokeOpacity={0.3} />
+                {finalDisplayData.length > 0 && (
+                  <ReferenceLine {...(axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? { yAxisId: "left" } : {})} x={showDaysFromStart ? finalDisplayData[finalDisplayData.length - 1].dayNumber : finalDisplayData[finalDisplayData.length - 1].time} stroke="hsl(var(--border))" strokeWidth={1} strokeOpacity={0.3} />
                 )}
 
                 <RechartsTooltip
@@ -3103,7 +3192,7 @@ export function PinChartDisplay({
           {axisMode === 'multi' && (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
-                data={displayData}
+                data={finalDisplayData}
                 margin={{
                   top: 5,
                   right: Math.ceil(visibleParameters.length / 2) * 50,
@@ -3114,11 +3203,13 @@ export function PinChartDisplay({
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
 
                 <XAxis
-                  dataKey="time"
+                  dataKey={showDaysFromStart ? "dayNumber" : "time"}
                   tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 8 }}
                   stroke="hsl(var(--border))"
                   tickFormatter={(value) =>
-                    appliedStyleRule?.properties.xAxisRange
+                    showDaysFromStart
+                      ? `Day ${Math.round(value)}`
+                      : appliedStyleRule?.properties.xAxisRange
                       ? format24HourTick(value)
                       : formatDateTick(value, dataSource, showYearInXAxis)
                   }
@@ -3145,7 +3236,19 @@ export function PinChartDisplay({
                   // Add gap between left axes: 3rd axis (index 2) gets +10px width
                   const axisWidth = (index === 2) ? 42 : 32;
                   const labelText = formatParameterWithSource(parameter);
-                  const labelOffset = getMultiAxisLabelOffset(domain, paramRange, paramMax);
+
+                  // Calculate base offset and apply custom offsets from style rules
+                  let labelOffset = getMultiAxisLabelOffset(domain, paramRange, paramMax);
+
+                  // Apply custom Y-axis title offsets for _nmax files in multi-axis mode
+                  if (appliedStyleRule?.properties.leftYAxisTitleOffset !== undefined ||
+                      appliedStyleRule?.properties.rightYAxisTitleOffset !== undefined) {
+                    const customOffset = orientation === 'left'
+                      ? (appliedStyleRule.properties.leftYAxisTitleOffset ?? 0)
+                      : (appliedStyleRule.properties.rightYAxisTitleOffset ?? 0);
+                    labelOffset += customOffset;
+                  }
+
                   const labelStyle = {
                     textAnchor: 'middle',
                     fontSize: '0.55rem',
@@ -3209,9 +3312,9 @@ export function PinChartDisplay({
                 })}
 
                 {/* Frame lines - right edge (using first axis) */}
-                {displayData.length > 0 && visibleParameters.length > 0 && (
+                {finalDisplayData.length > 0 && visibleParameters.length > 0 && (
                   <ReferenceLine
-                    x={displayData[displayData.length - 1].time}
+                    x={showDaysFromStart ? finalDisplayData[finalDisplayData.length - 1].dayNumber : finalDisplayData[finalDisplayData.length - 1].time}
                     yAxisId={`axis-${visibleParameters[0]}`}
                     stroke="hsl(var(--border))"
                     strokeWidth={1}

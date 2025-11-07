@@ -23,6 +23,7 @@ interface HeatmapDisplayProps {
   onBrushChange?: (newIndex: { startIndex?: number; endIndex?: number }) => void;
   timeFormat?: 'short' | 'full';
   customColor?: string; // Custom color for heatmap (hex format)
+  customMaxValue?: number; // Custom max value for color scale saturation
 }
 
 interface ProcessedCell {
@@ -45,7 +46,8 @@ export function HeatmapDisplay({
     brushEndIndex,
     onBrushChange,
     timeFormat = 'short',
-    customColor
+    customColor,
+    customMaxValue
 }: HeatmapDisplayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [svgDimensions, setSvgDimensions] = useState({ width: 0, height: 0 });
@@ -153,15 +155,28 @@ export function HeatmapDisplay({
       ? hexToRgba(customColor, 1.0)
       : "hsla(var(--primary) / 1.0)";
 
+    // Use custom max value if provided, otherwise use the actual data max
+    const effectiveMaxValue = customMaxValue !== undefined && customMaxValue > 0
+      ? customMaxValue
+      : processedData.maxValue;
+
     return scaleLinear<string>()
-      .domain([Math.max(0.001, processedData.minValue), processedData.maxValue])
+      .domain([Math.max(0.001, processedData.minValue), effectiveMaxValue])
       .range([lightColor, darkColor])
       .clamp(true);
-  }, [processedData.minValue, processedData.maxValue, customColor]);
+  }, [processedData.minValue, processedData.maxValue, customColor, customMaxValue]);
   
+  // FIX: Calculate tick values BEFORE early return to maintain hook order
+  const tickValues = useMemo(() => {
+    const days = processedData.uniqueDays;
+    if (days.length <= 10) return days;
+    const tickInterval = Math.ceil(days.length / 10);
+    return days.filter((_, i) => i % tickInterval === 0);
+  }, [processedData.uniqueDays]);
+
   if (!data || data.length === 0 || series.length === 0 || processedData.uniqueDays.length === 0) {
     return (
-      <div style={{ height: `${containerHeight}px` }} className="flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-muted/20">
+      <div style={{ height: `${containerHeight}px` }} className="flex items-center justify-center text-muted-foreground text-sm p-2 border rounded-md bg-white">
         No data available for heatmap view. Check selected range.
       </div>
     );
@@ -177,12 +192,6 @@ export function HeatmapDisplay({
   const xScale = scaleBand<string>().domain(uniqueDays).range([0, plotWidth]).padding(0.05);
   const yScale = scaleBand<string>().domain(visibleSeries).range([0, plotHeight]).padding(0.05);
   
-  const tickValues = useMemo(() => {
-    if (uniqueDays.length <= 10) return uniqueDays;
-    const tickInterval = Math.ceil(uniqueDays.length / 10);
-    return uniqueDays.filter((_, i) => i % tickInterval === 0);
-  }, [uniqueDays]);
-  
   const formatDateTickBrush = (timeValue: string | number): string => {
     try {
       const dateObj = parseISO(String(timeValue));
@@ -195,10 +204,10 @@ export function HeatmapDisplay({
 
   return (
     <div className="w-full h-full">
-        <div 
+        <div
           ref={containerRef}
-          style={{ height: `${heatmapHeight}px` }} 
-          className="w-full h-full border rounded-md p-2 bg-muted/20"
+          style={{ height: `${heatmapHeight}px` }}
+          className="w-full h-full border rounded-md p-2 bg-white"
         >
           <TooltipProvider>
             <svg width="100%" height="100%">
@@ -256,19 +265,6 @@ export function HeatmapDisplay({
                         // Show text for non-zero values with very minimal thresholds
                         // Only require minimum height, ignore width constraint
                         const showText = cell && cell.value > 0 && cellHeight > 8;
-
-                        // Debug logging for first few cells
-                        if (day === uniqueDays[0] && s === visibleSeries[0]) {
-                          console.log('[HEATMAP TEXT DEBUG]', {
-                            cellWidth,
-                            cellHeight,
-                            fontSize,
-                            showText,
-                            cellValue: cell?.value,
-                            hasCell: !!cell,
-                            reason: !showText ? (!cell ? 'no cell' : cell.value <= 0 ? 'zero value' : cellHeight <= 8 ? 'height too small' : 'unknown') : 'showing'
-                          });
-                        }
 
                         return (
                           <Tooltip key={`${s}-${day}`} delayDuration={200}>
