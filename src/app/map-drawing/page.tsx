@@ -1111,10 +1111,15 @@ function MapDrawingPageContent() {
   //   }
   // }, []);
 
-  // DATA EXPLORER PANEL - Keyboard shortcut (Cmd/Ctrl + D)
+  // ============================================================================
+  // CONSOLIDATED: Event Listeners
+  // Replaces 2 separate effects: Keyboard Shortcut, Custom Event Listener
+  // Lines replaced: 1115, 1133
+  // ============================================================================
   useEffect(() => {
     if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
 
+    // 1. Keyboard shortcut handler (Cmd/Ctrl + D)
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
         e.preventDefault();
@@ -1125,22 +1130,51 @@ function MapDrawingPageContent() {
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  // DATA EXPLORER PANEL - Listen for custom event from UserMenu
-  useEffect(() => {
-    if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
-
+    // 2. Custom event handler from UserMenu
     const handleOpenPanel = () => {
       console.log('📡 [DATA EXPLORER PANEL] Received open event from UserMenu');
       setShowDataExplorerPanel(true);
     };
 
+    window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('open-data-explorer-panel', handleOpenPanel);
-    return () => window.removeEventListener('open-data-explorer-panel', handleOpenPanel);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('open-data-explorer-panel', handleOpenPanel);
+    };
   }, []);
+
+  // REMOVED: Keyboard shortcut - now in consolidated effect above (line 1118)
+  // useEffect(() => {
+  //   if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+  //
+  //   const handleKeyDown = (e: KeyboardEvent) => {
+  //     if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
+  //       e.preventDefault();
+  //       setShowDataExplorerPanel(prev => {
+  //         console.log('⌨️ [DATA EXPLORER PANEL] Toggling panel via keyboard');
+  //         return !prev;
+  //       });
+  //     }
+  //   };
+  //
+  //   window.addEventListener('keydown', handleKeyDown);
+  //   return () => window.removeEventListener('keydown', handleKeyDown);
+  // }, []);
+
+  // REMOVED: Custom event listener - now in consolidated effect above (line 1125)
+  // useEffect(() => {
+  //   if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+  //
+  //   const handleOpenPanel = () => {
+  //     console.log('📡 [DATA EXPLORER PANEL] Received open event from UserMenu');
+  //     setShowDataExplorerPanel(true);
+  //   };
+  //
+  //   window.addEventListener('open-data-explorer-panel', handleOpenPanel);
+  //   return () => window.removeEventListener('open-data-explorer-panel', handleOpenPanel);
+  // }, []);
   // ============================================================================
 
   const [itemToEdit, setItemToEdit] = useState<Pin | Line | Area | null>(null);
@@ -1364,68 +1398,70 @@ function MapDrawingPageContent() {
     }
   }, [view, updateMapScale]);
 
-  // Pin Meteo Grid: Initialize plot configurations
+  // ============================================================================
+  // CONSOLIDATED: Pin Meteo Grid Management
+  // Replaces 3 separate effects: Initialize Plot Configurations, Manage Data Availability, Manage Brush Range
+  // Lines replaced: 1368, 1398, 1428
+  // ============================================================================
   useEffect(() => {
-    const configs: PlotConfigInternal[] = ALL_PARAMETERS.map(key => {
-      const baseConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
-      let iconComp: LucideIcon = Info; // Default icon
-      const isDirectional = key === 'waveDirection' || key === 'windDirection10m';
+    // 1. Initialize plot configurations (one-time, if not already set)
+    if (pinMeteoPlotConfigsInternal.length === 0) {
+      const configs: PlotConfigInternal[] = ALL_PARAMETERS.map(key => {
+        const baseConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
+        let iconComp: LucideIcon = Info; // Default icon
+        const isDirectional = key === 'waveDirection' || key === 'windDirection10m';
 
-      // Fallbacks if no icon is in PARAMETER_CONFIG
-      if (key === 'seaLevelHeightMsl') iconComp = Waves;
-      else if (key === 'waveHeight') iconComp = Sailboat;
-      else if (key === 'waveDirection') iconComp = CompassIcon;
-      else if (key === 'wavePeriod') iconComp = TimerIcon;
-      else if (key === 'seaSurfaceTemperature') iconComp = Thermometer;
-      else if (key === 'temperature2m') iconComp = Thermometer;
-      else if (key === 'windSpeed10m') iconComp = WindIcon;
-      else if (key === 'windDirection10m') iconComp = CompassIcon;
-      else if (key === 'ghi') iconComp = SunIcon;
-      
-      return {
-        dataKey: key as CombinedParameterKey,
-        name: baseConfig.name,
-        unit: baseConfig.unit || '',
-        color: baseConfig.color || '--chart-1',
-        Icon: iconComp,
-        isDirectional,
-      };
-    });
-    setPinMeteoPlotConfigsInternal(configs);
-  }, []);
+        // Fallbacks if no icon is in PARAMETER_CONFIG
+        if (key === 'seaLevelHeightMsl') iconComp = Waves;
+        else if (key === 'waveHeight') iconComp = Sailboat;
+        else if (key === 'waveDirection') iconComp = CompassIcon;
+        else if (key === 'wavePeriod') iconComp = TimerIcon;
+        else if (key === 'seaSurfaceTemperature') iconComp = Thermometer;
+        else if (key === 'temperature2m') iconComp = Thermometer;
+        else if (key === 'windSpeed10m') iconComp = WindIcon;
+        else if (key === 'windDirection10m') iconComp = CompassIcon;
+        else if (key === 'ghi') iconComp = SunIcon;
 
-  // Pin Meteo Grid: Manage data availability status
-  useEffect(() => {
+        return {
+          dataKey: key as CombinedParameterKey,
+          name: baseConfig.name,
+          unit: baseConfig.unit || '',
+          color: baseConfig.color || '--chart-1',
+          Icon: iconComp,
+          isDirectional,
+        };
+      });
+      setPinMeteoPlotConfigsInternal(configs);
+    }
+
+    // 2. Manage data availability status
     if (isLoadingPinMeteoData) {
       const pendingAvailability: Partial<Record<CombinedParameterKey, SeriesAvailabilityStatus>> = {};
       ALL_PARAMETERS.forEach(key => {
         pendingAvailability[key as CombinedParameterKey] = 'pending';
       });
       setPinMeteoSeriesDataAvailability(pendingAvailability as Record<CombinedParameterKey, SeriesAvailabilityStatus>);
-      return;
-    }
-    
-    const newAvailability: Partial<Record<CombinedParameterKey, SeriesAvailabilityStatus>> = {};
-    if (!pinMeteoData || pinMeteoData.length === 0) {
-      ALL_PARAMETERS.forEach(key => {
-        newAvailability[key as CombinedParameterKey] = 'unavailable';
-      });
     } else {
-      ALL_PARAMETERS.forEach(key => {
-        const hasData = pinMeteoData.some(
-          point => {
-            const val = point[key as keyof CombinedDataPoint];
-            return val !== undefined && val !== null && !isNaN(Number(val));
-          }
-        );
-        newAvailability[key as CombinedParameterKey] = hasData ? 'available' : 'unavailable';
-      });
+      const newAvailability: Partial<Record<CombinedParameterKey, SeriesAvailabilityStatus>> = {};
+      if (!pinMeteoData || pinMeteoData.length === 0) {
+        ALL_PARAMETERS.forEach(key => {
+          newAvailability[key as CombinedParameterKey] = 'unavailable';
+        });
+      } else {
+        ALL_PARAMETERS.forEach(key => {
+          const hasData = pinMeteoData.some(
+            point => {
+              const val = point[key as keyof CombinedDataPoint];
+              return val !== undefined && val !== null && !isNaN(Number(val));
+            }
+          );
+          newAvailability[key as CombinedParameterKey] = hasData ? 'available' : 'unavailable';
+        });
+      }
+      setPinMeteoSeriesDataAvailability(newAvailability as Record<CombinedParameterKey, SeriesAvailabilityStatus>);
     }
-    setPinMeteoSeriesDataAvailability(newAvailability as Record<CombinedParameterKey, SeriesAvailabilityStatus>);
-  }, [pinMeteoData, isLoadingPinMeteoData]);
 
-  // Pin Meteo Grid: Manage brush range
-  useEffect(() => {
+    // 3. Manage brush range
     if (pinMeteoData && pinMeteoData.length > 0 && pinMeteoBrushEndIndex === undefined) {
       setPinMeteoBrushStartIndex(0);
       setPinMeteoBrushEndIndex(pinMeteoData.length - 1);
@@ -1433,7 +1469,43 @@ function MapDrawingPageContent() {
       setPinMeteoBrushStartIndex(0);
       setPinMeteoBrushEndIndex(undefined);
     }
-  }, [pinMeteoData, pinMeteoBrushEndIndex]);
+  }, [pinMeteoData, isLoadingPinMeteoData, pinMeteoBrushEndIndex, pinMeteoPlotConfigsInternal.length]);
+
+  // REMOVED: Initialize plot configurations - now in consolidated effect above (line 1373)
+  // useEffect(() => {
+  //   const configs: PlotConfigInternal[] = ALL_PARAMETERS.map(key => {
+  //     const baseConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
+  //     let iconComp: LucideIcon = Info;
+  //     const isDirectional = key === 'waveDirection' || key === 'windDirection10m';
+  //     ...
+  //     return { dataKey, name, unit, color, Icon, isDirectional };
+  //   });
+  //   setPinMeteoPlotConfigsInternal(configs);
+  // }, []);
+
+  // REMOVED: Manage data availability status - now in consolidated effect above (line 1411)
+  // useEffect(() => {
+  //   if (isLoadingPinMeteoData) {
+  //     const pendingAvailability = {};
+  //     ALL_PARAMETERS.forEach(key => {
+  //       pendingAvailability[key] = 'pending';
+  //     });
+  //     setPinMeteoSeriesDataAvailability(pendingAvailability);
+  //     return;
+  //   }
+  //   ...
+  // }, [pinMeteoData, isLoadingPinMeteoData]);
+
+  // REMOVED: Manage brush range - now in consolidated effect above (line 1440)
+  // useEffect(() => {
+  //   if (pinMeteoData && pinMeteoData.length > 0 && pinMeteoBrushEndIndex === undefined) {
+  //     setPinMeteoBrushStartIndex(0);
+  //     setPinMeteoBrushEndIndex(pinMeteoData.length - 1);
+  //   } else if ((!pinMeteoData || pinMeteoData.length === 0)) {
+  //     setPinMeteoBrushStartIndex(0);
+  //     setPinMeteoBrushEndIndex(undefined);
+  //   }
+  // }, [pinMeteoData, pinMeteoBrushEndIndex]);
 
   // Fetch merged files - extracted as reusable function
   const fetchMergedFiles = useCallback(async () => {
@@ -2773,8 +2845,57 @@ function MapDrawingPageContent() {
     setIsResizing(true);
   }, []);
 
-  // Initialize editing state when itemToEdit changes
+  // ============================================================================
+  // CONSOLIDATED: Object Editing State Management
+  // Replaces 2 separate effects: Initialize Editing State, Keep itemToEdit in Sync
+  // Lines replaced: 2777, 2848
+  // ============================================================================
   useEffect(() => {
+    // 1. Keep itemToEdit in sync with pins/lines/areas arrays (check first to avoid stale state)
+    if (itemToEdit) {
+      // Check if it's a pin
+      if ('lat' in itemToEdit && 'lng' in itemToEdit) {
+        const updatedPin = pins.find(p => p.id === itemToEdit.id);
+        if (updatedPin) {
+          // Only update if the data has actually changed (comparing relevant fields)
+          if (updatedPin.label !== itemToEdit.label ||
+              updatedPin.notes !== itemToEdit.notes ||
+              updatedPin.lat !== itemToEdit.lat ||
+              updatedPin.lng !== itemToEdit.lng ||
+              updatedPin.labelVisible !== itemToEdit.labelVisible) {
+            console.log('Updating itemToEdit with updated pin data:', updatedPin);
+            setItemToEdit(updatedPin);
+            return; // Let the next render handle initialization
+          }
+        }
+      }
+      // Check if it's a line
+      else if ('path' in itemToEdit && !('fillVisible' in itemToEdit)) {
+        const updatedLine = lines.find(l => l.id === itemToEdit.id);
+        if (updatedLine) {
+          if (updatedLine.label !== itemToEdit.label ||
+              updatedLine.notes !== itemToEdit.notes) {
+            console.log('Updating itemToEdit with updated line data:', updatedLine);
+            setItemToEdit(updatedLine);
+            return; // Let the next render handle initialization
+          }
+        }
+      }
+      // Check if it's an area
+      else if ('path' in itemToEdit && 'fillVisible' in itemToEdit) {
+        const updatedArea = areas.find(a => a.id === itemToEdit.id);
+        if (updatedArea) {
+          if (updatedArea.label !== itemToEdit.label ||
+              updatedArea.notes !== itemToEdit.notes) {
+            console.log('Updating itemToEdit with updated area data:', updatedArea);
+            setItemToEdit(updatedArea);
+            return; // Let the next render handle initialization
+          }
+        }
+      }
+    }
+
+    // 2. Initialize editing state when itemToEdit changes
     if (itemToEdit && isEditingObject) {
       setEditingLabel(itemToEdit.label || '');
       setEditingNotes(itemToEdit.notes || '');
@@ -2782,12 +2903,12 @@ function MapDrawingPageContent() {
       // Initialize coordinates and colors based on object type
       if ('lat' in itemToEdit && 'lng' in itemToEdit) {
         console.log('Initializing coordinates:', itemToEdit.lat, itemToEdit.lng, 'format:', coordinateFormat);
-        
+
         const formats = getCoordinateFormats(itemToEdit.lat);
         const lngFormats = getCoordinateFormats(itemToEdit.lng);
-        
+
         console.log('Generated formats:', formats, lngFormats);
-        
+
         // Set coordinates based on current format
         switch (coordinateFormat) {
           case 'degreeMinutes':
@@ -2809,12 +2930,12 @@ function MapDrawingPageContent() {
           // This is an area - initialize area-specific state
           setEditingColor(itemToEdit.color || '#3b82f6'); // Use stored color or blue for areas
           setEditingTransparency(itemToEdit.transparency || 20); // Use stored transparency or default
-          
+
           // Initialize area coordinates for editing
           const areaCoords = itemToEdit.path.map(point => {
             const latFormats = getCoordinateFormats(point.lat);
             const lngFormats = getCoordinateFormats(point.lng);
-            
+
             switch (coordinateFormat) {
               case 'degreeMinutes':
                 return [latFormats.degreeMinutes, lngFormats.degreeMinutes];
@@ -2830,10 +2951,10 @@ function MapDrawingPageContent() {
         }
       }
       setEditingSize(itemToEdit.size || 2); // Use stored size or default to thinner
-      
+
       // Auto-expand notes if there are existing notes
       setShowNotesSection(Boolean(itemToEdit.notes && itemToEdit.notes.trim()));
-      
+
       // Focus the label input field after a brief delay
       setTimeout(() => {
         if (labelInputRef.current) {
@@ -2842,50 +2963,29 @@ function MapDrawingPageContent() {
         }
       }, 100);
     }
-  }, [itemToEdit, isEditingObject, coordinateFormat]);
+  }, [itemToEdit, isEditingObject, coordinateFormat, pins, lines, areas]);
 
-  // Keep itemToEdit in sync with pins/lines/areas arrays
-  useEffect(() => {
-    if (itemToEdit) {
-      // Check if it's a pin
-      if ('lat' in itemToEdit && 'lng' in itemToEdit) {
-        const updatedPin = pins.find(p => p.id === itemToEdit.id);
-        if (updatedPin) {
-          // Only update if the data has actually changed (comparing relevant fields)
-          if (updatedPin.label !== itemToEdit.label || 
-              updatedPin.notes !== itemToEdit.notes ||
-              updatedPin.lat !== itemToEdit.lat ||
-              updatedPin.lng !== itemToEdit.lng ||
-              updatedPin.labelVisible !== itemToEdit.labelVisible) {
-            console.log('Updating itemToEdit with updated pin data:', updatedPin);
-            setItemToEdit(updatedPin);
-          }
-        }
-      } 
-      // Check if it's a line
-      else if ('path' in itemToEdit && !('fillVisible' in itemToEdit)) {
-        const updatedLine = lines.find(l => l.id === itemToEdit.id);
-        if (updatedLine) {
-          if (updatedLine.label !== itemToEdit.label || 
-              updatedLine.notes !== itemToEdit.notes) {
-            console.log('Updating itemToEdit with updated line data:', updatedLine);
-            setItemToEdit(updatedLine);
-          }
-        }
-      }
-      // Check if it's an area
-      else if ('path' in itemToEdit && 'fillVisible' in itemToEdit) {
-        const updatedArea = areas.find(a => a.id === itemToEdit.id);
-        if (updatedArea) {
-          if (updatedArea.label !== itemToEdit.label || 
-              updatedArea.notes !== itemToEdit.notes) {
-            console.log('Updating itemToEdit with updated area data:', updatedArea);
-            setItemToEdit(updatedArea);
-          }
-        }
-      }
-    }
-  }, [pins, lines, areas]); // Removed itemToEdit from dependencies to avoid infinite loop
+  // REMOVED: Initialize editing state - now in consolidated effect above (line 2793)
+  // useEffect(() => {
+  //   if (itemToEdit && isEditingObject) {
+  //     setEditingLabel(itemToEdit.label || '');
+  //     setEditingNotes(itemToEdit.notes || '');
+  //     setEditingProjectId(itemToEdit.projectId || null);
+  //     ...
+  //   }
+  // }, [itemToEdit, isEditingObject, coordinateFormat]);
+
+  // REMOVED: Keep itemToEdit in sync - now in consolidated effect above (line 2783)
+  // useEffect(() => {
+  //   if (itemToEdit) {
+  //     // Check if it's a pin
+  //     if ('lat' in itemToEdit && 'lng' in itemToEdit) {
+  //       const updatedPin = pins.find(p => p.id === itemToEdit.id);
+  //       ...
+  //     }
+  //     ...
+  //   }
+  // }, [pins, lines, areas]);
 
   // Handle coordinate format change
   const handleCoordinateFormatChange = (newFormat: CoordinateFormat) => {
