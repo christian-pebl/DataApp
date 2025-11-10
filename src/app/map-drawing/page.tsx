@@ -88,6 +88,14 @@ import { BatchDateConfirmDialog } from '@/components/pin-data/BatchDateConfirmDi
 import { hasTimeColumn, createFileWithDateColumn } from '@/lib/csv-date-injector';
 import { extractEdnaDate, isEdnaMetaFile } from '@/lib/edna-utils';
 
+// ============================================================================
+// DATA EXPLORER PANEL IMPORTS - NEW ADDITION
+// ============================================================================
+import { isFeatureEnabled } from '@/lib/feature-flags';
+import { DataExplorerPanel } from '@/components/data-explorer/DataExplorerPanel';
+import type { SavedPlotView } from '@/lib/supabase/plot-view-types';
+// ============================================================================
+
 // Lazy load heavy dialog components
 const ShareDialogSimplified = dynamic(
   () => import('@/components/sharing/ShareDialogSimplified').then(mod => ({ default: mod.ShareDialogSimplified })),
@@ -681,6 +689,11 @@ function MapDrawingPageContent() {
   // Data restoration state
   const [showDataRestore, setShowDataRestore] = useState(false);
   const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
+
+  // One-time initialization guards for consolidated effects
+  const hasInitializedGPS = useRef(false);
+  const hasInitializedCache = useRef(false);
+  const hasCheckedRedirect = useRef(false);
   
   // Pin Meteo Data State (copied from data explorer)
   const [pinMeteoDateRange, setPinMeteoDateRange] = useState<DateRange | undefined>(() => {
@@ -712,6 +725,15 @@ function MapDrawingPageContent() {
   const [showMarineDeviceModal, setShowMarineDeviceModal] = useState(false);
   const [selectedFileType, setSelectedFileType] = useState<'GP' | 'FPOD' | 'Subcam' | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isLoadingFromSavedPlot, setIsLoadingFromSavedPlot] = useState(false);
+
+  // ============================================================================
+  // DATA EXPLORER PANEL STATE - NEW ADDITION (Safe to remove/disable)
+  // ============================================================================
+  const [showDataExplorerPanel, setShowDataExplorerPanel] = useState(false);
+  const [savedPlots, setSavedPlots] = useState<SavedPlotView[]>([]);
+  const [isLoadingSavedPlots, setIsLoadingSavedPlots] = useState(false);
+  // ============================================================================
 
   // Store object GPS coordinates for marine/meteo data
   const [objectGpsCoords, setObjectGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -797,10 +819,77 @@ function MapDrawingPageContent() {
     }
   }, []);
 
-  // Load dynamic projects on component mount
+  // ============================================================================
+  // CONSOLIDATED: Initial Setup & Authentication
+  // Replaces 5 separate effects: Load Dynamic Projects, Check GPS Permission,
+  // Clear File Date Cache, Check LocalStorage Data, Authentication & Restore Dialog
+  // Lines replaced: 818, 864, 1052, 1072, 2532
+  // ============================================================================
   useEffect(() => {
+    // 1. Initialize file date cache (one-time)
+    if (!hasInitializedCache.current) {
+      hasInitializedCache.current = true;
+      setFileDateCache({});
+    }
+
+    // 2. Check GPS permission (one-time)
+    if (!hasInitializedGPS.current) {
+      hasInitializedGPS.current = true;
+      const checkLocationPermission = async () => {
+        if ('permissions' in navigator) {
+          try {
+            const permission = await navigator.permissions.query({ name: 'geolocation' });
+            setLocationPermission(permission.state);
+            permission.addEventListener('change', () => {
+              setLocationPermission(permission.state);
+            });
+          } catch (error) {
+            console.log('Permissions API not supported');
+            setLocationPermission('unknown');
+          }
+        }
+      };
+      checkLocationPermission();
+    }
+
+    // 3. Load dynamic projects
     loadDynamicProjects();
-  }, [loadDynamicProjects]);
+
+    // 4. Clean up legacy localStorage (when authenticated and data loaded)
+    if (typeof window !== 'undefined' && isAuthenticated && !isDataLoading) {
+      const hasLocalData =
+        localStorage.getItem('map-drawing-pins') ||
+        localStorage.getItem('map-drawing-lines') ||
+        localStorage.getItem('map-drawing-areas');
+
+      if (hasLocalData) {
+        console.log('🧹 Clearing legacy localStorage data (authentication-only mode)');
+        localStorage.removeItem('map-drawing-pins');
+        localStorage.removeItem('map-drawing-lines');
+        localStorage.removeItem('map-drawing-areas');
+      }
+    }
+
+    // 5. Check authentication and show restore dialog
+    const checkAuthAndRestore = async () => {
+      if (!hasCheckedAuth && isAuthenticated) {
+        setHasCheckedAuth(true);
+
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (session) {
+          const lastSync = localStorage.getItem('map-drawing-last-sync');
+          const timeSinceSync = lastSync ? Date.now() - new Date(lastSync).getTime() : Infinity;
+
+          if (timeSinceSync > 5 * 60 * 1000 || !lastSync) {
+            setShowDataRestore(true);
+          }
+        }
+      }
+    };
+    checkAuthAndRestore();
+  }, [isAuthenticated, isDataLoading, loadDynamicProjects, hasCheckedAuth]);
   
   // Drawing state
   const [drawingMode, setDrawingMode] = useState<DrawingMode>('none');
@@ -843,41 +932,79 @@ function MapDrawingPageContent() {
     }
   }, [showDataDropdown, showMeteoDataSection, sidebarWidth, originalSidebarWidth]);
 
-  // Check GPS permission status on mount
+  // REMOVED: Check GPS permission status - now in consolidated effect above (line 836)
+  // useEffect(() => {
+  //   const checkLocationPermission = async () => {
+  //     if ('permissions' in navigator) {
+  //       try {
+  //         const permission = await navigator.permissions.query({ name: 'geolocation' });
+  //         setLocationPermission(permission.state);
+  //
+  //         // Listen for permission changes
+  //         permission.addEventListener('change', () => {
+  //           setLocationPermission(permission.state);
+  //         });
+  //       } catch (error) {
+  //         console.log('Permissions API not supported, will use geolocation directly');
+  //         setLocationPermission('unknown');
+  //       }
+  //     } else {
+  //       setLocationPermission('unknown');
+  //     }
+  //   };
+  //
+  //   checkLocationPermission();
+  // }, []);
+
+  // ============================================================================
+  // CONSOLIDATED: Data Explorer Initialization
+  // Replaces 3 separate effects: Auto-Open Marine Device Modal, Load Saved Plots, Auto-Open from Redirect
+  // Lines replaced: 960, 1007, 1037
+  // ============================================================================
   useEffect(() => {
-    const checkLocationPermission = async () => {
-      if ('permissions' in navigator) {
-        try {
-          const permission = await navigator.permissions.query({ name: 'geolocation' });
-          setLocationPermission(permission.state);
-          
-          // Listen for permission changes
-          permission.addEventListener('change', () => {
-            setLocationPermission(permission.state);
-          });
-        } catch (error) {
-          console.log('Permissions API not supported, will use geolocation directly');
-          setLocationPermission('unknown');
+    if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+
+    // 1. Check for redirect to open data explorer (one-time)
+    if (!hasCheckedRedirect.current) {
+      hasCheckedRedirect.current = true;
+      const shouldOpen = localStorage.getItem('pebl-open-data-explorer');
+      if (shouldOpen === 'true') {
+        console.log('🔄 [DATA EXPLORER PANEL] Auto-opening panel from redirect');
+        setShowDataExplorerPanel(true);
+        localStorage.removeItem('pebl-open-data-explorer');
+      }
+    }
+
+    // 2. Load saved plots for current project
+    const loadSavedPlots = async () => {
+      const projectId = currentProjectContext || activeProjectId;
+      if (!projectId) {
+        setSavedPlots([]);
+        return;
+      }
+
+      setIsLoadingSavedPlots(true);
+      try {
+        const { plotViewService } = await import('@/lib/supabase/plot-view-service');
+        const result = await plotViewService.listPlotViews(projectId);
+
+        if (result.success && result.data) {
+          console.log('📊 [DATA EXPLORER PANEL] Loaded', result.data.length, 'saved plots');
+          setSavedPlots(result.data);
         }
-      } else {
-        setLocationPermission('unknown');
+      } catch (error) {
+        console.error('❌ [DATA EXPLORER PANEL] Error loading saved plots:', error);
+      } finally {
+        setIsLoadingSavedPlots(false);
       }
     };
+    loadSavedPlots();
 
-    checkLocationPermission();
-  }, []);
-
-  // Auto-open marine device modal when redirected from data-explorer with saved plot
-  useEffect(() => {
+    // 3. Check for saved plot load from sessionStorage
     const checkForSavedPlotLoad = () => {
       try {
-        // console.log('🔍 [MAP-DRAWING] Checking for pending saved plot load...');
-
         const storedData = sessionStorage.getItem('pebl-load-plot-view');
-        if (!storedData) {
-          // console.log('ℹ️ [MAP-DRAWING] No saved plot in sessionStorage');
-          return;
-        }
+        if (!storedData) return;
 
         const parsedData = JSON.parse(storedData);
         const { viewId, viewName, timestamp } = parsedData;
@@ -890,26 +1017,131 @@ function MapDrawingPageContent() {
           currentProjectId: currentProjectContext || activeProjectId
         });
 
-        // Open the modal with dummy data - PinMarineDeviceData will handle the actual loading
         console.log('📂 [MAP-DRAWING] Opening marine device modal for auto-load...');
-        setSelectedFileType('GP'); // Default type, will be overridden by loaded view
-        setSelectedFiles([]); // Empty files, will be downloaded by PinMarineDeviceData
+        setSelectedFileType('GP');
+        setSelectedFiles([]);
+        setIsLoadingFromSavedPlot(true);
         setShowMarineDeviceModal(true);
 
         console.log('✅ [MAP-DRAWING] Modal state set to open. PinMarineDeviceData should now mount and detect sessionStorage.');
 
-        // Note: We don't clear sessionStorage here - PinMarineDeviceData will do that
-        // after it successfully loads the view
-
+        // Note: sessionStorage cleared by PinMarineDeviceData after successful load
       } catch (error) {
         console.error('❌ [MAP-DRAWING] Error checking for saved plot load:', error);
-        // Clear invalid data
         sessionStorage.removeItem('pebl-load-plot-view');
       }
     };
-
     checkForSavedPlotLoad();
   }, [currentProjectContext, activeProjectId]);
+
+  // REMOVED: Old Auto-open marine device modal - now in consolidated effect above (line 1003)
+  // useEffect(() => {
+  //   const checkForSavedPlotLoad = () => {
+  //     try {
+  //       const storedData = sessionStorage.getItem('pebl-load-plot-view');
+  //       if (!storedData) return;
+  //
+  //       const parsedData = JSON.parse(storedData);
+  //       const { viewId, viewName, timestamp } = parsedData;
+  //
+  //       console.log('✅ [MAP-DRAWING] Found saved plot to load:', {
+  //         viewId,
+  //         viewName,
+  //         timestamp,
+  //         timeSinceSet: Date.now() - timestamp,
+  //         currentProjectId: currentProjectContext || activeProjectId
+  //       });
+  //
+  //       console.log('📂 [MAP-DRAWING] Opening marine device modal for auto-load...');
+  //       setSelectedFileType('GP');
+  //       setSelectedFiles([]);
+  //       setIsLoadingFromSavedPlot(true);
+  //       setShowMarineDeviceModal(true);
+  //
+  //       console.log('✅ [MAP-DRAWING] Modal state set to open. PinMarineDeviceData should now mount and detect sessionStorage.');
+  //
+  //     } catch (error) {
+  //       console.error('❌ [MAP-DRAWING] Error checking for saved plot load:', error);
+  //       sessionStorage.removeItem('pebl-load-plot-view');
+  //     }
+  //   };
+  //
+  //   checkForSavedPlotLoad();
+  // }, [currentProjectContext, activeProjectId]);
+
+  // REMOVED: Load saved plots - now in consolidated effect above (line 978)
+  // useEffect(() => {
+  //   if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+  //
+  //   const loadSavedPlots = async () => {
+  //     const projectId = currentProjectContext || activeProjectId;
+  //     if (!projectId) {
+  //       setSavedPlots([]);
+  //       return;
+  //     }
+  //
+  //     setIsLoadingSavedPlots(true);
+  //     try {
+  //       const { plotViewService } = await import('@/lib/supabase/plot-view-service');
+  //       const result = await plotViewService.listPlotViews(projectId);
+  //
+  //       if (result.success && result.data) {
+  //         console.log('📊 [DATA EXPLORER PANEL] Loaded', result.data.length, 'saved plots');
+  //         setSavedPlots(result.data);
+  //       }
+  //     } catch (error) {
+  //       console.error('❌ [DATA EXPLORER PANEL] Error loading saved plots:', error);
+  //     } finally {
+  //       setIsLoadingSavedPlots(false);
+  //     }
+  //   };
+  //
+  //   loadSavedPlots();
+  // }, [currentProjectContext, activeProjectId]);
+
+  // REMOVED: Auto-open from redirect - now in consolidated effect above (line 967)
+  // useEffect(() => {
+  //   if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+  //
+  //   const shouldOpen = localStorage.getItem('pebl-open-data-explorer');
+  //   if (shouldOpen === 'true') {
+  //     console.log('🔄 [DATA EXPLORER PANEL] Auto-opening panel from redirect');
+  //     setShowDataExplorerPanel(true);
+  //     localStorage.removeItem('pebl-open-data-explorer');
+  //   }
+  // }, []);
+
+  // DATA EXPLORER PANEL - Keyboard shortcut (Cmd/Ctrl + D)
+  useEffect(() => {
+    if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
+        e.preventDefault();
+        setShowDataExplorerPanel(prev => {
+          console.log('⌨️ [DATA EXPLORER PANEL] Toggling panel via keyboard');
+          return !prev;
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // DATA EXPLORER PANEL - Listen for custom event from UserMenu
+  useEffect(() => {
+    if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+
+    const handleOpenPanel = () => {
+      console.log('📡 [DATA EXPLORER PANEL] Received open event from UserMenu');
+      setShowDataExplorerPanel(true);
+    };
+
+    window.addEventListener('open-data-explorer-panel', handleOpenPanel);
+    return () => window.removeEventListener('open-data-explorer-panel', handleOpenPanel);
+  }, []);
+  // ============================================================================
 
   const [itemToEdit, setItemToEdit] = useState<Pin | Line | Area | null>(null);
   const [editingGeometry, setEditingGeometry] = useState<Line | Area | null>(null);
@@ -953,53 +1185,52 @@ function MapDrawingPageContent() {
   
   // REMOVED: Migration prompt - authentication-only mode means no legacy localStorage data exists
   
-  // Check for existing localStorage data on mount
-  // IMPORTANT: Only check after initial data load completes to avoid race conditions
-  useEffect(() => {
-    // Wait for initial data load to complete
-    if (typeof window !== 'undefined' && isAuthenticated && !isDataLoading) {
-      const hasLocalData =
-        localStorage.getItem('map-drawing-pins') ||
-        localStorage.getItem('map-drawing-lines') ||
-        localStorage.getItem('map-drawing-areas');
+  // REMOVED: Check for existing localStorage data - now in consolidated effect above (line 858)
+  // useEffect(() => {
+  //   // Wait for initial data load to complete
+  //   if (typeof window !== 'undefined' && isAuthenticated && !isDataLoading) {
+  //     const hasLocalData =
+  //       localStorage.getItem('map-drawing-pins') ||
+  //       localStorage.getItem('map-drawing-lines') ||
+  //       localStorage.getItem('map-drawing-areas');
+  //
+  //     // DISABLED: Migration prompt removed - only logged-in users can draw, so no legacy data should exist
+  //     // Just silently clear any stale localStorage data if it exists
+  //     if (hasLocalData) {
+  //       console.log('🧹 Clearing legacy localStorage data (authentication-only mode)');
+  //       localStorage.removeItem('map-drawing-pins');
+  //       localStorage.removeItem('map-drawing-lines');
+  //       localStorage.removeItem('map-drawing-areas');
+  //     }
+  //   }
+  // }, [isAuthenticated, isDataLoading]);
 
-      // DISABLED: Migration prompt removed - only logged-in users can draw, so no legacy data should exist
-      // Just silently clear any stale localStorage data if it exists
-      if (hasLocalData) {
-        console.log('🧹 Clearing legacy localStorage data (authentication-only mode)');
-        localStorage.removeItem('map-drawing-pins');
-        localStorage.removeItem('map-drawing-lines');
-        localStorage.removeItem('map-drawing-areas');
-      }
-    }
-  }, [isAuthenticated, isDataLoading]);
-
-  // Check for authentication and show restore dialog on login
-  useEffect(() => {
-    const checkAuthAndRestore = async () => {
-      if (!hasCheckedAuth && isAuthenticated) {
-        setHasCheckedAuth(true);
-        
-        // Check if this is a fresh login (no data in state but user is authenticated)
-        const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session) {
-          // Check if we need to restore data
-          const lastSync = localStorage.getItem('map-drawing-last-sync');
-          const timeSinceSync = lastSync ? Date.now() - new Date(lastSync).getTime() : Infinity;
-          
-          // Show restore dialog if it's been more than 5 minutes since last sync
-          // or if there's no sync time recorded
-          if (timeSinceSync > 5 * 60 * 1000 || !lastSync) {
-            setShowDataRestore(true);
-          }
-        }
-      }
-    };
-    
-    checkAuthAndRestore();
-  }, [isAuthenticated, hasCheckedAuth]);
+  // REMOVED: Check for authentication and show restore dialog - now in consolidated effect above (line 874)
+  // useEffect(() => {
+  //   const checkAuthAndRestore = async () => {
+  //     if (!hasCheckedAuth && isAuthenticated) {
+  //       setHasCheckedAuth(true);
+  //
+  //       // Check if this is a fresh login (no data in state but user is authenticated)
+  //       const supabase = createClient();
+  //       const { data: { session } } = await supabase.auth.getSession();
+  //
+  //       if (session) {
+  //         // Check if we need to restore data
+  //         const lastSync = localStorage.getItem('map-drawing-last-sync');
+  //         const timeSinceSync = lastSync ? Date.now() - new Date(lastSync).getTime() : Infinity;
+  //
+  //         // Show restore dialog if it's been more than 5 minutes since last sync
+  //         // or if there's no sync time recorded
+  //         if (timeSinceSync > 5 * 60 * 1000 || !lastSync) {
+  //           setShowDataRestore(true);
+  //         }
+  //       }
+  //     }
+  //   };
+  //
+  //   checkAuthAndRestore();
+  // }, [isAuthenticated, hasCheckedAuth]);
   
   // REMOVED: handleMigration - authentication-only mode means no legacy localStorage data exists
 
@@ -2434,10 +2665,10 @@ function MapDrawingPageContent() {
     error?: string;
   }>>({});
 
-  // Clear the file date cache on component mount (run once)
-  useEffect(() => {
-    setFileDateCache({});
-  }, []);
+  // REMOVED: Clear the file date cache - now in consolidated effect above (line 830)
+  // useEffect(() => {
+  //   setFileDateCache({});
+  // }, []);
 
   // Function to get or analyze file date range
   const getFileDateRange = useCallback(async (file: PinFile) => {
@@ -4042,6 +4273,274 @@ function MapDrawingPageContent() {
       return null;
     }
   }, [pinFileMetadata, areaFileMetadata, mergedFiles, toast]);
+
+  // ============================================================================
+  // DATA EXPLORER PANEL HANDLERS - NEW ADDITION
+  // ============================================================================
+  const handleFileClickFromPanel = useCallback(async (file: PinFile & { pinLabel: string }) => {
+    console.log('📂 [DATA EXPLORER PANEL] File clicked:', file.fileName);
+
+    try {
+      // Determine file type from filename
+      let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+      const parts = file.fileName.split('_');
+      const position0 = parts[0]?.toLowerCase() || '';
+      const position1 = parts[1]?.toLowerCase() || '';
+
+      if (position0.includes('fpod') || position1.includes('fpod')) {
+        fileType = 'FPOD';
+      } else if (position0.includes('subcam') || position1.includes('subcam')) {
+        fileType = 'Subcam';
+      }
+
+      // Fetch GPS coordinates for marine/meteo integration
+      if (file.pinId || file.areaId) {
+        console.log('📍 [DATA EXPLORER PANEL] Fetching GPS coordinates for:', file.pinId || file.areaId);
+
+        if (file.pinId) {
+          // Fetch pin coordinates
+          const pin = pins.find(p => p.id === file.pinId);
+          if (pin) {
+            setObjectGpsCoords({ lat: pin.lat, lng: pin.lng });
+            setObjectName(pin.label || file.pinLabel || 'Pin');
+            console.log('✅ [DATA EXPLORER PANEL] Set GPS coords from pin:', { lat: pin.lat, lng: pin.lng });
+          }
+        } else if (file.areaId) {
+          // Fetch area coordinates (use centroid)
+          const area = areas.find(a => a.id === file.areaId);
+          if (area && area.path && area.path.length > 0) {
+            const centerLat = area.path.reduce((sum, p) => sum + p.lat, 0) / area.path.length;
+            const centerLng = area.path.reduce((sum, p) => sum + p.lng, 0) / area.path.length;
+            setObjectGpsCoords({ lat: centerLat, lng: centerLng });
+            setObjectName(area.name || file.pinLabel || 'Area');
+            console.log('✅ [DATA EXPLORER PANEL] Set GPS coords from area centroid:', { lat: centerLat, lng: centerLng });
+          }
+        }
+      }
+
+      // Download the file (reuse existing handler)
+      const downloadedFile = await handleDownloadFileForPlot(
+        file.pinId || null,
+        file.fileName,
+        file.areaId || null,
+        file
+      );
+
+      if (!downloadedFile) {
+        throw new Error('File download failed');
+      }
+
+      // Open in marine device modal
+      setSelectedFileType(fileType);
+      setSelectedFiles([downloadedFile]);
+      setShowMarineDeviceModal(true);
+      setShowDataExplorerPanel(false); // Close panel
+
+      console.log('✅ [DATA EXPLORER PANEL] File opened in marine device modal');
+    } catch (error) {
+      console.error('❌ [DATA EXPLORER PANEL] Error opening file:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to open file"
+      });
+    }
+  }, [handleDownloadFileForPlot, pins, areas, toast]);
+
+  const handleDeleteFileForPlot = useCallback(async (file: PinFile & { pinLabel: string }) => {
+    console.log('🗑️ [DATA EXPLORER PANEL] Delete file clicked:', file.fileName);
+
+    try {
+      console.log('Calling deleteFileSimple with ID:', file.id);
+      const success = await fileStorageService.deleteFileSimple(file.id);
+      console.log('Delete result from service:', success);
+
+      if (success) {
+        console.log('Delete successful, reloading files...');
+
+        // Update the metadata state to remove the deleted file
+        if (file.pinId) {
+          setPinFileMetadata(prev => {
+            const updated = { ...prev };
+            if (updated[file.pinId]) {
+              updated[file.pinId] = updated[file.pinId].filter(f => f.id !== file.id);
+            }
+            return updated;
+          });
+        } else if (file.areaId) {
+          setAreaFileMetadata(prev => {
+            const updated = { ...prev };
+            if (updated[file.areaId]) {
+              updated[file.areaId] = updated[file.areaId].filter(f => f.id !== file.id);
+            }
+            return updated;
+          });
+        }
+
+        toast({
+          title: "File Deleted",
+          description: `"${file.fileName}" has been deleted successfully`
+        });
+      } else {
+        throw new Error('Delete operation returned false');
+      }
+    } catch (error) {
+      console.error('❌ [DATA EXPLORER PANEL] Error deleting file:', error);
+      toast({
+        variant: "destructive",
+        title: "Delete Failed",
+        description: error instanceof Error ? error.message : "Failed to delete file"
+      });
+    }
+  }, [toast]);
+
+  const handleRenameFileForPlot = useCallback(async (file: PinFile & { pinLabel: string }, newName: string): Promise<boolean> => {
+    console.log('✏️ [DATA EXPLORER PANEL] Rename file request:', file.fileName, '→', newName);
+
+    try {
+      const success = await fileStorageService.renameFile(file.id, newName);
+      console.log('Rename result from service:', success);
+
+      if (success) {
+        console.log('Rename successful, updating UI...');
+
+        // Update the metadata state with the new filename
+        if (file.pinId) {
+          setPinFileMetadata(prev => {
+            const updated = { ...prev };
+            if (updated[file.pinId]) {
+              updated[file.pinId] = updated[file.pinId].map(f =>
+                f.id === file.id ? { ...f, fileName: newName } : f
+              );
+            }
+            return updated;
+          });
+        } else if (file.areaId) {
+          setAreaFileMetadata(prev => {
+            const updated = { ...prev };
+            if (updated[file.areaId]) {
+              updated[file.areaId] = updated[file.areaId].map(f =>
+                f.id === file.id ? { ...f, fileName: newName } : f
+              );
+            }
+            return updated;
+          });
+        }
+
+        toast({
+          title: "File Renamed",
+          description: `File renamed to "${newName}"`
+        });
+
+        return true;
+      } else {
+        throw new Error('Rename operation returned false');
+      }
+    } catch (error) {
+      console.error('❌ [DATA EXPLORER PANEL] Error renaming file:', error);
+      toast({
+        variant: "destructive",
+        title: "Rename Failed",
+        description: error instanceof Error ? error.message : "Failed to rename file"
+      });
+      return false;
+    }
+  }, [toast]);
+
+  const handlePlotClickFromPanel = useCallback(async (plot: SavedPlotView) => {
+    console.log('📊 [DATA EXPLORER PANEL] Plot clicked:', plot.name);
+
+    try {
+      // Validate plot first
+      const { plotViewService } = await import('@/lib/supabase/plot-view-service');
+      const validation = await plotViewService.validatePlotView(plot.view_config);
+
+      if (!validation.valid) {
+        toast({
+          variant: "destructive",
+          title: "Cannot Open Plot",
+          description: "This plot references files that are no longer available"
+        });
+        return;
+      }
+
+      // Determine file type from the first plot in the saved view
+      let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+      const firstPlot = plot.view_config.plots?.[0];
+      if (firstPlot?.fileName) {
+        const parts = firstPlot.fileName.split('_');
+        const position0 = parts[0]?.toLowerCase() || '';
+        const position1 = parts[1]?.toLowerCase() || '';
+
+        if (position0.includes('fpod') || position1.includes('fpod')) {
+          fileType = 'FPOD';
+        } else if (position0.includes('subcam') || position1.includes('subcam')) {
+          fileType = 'Subcam';
+        }
+      }
+      console.log('🎯 [DATA EXPLORER PANEL] Detected file type:', fileType, 'from first plot:', firstPlot?.fileName);
+
+      // Use existing auto-load mechanism
+      sessionStorage.setItem('pebl-load-plot-view', JSON.stringify({
+        viewId: plot.id,
+        viewName: plot.name,
+        timestamp: Date.now()
+      }));
+
+      // Open marine device modal with correct file type
+      setSelectedFileType(fileType);
+      setSelectedFiles([]);
+      setShowMarineDeviceModal(true);
+      setShowDataExplorerPanel(false); // Close panel
+
+      console.log('✅ [DATA EXPLORER PANEL] Plot will auto-load in marine device modal');
+
+      toast({
+        title: "Loading Plot",
+        description: `Opening "${plot.name}"`,
+        duration: 2000
+      });
+    } catch (error) {
+      console.error('❌ [DATA EXPLORER PANEL] Error opening plot:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to open plot"
+      });
+    }
+  }, [toast]);
+
+  const handlePlotDeleteFromPanel = useCallback(async (plotId: string) => {
+    console.log('🗑️ [DATA EXPLORER PANEL] Deleting plot:', plotId);
+
+    // Reuse existing plot view service
+    const { plotViewService } = await import('@/lib/supabase/plot-view-service');
+    const result = await plotViewService.deletePlotView(plotId);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Delete failed');
+    }
+
+    // Update local state
+    setSavedPlots(prev => prev.filter(p => p.id !== plotId));
+
+    console.log('✅ [DATA EXPLORER PANEL] Plot deleted successfully');
+  }, []);
+
+  const handlePlotEditFromPanel = useCallback((plot: SavedPlotView) => {
+    console.log('✏️ [DATA EXPLORER PANEL] Edit plot:', plot.name);
+
+    toast({
+      title: "Edit Plot",
+      description: "Plot editing functionality coming soon. You'll be able to edit the name and description."
+    });
+
+    // TODO: Implement edit dialog
+    // - Show dialog with name and description fields
+    // - Call plotViewService.updatePlotView() to save changes
+    // - Update local state: setSavedPlots(prev => prev.map(p => p.id === plot.id ? updated : p))
+  }, [toast]);
+  // ============================================================================
 
   // Handle file type selection
   const handleFileTypeSelection = async (fileType: 'GP' | 'FPOD' | 'Subcam') => {
@@ -6849,6 +7348,7 @@ function MapDrawingPageContent() {
             // Clear the selected files when closing
             setSelectedFileType(null);
             setSelectedFiles([]);
+            setIsLoadingFromSavedPlot(false);
             // UI state is preserved - all panels stay as they were
           }
         }}
@@ -6860,7 +7360,7 @@ function MapDrawingPageContent() {
             </DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-hidden">
-            {selectedFileType && selectedFiles.length > 0 ? (
+            {selectedFileType && (selectedFiles.length > 0 || sessionStorage.getItem('pebl-load-plot-view') || isLoadingFromSavedPlot) ? (
               (() => {
                 // console.log('📍 Object location for marine/meteo:', {
                 //   objectGpsCoords,
@@ -8664,6 +9164,34 @@ function MapDrawingPageContent() {
           forceSync();
         }}
       />
+
+      {/* ================================================================ */}
+      {/* DATA EXPLORER PANEL - NEW ADDITION (Safe to remove/disable)     */}
+      {/* ================================================================ */}
+      {isFeatureEnabled('DATA_EXPLORER_PANEL') && (
+        <DataExplorerPanel
+          open={showDataExplorerPanel}
+          onOpenChange={setShowDataExplorerPanel}
+
+          // Files tab
+          files={allProjectFilesForTimeline}
+          isLoadingFiles={false}
+          onFileClick={handleFileClickFromPanel}
+          onFileDelete={handleDeleteFileForPlot}
+          onFileRename={handleRenameFileForPlot}
+          getFileDateRange={getFileDateRange}
+
+          // Saved plots tab
+          savedPlots={savedPlots}
+          isLoadingPlots={isLoadingSavedPlots}
+          onPlotClick={handlePlotClickFromPanel}
+          onPlotDelete={handlePlotDeleteFromPanel}
+          onPlotEdit={handlePlotEditFromPanel}
+        />
+      )}
+      {/* ================================================================ */}
+      {/* END DATA EXPLORER PANEL                                         */}
+      {/* ================================================================ */}
 
     </>
   );
