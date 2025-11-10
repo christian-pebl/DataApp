@@ -2845,13 +2845,9 @@ function MapDrawingPageContent() {
     setIsResizing(true);
   }, []);
 
-  // ============================================================================
-  // CONSOLIDATED: Object Editing State Management
-  // Replaces 2 separate effects: Initialize Editing State, Keep itemToEdit in Sync
-  // Lines replaced: 2777, 2848
-  // ============================================================================
+  // Keep itemToEdit in sync with pins/lines/areas arrays
+  // NOTE: itemToEdit intentionally NOT in dependencies to avoid infinite loop
   useEffect(() => {
-    // 1. Keep itemToEdit in sync with pins/lines/areas arrays (check first to avoid stale state)
     if (itemToEdit) {
       // Check if it's a pin
       if ('lat' in itemToEdit && 'lng' in itemToEdit) {
@@ -2865,7 +2861,6 @@ function MapDrawingPageContent() {
               updatedPin.labelVisible !== itemToEdit.labelVisible) {
             console.log('Updating itemToEdit with updated pin data:', updatedPin);
             setItemToEdit(updatedPin);
-            return; // Let the next render handle initialization
           }
         }
       }
@@ -2877,7 +2872,6 @@ function MapDrawingPageContent() {
               updatedLine.notes !== itemToEdit.notes) {
             console.log('Updating itemToEdit with updated line data:', updatedLine);
             setItemToEdit(updatedLine);
-            return; // Let the next render handle initialization
           }
         }
       }
@@ -2889,13 +2883,14 @@ function MapDrawingPageContent() {
               updatedArea.notes !== itemToEdit.notes) {
             console.log('Updating itemToEdit with updated area data:', updatedArea);
             setItemToEdit(updatedArea);
-            return; // Let the next render handle initialization
           }
         }
       }
     }
+  }, [pins, lines, areas]); // Removed itemToEdit from dependencies to avoid infinite loop
 
-    // 2. Initialize editing state when itemToEdit changes
+  // Initialize editing state when itemToEdit changes
+  useEffect(() => {
     if (itemToEdit && isEditingObject) {
       setEditingLabel(itemToEdit.label || '');
       setEditingNotes(itemToEdit.notes || '');
@@ -2963,7 +2958,7 @@ function MapDrawingPageContent() {
         }
       }, 100);
     }
-  }, [itemToEdit, isEditingObject, coordinateFormat, pins, lines, areas]);
+  }, [itemToEdit, isEditingObject, coordinateFormat]);
 
   // REMOVED: Initialize editing state - now in consolidated effect above (line 2793)
   // useEffect(() => {
