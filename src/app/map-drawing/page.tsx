@@ -694,6 +694,7 @@ function MapDrawingPageContent() {
   const hasInitializedGPS = useRef(false);
   const hasInitializedCache = useRef(false);
   const hasCheckedRedirect = useRef(false);
+  const hasLoadedProjects = useRef(false);
   
   // Pin Meteo Data State (copied from data explorer)
   const [pinMeteoDateRange, setPinMeteoDateRange] = useState<DateRange | undefined>(() => {
@@ -852,8 +853,11 @@ function MapDrawingPageContent() {
       checkLocationPermission();
     }
 
-    // 3. Load dynamic projects
-    loadDynamicProjects();
+    // 3. Load dynamic projects (one-time)
+    if (!hasLoadedProjects.current) {
+      hasLoadedProjects.current = true;
+      loadDynamicProjects();
+    }
 
     // 4. Clean up legacy localStorage (when authenticated and data loaded)
     if (typeof window !== 'undefined' && isAuthenticated && !isDataLoading) {
