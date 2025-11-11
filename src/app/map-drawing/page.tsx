@@ -142,6 +142,7 @@ const LeafletMap = dynamic(() => import('@/components/map/LeafletMap').then(mod 
 
 import { Project, Tag, Pin, Line as LineType, Area } from '@/lib/supabase/types';
 import { PinMarineDeviceData } from '@/components/pin-data/PinMarineDeviceData';
+import { FileUploadDialog } from '@/components/map-drawing/dialogs/FileUploadDialog';
 
 type DrawingMode = 'none' | 'pin' | 'line' | 'area';
 
@@ -8375,177 +8376,25 @@ function MapDrawingPageContent() {
       </Dialog>
 
       {/* Pin Selector Dialog - Appears after files are selected */}
-      <Dialog open={showUploadPinSelector} onOpenChange={(open) => {
-        if (!open) {
+      <FileUploadDialog
+        open={showUploadPinSelector}
+        onOpenChange={(open) => {
+          setShowUploadPinSelector(open);
+          if (!open) {
+            setPendingUploadFiles([]);
+          }
+        }}
+        pendingUploadFiles={pendingUploadFiles}
+        pins={pins}
+        areas={areas}
+        currentProjectId={currentProjectContext || activeProjectId}
+        isUploadingFiles={isUploadingFiles}
+        onUpload={(targetId, targetType) => handleFileUpload(targetId, targetType)}
+        onCancel={() => {
           setShowUploadPinSelector(false);
           setPendingUploadFiles([]);
-          setSelectedUploadPinId('');
-          setSelectedUploadAreaId('');
-          setUploadTargetType('pin');
-        }
-      }}>
-        <DialogContent className="sm:max-w-md z-[9999]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Assign Files
-            </DialogTitle>
-            <DialogDescription>
-              {pendingUploadFiles.length} file{pendingUploadFiles.length > 1 ? 's' : ''} selected. Choose where to upload them.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            {/* Show selected files */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Selected Files:</label>
-              <div className="bg-muted/30 rounded-md p-3 max-h-32 overflow-y-auto">
-                {pendingUploadFiles.map((file, index) => (
-                  <div key={index} className="text-xs font-mono text-muted-foreground py-0.5">
-                    {file.name}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Target type selector (Pin vs Area) */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Upload to:</label>
-              <RadioGroup value={uploadTargetType} onValueChange={(value: 'pin' | 'area') => {
-                setUploadTargetType(value);
-                setSelectedUploadPinId('');
-                setSelectedUploadAreaId('');
-              }}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="pin" id="target-pin" />
-                  <Label htmlFor="target-pin" className="flex items-center gap-2 cursor-pointer">
-                    <MapPin className="h-4 w-4 text-blue-500" />
-                    Pin (Single Location)
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="area" id="target-area" />
-                  <Label htmlFor="target-area" className="flex items-center gap-2 cursor-pointer">
-                    <Square className="h-4 w-4 text-purple-500" />
-                    Area (Region/Multi-Site)
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            {/* Pin/Area selector */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                {uploadTargetType === 'pin' ? 'Assign to Pin:' : 'Assign to Area:'}
-              </label>
-              {uploadTargetType === 'pin' ? (
-                <Select value={selectedUploadPinId} onValueChange={setSelectedUploadPinId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select a pin..." />
-                  </SelectTrigger>
-                  <SelectContent className="z-[99999]">
-                    {(() => {
-                      const projectPins = pins.filter(pin => pin.projectId === (currentProjectContext || activeProjectId));
-
-                      if (projectPins.length === 0) {
-                        return (
-                          <div className="p-4 text-center text-sm text-muted-foreground">
-                            No pins found in this project.
-                          </div>
-                        );
-                      }
-
-                      return projectPins.map(pin => (
-                        <SelectItem key={pin.id} value={pin.id}>
-                          <div className="flex items-center gap-2">
-                            <MapPin className="h-3 w-3 text-blue-500" />
-                            <div
-                              className="w-3 h-3 rounded-full"
-                              style={{ backgroundColor: pin.color }}
-                            />
-                            <span>{pin.label || 'Unnamed Pin'}</span>
-                          </div>
-                        </SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Select value={selectedUploadAreaId} onValueChange={setSelectedUploadAreaId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select an area..." />
-                  </SelectTrigger>
-                  <SelectContent className="z-[99999]">
-                    {(() => {
-                      const projectAreas = areas.filter(area => area.projectId === (currentProjectContext || activeProjectId));
-
-                      if (projectAreas.length === 0) {
-                        return (
-                          <div className="p-4 text-center text-sm text-muted-foreground">
-                            No areas found in this project.
-                          </div>
-                        );
-                      }
-
-                      return projectAreas.map(area => (
-                        <SelectItem key={area.id} value={area.id}>
-                          <div className="flex items-center gap-2">
-                            <Square className="h-3 w-3 text-purple-500" />
-                            <span>{area.label || 'Unnamed Area'}</span>
-                          </div>
-                        </SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setShowUploadPinSelector(false);
-                  setPendingUploadFiles([]);
-                  setSelectedUploadPinId('');
-                  setSelectedUploadAreaId('');
-                  setUploadTargetType('pin');
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  const targetId = uploadTargetType === 'pin' ? selectedUploadPinId : selectedUploadAreaId;
-                  if (targetId) {
-                    setShowUploadPinSelector(false);
-                    handleFileUpload(targetId, uploadTargetType);
-                  } else {
-                    toast({
-                      variant: "destructive",
-                      title: `No ${uploadTargetType === 'pin' ? 'Pin' : 'Area'} Selected`,
-                      description: `Please select ${uploadTargetType === 'pin' ? 'a pin' : 'an area'} to upload files to.`
-                    });
-                  }
-                }}
-                disabled={(!selectedUploadPinId && !selectedUploadAreaId) || isUploadingFiles}
-              >
-                {isUploadingFiles ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Uploading...
-                  </>
-                ) : (
-                  'Upload Files'
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        }}
+      />
 
       {/* Duplicate File Warning Dialog */}
       <Dialog open={showDuplicateWarning} onOpenChange={(open) => {
