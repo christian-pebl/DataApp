@@ -146,6 +146,7 @@ import { FileUploadDialog } from '@/components/map-drawing/dialogs/FileUploadDia
 import { ProjectSettingsDialog } from '@/components/map-drawing/dialogs/ProjectSettingsDialog';
 import { MarineDeviceModal } from '@/components/map-drawing/dialogs/MarineDeviceModal';
 import { ProjectsDialog } from '@/components/map-drawing/dialogs/ProjectsDialog';
+import { DeleteProjectConfirmDialog } from '@/components/map-drawing/dialogs/DeleteProjectConfirmDialog';
 
 type DrawingMode = 'none' | 'pin' | 'line' | 'area';
 
@@ -8311,98 +8312,27 @@ function MapDrawingPageContent() {
       />
 
       {/* Delete Project Confirmation Dialog */}
-      <Dialog open={showDeleteConfirmDialog} onOpenChange={(open) => {
-        if (!open) setCurrentProjectContext('');
-        setShowDeleteConfirmDialog(open);
-      }}>
-        <DialogContent className="sm:max-w-md z-[9999]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="h-5 w-5" />
-              Delete Project
-            </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete "{dynamicProjects[currentProjectContext || activeProjectId]?.name}"?
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
-              <p className="text-sm text-destructive font-medium mb-2">This action will permanently delete:</p>
-              <ul className="text-sm text-destructive space-y-1 ml-4 list-disc">
-                <li>All pins, lines, and areas in this project</li>
-                <li>All uploaded data files</li>
-                <li>All project settings and configurations</li>
-              </ul>
-              <p className="text-sm text-destructive font-medium mt-2">This action cannot be undone.</p>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowDeleteConfirmDialog(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={async () => {
-                  console.log('🗑️ Delete Project button clicked');
-                  console.log('📂 Project context:', currentProjectContext);
-                  
-                  const projectId = currentProjectContext || activeProjectId;
-                  if (!projectId) {
-                    console.log('❌ No project ID available for deletion');
-                    toast({
-                      title: "Error",
-                      description: "No project selected for deletion.",
-                      variant: "destructive"
-                    });
-                    return;
-                  }
-
-                  console.log('⏳ Setting isDeletingProject to true');
-                  setIsDeletingProject(true);
-                  try {
-                    console.log('🚀 Calling projectService.deleteProject...');
-                    await projectService.deleteProject(projectId);
-                    console.log('✅ Project deleted successfully');
-
-                    toast({
-                      title: "Project Deleted",
-                      description: `Project "${dynamicProjects[projectId]?.name}" has been deleted successfully.`,
-                      duration: 3000
-                    });
-
-                    setShowDeleteConfirmDialog(false);
-                    setCurrentProjectContext('');
-                    
-                    // Refresh project list to remove deleted project
-                    console.log('🔄 Refreshing project list after deletion...');
-                    await loadDynamicProjects();
-                    
-                  } catch (error) {
-                    console.error('Failed to delete project:', error);
-                    toast({
-                      title: "Deletion Failed",
-                      description: error instanceof Error ? error.message : "Failed to delete project. Please try again.",
-                      variant: "destructive",
-                      duration: 5000
-                    });
-                  } finally {
-                    setIsDeletingProject(false);
-                  }
-                }}
-                disabled={isDeletingProject}
-                className="flex items-center gap-2"
-              >
-                {isDeletingProject && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                {isDeletingProject ? 'Deleting...' : 'Delete Project'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <DeleteProjectConfirmDialog
+        open={showDeleteConfirmDialog}
+        onOpenChange={(open) => {
+          if (!open) setCurrentProjectContext('');
+          setShowDeleteConfirmDialog(open);
+        }}
+        projectName={dynamicProjects[currentProjectContext || activeProjectId]?.name || ''}
+        projectId={currentProjectContext || activeProjectId}
+        onConfirmDelete={async () => {
+          console.log('🗑️ Delete Project button clicked');
+          const projectId = currentProjectContext || activeProjectId;
+          console.log('📂 Project context:', projectId);
+          console.log('🚀 Calling projectService.deleteProject...');
+          await projectService.deleteProject(projectId);
+          console.log('✅ Project deleted successfully');
+          setCurrentProjectContext('');
+          console.log('🔄 Refreshing project list after deletion...');
+          await loadDynamicProjects();
+        }}
+        onCancel={() => setShowDeleteConfirmDialog(false)}
+      />
 
       {/* Batch Delete Confirmation Dialog */}
       <Dialog open={showBatchDeleteConfirmDialog} onOpenChange={setShowBatchDeleteConfirmDialog}>
