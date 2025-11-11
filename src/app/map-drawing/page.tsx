@@ -4602,6 +4602,7 @@ function MapDrawingPageContent() {
       // Open marine device modal with correct file type
       setSelectedFileType(fileType);
       setSelectedFiles([]);
+      setIsLoadingFromSavedPlot(true); // Tell modal we're loading from saved plot
       setShowMarineDeviceModal(true);
       setShowDataExplorerPanel(false); // Close panel
 

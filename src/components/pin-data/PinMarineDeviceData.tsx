@@ -1227,7 +1227,8 @@ function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availabl
 
         // Reset auto-load flag after successful restoration
         autoLoadInProgress.current = false;
-        console.log('✅ [PINMARINEDEVICEDATA] Reset autoLoadInProgress = false');
+        plotsInitialized.current = true; // Mark plots as initialized to prevent empty plot creation
+        console.log('✅ [PINMARINEDEVICEDATA] Reset autoLoadInProgress = false and plotsInitialized = true');
 
       } catch (error) {
         console.error('❌ [PINMARINEDEVICEDATA] Error auto-loading plot view:', error);
