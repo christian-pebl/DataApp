@@ -72,15 +72,6 @@ function detectDateFormat(lines: string[], timeColumnIndex: number, startRow: nu
   const isoDateValues: string[] = [];
   const isHaplotypeFile = fileName.toLowerCase().includes('hapl');
 
-  console.log('═══════════════════════════════════════════════════════');
-  // console.log('[DATE DETECTION] Starting date format detection...');
-  // console.log('[DATE DETECTION] Time column index:', timeColumnIndex);
-  // console.log('[DATE DETECTION] Start row:', startRow);
-  // console.log('[DATE DETECTION] Sample size:', sampleSize);
-  if (isHaplotypeFile) {
-    console.log('🧬 HAPL_DEBUG: Date format detection for haplotype file');
-  }
-  console.log('═══════════════════════════════════════════════════════');
 
   // Extract date values from sample rows (starting from the first data row)
   for (let i = startRow; i < startRow + sampleSize && i < lines.length; i++) {
@@ -105,25 +96,14 @@ function detectDateFormat(lines: string[], timeColumnIndex: number, startRow: nu
     }
   }
 
-  console.log('[DATE DETECTION] Slash-separated dates found:', dateValues.length);
-  console.log('[DATE DETECTION] Sample slash dates:', dateValues.slice(0, 5));
-  console.log('[DATE DETECTION] ISO format dates found:', isoDateValues.length);
-  console.log('[DATE DETECTION] Sample ISO dates:', isoDateValues.slice(0, 5));
-
-  // 🧬 HAPL_DEBUG: Show all sample dates for haplotype files
-  if (isHaplotypeFile) {
-    console.log('🧬 HAPL_DEBUG: Slash dates found:', dateValues.length);
-    console.log('🧬 HAPL_DEBUG: Sample slash dates:', dateValues.slice(0, 10));
-    console.log('🧬 HAPL_DEBUG: ISO dates found:', isoDateValues.length);
-    console.log('🧬 HAPL_DEBUG: Sample ISO dates:', isoDateValues.slice(0, 10));
-  }
-
   // Priority 1: If we found ISO format dates, use that
   if (isoDateValues.length > 0) {
-    console.log('═══════════════════════════════════════════════════════');
-    console.log('[DATE DETECTION] ✓ Detected format: YYYY-MM-DD (ISO format)');
-    console.log('═══════════════════════════════════════════════════════');
+    console.log(`[DATE DETECTION] ✓ ISO format (${isoDateValues.length} dates)`);
     return 'YYYY-MM-DD';
+  }
+
+  if (dateValues.length > 0) {
+    console.log(`[DATE DETECTION] Slash-separated dates found: ${dateValues.length}`);
   }
 
   // Priority 2: Process slash-separated dates
@@ -332,8 +312,7 @@ export async function parseCSVFile(
     diagnosticLogs.push(`✅ Using row ${headerRowIndex} as header row`);
     diagnosticLogs.push(`📋 Detected ${rawHeaders.length} columns: ${rawHeaders.slice(0, 5).join(', ')}${rawHeaders.length > 5 ? '...' : ''}`);
 
-    console.log(`[CSV PARSER] Using row ${headerRowIndex} as header row`);
-    console.log(`[CSV PARSER] Headers detected:`, rawHeaders.slice(0, 10));
+    console.log(`[CSV PARSER] Headers: ${rawHeaders.length} cols (${rawHeaders.slice(0, 3).join(', ')}${rawHeaders.length > 3 ? '...' : ''})`);
 
     // 🧬 HAPL_DEBUG: Log all headers for haplotype files
     if (isHaplotypeFile) {

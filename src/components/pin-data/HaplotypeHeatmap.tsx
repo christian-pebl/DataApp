@@ -6,11 +6,14 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Save } from "lucide-react";
+import { Save, TableIcon, TrendingUp, Settings } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type { HaplotypeCellData, HaplotypeParseResult } from './csvParser';
 import type { StyleProperties } from './StylingRulesDialog';
+import { RarefactionChart } from './RarefactionChart';
+import { RarefactionSettingsDialog } from './RarefactionSettingsDialog';
+import type { CurveFitModel } from '@/lib/curve-fitting';
 
 interface HaplotypeHeatmapProps {
   haplotypeData: HaplotypeParseResult;
@@ -31,6 +34,8 @@ interface HaplotypeHeatmapProps {
 interface ProcessedCell extends HaplotypeCellData {
   displayValue: string;
 }
+
+type HaplotypeViewMode = 'heatmap' | 'rarefaction';
 
 export function HaplotypeHeatmap({
   haplotypeData,
@@ -53,6 +58,20 @@ export function HaplotypeHeatmap({
     yAxisTitleFontWeight: spotSampleStyles?.yAxisTitleFontWeight ?? 'normal',
     yAxisTitleAlign: spotSampleStyles?.yAxisTitleAlign ?? 'center'
   };
+
+  // View mode state
+  const [viewMode, setViewMode] = useState<HaplotypeViewMode>('heatmap');
+
+  // Rarefaction curve settings (always use logarithmic fit)
+  const curveFitModel: CurveFitModel = 'logarithmic';
+  const showFittedCurve = true;
+  const [showRarefactionSettings, setShowRarefactionSettings] = useState(false);
+  const [rarefactionChartSize, setRarefactionChartSize] = useState(300);
+  const [rarefactionLegendXOffset, setRarefactionLegendXOffset] = useState(25);
+  const [rarefactionLegendYOffset, setRarefactionLegendYOffset] = useState(100);
+  const [rarefactionYAxisTitleOffset, setRarefactionYAxisTitleOffset] = useState(20);
+  const [rarefactionMaxYAxis, setRarefactionMaxYAxis] = useState<number | null>(null);
+  const [rarefactionShowLegend, setRarefactionShowLegend] = useState(true);
 
   // Credibility filter state (all enabled by default)
   const [showHigh, setShowHigh] = useState(true);
@@ -298,8 +317,49 @@ export function HaplotypeHeatmap({
     <div className="w-full h-full flex flex-col gap-2">
       {/* Filter Panel */}
       <div className="flex flex-col gap-3 p-3 border rounded-md bg-card shadow-sm">
-        <div className="flex items-center gap-6">
-          <span className="text-sm font-medium">Credibility Filters:</span>
+        {/* View Mode Selector */}
+        <div className="flex items-center gap-4 pb-3 border-b">
+          <span className="text-sm font-medium">View Mode:</span>
+          <div className="flex items-center gap-1 border rounded-md p-1 bg-gray-50">
+            <Button
+              variant={viewMode === 'heatmap' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('heatmap')}
+              className="h-8"
+            >
+              <TableIcon className="h-4 w-4 mr-2" />
+              Heatmap
+            </Button>
+            <Button
+              variant={viewMode === 'rarefaction' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('rarefaction')}
+              className="h-8"
+            >
+              <TrendingUp className="h-4 w-4 mr-2" />
+              Rarefaction
+            </Button>
+          </div>
+
+          {/* Rarefaction Settings Button */}
+          {viewMode === 'rarefaction' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowRarefactionSettings(true)}
+              className="h-8 gap-2"
+            >
+              <Settings className="h-4 w-4" />
+              Curve Fit Settings
+            </Button>
+          )}
+        </div>
+
+        {/* Heatmap-specific filters (only show in heatmap mode) */}
+        {viewMode === 'heatmap' && (
+          <>
+            <div className="flex items-center gap-6">
+              <span className="text-sm font-medium">Credibility Filters:</span>
           <div className="flex items-center gap-2">
             <Checkbox id="high" checked={showHigh} onCheckedChange={setShowHigh} />
             <Label htmlFor="high" className="text-sm cursor-pointer">High</Label>
@@ -361,14 +421,37 @@ export function HaplotypeHeatmap({
             </Button>
           )}
         </div>
+          </>
+        )}
       </div>
 
-      {/* Heatmap */}
-      <div
-        ref={containerRef}
-        style={{ height: `${heatmapHeight}px` }}
-        className="flex-1 w-full border rounded-md p-2 bg-white overflow-auto"
-      >
+      {/* Conditional Rendering: Heatmap or Rarefaction */}
+      {viewMode === 'rarefaction' ? (
+        /* Rarefaction View */
+        <div
+          style={{ height: `${heatmapHeight}px` }}
+          className="flex-1 w-full border rounded-md p-4 bg-white overflow-auto"
+        >
+          <RarefactionChart
+            haplotypeData={haplotypeData}
+            curveFitModel={curveFitModel}
+            showFittedCurve={showFittedCurve}
+            height={heatmapHeight - 60}
+            chartSize={rarefactionChartSize}
+            legendXOffset={rarefactionLegendXOffset}
+            legendYOffset={rarefactionLegendYOffset}
+            yAxisTitleOffset={rarefactionYAxisTitleOffset}
+            maxYAxis={rarefactionMaxYAxis}
+            showLegend={rarefactionShowLegend}
+          />
+        </div>
+      ) : (
+        /* Heatmap View */
+        <div
+          ref={containerRef}
+          style={{ height: `${heatmapHeight}px` }}
+          className="flex-1 w-full border rounded-md p-2 bg-white overflow-auto"
+        >
         <TooltipProvider>
           <svg width="100%" height={Math.max(plotHeight + margin.top + margin.bottom, 400)}>
             {plotWidth > 0 && plotHeight > 0 && (
@@ -550,6 +633,37 @@ export function HaplotypeHeatmap({
           </svg>
         </TooltipProvider>
       </div>
+      )}
+
+      {/* Rarefaction Plot Settings Dialog */}
+      <RarefactionSettingsDialog
+        open={showRarefactionSettings}
+        onOpenChange={setShowRarefactionSettings}
+        chartSize={rarefactionChartSize}
+        onChartSizeChange={setRarefactionChartSize}
+        legendXOffset={rarefactionLegendXOffset}
+        onLegendXOffsetChange={setRarefactionLegendXOffset}
+        legendYOffset={rarefactionLegendYOffset}
+        onLegendYOffsetChange={setRarefactionLegendYOffset}
+        yAxisTitleOffset={rarefactionYAxisTitleOffset}
+        onYAxisTitleOffsetChange={setRarefactionYAxisTitleOffset}
+        maxYAxis={rarefactionMaxYAxis}
+        onMaxYAxisChange={setRarefactionMaxYAxis}
+        showLegend={rarefactionShowLegend}
+        onShowLegendChange={setRarefactionShowLegend}
+        autoMaxYAxis={(() => {
+          const totalSpecies = haplotypeData.species.length || 50;
+          const autoMax = Math.ceil(totalSpecies) + 5;
+          // Round to neat number
+          let increment: number;
+          if (autoMax <= 20) increment = 5;
+          else if (autoMax <= 50) increment = 10;
+          else if (autoMax <= 100) increment = 20;
+          else if (autoMax <= 200) increment = 50;
+          else increment = 100;
+          return Math.ceil(autoMax / increment) * increment;
+        })()}
+      />
     </div>
   );
 }

@@ -700,7 +700,6 @@ class FileStorageService {
    */
   async getProjectFiles(projectId: string): Promise<PinFile[]> {
     perfLogger.start(`getProjectFiles-${projectId.slice(0, 8)}`);
-    console.log(`🔍 [FILE-STORAGE] getProjectFiles called for project: ${projectId}`);
 
     try {
       // Get current user to ensure they have access
@@ -712,10 +711,7 @@ class FileStorageService {
         return []
       }
 
-      console.log(`✅ [FILE-STORAGE] User authenticated: ${user.id}`);
-
       // Query all files for the project - RLS policies will handle access control
-      console.log(`📡 [FILE-STORAGE] Querying pin_files table with project_id = ${projectId}`);
       const { data, error } = await this.supabase
         .from('pin_files')
         .select('*')
@@ -728,24 +724,14 @@ class FileStorageService {
         return []
       }
 
-      console.log(`📊 [FILE-STORAGE] Query returned ${data?.length || 0} files`);
-
       if (data && data.length > 0) {
-        const fileNames = data.map(f => f.file_name);
-        console.log(`📋 [FILE-STORAGE] All file names:`, fileNames);
-
         const nmaxFiles = data.filter(f => f.file_name.includes('_nmax'));
-        if (nmaxFiles.length > 0) {
-          console.log(`🎯 [FILE-STORAGE] Found ${nmaxFiles.length} _nmax files:`, nmaxFiles.map(f => f.file_name));
-        } else {
-          console.log(`⚠️ [FILE-STORAGE] No _nmax files found in results!`);
-        }
-
-        // Log files by pin/area attachment
         const pinFiles = data.filter(f => f.pin_id && !f.area_id);
         const areaFiles = data.filter(f => f.area_id && !f.pin_id);
         const orphanedFiles = data.filter(f => !f.pin_id && !f.area_id);
-        console.log(`📌 [FILE-STORAGE] Files breakdown: ${pinFiles.length} pin files, ${areaFiles.length} area files, ${orphanedFiles.length} orphaned`);
+        console.log(`📊 [FILE-STORAGE] ${data.length} files (${pinFiles.length} pin, ${areaFiles.length} area, ${nmaxFiles.length} nmax${orphanedFiles.length > 0 ? `, ${orphanedFiles.length} orphaned` : ''})`);
+      } else {
+        console.log(`📊 [FILE-STORAGE] Query returned 0 files`);
       }
 
       perfLogger.end(`getProjectFiles-${projectId.slice(0, 8)}`, `${data?.length || 0} files`);

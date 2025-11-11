@@ -27,6 +27,7 @@ interface RarefactionChartProps {
   legendYOffset?: number;
   yAxisTitleOffset?: number;
   maxYAxis?: number | null;
+  showLegend?: boolean;
 }
 
 export function RarefactionChart({
@@ -34,10 +35,11 @@ export function RarefactionChart({
   width,
   height: initialHeight = 120,
   chartSize: propChartSize = 300,
-  legendXOffset = -22,
-  legendYOffset = 15,
+  legendXOffset = 25,
+  legendYOffset = 100,
   yAxisTitleOffset = 20,
-  maxYAxis = null
+  maxYAxis = null,
+  showLegend = true
 }: RarefactionChartProps) {
   const chartSize = propChartSize;
 
@@ -91,7 +93,7 @@ export function RarefactionChart({
           x,
           fitted: Math.max(0, fitted),
           fittedUpper: fitted + standardError,
-          fittedLower: Math.max(0, fitted - standardError)
+          fittedLower: fitted - standardError  // Don't clamp - let Area create proper ribbon
         });
       }
 
@@ -105,7 +107,7 @@ export function RarefactionChart({
           x,
           extrapolation: Math.max(0, extrapolation),
           extrapolationUpper: extrapolation + extrapolationSE,
-          extrapolationLower: Math.max(0, extrapolation - extrapolationSE)
+          extrapolationLower: extrapolation - extrapolationSE  // Don't clamp - let Area create proper ribbon
         });
       }
     }
@@ -166,9 +168,15 @@ export function RarefactionChart({
     return getNiceInterval(stats.totalSamples + 6);
   }, [stats.totalSamples]);
 
+  // Calculate actual max Y value being used (auto or custom)
+  const actualMaxY = useMemo(() => {
+    const autoMax = roundToNeatNumber(Math.ceil(stats.totalSpecies) + 5);
+    return maxYAxis !== null ? maxYAxis : autoMax;
+  }, [stats.totalSpecies, maxYAxis]);
+
   const yAxisInterval = useMemo(() => {
-    return getNiceInterval(stats.totalSpecies);
-  }, [stats.totalSpecies]);
+    return getNiceInterval(actualMaxY);
+  }, [actualMaxY]);
 
   // Generate tick arrays
   const xAxisTicks = useMemo(() => {
@@ -186,17 +194,15 @@ export function RarefactionChart({
 
   const yAxisTicks = useMemo(() => {
     const ticks = [];
-    const autoMax = roundToNeatNumber(Math.ceil(stats.totalSpecies) + 5);
-    const maxY = maxYAxis !== null ? maxYAxis : autoMax;
-    for (let i = 0; i <= maxY; i += yAxisInterval) {
+    for (let i = 0; i <= actualMaxY; i += yAxisInterval) {
       ticks.push(i);
     }
     // Ensure we include the max value if it's close
-    if (ticks[ticks.length - 1] < maxY - yAxisInterval / 2) {
-      ticks.push(Math.ceil(maxY / yAxisInterval) * yAxisInterval);
+    if (ticks[ticks.length - 1] < actualMaxY - yAxisInterval / 2) {
+      ticks.push(Math.ceil(actualMaxY / yAxisInterval) * yAxisInterval);
     }
     return ticks;
-  }, [stats.totalSpecies, yAxisInterval, maxYAxis]);
+  }, [actualMaxY, yAxisInterval]);
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length > 0) {
@@ -247,7 +253,7 @@ export function RarefactionChart({
               stroke="#9ca3af"
             />
             <YAxis
-              domain={[0, maxYAxis !== null ? maxYAxis : roundToNeatNumber(Math.ceil(stats.totalSpecies) + 5)]}
+              domain={[0, actualMaxY]}
               ticks={yAxisTicks}
               label={{
                 value: 'Species',
@@ -271,6 +277,18 @@ export function RarefactionChart({
               connectNulls={true}
               legendType="none"
               baseLine="fittedLower"
+            />
+
+            <Area
+              type="monotone"
+              dataKey="extrapolationUpper"
+              stroke="none"
+              fill="#f59e0b"
+              fillOpacity={0.15}
+              isAnimationActive={false}
+              connectNulls={true}
+              legendType="none"
+              baseLine="extrapolationLower"
             />
 
             <Line
@@ -307,32 +325,34 @@ export function RarefactionChart({
           </ComposedChart>
         </ResponsiveContainer>
 
-        <div style={{
-          position: 'absolute',
-          top: `${legendYOffset}px`,
-          right: `${legendXOffset}px`,
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-          border: '1px solid #d1d5db',
-          borderRadius: '6px',
-          padding: '8px 10px',
-          fontSize: '11px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-          zIndex: 10
-        }}>
-          <div style={{ fontWeight: 600, marginBottom: '6px', color: '#374151' }}>Legend</div>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
-            <div style={{ width: '16px', height: '3px', backgroundColor: '#0ea5e9', marginRight: '6px' }}></div>
-            <span style={{ color: '#374151' }}>Observed</span>
+        {showLegend && (
+          <div style={{
+            position: 'absolute',
+            top: `${legendYOffset}px`,
+            right: `${legendXOffset}px`,
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            border: '1px solid #d1d5db',
+            borderRadius: '6px',
+            padding: '8px 10px',
+            fontSize: '11px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+            zIndex: 10
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: '6px', color: '#374151' }}>Legend</div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
+              <div style={{ width: '16px', height: '3px', backgroundColor: '#0ea5e9', marginRight: '6px' }}></div>
+              <span style={{ color: '#374151' }}>Observed</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
+              <div style={{ width: '16px', height: '3px', backgroundColor: '#10b981', marginRight: '6px' }}></div>
+              <span style={{ color: '#374151' }}>Log Fit</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{ width: '16px', height: '3px', backgroundColor: '#f59e0b', marginRight: '6px', backgroundImage: 'linear-gradient(to right, #f59e0b 50%, transparent 50%)', backgroundSize: '8px 3px' }}></div>
+              <span style={{ color: '#374151' }}>Extrapolation</span>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
-            <div style={{ width: '16px', height: '3px', backgroundColor: '#10b981', marginRight: '6px' }}></div>
-            <span style={{ color: '#374151' }}>Log Fit</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <div style={{ width: '16px', height: '3px', backgroundColor: '#f59e0b', marginRight: '6px', backgroundImage: 'linear-gradient(to right, #f59e0b 50%, transparent 50%)', backgroundSize: '8px 3px' }}></div>
-            <span style={{ color: '#374151' }}>Extrapolation</span>
-          </div>
-        </div>
+        )}
       </div>
 
       <details className="border rounded p-2 mt-2">

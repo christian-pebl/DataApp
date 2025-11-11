@@ -35,6 +35,8 @@ import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { LoadPlotViewDialog } from '@/components/pin-data/LoadPlotViewDialog'
 import type { SavedPlotView, PlotViewValidationResult } from '@/lib/supabase/plot-view-types'
+import { isFeatureEnabled } from '@/lib/feature-flags'
+import { Database } from 'lucide-react'
 
 interface UserMenuProps {
   user: User
@@ -309,15 +311,35 @@ export default function UserMenu({ user, projectId }: UserMenuProps) {
         </div>
         
         <DropdownMenuSeparator />
-        
+
         {/* Navigation Items */}
-        <Link href="/data-explorer">
-          <DropdownMenuItem className="cursor-pointer">
-            <BarChart3 className="mr-2 h-4 w-4" />
+        {/* Data Explorer - Smart behavior based on context */}
+        {pathname === '/map-drawing' && isFeatureEnabled('DATA_EXPLORER_PANEL') ? (
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onClick={() => {
+              // Trigger panel to open via custom event
+              window.dispatchEvent(new CustomEvent('open-data-explorer-panel'))
+              toast({
+                title: "Data Explorer",
+                description: "Opening data explorer panel...",
+                duration: 1500
+              })
+            }}
+          >
+            <Database className="mr-2 h-4 w-4" />
             <span>Data Explorer</span>
-            {pathname === '/data-explorer' && <div className="ml-auto w-2 h-2 bg-primary rounded-full" />}
+            <div className="ml-auto w-2 h-2 bg-primary rounded-full" />
           </DropdownMenuItem>
-        </Link>
+        ) : (
+          <Link href="/data-explorer">
+            <DropdownMenuItem className="cursor-pointer">
+              <BarChart3 className="mr-2 h-4 w-4" />
+              <span>Data Explorer</span>
+              {pathname === '/data-explorer' && <div className="ml-auto w-2 h-2 bg-primary rounded-full" />}
+            </DropdownMenuItem>
+          </Link>
+        )}
         
         <Link href="/map-drawing">
           <DropdownMenuItem className="cursor-pointer">

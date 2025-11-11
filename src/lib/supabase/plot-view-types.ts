@@ -59,6 +59,7 @@ export interface SavedPlotConfig {
   computationConfig?: {
     direction?: '1-2' | '2-1'; // For subtraction
     missingDataMode?: 'skip' | 'zero'; // How to handle missing data
+    includeZeroValues?: boolean; // Whether to include points where one value is zero (default: false)
   };
 
   // Parameter display settings (which parameters are checked and their styling)

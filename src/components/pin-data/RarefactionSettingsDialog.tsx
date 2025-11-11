@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface RarefactionSettingsDialogProps {
   open: boolean;
@@ -24,6 +25,8 @@ interface RarefactionSettingsDialogProps {
   onYAxisTitleOffsetChange: (offset: number) => void;
   maxYAxis: number | null;
   onMaxYAxisChange: (value: number | null) => void;
+  showLegend: boolean;
+  onShowLegendChange: (show: boolean) => void;
   autoMaxYAxis: number;
 }
 
@@ -40,6 +43,8 @@ export function RarefactionSettingsDialog({
   onYAxisTitleOffsetChange,
   maxYAxis,
   onMaxYAxisChange,
+  showLegend,
+  onShowLegendChange,
   autoMaxYAxis,
 }: RarefactionSettingsDialogProps) {
   const [pendingMaxYAxis, setPendingMaxYAxis] = useState<number | null>(maxYAxis);
@@ -77,6 +82,20 @@ export function RarefactionSettingsDialog({
     setPendingMaxYAxis(null);
   };
 
+  // Chart size notches
+  const chartSizeNotches = [100, 200, 250, 300, 400];
+
+  const snapToNearestNotch = (value: number): number => {
+    return chartSizeNotches.reduce((prev, curr) =>
+      Math.abs(curr - value) < Math.abs(prev - value) ? curr : prev
+    );
+  };
+
+  const handleChartSizeChange = (value: number) => {
+    const snapped = snapToNearestNotch(value);
+    onChartSizeChange(snapped);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -97,16 +116,40 @@ export function RarefactionSettingsDialog({
             <input
               id="chart-size-slider"
               type="range"
-              min="80"
-              max="300"
+              min="100"
+              max="400"
+              list="chart-size-notches"
               value={chartSize}
-              onChange={(e) => onChartSizeChange(Number(e.target.value))}
+              onChange={(e) => handleChartSizeChange(Number(e.target.value))}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
             />
+            <datalist id="chart-size-notches">
+              {chartSizeNotches.map((notch) => (
+                <option key={notch} value={notch} />
+              ))}
+            </datalist>
             <div className="flex justify-between text-xs text-gray-500">
-              <span>80px</span>
+              <span>100px</span>
+              <span>200px</span>
+              <span>250px</span>
               <span>300px</span>
+              <span>400px</span>
             </div>
+          </div>
+
+          {/* Show Legend Toggle */}
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="show-legend"
+              checked={showLegend}
+              onCheckedChange={onShowLegendChange}
+            />
+            <Label
+              htmlFor="show-legend"
+              className="text-sm font-medium cursor-pointer"
+            >
+              Show Legend
+            </Label>
           </div>
 
           {/* Legend X Offset Slider */}

@@ -65,6 +65,10 @@ interface PinPlotInstanceProps {
   initialCustomParameterNames?: Record<string, string>;
   // Pin ID for saving corrected files to database
   pinId?: string;
+  // Subtracted plot settings (for computed/subtracted plots)
+  isSubtractedPlot?: boolean;
+  includeZeroValues?: boolean;
+  onIncludeZeroValuesChange?: (include: boolean) => void;
 }
 
 
@@ -90,7 +94,10 @@ export function PinPlotInstance({
   initialCustomYAxisLabel,
   initialCompactView,
   initialCustomParameterNames,
-  pinId
+  pinId,
+  isSubtractedPlot = false,
+  includeZeroValues = false,
+  onIncludeZeroValuesChange
 }: PinPlotInstanceProps) {
   const { toast } = useToast();
   const componentId = useId();
@@ -287,6 +294,10 @@ export function PinPlotInstance({
               headers={parseResult.headers}
               // Haplotype data (for EDNA hapl files)
               haplotypeData={haplotypeData || undefined}
+              // Subtracted plot settings
+              isSubtractedPlot={isSubtractedPlot}
+              includeZeroValues={includeZeroValues}
+              onIncludeZeroValuesChange={onIncludeZeroValuesChange}
             />
           </div>
         ) : (
