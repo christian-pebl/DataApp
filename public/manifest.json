@@ -1,0 +1,18 @@
+{
+  "name": "PEBL Data App",
+  "short_name": "PEBL",
+  "description": "PEBL Environmental Data Analysis Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2b7a78",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logos/PEBL Logo-5.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
