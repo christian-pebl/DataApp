@@ -149,6 +149,7 @@ import { ProjectsDialog } from '@/components/map-drawing/dialogs/ProjectsDialog'
 import { DeleteProjectConfirmDialog } from '@/components/map-drawing/dialogs/DeleteProjectConfirmDialog';
 import { BatchDeleteConfirmDialog } from '@/components/map-drawing/dialogs/BatchDeleteConfirmDialog';
 import { DuplicateWarningDialog } from '@/components/map-drawing/dialogs/DuplicateWarningDialog';
+import { AddProjectDialog } from '@/components/map-drawing/dialogs/AddProjectDialog';
 
 type DrawingMode = 'none' | 'pin' | 'line' | 'area';
 
@@ -663,8 +664,6 @@ function MapDrawingPageContent() {
   // Multi-selection state for batch operations
   const [selectedObjectIds, setSelectedObjectIds] = useState<Set<string>>(new Set());
   const [showBatchDeleteConfirmDialog, setShowBatchDeleteConfirmDialog] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectDescription, setNewProjectDescription] = useState('');
   const [showUploadPinSelector, setShowUploadPinSelector] = useState(false);
   const [selectedUploadPinId, setSelectedUploadPinId] = useState<string>('');
   const [selectedUploadAreaId, setSelectedUploadAreaId] = useState<string>(''); // NEW: For area uploads
@@ -672,7 +671,6 @@ function MapDrawingPageContent() {
   const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
   const [duplicateFiles, setDuplicateFiles] = useState<{fileName: string, existingFile: PinFile}[]>([]);
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
-  const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isUpdatingProject, setIsUpdatingProject] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
 
@@ -8354,112 +8352,11 @@ function MapDrawingPageContent() {
       />
 
       {/* Add New Project Dialog */}
-      <Dialog open={showAddProjectDialog} onOpenChange={(open) => {
-        if (!open) {
-          setNewProjectName('');
-          setNewProjectDescription('');
-        }
-        setShowAddProjectDialog(open);
-      }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Plus className="h-5 w-5" />
-              Add New Project
-            </DialogTitle>
-            <DialogDescription>
-              Create a new project to organize your pins, lines, and areas.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            {/* Project Name */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Project Name *</label>
-              <Input
-                value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
-                placeholder="Enter project name"
-                required
-              />
-            </div>
-            
-            {/* Project Description */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Description</label>
-              <Textarea
-                value={newProjectDescription}
-                onChange={(e) => setNewProjectDescription(e.target.value)}
-                placeholder="Optional description"
-                rows={3}
-              />
-            </div>
-            
-
-            {/* Actions */}
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => setShowAddProjectDialog(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={async () => {
-                  console.log('🔄 Create Project button clicked');
-                  console.log('📝 Project name:', newProjectName);
-                  console.log('📝 Project description:', newProjectDescription);
-                  
-                  if (!newProjectName.trim()) {
-                    console.log('❌ Project name is empty, aborting');
-                    return;
-                  }
-                  
-                  console.log('⏳ Setting isCreatingProject to true');
-                  setIsCreatingProject(true);
-                  try {
-                    console.log('🚀 Calling projectService.createProject...');
-                    const newProject = await projectService.createProject({
-                      name: newProjectName.trim(),
-                      description: newProjectDescription.trim() || undefined
-                    });
-                    console.log('✅ Project created successfully:', newProject);
-
-                    toast({
-                      title: "Project Created",
-                      description: `"${newProject.name}" has been created successfully.`,
-                      duration: 3000
-                    });
-
-                    setShowAddProjectDialog(false);
-                    setNewProjectName('');
-                    setNewProjectDescription('');
-                    
-                    // Refresh project list to show new project
-                    console.log('🔄 Refreshing project list after creation...');
-                    await loadDynamicProjects();
-                    
-                  } catch (error) {
-                    console.error('Failed to create project:', error);
-                    toast({
-                      title: "Creation Failed",
-                      description: error instanceof Error ? error.message : "Failed to create project. Please try again.",
-                      variant: "destructive",
-                      duration: 5000
-                    });
-                  } finally {
-                    setIsCreatingProject(false);
-                  }
-                }}
-                disabled={!newProjectName.trim() || isCreatingProject}
-              >
-                {isCreatingProject && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                {isCreatingProject ? 'Creating...' : 'Create Project'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <AddProjectDialog
+        open={showAddProjectDialog}
+        onOpenChange={setShowAddProjectDialog}
+        onProjectCreated={loadDynamicProjects}
+      />
 
       {/* Merge Rules Dialog */}
       {multiFileConfirmData && (
