@@ -147,6 +147,7 @@ import { ProjectSettingsDialog } from '@/components/map-drawing/dialogs/ProjectS
 import { MarineDeviceModal } from '@/components/map-drawing/dialogs/MarineDeviceModal';
 import { ProjectsDialog } from '@/components/map-drawing/dialogs/ProjectsDialog';
 import { DeleteProjectConfirmDialog } from '@/components/map-drawing/dialogs/DeleteProjectConfirmDialog';
+import { BatchDeleteConfirmDialog } from '@/components/map-drawing/dialogs/BatchDeleteConfirmDialog';
 
 type DrawingMode = 'none' | 'pin' | 'line' | 'area';
 
@@ -8335,63 +8336,21 @@ function MapDrawingPageContent() {
       />
 
       {/* Batch Delete Confirmation Dialog */}
-      <Dialog open={showBatchDeleteConfirmDialog} onOpenChange={setShowBatchDeleteConfirmDialog}>
-        <DialogContent className="sm:max-w-md z-[9999]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="h-5 w-5" />
-              Confirm Batch Deletion
-            </DialogTitle>
-            <DialogDescription>
-              This action cannot be undone. The following {selectedObjectIds.size} object{selectedObjectIds.size !== 1 ? 's' : ''} will be permanently deleted:
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* List of objects to delete */}
-          <div className="max-h-48 overflow-y-auto border rounded p-3 space-y-2">
-            {getSelectedObjects().map(obj => {
-              const fileCount = obj.type === 'pin'
-                ? (pinFileMetadata[obj.id]?.length || pinFiles[obj.id]?.length || 0)
-                : obj.type === 'area'
-                ? (areaFileMetadata[obj.id]?.length || 0)
-                : 0;
-
-              return (
-                <div key={obj.id} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    {obj.type === 'pin' && <div className="w-2 h-2 rounded-full bg-blue-500"></div>}
-                    {obj.type === 'line' && <div className="w-3 h-0.5 bg-green-500"></div>}
-                    {obj.type === 'area' && <div className="w-2 h-2 bg-red-500/30 border border-red-500"></div>}
-                    <span className="font-medium">{obj.label || `Unnamed ${obj.type}`}</span>
-                  </div>
-                  {fileCount > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      {fileCount} file{fileCount !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => setShowBatchDeleteConfirmDialog(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleBatchDelete}
-              className="flex items-center gap-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete {selectedObjectIds.size} Object{selectedObjectIds.size !== 1 ? 's' : ''}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <BatchDeleteConfirmDialog
+        open={showBatchDeleteConfirmDialog}
+        onOpenChange={setShowBatchDeleteConfirmDialog}
+        selectedObjects={getSelectedObjects().map(obj => {
+          const fileCount = obj.type === 'pin'
+            ? (pinFileMetadata[obj.id]?.length || pinFiles[obj.id]?.length || 0)
+            : obj.type === 'area'
+            ? (areaFileMetadata[obj.id]?.length || 0)
+            : 0;
+          return { ...obj, fileCount };
+        })}
+        selectedCount={selectedObjectIds.size}
+        onConfirmDelete={handleBatchDelete}
+        onCancel={() => setShowBatchDeleteConfirmDialog(false)}
+      />
 
       {/* Add New Project Dialog */}
       <Dialog open={showAddProjectDialog} onOpenChange={(open) => {
