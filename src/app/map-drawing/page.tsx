@@ -1003,9 +1003,14 @@ function MapDrawingPageContent() {
         if (result.success && result.data) {
           console.log('📊 [DATA EXPLORER PANEL] Loaded', result.data.length, 'saved plots');
           setSavedPlots(result.data);
+        } else if (!result.success) {
+          // Handle authentication errors or other failures gracefully
+          console.log('ℹ️ [DATA EXPLORER PANEL] Could not load saved plots:', result.error || 'Unknown error');
+          setSavedPlots([]);
         }
       } catch (error) {
         console.error('❌ [DATA EXPLORER PANEL] Error loading saved plots:', error);
+        setSavedPlots([]);
       } finally {
         setIsLoadingSavedPlots(false);
       }

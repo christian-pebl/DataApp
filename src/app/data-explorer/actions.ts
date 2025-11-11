@@ -57,7 +57,7 @@ export async function getAllUserFilesAction(): Promise<{
     // Get all areas owned by the user
     const { data: userAreas, error: areasError } = await supabase
       .from('areas')
-      .select('id, name')
+      .select('id, label')
       .eq('user_id', user.id);
 
     if (areasError) {
@@ -152,9 +152,9 @@ export async function getAllUserFilesAction(): Promise<{
       }
     }
 
-    // Create maps of pin IDs to labels and area IDs to names
+    // Create maps of pin IDs to labels and area IDs to labels
     const pinsMap = Object.fromEntries((userPins || []).map(p => [p.id, p.label]));
-    const areasMap = Object.fromEntries((userAreas || []).map(a => [a.id, a.name]));
+    const areasMap = Object.fromEntries((userAreas || []).map(a => [a.id, a.label]));
 
     // Transform regular files
     const files: UserFileDetails[] = (filesData || []).map((item: any) => {
