@@ -148,6 +148,7 @@ import { MarineDeviceModal } from '@/components/map-drawing/dialogs/MarineDevice
 import { ProjectsDialog } from '@/components/map-drawing/dialogs/ProjectsDialog';
 import { DeleteProjectConfirmDialog } from '@/components/map-drawing/dialogs/DeleteProjectConfirmDialog';
 import { BatchDeleteConfirmDialog } from '@/components/map-drawing/dialogs/BatchDeleteConfirmDialog';
+import { DuplicateWarningDialog } from '@/components/map-drawing/dialogs/DuplicateWarningDialog';
 
 type DrawingMode = 'none' | 'pin' | 'line' | 'area';
 
