@@ -71,7 +71,7 @@ import { useActiveProject } from '@/hooks/use-active-project';
 import { LoadPlotViewDialog } from '@/components/pin-data/LoadPlotViewDialog';
 import type { SavedPlotView, PlotViewValidationResult } from '@/lib/supabase/plot-view-types';
 import { DataTimeline } from '@/components/pin-data/DataTimeline';
-import { PinMarineDeviceData } from '@/components/pin-data/PinMarineDeviceData';
+import PinMarineDeviceData from '@/components/pin-data/PinMarineDeviceData';
 import type { PinFile } from '@/lib/supabase/file-storage-service';
 import { getAllUserFilesAction, renameFileAction, deleteFileAction, fetchFileDataAction, downloadFileAction, type UserFileDetails } from './actions';
 

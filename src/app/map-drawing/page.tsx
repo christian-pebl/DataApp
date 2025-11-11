@@ -92,7 +92,7 @@ import { extractEdnaDate, isEdnaMetaFile } from '@/lib/edna-utils';
 // DATA EXPLORER PANEL IMPORTS - NEW ADDITION
 // ============================================================================
 import { isFeatureEnabled } from '@/lib/feature-flags';
-import { DataExplorerPanel } from '@/components/data-explorer/DataExplorerPanel';
+import LazyDataExplorerPanel from '@/components/data-explorer/LazyDataExplorerPanel';
 import type { SavedPlotView } from '@/lib/supabase/plot-view-types';
 // ============================================================================
 
@@ -141,16 +141,19 @@ const LeafletMap = dynamic(() => import('@/components/map/LeafletMap').then(mod 
 });
 
 import { Project, Tag, Pin, Line as LineType, Area } from '@/lib/supabase/types';
-import { PinMarineDeviceData } from '@/components/pin-data/PinMarineDeviceData';
-import { FileUploadDialog } from '@/components/map-drawing/dialogs/FileUploadDialog';
-import { ProjectSettingsDialog } from '@/components/map-drawing/dialogs/ProjectSettingsDialog';
-import { MarineDeviceModal } from '@/components/map-drawing/dialogs/MarineDeviceModal';
-import { ProjectsDialog } from '@/components/map-drawing/dialogs/ProjectsDialog';
-import { DeleteProjectConfirmDialog } from '@/components/map-drawing/dialogs/DeleteProjectConfirmDialog';
-import { BatchDeleteConfirmDialog } from '@/components/map-drawing/dialogs/BatchDeleteConfirmDialog';
-import { DuplicateWarningDialog } from '@/components/map-drawing/dialogs/DuplicateWarningDialog';
-import { AddProjectDialog } from '@/components/map-drawing/dialogs/AddProjectDialog';
-import { ProjectDataDialog } from '@/components/map-drawing/dialogs/ProjectDataDialog';
+import PinMarineDeviceData from '@/components/pin-data/PinMarineDeviceData';
+// Lazy-loaded dialog components (reduce initial bundle size)
+import {
+  LazyFileUploadDialog as FileUploadDialog,
+  LazyProjectSettingsDialog as ProjectSettingsDialog,
+  LazyMarineDeviceModal as MarineDeviceModal,
+  LazyProjectsDialog as ProjectsDialog,
+  LazyDeleteProjectConfirmDialog as DeleteProjectConfirmDialog,
+  LazyBatchDeleteConfirmDialog as BatchDeleteConfirmDialog,
+  LazyDuplicateWarningDialog as DuplicateWarningDialog,
+  LazyAddProjectDialog as AddProjectDialog,
+  LazyProjectDataDialog as ProjectDataDialog
+} from '@/components/map-drawing/dialogs/LazyDialogs';
 
 type DrawingMode = 'none' | 'pin' | 'line' | 'area';
 
@@ -1899,49 +1902,49 @@ function MapDrawingPageContent() {
     }
   }, [deletePinData, toast]);
 
-  const handleUpdateLine = async (id: string, label: string, notes: string, projectId?: string, tagIds?: string[]) => {
+  const handleUpdateLine = useCallback(async (id: string, label: string, notes: string, projectId?: string, tagIds?: string[]) => {
     try {
       await updateLineData(id, { label, notes, projectId, tagIds });
       toast({ title: "Line Updated", description: "Line has been updated successfully." });
     } catch (error) {
       console.error('Error updating line:', error);
-      toast({ 
+      toast({
         variant: "destructive",
-        title: "Error", 
-        description: "Failed to update line. Please try again." 
+        title: "Error",
+        description: "Failed to update line. Please try again."
       });
     }
-  };
+  }, [updateLineData, toast]);
 
-  const handleDeleteLine = async (id: string) => {
+  const handleDeleteLine = useCallback(async (id: string) => {
     try {
       await deleteLineData(id);
       toast({ title: "Line Deleted", description: "Line has been deleted from the map." });
     } catch (error) {
       console.error('Error deleting line:', error);
-      toast({ 
+      toast({
         variant: "destructive",
-        title: "Error", 
-        description: "Failed to delete line. Please try again." 
+        title: "Error",
+        description: "Failed to delete line. Please try again."
       });
     }
-  };
+  }, [deleteLineData, toast]);
 
-  const handleUpdateArea = async (id: string, label: string, notes: string, path: {lat: number, lng: number}[], projectId?: string, tagIds?: string[]) => {
+  const handleUpdateArea = useCallback(async (id: string, label: string, notes: string, path: {lat: number, lng: number}[], projectId?: string, tagIds?: string[]) => {
     try {
       await updateAreaData(id, { label, notes, path, projectId, tagIds });
       toast({ title: "Area Updated", description: "Area has been updated successfully." });
     } catch (error) {
       console.error('Error updating area:', error);
-      toast({ 
+      toast({
         variant: "destructive",
-        title: "Error", 
-        description: "Failed to update area. Please try again." 
+        title: "Error",
+        description: "Failed to update area. Please try again."
       });
     }
-  };
+  }, [updateAreaData, toast]);
 
-  const handleDeleteArea = async (id: string) => {
+  const handleDeleteArea = useCallback(async (id: string) => {
     try {
       await deleteAreaData(id);
       toast({ title: "Area Deleted", description: "Area has been deleted from the map." });
@@ -1953,7 +1956,7 @@ function MapDrawingPageContent() {
         description: "Failed to delete area. Please try again."
       });
     }
-  };
+  }, [deleteAreaData, toast]);
 
   // Multi-selection helper functions
   const toggleObjectSelection = (objectId: string) => {
@@ -2046,7 +2049,7 @@ function MapDrawingPageContent() {
     setShowBatchDeleteConfirmDialog(false);
   };
 
-  const handleToggleLabel = async (id: string, type: 'pin' | 'line' | 'area') => {
+  const handleToggleLabel = useCallback(async (id: string, type: 'pin' | 'line' | 'area') => {
     try {
       if (type === 'pin') {
         const pin = pins.find(p => p.id === id);
@@ -2066,15 +2069,15 @@ function MapDrawingPageContent() {
       }
     } catch (error) {
       console.error('Error toggling label:', error);
-      toast({ 
+      toast({
         variant: "destructive",
-        title: "Error", 
-        description: "Failed to toggle label visibility." 
+        title: "Error",
+        description: "Failed to toggle label visibility."
       });
     }
-  };
+  }, [pins, lines, areas, updatePinData, updateLineData, updateAreaData, toast]);
 
-  const handleToggleFill = async (id: string) => {
+  const handleToggleFill = useCallback(async (id: string) => {
     try {
       const area = areas.find(a => a.id === id);
       if (area) {
@@ -2088,7 +2091,7 @@ function MapDrawingPageContent() {
         description: "Failed to toggle fill visibility."
       });
     }
-  };
+  }, [areas, updateAreaData, toast]);
 
   const handleToggleObjectVisibility = async (id: string, type: 'pin' | 'line' | 'area') => {
     try {
@@ -2724,11 +2727,7 @@ function MapDrawingPageContent() {
     }
   }, []);
 
-  // Self-test on page load to verify our date parsing
-  React.useEffect(() => {
-    const testISO = "2024-08-01T00:00:00.000Z";
-    // Date parsing self-test removed - functionality verified
-  }, []);
+  // REMOVED: Date parsing self-test - functionality verified and no longer needed
 
   // Parse various date formats commonly found in CSV files
   // NOTE: Old detectDateFormat() and parseCSVDate() functions removed
@@ -2770,59 +2769,59 @@ function MapDrawingPageContent() {
     return result;
   }, [analyzeCSVDateRange, fileDateCache]);
 
-  // Close menu when clicking outside
+  // ============================================================================
+  // CONSOLIDATED: UI Event Listeners
+  // Replaces 2 separate effects: Click Outside Handler, Sidebar Resizing
+  // Lines replaced: 2773, 2821
+  // ============================================================================
   useEffect(() => {
+    // 1. Click outside handler for menus and dropdowns
     const handleClickOutside = (event: MouseEvent) => {
       if (showMainMenu) {
         const target = event.target as Element;
         const menuButton = document.querySelector('[data-menu-button]');
         const menuDropdown = document.querySelector('[data-menu-dropdown]');
-        
+
         if (menuButton && !menuButton.contains(target) && menuDropdown && !menuDropdown.contains(target)) {
           setShowMainMenu(false);
         }
       }
-      
+
       // Close data dropdown when clicking outside
       if (showDataDropdown) {
         const target = event.target as Element;
         const dataDropdown = document.querySelector('[data-data-dropdown]');
-        
+
         if (dataDropdown && !dataDropdown.contains(target)) {
           setShowDataDropdown(false);
         }
       }
-      
-          // Close explore dropdown when clicking outside
+
+      // Close explore dropdown when clicking outside
       if (showExploreDropdown) {
         const target = event.target as Element;
         const exploreDropdown = document.querySelector('[data-explore-dropdown]');
-        
+
         if (exploreDropdown && !exploreDropdown.contains(target)) {
           setShowExploreDropdown(false);
         }
       }
-      
+
       // Close marine device modal when clicking outside
       if (showMarineDeviceModal) {
         const target = event.target as Element;
         const modalContent = document.querySelector('[data-marine-modal]');
-        
+
         if (modalContent && !modalContent.contains(target)) {
           // Let the Dialog component handle backdrop clicks
         }
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showMainMenu, showDataDropdown, showExploreDropdown]);
-
-  // Handle sidebar resizing
-  useEffect(() => {
+    // 2. Sidebar resize handlers
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
-      
+
       const newWidth = Math.max(280, Math.min(600, e.clientX)); // Min 280px, max 600px
       setSidebarWidth(newWidth);
     };
@@ -2831,6 +2830,10 @@ function MapDrawingPageContent() {
       setIsResizing(false);
     };
 
+    // Add click outside listener
+    document.addEventListener('mousedown', handleClickOutside);
+
+    // Add resize listeners if resizing is active
     if (isResizing) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
@@ -2841,22 +2844,29 @@ function MapDrawingPageContent() {
       document.body.style.userSelect = '';
     }
 
+    // Cleanup function
     return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [isResizing]);
+  }, [showMainMenu, showDataDropdown, showExploreDropdown, isResizing]);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizing(true);
   }, []);
 
-  // Keep itemToEdit in sync with pins/lines/areas arrays
-  // NOTE: itemToEdit intentionally NOT in dependencies to avoid infinite loop
+  // ============================================================================
+  // CONSOLIDATED: Object Editing State
+  // Replaces 2 separate effects: Keep itemToEdit in Sync, Initialize Editing State
+  // Lines replaced: 2857, 2900
+  // ============================================================================
   useEffect(() => {
+    // 1. Keep itemToEdit in sync with pins/lines/areas arrays
+    // NOTE: itemToEdit intentionally NOT in dependencies to avoid infinite loop
     if (itemToEdit) {
       // Check if it's a pin
       if ('lat' in itemToEdit && 'lng' in itemToEdit) {
@@ -2896,10 +2906,8 @@ function MapDrawingPageContent() {
         }
       }
     }
-  }, [pins, lines, areas]); // Removed itemToEdit from dependencies to avoid infinite loop
 
-  // Initialize editing state when itemToEdit changes
-  useEffect(() => {
+    // 2. Initialize editing state when itemToEdit changes and edit mode is active
     if (itemToEdit && isEditingObject) {
       setEditingLabel(itemToEdit.label || '');
       setEditingNotes(itemToEdit.notes || '');
@@ -2967,7 +2975,7 @@ function MapDrawingPageContent() {
         }
       }, 100);
     }
-  }, [itemToEdit, isEditingObject, coordinateFormat]);
+  }, [pins, lines, areas, itemToEdit, isEditingObject, coordinateFormat]);
 
   // REMOVED: Initialize editing state - now in consolidated effect above (line 2793)
   // useEffect(() => {
@@ -6166,30 +6174,55 @@ function MapDrawingPageContent() {
                 )}
               </div>
             )}
-            
-            
-            {/* Floating Drawing Tools Button */}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="ghost"
-                    size="icon" 
-                    onClick={() => setShowFloatingDrawingTools(!showFloatingDrawingTools)}
-                    className={`h-10 w-10 rounded-full shadow-lg border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 ${
-                      (drawingMode !== 'none' || isDrawingLine || isDrawingArea) 
-                        ? 'bg-accent/90 hover:bg-accent text-accent-foreground' 
-                        : 'bg-primary/90 hover:bg-primary text-primary-foreground'
-                    }`}
-                  >
-                    <Edit3 className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Drawing Tools</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+
+
+            {/* Data Explorer Button - Hide when panel is open */}
+            {!showDataExplorerPanel && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('open-data-explorer-panel'));
+                      }}
+                      className="h-10 w-10 rounded-full shadow-lg border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 bg-primary/90 hover:bg-primary text-primary-foreground"
+                    >
+                      <Database className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Data Explorer</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
+            {/* Floating Drawing Tools Button - Hide when panel is open */}
+            {!showDataExplorerPanel && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowFloatingDrawingTools(!showFloatingDrawingTools)}
+                      className={`h-10 w-10 rounded-full shadow-lg border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 ${
+                        (drawingMode !== 'none' || isDrawingLine || isDrawingArea)
+                          ? 'bg-accent/90 hover:bg-accent text-accent-foreground'
+                          : 'bg-primary/90 hover:bg-primary text-primary-foreground'
+                      }`}
+                    >
+                      <Edit3 className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Drawing Tools</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             
             {/* Floating Drawing Tools Dropdown */}
             {showFloatingDrawingTools && (
@@ -7779,7 +7812,7 @@ function MapDrawingPageContent() {
       {/* DATA EXPLORER PANEL - NEW ADDITION (Safe to remove/disable)     */}
       {/* ================================================================ */}
       {isFeatureEnabled('DATA_EXPLORER_PANEL') && (
-        <DataExplorerPanel
+        <LazyDataExplorerPanel
           open={showDataExplorerPanel}
           onOpenChange={setShowDataExplorerPanel}
 

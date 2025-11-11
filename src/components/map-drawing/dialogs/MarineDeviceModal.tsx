@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Database } from 'lucide-react';
-import { PinMarineDeviceData } from '@/components/pin-data/PinMarineDeviceData';
+import PinMarineDeviceData from '@/components/pin-data/PinMarineDeviceData';
 import type { PinFile } from '@/lib/supabase/file-storage-service';
 
 interface AvailableProject {
@@ -36,7 +36,7 @@ export interface MarineDeviceModalProps {
   onClose: () => void;
 }
 
-export function MarineDeviceModal({
+function MarineDeviceModalComponent({
   open,
   onOpenChange,
   selectedFileType,
@@ -104,3 +104,36 @@ export function MarineDeviceModal({
     </Dialog>
   );
 }
+
+// Custom comparison function for React.memo()
+// Dialogs should only re-render when open state or critical data changes
+const arePropsEqual = (prevProps: MarineDeviceModalProps, nextProps: MarineDeviceModalProps): boolean => {
+  // Always re-render if dialog open state changes
+  if (prevProps.open !== nextProps.open) {
+    return false;
+  }
+
+  // If dialog is closed, skip re-renders for other prop changes
+  if (!nextProps.open) {
+    return true;
+  }
+
+  // When dialog is open, check data props
+  if (prevProps.selectedFileType !== nextProps.selectedFileType ||
+      prevProps.selectedFiles !== nextProps.selectedFiles ||
+      prevProps.isLoadingFromSavedPlot !== nextProps.isLoadingFromSavedPlot ||
+      prevProps.availableFilesForPlots !== nextProps.availableFilesForPlots ||
+      prevProps.objectGpsCoords !== nextProps.objectGpsCoords ||
+      prevProps.objectName !== nextProps.objectName ||
+      prevProps.multiFileMergeMode !== nextProps.multiFileMergeMode ||
+      prevProps.allProjectFilesForTimeline !== nextProps.allProjectFilesForTimeline ||
+      prevProps.projectId !== nextProps.projectId ||
+      prevProps.availableProjects !== nextProps.availableProjects) {
+    return false;
+  }
+
+  return true; // Props are equal, skip re-render
+};
+
+// Export memoized component for better performance (prevents re-renders when dialog is closed)
+export const MarineDeviceModal = memo(MarineDeviceModalComponent, arePropsEqual);

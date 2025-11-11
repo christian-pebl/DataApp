@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useRef, useCallback, useMemo, useEffect, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -140,7 +140,7 @@ interface PinMarineDeviceDataProps {
   initialViewToLoad?: string; // Plot view ID to auto-load on mount
 }
 
-export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, multiFileMergeMode = 'sequential', objectLocation, objectName, allProjectFilesForTimeline, getFileDateRange, projectId, onRefreshFiles, availableProjects, initialViewToLoad }: PinMarineDeviceDataProps) {
+function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, multiFileMergeMode = 'sequential', objectLocation, objectName, allProjectFilesForTimeline, getFileDateRange, projectId, onRefreshFiles, availableProjects, initialViewToLoad }: PinMarineDeviceDataProps) {
   const { toast } = useToast();
 
   // State for managing plots with file data
@@ -3214,3 +3214,50 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     </div>
   );
 }
+
+// Custom comparison function for React.memo()
+// Focus on data props that affect rendering
+const arePropsEqual = (prevProps: PinMarineDeviceDataProps, nextProps: PinMarineDeviceDataProps): boolean => {
+  // Check file-related props
+  if (prevProps.fileType !== nextProps.fileType ||
+      prevProps.files !== nextProps.files ||
+      prevProps.availableFiles !== nextProps.availableFiles) {
+    return false;
+  }
+
+  // Check location props
+  if (prevProps.objectLocation?.lat !== nextProps.objectLocation?.lat ||
+      prevProps.objectLocation?.lon !== nextProps.objectLocation?.lon ||
+      prevProps.objectName !== nextProps.objectName) {
+    return false;
+  }
+
+  // Check project props
+  if (prevProps.projectId !== nextProps.projectId ||
+      prevProps.availableProjects !== nextProps.availableProjects) {
+    return false;
+  }
+
+  // Check initial view to load
+  if (prevProps.initialViewToLoad !== nextProps.initialViewToLoad) {
+    return false;
+  }
+
+  // Check merge mode
+  if (prevProps.multiFileMergeMode !== nextProps.multiFileMergeMode) {
+    return false;
+  }
+
+  // Check timeline data (reference equality)
+  if (prevProps.allProjectFilesForTimeline !== nextProps.allProjectFilesForTimeline) {
+    return false;
+  }
+
+  // Callbacks are assumed to be memoized in parent
+  // If they change, component should re-render
+
+  return true; // Props are equal, skip re-render
+};
+
+// Export memoized component for better performance (reduces re-renders for large data processing)
+export default memo(PinMarineDeviceData, arePropsEqual);
