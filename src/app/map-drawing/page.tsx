@@ -144,6 +144,7 @@ import { Project, Tag, Pin, Line as LineType, Area } from '@/lib/supabase/types'
 import { PinMarineDeviceData } from '@/components/pin-data/PinMarineDeviceData';
 import { FileUploadDialog } from '@/components/map-drawing/dialogs/FileUploadDialog';
 import { ProjectSettingsDialog } from '@/components/map-drawing/dialogs/ProjectSettingsDialog';
+import { MarineDeviceModal } from '@/components/map-drawing/dialogs/MarineDeviceModal';
 
 type DrawingMode = 'none' | 'pin' | 'line' | 'area';
 
@@ -7440,63 +7441,31 @@ function MapDrawingPageContent() {
       {/* REMOVED: Migration Dialog - authentication-only mode means no legacy localStorage data exists */}
 
       {/* Marine Device Data Modal */}
-      <Dialog 
-        open={showMarineDeviceModal} 
-        onOpenChange={(open) => {
-          setShowMarineDeviceModal(open);
-          if (!open) {
-            // Clear the selected files when closing
-            setSelectedFileType(null);
-            setSelectedFiles([]);
-            setIsLoadingFromSavedPlot(false);
-            // UI state is preserved - all panels stay as they were
-          }
+      <MarineDeviceModal
+        open={showMarineDeviceModal}
+        onOpenChange={setShowMarineDeviceModal}
+        selectedFileType={selectedFileType}
+        selectedFiles={selectedFiles}
+        isLoadingFromSavedPlot={isLoadingFromSavedPlot}
+        onRequestFileSelection={handleRequestFileSelection}
+        availableFilesForPlots={availableFilesForPlots}
+        onDownloadFile={handleDownloadFileForPlot}
+        objectGpsCoords={objectGpsCoords}
+        objectName={objectName}
+        multiFileMergeMode={multiFileMergeMode}
+        allProjectFilesForTimeline={allProjectFilesForTimeline}
+        getFileDateRange={getFileDateRange}
+        projectId={currentProjectContext || activeProjectId}
+        onRefreshFiles={reloadProjectFiles}
+        availableProjects={Object.entries(dynamicProjects).map(([id, project]) => ({ id, name: project.name }))}
+        onClose={() => {
+          // Clear the selected files when closing
+          setSelectedFileType(null);
+          setSelectedFiles([]);
+          setIsLoadingFromSavedPlot(false);
+          // UI state is preserved - all panels stay as they were
         }}
-      >
-        <DialogContent className="max-w-6xl h-[80vh] marine-device-modal" data-marine-modal>
-          <DialogHeader className="sr-only">
-            <DialogTitle>
-              {selectedFileType ? `${selectedFileType} Data Analysis` : 'Data Viewer'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-hidden">
-            {selectedFileType && (selectedFiles.length > 0 || sessionStorage.getItem('pebl-load-plot-view') || isLoadingFromSavedPlot) ? (
-              (() => {
-                // console.log('📍 Object location for marine/meteo:', {
-                //   objectGpsCoords,
-                //   objectName,
-                //   hasCoords: !!objectGpsCoords
-                // });
-                return (
-                  <PinMarineDeviceData
-                    fileType={selectedFileType}
-                    files={selectedFiles}
-                    onRequestFileSelection={handleRequestFileSelection}
-                    availableFiles={availableFilesForPlots}
-                    onDownloadFile={handleDownloadFileForPlot}
-                    objectLocation={objectGpsCoords}
-                    objectName={objectName}
-                    multiFileMergeMode={multiFileMergeMode}
-                    allProjectFilesForTimeline={allProjectFilesForTimeline}
-                    getFileDateRange={getFileDateRange}
-                    projectId={currentProjectContext || activeProjectId}
-                    onRefreshFiles={reloadProjectFiles}
-                    availableProjects={Object.entries(dynamicProjects).map(([id, project]) => ({ id, name: project.name }))}
-                  />
-                );
-              })()
-            ) : (
-              <div className="flex items-center justify-center h-full text-center">
-                <div className="text-muted-foreground">
-                  <Database className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="font-medium">No files selected</p>
-                  <p className="text-sm">Select a file type to begin analysis</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      />
 
       {/* Share Dialog */}
       {selectedPinForShare && (
