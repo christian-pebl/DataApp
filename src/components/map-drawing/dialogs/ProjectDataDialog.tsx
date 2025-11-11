@@ -25,7 +25,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { DataTimeline } from '@/components/pin-data/DataTimeline';
-import { DataTimelineSkeleton } from '@/components/pin-data/DataTimelineSkeleton';
+import { DataTimelineSkeleton } from '@/components/loading/PageSkeletons';
 import type { Pin, Line as LineType, Area, Project, PinFile, MergedFile } from '@/lib/supabase/types';
 import { fileStorageService } from '@/lib/supabase/file-storage-service';
 
