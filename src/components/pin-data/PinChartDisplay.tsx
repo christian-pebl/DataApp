@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
+import dynamic from 'next/dynamic';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, ReferenceLine } from 'recharts';
 import { format, parseISO, isValid } from 'date-fns';
 import { HexColorPicker } from 'react-colorful';
@@ -13,7 +14,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock, Palette, Eye, Grid3x3, Ruler } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock, Palette, Eye, Grid3x3, Ruler, Network, RefreshCw } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
@@ -25,6 +27,15 @@ import { HeatmapDisplay } from '@/components/dataflow/HeatmapDisplay';
 import { HaplotypeHeatmap } from './HaplotypeHeatmap';
 import type { HaplotypeParseResult } from './csvParser';
 import { BrushPanHandle } from './BrushPanHandle';
+import { TaxonomicTreeView } from './TaxonomicTreeView';
+import { buildTaxonomicTree, flattenTreeForHeatmap } from '@/lib/taxonomic-tree-builder';
+import { lookupSpeciesBatch } from '@/lib/taxonomy-service';
+
+// Lazy load RawCsvViewer - only loads when user clicks on unrecognized species
+const RawCsvViewer = dynamic(
+  () => import('@/components/data-explorer/RawCsvViewer').then(mod => ({ default: mod.RawCsvViewer })),
+  { ssr: false, loading: () => <div className="animate-pulse p-4">Loading CSV viewer...</div> }
+);
 
 interface PinChartDisplayProps {
   data: ParsedDataPoint[];
@@ -442,12 +453,28 @@ export function PinChartDisplay({
     }
   }, []);
 
-  // Toggle state for switching between chart and table view
-  const [showTable, setShowTable] = useState(false);
+  // Unified view mode for all file types
+  type ViewMode = 'chart' | 'table' | 'heatmap' | 'tree';
+  const [viewMode, setViewMode] = useState<ViewMode>('chart');
 
-  // Heatmap view state - for Subcam nmax files
-  const [showHeatmap, setShowHeatmap] = useState(false);
+  // Legacy support: derive old state variables from unified viewMode
+  const showTable = viewMode === 'table';
+  const nmaxViewMode = viewMode === 'table' ? 'chart' : (viewMode as 'chart' | 'heatmap' | 'tree');
+  const showHeatmap = viewMode === 'heatmap';
   const [heatmapColor, setHeatmapColor] = useState('#1e3a8a'); // Dark blue default
+
+  // Heatmap refresh state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const { toast } = useToast();
+
+  // Species selection panel state (collapsed by default)
+  const [isSpeciesPanelExpanded, setIsSpeciesPanelExpanded] = useState(false);
+
+  // Taxonomy enrichment for nmax species
+  const [nmaxTaxonomyData, setNmaxTaxonomyData] = useState<Map<string, any>>(new Map());
+  const [isFetchingNmaxTaxonomy, setIsFetchingNmaxTaxonomy] = useState(false);
+  const [nmaxFetchedSpeciesList, setNmaxFetchedSpeciesList] = useState<string>(''); // Track which species we've fetched
 
   // Haplotype heatmap view state - for EDNA hapl files (default to true for hapl files)
   const [showHaplotypeHeatmap, setShowHaplotypeHeatmap] = useState(isHaplotypeFile && !!haplotypeData);
@@ -458,6 +485,38 @@ export function PinChartDisplay({
       setShowHaplotypeHeatmap(true);
     }
   }, [isHaplotypeFile, haplotypeData, showHaplotypeHeatmap]);
+
+  // Raw CSV viewer state for haplotype editing
+  const [showRawViewer, setShowRawViewer] = useState(false);
+  const [selectedFileForRaw, setSelectedFileForRaw] = useState<{
+    id: string;
+    name: string;
+    highlightSpecies?: string;
+  } | null>(null);
+
+  // Helper to get file info for raw editing
+  // Note: rawFiles contains browser File objects, not database IDs
+  // We'll use pinId as the fileId since RawCsvViewer can work with pinId
+  const rawFileInfo = useMemo(() => {
+    if (!rawFiles || rawFiles.length === 0 || !pinId) {
+      console.log('[RAW FILE INFO] Missing data:', {
+        hasRawFiles: !!rawFiles,
+        rawFilesLength: rawFiles?.length,
+        hasPinId: !!pinId,
+        fileName
+      });
+      return null;
+    }
+
+    const info = {
+      id: pinId, // Using pinId as fileId - RawCsvViewer will need to adapt
+      name: fileName || rawFiles[0].name,
+      file: rawFiles[0]
+    };
+
+    console.log('[RAW FILE INFO] Created:', info);
+    return info;
+  }, [rawFiles, pinId, fileName]);
 
   // Compact view state - shows only selected parameters without borders
   const [compactView, setCompactView] = useState(initialCompactView ?? false);
@@ -859,7 +918,7 @@ export function PinChartDisplay({
 
     // For haplotype heatmap/rarefaction view, return a fixed larger height
     if (showHaplotypeHeatmap && isHaplotypeFile && haplotypeData) {
-      return 800; // Sufficient height for heatmap and rarefaction chart
+      return 4000; // Increased height to show entire taxonomic tree without scrolling
     }
 
     const baseHeight = appliedStyleRule?.properties.chartHeight || 208;
@@ -1009,12 +1068,12 @@ export function PinChartDisplay({
     }
   };
 
-  // Handle heatmap toggle with parameter visibility updates
-  const handleHeatmapToggle = (enabled: boolean) => {
-    setShowHeatmap(enabled);
+  // Handle view mode change (unified for all file types)
+  const handleViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
 
-    // Only adjust visibility for nmax files when toggling TO heatmap mode
-    if (enabled && isSubcamNmaxFile && speciesColumns.length > 0) {
+    // Only adjust visibility for nmax files when switching TO heatmap or tree mode
+    if ((mode === 'heatmap' || mode === 'tree') && isSubcamNmaxFile && speciesColumns.length > 0) {
       setParameterStates(prev => {
         const updated = { ...prev };
 
@@ -1034,7 +1093,8 @@ export function PinChartDisplay({
           }
         });
 
-        console.log('[HEATMAP TOGGLE] Updated parameter visibility:', {
+        console.log('[NMAX VIEW MODE] Updated parameter visibility:', {
+          mode,
           hiddenMetadata: metadataParams,
           visibleSpecies: speciesColumns,
           totalSpecies: speciesColumns.length
@@ -1045,8 +1105,147 @@ export function PinChartDisplay({
     }
   };
 
+  // Legacy handler for backward compatibility (used by Switch component)
+  const handleHeatmapToggle = (enabled: boolean) => {
+    handleViewModeChange(enabled ? 'heatmap' : 'chart');
+  };
+
+  // Fetch taxonomy data for nmax species when in tree mode or when species change
+  React.useEffect(() => {
+    if (nmaxViewMode === 'tree' && isSubcamNmaxFile && speciesColumns.length > 0 && !isFetchingNmaxTaxonomy) {
+      const currentSpeciesList = speciesColumns.join(',');
+
+      // Only fetch if we haven't fetched this exact species list before
+      if (currentSpeciesList !== nmaxFetchedSpeciesList) {
+        console.log('🔬 Fetching taxonomy for nmax species (new species list detected):', speciesColumns);
+        setIsFetchingNmaxTaxonomy(true);
+
+        lookupSpeciesBatch(speciesColumns, 5)
+          .then(taxonomyMap => {
+            setNmaxTaxonomyData(taxonomyMap);
+            setNmaxFetchedSpeciesList(currentSpeciesList); // Mark this species list as fetched
+            console.log(`✅ Taxonomy data enriched for ${taxonomyMap.size}/${speciesColumns.length} nmax species`);
+          })
+          .catch(error => {
+            console.error('⚠️ Taxonomy lookup failed:', error);
+            setNmaxFetchedSpeciesList(currentSpeciesList); // Mark as attempted even on failure
+          })
+          .finally(() => {
+            setIsFetchingNmaxTaxonomy(false);
+          });
+      }
+    }
+  }, [nmaxViewMode, isSubcamNmaxFile, speciesColumns.join(','), nmaxFetchedSpeciesList, isFetchingNmaxTaxonomy]);
+
+  // Build taxonomic tree for nmax species
+  const nmaxTaxonomicTree = useMemo(() => {
+    if (!isSubcamNmaxFile || speciesColumns.length === 0 || nmaxTaxonomyData.size === 0) {
+      return null;
+    }
+
+    // Convert nmax species and taxonomy data to haplotype-like cell data format
+    const cellData = speciesColumns.map(species => {
+      const taxonomy = nmaxTaxonomyData.get(species);
+      return {
+        species,
+        site: 'nmax', // Dummy site since nmax doesn't have sites
+        count: 1,
+        metadata: {
+          credibility: 'high',
+          phylum: taxonomy?.hierarchy?.phylum || 'Unknown',
+          fullHierarchy: taxonomy?.hierarchy || {},
+          taxonomySource: taxonomy?.source as 'worms' | 'gbif' | 'unknown' | undefined,
+          taxonId: taxonomy?.taxonId,
+          commonNames: taxonomy?.commonNames || [],
+          taxonomyConfidence: taxonomy?.confidence,
+          taxonomyRank: taxonomy?.rank
+        }
+      };
+    });
+
+    return buildTaxonomicTree(cellData);
+  }, [isSubcamNmaxFile, speciesColumns, nmaxTaxonomyData]);
+
+  // Create taxonomically ordered species list (only CSV entries from tree)
+  const taxonomicallyOrderedSpecies = useMemo(() => {
+    if (!nmaxTaxonomicTree) {
+      return speciesColumns; // Fallback to original order if no tree
+    }
+
+    // Flatten the tree and filter to only CSV entries (full-color entries in tree view)
+    const flattenedTree = flattenTreeForHeatmap(nmaxTaxonomicTree);
+    const csvSpecies = flattenedTree
+      .filter(taxon => taxon.node.csvEntry) // Only show entries that exist in CSV (full-color in tree view)
+      .map(taxon => taxon.node.originalName || taxon.name); // Use original name if available (preserves rank annotations)
+
+    console.log('[Taxonomic Ordering] Total species in tree:', flattenedTree.length);
+    console.log('[Taxonomic Ordering] CSV entries (full-color):', csvSpecies.length);
+    console.log('[Taxonomic Ordering] Ordered species:', csvSpecies);
+
+    return csvSpecies;
+  }, [nmaxTaxonomicTree, speciesColumns]);
+
+  // Create species indentation map for heatmap display
+  const speciesIndentMap = useMemo(() => {
+    if (!nmaxTaxonomicTree) {
+      return new Map<string, number>();
+    }
+
+    const flattenedTree = flattenTreeForHeatmap(nmaxTaxonomicTree);
+    const indentMap = new Map<string, number>();
+
+    flattenedTree
+      .filter(taxon => taxon.node.csvEntry)
+      .forEach(taxon => {
+        // Use original name if available (preserves rank annotations like "(gen.)")
+        const key = taxon.node.originalName || taxon.name;
+        indentMap.set(key, taxon.indentLevel);
+      });
+
+    console.log('[Taxonomic Ordering] Indentation map size:', indentMap.size);
+
+    return indentMap;
+  }, [nmaxTaxonomicTree]);
+
+  // Create species rank map for heatmap display (from CSV species names)
+  const speciesRankMap = useMemo(() => {
+    const rankMap = new Map<string, string>();
+
+    // Extract rank directly from CSV species names (e.g., "Teleostei (infraclass.)")
+    speciesColumns.forEach(speciesName => {
+      const suffixMatch = speciesName.match(/\((phyl|infraclass|class|ord|fam|gen|sp)\.\)/);
+      if (suffixMatch) {
+        rankMap.set(speciesName, suffixMatch[1]);
+      } else {
+        // If no suffix, try to infer from tree view if available
+        if (nmaxTaxonomicTree) {
+          const flattenedTree = flattenTreeForHeatmap(nmaxTaxonomicTree);
+          const treeNode = flattenedTree.find(t => (t.node.originalName || t.name) === speciesName && t.node.csvEntry);
+          if (treeNode) {
+            const rankMapping: Record<string, string> = {
+              'kingdom': 'kingdom',
+              'phylum': 'phyl',
+              'class': 'class',
+              'order': 'ord',
+              'family': 'fam',
+              'genus': 'gen',
+              'species': 'sp'
+            };
+            const mappedRank = rankMapping[treeNode.rank] || treeNode.rank;
+            rankMap.set(speciesName, mappedRank);
+          }
+        }
+      }
+    });
+
+    console.log('[Taxonomic Ordering] Rank map size:', rankMap.size);
+    console.log('[Taxonomic Ordering] Rank map entries:', Array.from(rankMap.entries()));
+
+    return rankMap;
+  }, [speciesColumns, nmaxTaxonomicTree]);
+
   // Determine which brush indices to use based on mode
-  const activeBrushStart = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.startIndex : brushStartIndex;
+  const activeBrushStart = timeAxisMode === 'common' && globalBrushRange ? (globalBrushRange.startIndex ?? 0) : (brushStartIndex ?? 0);
   const activeBrushEnd = timeAxisMode === 'common' && globalBrushRange
     ? (globalBrushRange.endIndex ?? data.length - 1)  // Fix: fallback for global brush range
     : (brushEndIndex ?? data.length - 1);             // Fix: fallback for local brush index
@@ -1434,6 +1633,83 @@ export function PinChartDisplay({
       setBrushEndIndex(brushData.endIndex);
     }
   };
+
+  const handleHeatmapRefresh = useCallback(() => {
+    setIsRefreshing(true);
+
+    try {
+      console.log('[Heatmap Refresh] Starting validation checks...');
+
+      // Get visible species for validation
+      const visibleSpecies = speciesColumns.filter(species => parameterStates[species]?.visible);
+
+      // 1. Validation Checks (log warnings/errors)
+      const validationResults = {
+        totalSeries: visibleSpecies.length,
+        ranksDetected: new Set<string>(),
+        orphanedTaxa: [] as string[],
+        duplicates: [] as string[],
+        missingData: [] as string[]
+      };
+
+      // Check for taxonomic rank detection
+      visibleSpecies.forEach(series => {
+        const match = series.match(/\((phyl|infraclass|class|ord|fam|gen|sp)\.\)/);
+        if (match) {
+          validationResults.ranksDetected.add(match[1]);
+        }
+      });
+
+      // Check for duplicates
+      const nameMap = new Map<string, number>();
+      visibleSpecies.forEach(name => {
+        nameMap.set(name, (nameMap.get(name) || 0) + 1);
+      });
+      nameMap.forEach((count, name) => {
+        if (count > 1) validationResults.duplicates.push(name);
+      });
+
+      console.log('[Heatmap Refresh] Validation results:', {
+        totalSeries: validationResults.totalSeries,
+        ranksDetected: Array.from(validationResults.ranksDetected),
+        duplicatesCount: validationResults.duplicates.length,
+        duplicates: validationResults.duplicates
+      });
+
+      // Show validation warnings if needed
+      if (validationResults.duplicates.length > 0) {
+        console.warn('[Heatmap Refresh] Found duplicate taxa:', validationResults.duplicates);
+      }
+
+      // 2. Force recalculation by incrementing key
+      // This causes React to unmount/remount HeatmapDisplay with fresh memoization
+      setRefreshKey(prev => prev + 1);
+
+      // 3. Reset brush to full range to show all data
+      if (timeAxisMode === 'separate') {
+        setBrushStartIndex(0);
+        setBrushEndIndex(data.length - 1);
+      }
+
+      console.log('[Heatmap Refresh] Heatmap structure refreshed successfully');
+
+      // Show success toast
+      toast({
+        title: 'Heatmap Refreshed',
+        description: `Processed ${validationResults.totalSeries} taxa with ${validationResults.ranksDetected.size} taxonomic rank${validationResults.ranksDetected.size !== 1 ? 's' : ''}`,
+      });
+
+    } catch (error) {
+      console.error('[Heatmap Refresh] Error during refresh:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Refresh Failed',
+        description: 'Failed to refresh heatmap structure. Check console for details.',
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [speciesColumns, parameterStates, data, toast, timeAxisMode]);
 
   const handleStyleRuleToggle = (suffix: string, enabled: boolean) => {
     setStyleRules(prev => {
@@ -2509,147 +2785,150 @@ export function PinChartDisplay({
           </div>
         )}
 
-        {/* View Toggles - always right-aligned */}
+        {/* View Controls - always consistent layout */}
         <div className="flex items-center gap-4 ml-auto">
-          {/* Chart/Table Toggle */}
+          {/* Unified View Mode Selector - always shows all 4 options */}
           <div className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Chart</span>
-            <Switch
-              checked={showTable}
-              onCheckedChange={setShowTable}
-              className="h-5 w-9"
-            />
-            <span className="text-xs text-muted-foreground">Table</span>
-            <TableIcon className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground font-medium">View:</span>
+            <div className="flex items-center gap-1 border rounded-md p-1 bg-gray-50">
+              <Button
+                variant={viewMode === 'chart' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => handleViewModeChange('chart')}
+                className="h-7 px-2 text-xs"
+              >
+                <BarChart3 className="h-3 w-3 mr-1" />
+                Chart
+              </Button>
+              <Button
+                variant={viewMode === 'table' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => handleViewModeChange('table')}
+                className="h-7 px-2 text-xs"
+              >
+                <TableIcon className="h-3 w-3 mr-1" />
+                Table
+              </Button>
+              <Button
+                variant={viewMode === 'heatmap' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => handleViewModeChange('heatmap')}
+                className="h-7 px-2 text-xs"
+                disabled={!isSubcamNmaxFile && !isHaplotypeFile}
+                title={!isSubcamNmaxFile && !isHaplotypeFile ? 'Heatmap view only available for nmax and hapl files' : ''}
+              >
+                <Grid3x3 className="h-3 w-3 mr-1" />
+                Heatmap
+              </Button>
+              <Button
+                variant={viewMode === 'tree' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => handleViewModeChange('tree')}
+                className="h-7 px-2 text-xs"
+                disabled={!isSubcamNmaxFile}
+                title={!isSubcamNmaxFile ? 'Tree view only available for nmax files' : ''}
+              >
+                <Network className="h-3 w-3 mr-1" />
+                Tree
+              </Button>
+            </div>
           </div>
 
-          {/* Heatmap Toggle - only show for Subcam nmax files in chart mode */}
-          {!showTable && isSubcamNmaxFile && (
-            <div className="flex items-center gap-2 pl-4 border-l">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Line</span>
-              <Switch
-                checked={showHeatmap}
-                onCheckedChange={handleHeatmapToggle}
-                className="h-5 w-9"
-              />
-              <span className="text-xs text-muted-foreground">Heatmap</span>
-              <Grid3x3 className="h-4 w-4 text-muted-foreground" />
-            </div>
-          )}
-
-          {/* Heatmap Settings - only show in heatmap mode for nmax files */}
-          {!showTable && showHeatmap && isSubcamNmaxFile && (
-            <div className="flex items-center gap-2 pl-4 border-l">
-              <StylingRulesDialog
-                open={showStylingRules}
-                onOpenChange={setShowStylingRules}
-                styleRules={styleRules}
-                onStyleRuleToggle={handleStyleRuleToggle}
-                onStyleRuleUpdate={handleStyleRuleUpdate}
-                currentFileName={fileName}
-              >
+          {/* Refresh & Settings - always in same position, shown only for Chart and Heatmap views */}
+          {(viewMode === 'chart' || viewMode === 'heatmap') && (
+            <div className="flex items-center gap-1">
+              {/* Refresh Button - shown only for Heatmap view on NMAX/Hapl files */}
+              {viewMode === 'heatmap' && (isSubcamNmaxFile || (isHaplotypeFile && haplotypeData)) && (
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7"
-                  title="Heatmap settings (row height)"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowStylingRules(true);
-                  }}
+                  title="Refresh heatmap structure and recalculate hierarchy"
+                  onClick={handleHeatmapRefresh}
+                  disabled={isRefreshing}
                 >
-                  <Settings className="h-4 w-4 text-muted-foreground" />
+                  <RefreshCw
+                    className={cn(
+                      "h-4 w-4 text-muted-foreground",
+                      isRefreshing && "animate-spin"
+                    )}
+                  />
                 </Button>
-              </StylingRulesDialog>
-            </div>
-          )}
+              )}
 
-          {/* Haplotype Heatmap Toggle - only show for EDNA hapl files in chart mode */}
-          {!showTable && isHaplotypeFile && haplotypeData && (
-            <div className="flex items-center gap-2 pl-4 border-l">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Table</span>
-              <Switch
-                checked={showHaplotypeHeatmap}
-                onCheckedChange={setShowHaplotypeHeatmap}
-                className="h-5 w-9"
-              />
-              <span className="text-xs text-muted-foreground">Heatmap</span>
-              <Grid3x3 className="h-4 w-4 text-muted-foreground" />
-            </div>
-          )}
-
-          {/* Haplotype Heatmap Settings - only show in haplotype heatmap mode */}
-          {!showTable && showHaplotypeHeatmap && isHaplotypeFile && haplotypeData && (
-            <div className="flex items-center gap-2 pl-4 border-l">
-              <StylingRulesDialog
-                open={showStylingRules}
-                onOpenChange={setShowStylingRules}
-                styleRules={styleRules}
-                onStyleRuleToggle={handleStyleRuleToggle}
-                onStyleRuleUpdate={handleStyleRuleUpdate}
-                currentFileName={fileName}
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  title="Haplotype heatmap settings (row height)"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowStylingRules(true);
-                  }}
+              {/* Chart/Heatmap Settings */}
+              {viewMode === 'heatmap' && (isSubcamNmaxFile || (isHaplotypeFile && haplotypeData)) ? (
+                <StylingRulesDialog
+                  open={showStylingRules}
+                  onOpenChange={setShowStylingRules}
+                  styleRules={styleRules}
+                  onStyleRuleToggle={handleStyleRuleToggle}
+                  onStyleRuleUpdate={handleStyleRuleUpdate}
+                  currentFileName={fileName}
                 >
-                  <Settings className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </StylingRulesDialog>
-            </div>
-          )}
-
-          {/* Compact View Toggle - only show in chart mode and not in heatmap mode */}
-          {!showTable && !showHeatmap && !showHaplotypeHeatmap && (
-            <>
-              <div className="flex items-center gap-2 pl-4 border-l">
-                <span className="text-xs text-muted-foreground">Compact</span>
-                <Switch
-                  checked={compactView}
-                  onCheckedChange={setCompactView}
-                  className="h-5 w-9"
-                />
-              </div>
-            </>
-          )}
-
-          {/* Single/Multi Axis Toggle - only show in chart mode and not in heatmap mode */}
-          {!showTable && !showHeatmap && !showHaplotypeHeatmap && (
-            <>
-              <div className="flex items-center gap-2 pl-4 border-l">
-                <span className="text-xs text-muted-foreground">Single</span>
-                <Switch
-                  checked={axisMode === 'multi'}
-                  onCheckedChange={(checked) => setAxisMode(checked ? 'multi' : 'single')}
-                  className="h-5 w-9"
-                />
-                <span className="text-xs text-muted-foreground">Multi</span>
-              </div>
-
-              {/* X-Axis Settings - cog button with popover */}
-              <Popover>
-                <PopoverTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 ml-2"
-                    title="X-axis settings"
+                    className="h-7 w-7"
+                    title="Heatmap settings"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowStylingRules(true);
+                    }}
                   >
                     <Settings className="h-4 w-4 text-muted-foreground" />
                   </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-56 p-3" align="end">
-                  <div className="space-y-3">
-                    <p className="text-xs font-semibold border-b pb-2">X-Axis Settings</p>
+                </StylingRulesDialog>
+              ) : (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      title="Chart settings"
+                    >
+                      <Settings className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-3" align="end">
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold border-b pb-2">Chart Settings</p>
+
+                      {/* Compact View Toggle */}
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="compact-view" className="text-xs cursor-pointer">
+                          Compact View
+                        </Label>
+                        <Switch
+                          id="compact-view"
+                          checked={compactView}
+                          onCheckedChange={setCompactView}
+                          className="h-4 w-7"
+                        />
+                      </div>
+                      <p className="text-[0.65rem] text-muted-foreground">
+                        Show only selected parameters without borders
+                      </p>
+
+                      {/* Single/Multi Axis Toggle */}
+                      <div className="flex items-center justify-between pt-2 border-t">
+                        <Label htmlFor="axis-mode" className="text-xs cursor-pointer">
+                          Multi-Axis Mode
+                        </Label>
+                        <Switch
+                          id="axis-mode"
+                          checked={axisMode === 'multi'}
+                          onCheckedChange={(checked) => setAxisMode(checked ? 'multi' : 'single')}
+                          className="h-4 w-7"
+                        />
+                      </div>
+                      <p className="text-[0.65rem] text-muted-foreground">
+                        {axisMode === 'multi' ? 'Separate Y-axis for each parameter' : 'Shared Y-axis for all parameters'}
+                      </p>
+
+                      {/* X-Axis Settings Section */}
+                      <p className="text-xs font-semibold border-b pb-2 pt-2">X-Axis Settings</p>
                     <div className="flex items-center justify-between">
                       <Label htmlFor="show-year" className="text-xs cursor-pointer">
                         Show year (/YY)
@@ -2779,7 +3058,8 @@ export function PinChartDisplay({
                   </div>
                 </PopoverContent>
               </Popover>
-            </>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -2909,14 +3189,38 @@ export function PinChartDisplay({
             )}
           </div>
         </div>
+      ) : nmaxViewMode === 'tree' && isSubcamNmaxFile ? (
+        // Tree View for Subcam nmax files
+        <div className="flex-1">
+          {isFetchingNmaxTaxonomy ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+                <p className="text-sm text-muted-foreground">Fetching taxonomy data...</p>
+              </div>
+            </div>
+          ) : nmaxTaxonomicTree ? (
+            <TaxonomicTreeView
+              tree={nmaxTaxonomicTree}
+              containerHeight={dynamicChartHeight}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-sm text-muted-foreground">No taxonomy data available</p>
+            </div>
+          )}
+        </div>
       ) : showHeatmap && isSubcamNmaxFile ? (
         // Heatmap View for Subcam nmax files
         <div className="flex" style={{ gap: `${appliedStyleRule?.properties.plotToParametersGap ?? 12}px` }}>
           {/* Main Heatmap - Takes up most space */}
           <div className="flex-1">
             <HeatmapDisplay
+              key={refreshKey}
               data={finalDisplayData}
-              series={speciesColumns.filter(species => parameterStates[species]?.visible)}
+              series={taxonomicallyOrderedSpecies.filter(species => parameterStates[species]?.visible)}
+              speciesIndentMap={speciesIndentMap}
+              speciesRankMap={speciesRankMap}
               containerHeight={dynamicChartHeight}
               brushStartIndex={activeBrushStart}
               brushEndIndex={activeBrushEnd}
@@ -2927,39 +3231,72 @@ export function PinChartDisplay({
             />
           </div>
 
-          {/* Species Selection Panel - Right sidebar */}
-          <div className="w-64 border rounded-md bg-card">
-            <div className="p-3 border-b">
-              <h3 className="text-sm font-semibold">Species Selection</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                {speciesColumns.filter(s => parameterStates[s]?.visible).length} of {speciesColumns.length} visible
-              </p>
-            </div>
-            <div className="p-2 max-h-[600px] overflow-y-auto space-y-1">
-              {speciesColumns.map((species) => (
-                <div key={species} className="flex items-center gap-2 p-2 rounded hover:bg-accent/50 transition-colors">
-                  <Checkbox
-                    id={`species-${species}`}
-                    checked={parameterStates[species]?.visible ?? false}
-                    onCheckedChange={(checked) => {
-                      setParameterStates(prev => ({
-                        ...prev,
-                        [species]: {
-                          ...prev[species],
-                          visible: checked as boolean
-                        }
-                      }));
-                    }}
-                  />
-                  <Label
-                    htmlFor={`species-${species}`}
-                    className="text-xs cursor-pointer flex-1"
+          {/* Species Selection Panel - Right sidebar - Collapsible */}
+          <div className={cn(
+            "border rounded-md bg-card transition-all duration-300 ease-in-out",
+            isSpeciesPanelExpanded ? "w-64" : "w-12"
+          )}>
+            {isSpeciesPanelExpanded ? (
+              <>
+                <div className="p-3 border-b flex items-center justify-between">
+                  <div className="flex-1">
+                    <h3 className="text-sm font-semibold">Species Selection</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {taxonomicallyOrderedSpecies.filter(s => parameterStates[s]?.visible).length} of {taxonomicallyOrderedSpecies.length} visible
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => setIsSpeciesPanelExpanded(false)}
+                    title="Collapse panel"
                   >
-                    {species}
-                  </Label>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
                 </div>
-              ))}
-            </div>
+                <div className="p-2 max-h-[600px] overflow-y-auto space-y-1">
+                  {taxonomicallyOrderedSpecies.map((species) => (
+                    <div key={species} className="flex items-center gap-2 p-2 rounded hover:bg-accent/50 transition-colors">
+                      <Checkbox
+                        id={`species-${species}`}
+                        checked={parameterStates[species]?.visible ?? false}
+                        onCheckedChange={(checked) => {
+                          setParameterStates(prev => ({
+                            ...prev,
+                            [species]: {
+                              ...prev[species],
+                              visible: checked as boolean
+                            }
+                          }));
+                        }}
+                      />
+                      <Label
+                        htmlFor={`species-${species}`}
+                        className="text-xs cursor-pointer flex-1"
+                      >
+                        {species}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center py-3">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setIsSpeciesPanelExpanded(true)}
+                  title={`Show taxa selection (${taxonomicallyOrderedSpecies.filter(s => parameterStates[s]?.visible).length}/${taxonomicallyOrderedSpecies.length} visible)`}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <div className="mt-2 -rotate-90 whitespace-nowrap text-xs text-muted-foreground font-medium origin-center">
+                  Taxa
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : showHaplotypeHeatmap && isHaplotypeFile && haplotypeData ? (
@@ -2972,6 +3309,15 @@ export function PinChartDisplay({
             cellWidth={appliedStyleRule?.properties.heatmapCellWidth ?? 30}
             spotSampleStyles={appliedStyleRule?.properties.spotSample}
             onStyleRuleUpdate={handleStyleRuleUpdate}
+            rawFileId={rawFileInfo?.id}
+            rawFileName={rawFileInfo?.name}
+            pinId={pinId}
+            onOpenRawEditor={(fileId, fileName, speciesName) => {
+              console.log('[OPEN RAW EDITOR] Called with:', { fileId, fileName, speciesName });
+              setSelectedFileForRaw({ id: fileId, name: fileName, highlightSpecies: speciesName });
+              setShowRawViewer(true);
+              console.log('[OPEN RAW EDITOR] State updated, showRawViewer should be true');
+            }}
           />
         </div>
       ) : (
@@ -4913,6 +5259,19 @@ export function PinChartDisplay({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Raw CSV Viewer for editing unrecognized species */}
+      {selectedFileForRaw && (
+        <RawCsvViewer
+          fileId={selectedFileForRaw.id}
+          fileName={selectedFileForRaw.name}
+          isOpen={showRawViewer}
+          onClose={() => {
+            setShowRawViewer(false);
+            setSelectedFileForRaw(null);
+          }}
+        />
+      )}
     </div>
   );
 }

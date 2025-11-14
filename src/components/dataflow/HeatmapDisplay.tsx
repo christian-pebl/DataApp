@@ -6,6 +6,7 @@ import { parseISO, startOfDay, format, isValid, eachDayOfInterval } from 'date-f
 import { scaleLinear, scaleBand } from 'd3-scale';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { reorganizeTaxonomicData } from '@/lib/taxonomic-reorganizer';
 import { ResponsiveContainer, LineChart, Line, XAxis, Brush } from 'recharts';
 
 
@@ -17,6 +18,8 @@ interface DataPoint {
 interface HeatmapDisplayProps {
   data: DataPoint[];
   series: string[];
+  speciesIndentMap?: Map<string, number>; // Taxonomic indentation levels from tree view
+  speciesRankMap?: Map<string, string>; // Taxonomic ranks from tree view
   containerHeight: number;
   brushStartIndex?: number;
   brushEndIndex?: number;
@@ -41,6 +44,8 @@ interface OverviewDataPoint {
 export function HeatmapDisplay({
     data,
     series,
+    speciesIndentMap,
+    speciesRankMap,
     containerHeight,
     brushStartIndex,
     brushEndIndex,
@@ -54,7 +59,116 @@ export function HeatmapDisplay({
 
   const BRUSH_CHART_HEIGHT = 60;
   const heatmapHeight = onBrushChange ? containerHeight - BRUSH_CHART_HEIGHT : containerHeight;
-  const margin = { top: 20, right: 20, bottom: 60, left: 150 };
+
+  // Extract taxonomic rank from species name (e.g., "Brachyura (ord.)" → "ord")
+  // Prefer speciesRankMap from tree view when available
+  const getTaxonomicRank = (speciesName: string): string | null => {
+    // If we have tree view rank data, use that
+    if (speciesRankMap && speciesRankMap.has(speciesName)) {
+      return speciesRankMap.get(speciesName)!;
+    }
+    // Fallback to extracting from species name string
+    const match = speciesName.match(/\((phyl|infraclass|class|ord|fam|gen|sp)\.\)/);
+    return match ? match[1] : null;
+  };
+
+  // Get single-letter abbreviation for taxonomic rank
+  const getRankAbbreviation = (rank: string | null): string => {
+    const abbrevMap: Record<string, string> = {
+      'phyl': 'P',       // Phylum
+      'infraclass': 'I', // Infraclass
+      'class': 'C',      // Class
+      'ord': 'O',        // Order
+      'fam': 'F',        // Family
+      'gen': 'G',        // Genus
+      'sp': 'S'          // Species
+    };
+    return rank ? (abbrevMap[rank] ?? '?') : '?';
+  };
+
+// Get color for taxonomic rank (matching tree view colors)
+  const getRankColor = (rank: string | null): string => {
+    const rankColors: Record<string, string> = {
+      'phyl': '#8B5CF6',      // Phylum - purple
+      'infraclass': '#A78BFA', // Infraclass - lighter purple
+      'class': '#EF4444',     // Class - red
+      'ord': '#F59E0B',       // Order - amber/orange
+      'fam': '#84CC16',       // Family - lime green
+      'gen': '#10B981',       // Genus - emerald green
+      'sp': '#14B8A6'         // Species - teal
+    };
+    return rank ? (rankColors[rank] ?? '#94A3B8') : '#94A3B8';
+  };
+
+  // Remove rank suffix from name (e.g., "Gadus morhua (sp.)" → "Gadus morhua")
+  const stripRankSuffix = (name: string): string => {
+    return name.replace(/\s*\((phyl|infraclass|class|ord|fam|gen|sp)\.\)\s*$/, '');
+  };
+
+  // Map rank to indent level (hierarchical ordering)
+  // Prefer speciesIndentMap from tree view when available, fallback to rank-based calculation
+  const getRankIndentLevel = (rank: string | null): number => {
+    const rankLevels: Record<string, number> = {
+      'phyl': 0,       // Phylum - no indentation (highest level)
+      'infraclass': 1, // Infraclass - 1 level indent
+      'class': 2,      // Class - 2 level indent
+      'ord': 3,        // Order - 3 level indent
+      'fam': 4,        // Family - 4 levels indent
+      'gen': 5,        // Genus - 5 levels indent
+      'sp': 6          // Species - 6 levels indent
+    };
+    return rank ? (rankLevels[rank] ?? 0) : 0;
+  };
+
+  // Get indentation level for a species, using tree view data when available
+  const getIndentLevel = (speciesName: string): number => {
+    // If we have tree view indentation data, use that
+    if (speciesIndentMap && speciesIndentMap.has(speciesName)) {
+      return speciesIndentMap.get(speciesName)!;
+    }
+    // Fallback to rank-based calculation
+    const rank = getTaxonomicRank(speciesName);
+    return getRankIndentLevel(rank);
+  };
+
+  // Use series directly - it's already in correct taxonomic order from the tree builder
+  // No need to rebuild hierarchy here, as it would create incorrect parent-child relationships
+  const hierarchicalSeries = series;
+
+  // Use FIXED max indent level for consistent positioning (species level = 6)
+  // This ensures indentation is always based on taxonomic rank, not on what species are visible
+  const maxIndentLevel = 6; // Species rank has the highest indent level
+
+  // Indent pixels per level
+  const INDENT_PX_PER_LEVEL = 20;
+
+  // Calculate maximum label width needed based on longest taxa name
+  const maxLabelWidth = useMemo(() => {
+    // Estimate ~6.5 pixels per character for text-xs font
+    const CHAR_WIDTH = 6.5;
+    const BASE_PADDING = 20; // Base padding for the label area
+
+    const longestName = series.reduce((max, name) => {
+      const cleanName = name.replace(/\s*\((phyl|infraclass|class|ord|fam|gen|sp)\.\)\s*$/, '');
+      const maxClean = max.replace(/\s*\((phyl|infraclass|class|ord|fam|gen|sp)\.\)\s*$/, '');
+      return cleanName.length > maxClean.length ? name : max;
+    }, '');
+
+    const cleanLongestName = longestName.replace(/\s*\((phyl|infraclass|class|ord|fam|gen|sp)\.\)\s*$/, '');
+
+    // Calculate width needed: character width + indentation space + square + base padding
+    const estimatedWidth = (cleanLongestName.length * CHAR_WIDTH) +
+                          (maxIndentLevel * INDENT_PX_PER_LEVEL) +
+                          16 + // Colored square (12px) + gap (4px)
+                          BASE_PADDING;
+
+    // Ensure minimum width of 150px
+    return Math.max(150, Math.ceil(estimatedWidth));
+  }, [series]);
+
+  // Dynamic left margin to accommodate all labels without truncation
+  const leftMargin = maxLabelWidth;
+  const margin = { top: 50, right: 20, bottom: 60, left: leftMargin };
 
   useEffect(() => {
     const resizeObserver = new ResizeObserver(entries => {
@@ -134,10 +248,10 @@ export function HeatmapDisplay({
     const minValue = Math.min(0, ...allValues);
     const maxValue = Math.max(...allValues);
 
-    const processedResult = { cells, uniqueDays, series, minValue, maxValue, dateInterval: finalInterval };
+    const processedResult = { cells, uniqueDays, series: hierarchicalSeries, minValue, maxValue, dateInterval: finalInterval };
     return { processedData: processedResult };
 
-  }, [data, series, brushStartIndex, brushEndIndex]);
+  }, [data, series, hierarchicalSeries, brushStartIndex, brushEndIndex]);
 
   const colorScale = useMemo(() => {
     // Convert hex to rgba for gradient
@@ -155,10 +269,10 @@ export function HeatmapDisplay({
       ? hexToRgba(customColor, 1.0)
       : "hsla(var(--primary) / 1.0)";
 
-    // Use custom max value if provided, otherwise use the actual data max
+    // Use custom max value if provided, otherwise default to 10
     const effectiveMaxValue = customMaxValue !== undefined && customMaxValue > 0
       ? customMaxValue
-      : processedData.maxValue;
+      : 10; // Default max value for conditional formatting
 
     return scaleLinear<string>()
       .domain([Math.max(0.001, processedData.minValue), effectiveMaxValue])
@@ -184,9 +298,18 @@ export function HeatmapDisplay({
 
   const { cells, uniqueDays, series: visibleSeries } = processedData;
   const cellMap = new Map<string, ProcessedCell>(cells.map(c => [`${c.date}__${c.series}`, c]));
-  
+
   const { width, height } = svgDimensions;
-  const plotWidth = width > 0 ? width - margin.left - margin.right : 0;
+
+  // Default cell width for data columns
+  const DEFAULT_CELL_WIDTH = 10;
+
+  // Calculate minimum plot width needed to accommodate all days at default cell width
+  const minPlotWidth = uniqueDays.length * (DEFAULT_CELL_WIDTH / 0.95); // Account for 0.05 padding
+
+  // Use the larger of available width or minimum width to ensure cells are at least DEFAULT_CELL_WIDTH
+  const availablePlotWidth = width > 0 ? width - margin.left - margin.right : 0;
+  const plotWidth = Math.max(availablePlotWidth, minPlotWidth);
   const plotHeight = height > 0 ? height - margin.top - margin.bottom : 0;
 
   const xScale = scaleBand<string>().domain(uniqueDays).range([0, plotWidth]).padding(0.05);
@@ -202,33 +325,132 @@ export function HeatmapDisplay({
     }
   };
 
+  // Get unique ranks present in the data
+  const ranksPresent = useMemo(() => {
+    const ranks = new Set(series.map(s => getTaxonomicRank(s)).filter(r => r !== null));
+    return Array.from(ranks).sort((a, b) => {
+      const order = { 'ord': 0, 'fam': 1, 'gen': 2, 'sp': 3 };
+      return (order[a as keyof typeof order] || 999) - (order[b as keyof typeof order] || 999);
+    });
+  }, [series]);
+
+  const rankLabels: Record<string, string> = {
+    'ord': 'Order',
+    'fam': 'Family',
+    'gen': 'Genus',
+    'sp': 'Species'
+  };
+
   return (
     <div className="w-full h-full">
         <div
           ref={containerRef}
           style={{ height: `${heatmapHeight}px` }}
-          className="w-full h-full border rounded-md p-2 bg-white"
+          className="relative w-full h-full border rounded-md p-2 bg-white overflow-x-auto"
         >
+          {/* Taxonomic Rank Legend - Top Right */}
+          <div className="absolute top-[6px] right-2 px-3 py-2 bg-white/95 backdrop-blur-sm rounded-md shadow-sm z-10">
+            <div className="flex items-center gap-3 text-xs">
+              <span className="font-semibold text-gray-700">Taxonomic Ranks:</span>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#8B5CF6' }}></div>
+                <span className="text-gray-600">Phylum</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#A78BFA' }}></div>
+                <span className="text-gray-600">Infraclass</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#EF4444' }}></div>
+                <span className="text-gray-600">Class</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#F59E0B' }}></div>
+                <span className="text-gray-600">Order</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#84CC16' }}></div>
+                <span className="text-gray-600">Family</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#10B981' }}></div>
+                <span className="text-gray-600">Genus</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#14B8A6' }}></div>
+                <span className="text-gray-600">Species</span>
+              </div>
+            </div>
+          </div>
           <TooltipProvider>
-            <svg width="100%" height="100%">
+            <svg width={Math.max(width, plotWidth + margin.left + margin.right)} height="100%">
               {plotWidth > 0 && plotHeight > 0 && (
               <g transform={`translate(${margin.left},${margin.top})`}>
                 {/* Y-axis */}
                 <g className="y-axis">
-                  {yScale.domain().map(seriesName => (
-                    <text
-                      key={seriesName}
-                      x={-10}
-                      y={(yScale(seriesName) ?? 0) + yScale.bandwidth() / 2}
-                      textAnchor="end"
-                      dominantBaseline="middle"
-                      className="text-xs fill-current text-muted-foreground"
-                      title={seriesName}
-                    >
-                      {seriesName.length > 20 ? `${seriesName.substring(0, 18)}...` : seriesName}
-                    </text>
-                  ))}
+                  {/* Taxa names with rank badges */}
+                  {yScale.domain().map(seriesName => {
+                    const rank = getTaxonomicRank(seriesName);
+                    const indentLevel = getIndentLevel(seriesName);
+                    const rankColor = getRankColor(rank);
+                    const rankAbbrev = getRankAbbreviation(rank);
+                    const cleanName = stripRankSuffix(seriesName);
+
+                    // Position badges and text based on indentation level
+                    // More indented items (higher level) should be closer to plot area (closer to x=0)
+                    // Calculate position from the right side of the margin (close to plot area)
+                    const squareSize = 12;
+                    const badgeGap = 4; // Gap between badge and text
+                    const textRightPadding = squareSize + badgeGap + 4; // Space for badge + gap + extra padding
+
+                    // Badge position: to the RIGHT of text (between text and heatmap)
+                    const xOffsetOriginal = -(textRightPadding + (maxIndentLevel - indentLevel) * INDENT_PX_PER_LEVEL);
+                    const squareOffset = xOffsetOriginal + badgeGap;
+                    // Text position: shifted 7px left from badge for clarity with connection lines
+                    const xOffset = xOffsetOriginal - 7;
+
+                    return (
+                      <g key={seriesName}>
+                        {/* Colored square for rank */}
+                        <rect
+                          x={squareOffset}
+                          y={(yScale(seriesName) ?? 0) + yScale.bandwidth() / 2 - squareSize / 2}
+                          width={squareSize}
+                          height={squareSize}
+                          fill={rankColor}
+                          opacity={0.25}
+                          rx={2}
+                        />
+                        {/* Rank letter badge */}
+                        <text
+                          x={squareOffset + squareSize / 2}
+                          y={(yScale(seriesName) ?? 0) + yScale.bandwidth() / 2}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            fill: rankColor
+                          }}
+                        >
+                          {rankAbbrev}
+                        </text>
+                        {/* Taxa name */}
+                        <text
+                          x={xOffset}
+                          y={(yScale(seriesName) ?? 0) + yScale.bandwidth() / 2}
+                          textAnchor="end"
+                          dominantBaseline="middle"
+                          className="text-xs fill-current text-muted-foreground"
+                          title={seriesName}
+                        >
+                          {cleanName}
+                        </text>
+                      </g>
+                    );
+                  })}
                 </g>
+                
                 
                 {/* X-axis */}
                 <g className="x-axis" transform={`translate(0, ${plotHeight})`}>
@@ -297,7 +519,7 @@ export function HeatmapDisplay({
                                       strokeLinejoin: 'round'
                                     }}
                                   >
-                                    {cell.value.toFixed(0)}
+                                    {Math.min(99, cell.value).toFixed(0)}
                                   </text>
                                 )}
                               </g>
@@ -355,3 +577,4 @@ export function HeatmapDisplay({
     </div>
   );
 }
+
