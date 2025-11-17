@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { reorganizeTaxonomicData } from '@/lib/taxonomic-reorganizer';
 import { ResponsiveContainer, LineChart, Line, XAxis, Brush } from 'recharts';
+import type { FlattenedTaxon } from '@/lib/taxonomic-tree-builder';
 
 
 interface DataPoint {
@@ -20,6 +21,8 @@ interface HeatmapDisplayProps {
   series: string[];
   speciesIndentMap?: Map<string, number>; // Taxonomic indentation levels from tree view
   speciesRankMap?: Map<string, string>; // Taxonomic ranks from tree view
+  filteredFlattenedTree?: FlattenedTaxon[]; // Flattened tree with parent-child relationships
+  parentChildRelationships?: Map<string, { color: string; role: 'parent' | 'child' }>; // Parent-child relationship indicators
   containerHeight: number;
   brushStartIndex?: number;
   brushEndIndex?: number;
@@ -46,6 +49,8 @@ export function HeatmapDisplay({
     series,
     speciesIndentMap,
     speciesRankMap,
+    filteredFlattenedTree,
+    parentChildRelationships,
     containerHeight,
     brushStartIndex,
     brushEndIndex,
@@ -54,6 +59,9 @@ export function HeatmapDisplay({
     customColor,
     customMaxValue
 }: HeatmapDisplayProps) {
+  // Debug: Check if filteredFlattenedTree is being passed
+  console.log('[HEATMAP DISPLAY] filteredFlattenedTree prop:', filteredFlattenedTree ? `${filteredFlattenedTree.length} items` : 'undefined/null');
+
   const containerRef = useRef<HTMLDivElement>(null);
   const [svgDimensions, setSvgDimensions] = useState({ width: 0, height: 0 });
 
@@ -380,6 +388,15 @@ export function HeatmapDisplay({
                 <div className="w-3 h-3 rounded" style={{ backgroundColor: '#14B8A6' }}></div>
                 <span className="text-gray-600">Species</span>
               </div>
+              <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-300">
+                <svg width="14" height="14" viewBox="-7 -7 14 14" className="inline-block">
+                  <path d="M -2.4,0 L 0,2.4 L 2.4,0 Z" fill="#3b82f6" opacity="0.9" />
+                </svg>
+                <svg width="14" height="14" viewBox="-7 -7 14 14" className="inline-block">
+                  <path d="M -2.4,0 L 0,-2.4 L 2.4,0 Z" fill="#3b82f6" opacity="0.9" />
+                </svg>
+                <span className="text-gray-600">Parent-Child</span>
+              </div>
             </div>
           </div>
           <TooltipProvider>
@@ -396,6 +413,10 @@ export function HeatmapDisplay({
                     const rankAbbrev = getRankAbbreviation(rank);
                     const cleanName = stripRankSuffix(seriesName);
 
+                    // Check if this is a parent node (not a leaf in the tree)
+                    const taxonInfo = filteredFlattenedTree?.find(t => (t.node.originalName || t.name) === seriesName);
+                    const isParentNode = taxonInfo && !taxonInfo.node.isLeaf;
+
                     // Position badges and text based on indentation level
                     // More indented items (higher level) should be closer to plot area (closer to x=0)
                     // Calculate position from the right side of the margin (close to plot area)
@@ -403,14 +424,29 @@ export function HeatmapDisplay({
                     const badgeGap = 4; // Gap between badge and text
                     const textRightPadding = squareSize + badgeGap + 4; // Space for badge + gap + extra padding
 
-                    // Badge position: to the RIGHT of text (between text and heatmap)
+                    // Badge position: to the RIGHT of text (between text and heatmap), shifted 5px left
                     const xOffsetOriginal = -(textRightPadding + (maxIndentLevel - indentLevel) * INDENT_PX_PER_LEVEL);
-                    const squareOffset = xOffsetOriginal + badgeGap;
+                    const squareOffset = xOffsetOriginal + badgeGap - 5;
                     // Text position: shifted 7px left from badge for clarity with connection lines
                     const xOffset = xOffsetOriginal - 7;
 
+                    // Check if this taxon has a parent-child relationship
+                    const relationship = parentChildRelationships?.get(seriesName);
+
                     return (
                       <g key={seriesName}>
+                        {/* Parent-child relationship indicator triangle */}
+                        {relationship && (
+                          <path
+                            d={relationship.role === 'parent'
+                              ? 'M -2.4,0 L 0,2.4 L 2.4,0 Z'  // Downward triangle
+                              : 'M -2.4,0 L 0,-2.4 L 2.4,0 Z' // Upward triangle
+                            }
+                            transform={`translate(-3, ${(yScale(seriesName) ?? 0) + yScale.bandwidth() / 2})`}
+                            fill={relationship.color}
+                            opacity={0.9}
+                          />
+                        )}
                         {/* Colored square for rank */}
                         <rect
                           x={squareOffset}
@@ -435,14 +471,19 @@ export function HeatmapDisplay({
                         >
                           {rankAbbrev}
                         </text>
-                        {/* Taxa name */}
+                        {/* Taxa name - Bold & Italic for parent nodes */}
                         <text
                           x={xOffset}
                           y={(yScale(seriesName) ?? 0) + yScale.bandwidth() / 2}
                           textAnchor="end"
                           dominantBaseline="middle"
-                          className="text-xs fill-current text-muted-foreground"
+                          className="text-xs fill-current"
                           title={seriesName}
+                          style={{
+                            fontWeight: isParentNode ? 600 : 'normal',
+                            fontStyle: isParentNode ? 'italic' : 'normal',
+                            fill: isParentNode ? '#374151' : '#9ca3af'
+                          }}
                         >
                           {cleanName}
                         </text>
@@ -450,8 +491,71 @@ export function HeatmapDisplay({
                     );
                   })}
                 </g>
-                
-                
+
+                {/* Parent-Child Connection Lines */}
+                {filteredFlattenedTree && filteredFlattenedTree.length > 0 && (
+                  <g className="parent-child-lines">
+                    {filteredFlattenedTree.map((taxon, index) => {
+                      // Skip if this is the last item in the list
+                      if (index >= filteredFlattenedTree.length - 1) return null;
+
+                      const nextTaxon = filteredFlattenedTree[index + 1];
+                      const taxonName = taxon.node.originalName || taxon.name;
+                      const nextTaxonName = nextTaxon.node.originalName || nextTaxon.name;
+
+                      // Debug logging
+                      if (index === 0) {
+                        console.log('[HEATMAP CONNECTION LINES] filteredFlattenedTree length:', filteredFlattenedTree.length);
+                        console.log('[HEATMAP CONNECTION LINES] series:', series);
+                        console.log('[HEATMAP CONNECTION LINES] First few taxa:', filteredFlattenedTree.slice(0, 5).map(t => ({
+                          name: t.node.originalName || t.name,
+                          rank: t.rank,
+                          isLeaf: t.node.isLeaf,
+                          indentLevel: t.indentLevel
+                        })));
+                      }
+
+                      // Only render if both taxa are visible in the current series
+                      if (!series.includes(taxonName) || !series.includes(nextTaxonName)) return null;
+
+                      // Check if next item is a direct child
+                      const isDirectChild = (
+                        nextTaxon.indentLevel === taxon.indentLevel + 1 &&
+                        nextTaxon.path.includes(taxon.name)
+                      );
+
+                      if (!isDirectChild) return null;
+
+                      // Calculate Y positions
+                      const parentY = (yScale(taxonName) ?? 0);
+                      const childY = (yScale(nextTaxonName) ?? 0);
+
+                      // Calculate X position (left edge of child's indent level)
+                      // Match the text offset calculation from Y-axis rendering
+                      const squareSize = 12;
+                      const badgeGap = 4;
+                      const textRightPadding = squareSize + badgeGap + 4;
+                      const childIndentLevel = getIndentLevel(nextTaxonName);
+                      const xOffsetOriginal = -(textRightPadding + (maxIndentLevel - childIndentLevel) * INDENT_PX_PER_LEVEL);
+                      const lineX = xOffsetOriginal - 7 - 10; // 10px to the left of text for visual clarity
+
+                      return (
+                        <line
+                          key={`parent-child-${taxonName}-${nextTaxonName}`}
+                          x1={lineX}
+                          y1={parentY + yScale.bandwidth() / 2}
+                          x2={lineX}
+                          y2={childY + yScale.bandwidth() / 2}
+                          stroke="#9ca3af"
+                          strokeWidth={2}
+                          strokeDasharray="3,3"
+                          opacity={0.6}
+                        />
+                      );
+                    })}
+                  </g>
+                )}
+
                 {/* X-axis */}
                 <g className="x-axis" transform={`translate(0, ${plotHeight})`}>
                   {tickValues.map(day => (
@@ -472,57 +576,81 @@ export function HeatmapDisplay({
 
                 {/* Heatmap Cells */}
                 <g className="cells">
-                  {visibleSeries.map(s => (
-                    <React.Fragment key={s}>
-                      {uniqueDays.map(day => {
-                        const cell = cellMap.get(`${day}__${s}`);
-                        const cellValue = cell?.value ?? 0;
-                        const fillColor = cellValue > 0 ? colorScale(cellValue) : 'hsl(var(--muted)/0.3)';
+                  {visibleSeries.map(s => {
+                    // Check if this is a parent node (not a leaf in the tree)
+                    const taxonInfo = filteredFlattenedTree?.find(t => (t.node.originalName || t.name) === s);
+                    const isParentNode = taxonInfo && !taxonInfo.node.isLeaf;
 
-                        // Determine font size based on cell dimensions
-                        const cellWidth = xScale.bandwidth();
-                        const cellHeight = yScale.bandwidth();
-                        // Calculate font size - scale down for very small cells
-                        const fontSize = Math.max(6, Math.min(cellWidth * 1.2, cellHeight / 1.5, 11));
-                        // Show text for non-zero values with very minimal thresholds
-                        // Only require minimum height, ignore width constraint
-                        const showText = cell && cell.value > 0 && cellHeight > 8;
-
-                        return (
-                          <Tooltip key={`${s}-${day}`} delayDuration={200}>
-                            <TooltipTrigger asChild>
+                    return (
+                      <React.Fragment key={s}>
+                        {uniqueDays.map(day => {
+                          // Parent nodes: render empty cell
+                          if (isParentNode) {
+                            return (
                               <g
+                                key={`${s}-${day}`}
                                 transform={`translate(${xScale(day)}, ${yScale(s)})`}
-                                style={{ cursor: 'pointer' }}
                               >
                                 <rect
                                   width={xScale.bandwidth()}
                                   height={yScale.bandwidth()}
-                                  fill={fillColor}
-                                  className="stroke-background/50 hover:stroke-foreground"
-                                  strokeWidth={1}
-                                  style={{ pointerEvents: 'all' }}
+                                  fill="transparent"
+                                  stroke="#e5e7eb"
+                                  strokeWidth={0.5}
                                 />
-                                {showText && (
-                                  <text
-                                    x={xScale.bandwidth() / 2}
-                                    y={yScale.bandwidth() / 2}
-                                    textAnchor="middle"
-                                    dominantBaseline="middle"
-                                    className="pointer-events-none font-bold select-none"
-                                    style={{
-                                      fontSize: `${fontSize}px`,
-                                      fill: 'white',
-                                      paintOrder: 'stroke',
-                                      stroke: 'rgba(200,200,200,0.7)',
-                                      strokeWidth: '1.2px',
-                                      strokeLinejoin: 'round'
-                                    }}
-                                  >
-                                    {Math.min(99, cell.value).toFixed(0)}
-                                  </text>
-                                )}
                               </g>
+                            );
+                          }
+
+                          // Leaf nodes: render normally with data
+                          const cell = cellMap.get(`${day}__${s}`);
+                          const cellValue = cell?.value ?? 0;
+                          const fillColor = cellValue > 0 ? colorScale(cellValue) : 'hsl(var(--muted)/0.3)';
+
+                          // Determine font size based on cell dimensions
+                          const cellWidth = xScale.bandwidth();
+                          const cellHeight = yScale.bandwidth();
+                          // Calculate font size - scale down for very small cells
+                          const fontSize = Math.max(6, Math.min(cellWidth * 1.2, cellHeight / 1.5, 11));
+                          // Show text for non-zero values with very minimal thresholds
+                          // Only require minimum height, ignore width constraint
+                          const showText = cell && cell.value > 0 && cellHeight > 8;
+
+                          return (
+                            <Tooltip key={`${s}-${day}`} delayDuration={200}>
+                              <TooltipTrigger asChild>
+                                <g
+                                  transform={`translate(${xScale(day)}, ${yScale(s)})`}
+                                  style={{ cursor: 'pointer' }}
+                                >
+                                  <rect
+                                    width={xScale.bandwidth()}
+                                    height={yScale.bandwidth()}
+                                    fill={fillColor}
+                                    className="stroke-background/50 hover:stroke-foreground"
+                                    strokeWidth={1}
+                                    style={{ pointerEvents: 'all' }}
+                                  />
+                                  {showText && (
+                                    <text
+                                      x={xScale.bandwidth() / 2}
+                                      y={yScale.bandwidth() / 2}
+                                      textAnchor="middle"
+                                      dominantBaseline="middle"
+                                      className="pointer-events-none font-bold select-none"
+                                      style={{
+                                        fontSize: `${fontSize}px`,
+                                        fill: 'white',
+                                        paintOrder: 'stroke',
+                                        stroke: 'rgba(200,200,200,0.7)',
+                                        strokeWidth: '1.2px',
+                                        strokeLinejoin: 'round'
+                                      }}
+                                    >
+                                      {Math.min(99, cell.value).toFixed(0)}
+                                    </text>
+                                  )}
+                                </g>
                             </TooltipTrigger>
                             <TooltipContent side="top" className="max-w-xs">
                               <div className="space-y-1">
@@ -532,10 +660,11 @@ export function HeatmapDisplay({
                               </div>
                             </TooltipContent>
                           </Tooltip>
-                        );
-                      })}
-                    </React.Fragment>
-                  ))}
+                          );
+                        })}
+                      </React.Fragment>
+                    );
+                  })}
                 </g>
               </g>
               )}

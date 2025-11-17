@@ -476,6 +476,10 @@ export function PinChartDisplay({
   const [isFetchingNmaxTaxonomy, setIsFetchingNmaxTaxonomy] = useState(false);
   const [nmaxFetchedSpeciesList, setNmaxFetchedSpeciesList] = useState<string>(''); // Track which species we've fetched
 
+  // Adjustable cell dimensions for subcam nmax heatmaps
+  const [adjustableNmaxRowHeight, setAdjustableNmaxRowHeight] = useState(15);
+  const [adjustableNmaxCellWidth, setAdjustableNmaxCellWidth] = useState(12);
+
   // Haplotype heatmap view state - for EDNA hapl files (default to true for hapl files)
   const [showHaplotypeHeatmap, setShowHaplotypeHeatmap] = useState(isHaplotypeFile && !!haplotypeData);
 
@@ -909,8 +913,8 @@ export function PinChartDisplay({
     // For heatmap mode, calculate height based on number of visible species
     if (showHeatmap && isSubcamNmaxFile) {
       const visibleSpeciesCount = speciesColumns.filter(species => parameterStates[species]?.visible).length;
-      // Get row height from styling rule, default to 35px
-      const rowHeight = appliedStyleRule?.properties.heatmapRowHeight || 35;
+      // Use adjustable row height
+      const rowHeight = adjustableNmaxRowHeight;
       // Calculate height: (rowHeight per species row) + margins (150px for margins/axes/brush)
       const heatmapHeight = Math.max(300, (visibleSpeciesCount * rowHeight) + 150);
       return heatmapHeight;
@@ -918,7 +922,12 @@ export function PinChartDisplay({
 
     // For haplotype heatmap/rarefaction view, return a fixed larger height
     if (showHaplotypeHeatmap && isHaplotypeFile && haplotypeData) {
-      return 4000; // Increased height to show entire taxonomic tree without scrolling
+      return 8000; // Double height to show more of the taxonomic tree without scrolling
+    }
+
+    // For nmax tree view, return a fixed larger height to show the entire taxonomic tree
+    if (nmaxViewMode === 'tree' && isSubcamNmaxFile) {
+      return 8000; // Large height to minimize scrolling in tree view
     }
 
     const baseHeight = appliedStyleRule?.properties.chartHeight || 208;
@@ -957,7 +966,7 @@ export function PinChartDisplay({
     // For 4+ parameters, use the full height
     // console.log('[CHART HEIGHT] Using full height for 4+ params:', baseHeight);
     return baseHeight;
-  }, [visibleParameters.length, appliedStyleRule?.properties.chartHeight, appliedStyleRule?.properties.heatmapRowHeight, fileName, appliedStyleRule?.styleName, showHeatmap, isSubcamNmaxFile, speciesColumns, parameterStates, showHaplotypeHeatmap, isHaplotypeFile, haplotypeData]);
+  }, [visibleParameters.length, appliedStyleRule?.properties.chartHeight, appliedStyleRule?.properties.heatmapRowHeight, fileName, appliedStyleRule?.styleName, showHeatmap, isSubcamNmaxFile, speciesColumns, parameterStates, showHaplotypeHeatmap, isHaplotypeFile, haplotypeData, adjustableNmaxRowHeight, nmaxViewMode]);
 
   // Get moving average parameters (for display in parameter list)
   const movingAverageParameters = useMemo(() => {
@@ -1110,9 +1119,9 @@ export function PinChartDisplay({
     handleViewModeChange(enabled ? 'heatmap' : 'chart');
   };
 
-  // Fetch taxonomy data for nmax species when in tree mode or when species change
+  // Fetch taxonomy data for nmax species when file loads (needed for both tree and heatmap views)
   React.useEffect(() => {
-    if (nmaxViewMode === 'tree' && isSubcamNmaxFile && speciesColumns.length > 0 && !isFetchingNmaxTaxonomy) {
+    if (isSubcamNmaxFile && speciesColumns.length > 0 && !isFetchingNmaxTaxonomy) {
       const currentSpeciesList = speciesColumns.join(',');
 
       // Only fetch if we haven't fetched this exact species list before
@@ -1139,9 +1148,18 @@ export function PinChartDisplay({
 
   // Build taxonomic tree for nmax species
   const nmaxTaxonomicTree = useMemo(() => {
+    console.log('[NMAX TREE BUILD] Conditions check:', {
+      isSubcamNmaxFile,
+      speciesColumnsLength: speciesColumns.length,
+      nmaxTaxonomyDataSize: nmaxTaxonomyData.size
+    });
+
     if (!isSubcamNmaxFile || speciesColumns.length === 0 || nmaxTaxonomyData.size === 0) {
+      console.log('[NMAX TREE BUILD] Returning null - one or more conditions failed');
       return null;
     }
+
+    console.log('[NMAX TREE BUILD] All conditions passed - building tree');
 
     // Convert nmax species and taxonomy data to haplotype-like cell data format
     const cellData = speciesColumns.map(species => {
@@ -1166,26 +1184,44 @@ export function PinChartDisplay({
     return buildTaxonomicTree(cellData);
   }, [isSubcamNmaxFile, speciesColumns, nmaxTaxonomyData]);
 
-  // Create taxonomically ordered species list (only CSV entries from tree)
+  // Create taxonomically ordered species list (CSV entries + their parent nodes for hierarchy visualization)
   const taxonomicallyOrderedSpecies = useMemo(() => {
     if (!nmaxTaxonomicTree) {
       return speciesColumns; // Fallback to original order if no tree
     }
 
-    // Flatten the tree and filter to only CSV entries (full-color entries in tree view)
+    // Flatten the tree
     const flattenedTree = flattenTreeForHeatmap(nmaxTaxonomicTree);
-    const csvSpecies = flattenedTree
-      .filter(taxon => taxon.node.csvEntry) // Only show entries that exist in CSV (full-color in tree view)
-      .map(taxon => taxon.node.originalName || taxon.name); // Use original name if available (preserves rank annotations)
+
+    // Step 1: Get all CSV entries (leaf nodes that exist in the actual data)
+    const csvEntries = flattenedTree.filter(taxon => taxon.node.csvEntry);
+
+    // Step 2: Build set of all nodes needed (CSV entries + their ancestors)
+    const neededNodeNames = new Set<string>();
+    csvEntries.forEach(entry => {
+      // Add the entry itself
+      const entryName = entry.node.originalName || entry.name;
+      neededNodeNames.add(entryName);
+
+      // Add all ancestors in the path
+      entry.path.forEach(ancestorName => neededNodeNames.add(ancestorName));
+    });
+
+    // Step 3: Filter to include both CSV entries and their parent nodes
+    const orderedSpeciesWithParents = flattenedTree
+      .filter(taxon => neededNodeNames.has(taxon.node.originalName || taxon.name))
+      .map(taxon => taxon.node.originalName || taxon.name);
 
     console.log('[Taxonomic Ordering] Total species in tree:', flattenedTree.length);
-    console.log('[Taxonomic Ordering] CSV entries (full-color):', csvSpecies.length);
-    console.log('[Taxonomic Ordering] Ordered species:', csvSpecies);
+    console.log('[Taxonomic Ordering] CSV entries (leaf nodes):', csvEntries.length);
+    console.log('[Taxonomic Ordering] Including parent nodes, total:', orderedSpeciesWithParents.length);
+    console.log('[Taxonomic Ordering] Parent count:', orderedSpeciesWithParents.length - csvEntries.length);
+    console.log('[Taxonomic Ordering] Ordered species with parents:', orderedSpeciesWithParents);
 
-    return csvSpecies;
+    return orderedSpeciesWithParents;
   }, [nmaxTaxonomicTree, speciesColumns]);
 
-  // Create species indentation map for heatmap display
+  // Create species indentation map for heatmap display (includes both CSV entries and parent nodes)
   const speciesIndentMap = useMemo(() => {
     if (!nmaxTaxonomicTree) {
       return new Map<string, number>();
@@ -1194,48 +1230,48 @@ export function PinChartDisplay({
     const flattenedTree = flattenTreeForHeatmap(nmaxTaxonomicTree);
     const indentMap = new Map<string, number>();
 
-    flattenedTree
-      .filter(taxon => taxon.node.csvEntry)
-      .forEach(taxon => {
-        // Use original name if available (preserves rank annotations like "(gen.)")
-        const key = taxon.node.originalName || taxon.name;
-        indentMap.set(key, taxon.indentLevel);
-      });
+    // Include ALL taxa in the ordered list (both CSV entries and their parents)
+    flattenedTree.forEach(taxon => {
+      // Use original name if available (preserves rank annotations like "(gen.)")
+      const key = taxon.node.originalName || taxon.name;
+      indentMap.set(key, taxon.indentLevel);
+    });
 
     console.log('[Taxonomic Ordering] Indentation map size:', indentMap.size);
 
     return indentMap;
   }, [nmaxTaxonomicTree]);
 
-  // Create species rank map for heatmap display (from CSV species names)
+  // Create species rank map for heatmap display (includes both CSV entries and parent nodes)
   const speciesRankMap = useMemo(() => {
     const rankMap = new Map<string, string>();
 
-    // Extract rank directly from CSV species names (e.g., "Teleostei (infraclass.)")
-    speciesColumns.forEach(speciesName => {
-      const suffixMatch = speciesName.match(/\((phyl|infraclass|class|ord|fam|gen|sp)\.\)/);
-      if (suffixMatch) {
-        rankMap.set(speciesName, suffixMatch[1]);
-      } else {
-        // If no suffix, try to infer from tree view if available
-        if (nmaxTaxonomicTree) {
-          const flattenedTree = flattenTreeForHeatmap(nmaxTaxonomicTree);
-          const treeNode = flattenedTree.find(t => (t.node.originalName || t.name) === speciesName && t.node.csvEntry);
-          if (treeNode) {
-            const rankMapping: Record<string, string> = {
-              'kingdom': 'kingdom',
-              'phylum': 'phyl',
-              'class': 'class',
-              'order': 'ord',
-              'family': 'fam',
-              'genus': 'gen',
-              'species': 'sp'
-            };
-            const mappedRank = rankMapping[treeNode.rank] || treeNode.rank;
-            rankMap.set(speciesName, mappedRank);
-          }
+    if (!nmaxTaxonomicTree) {
+      // Fallback: Extract rank directly from CSV species names
+      speciesColumns.forEach(speciesName => {
+        const suffixMatch = speciesName.match(/\((phyl|infraclass|class|ord|fam|gen|sp)\.\)/);
+        if (suffixMatch) {
+          rankMap.set(speciesName, suffixMatch[1]);
         }
-      }
+      });
+      return rankMap;
+    }
+
+    // Build rank map from flattened tree (includes all nodes, not just CSV entries)
+    const flattenedTree = flattenTreeForHeatmap(nmaxTaxonomicTree);
+    flattenedTree.forEach(taxon => {
+      const key = taxon.node.originalName || taxon.name;
+      const rankMapping: Record<string, string> = {
+        'kingdom': 'kingdom',
+        'phylum': 'phyl',
+        'class': 'class',
+        'order': 'ord',
+        'family': 'fam',
+        'genus': 'gen',
+        'species': 'sp'
+      };
+      const mappedRank = rankMapping[taxon.rank] || taxon.rank;
+      rankMap.set(key, mappedRank);
     });
 
     console.log('[Taxonomic Ordering] Rank map size:', rankMap.size);
@@ -1243,6 +1279,108 @@ export function PinChartDisplay({
 
     return rankMap;
   }, [speciesColumns, nmaxTaxonomicTree]);
+
+  // Create filtered flattened tree for parent-child connection lines
+  const filteredFlattenedTree = useMemo(() => {
+    console.log('[FILTERED TREE] nmaxTaxonomicTree:', nmaxTaxonomicTree ? 'exists' : 'null/undefined');
+
+    if (!nmaxTaxonomicTree) {
+      console.log('[FILTERED TREE] Returning empty array - nmaxTaxonomicTree is null/undefined');
+      return [];
+    }
+
+    const flattenedTree = flattenTreeForHeatmap(nmaxTaxonomicTree);
+    console.log('[FILTERED TREE] flattenedTree length:', flattenedTree.length);
+
+    // Get the same set of needed nodes as in taxonomicallyOrderedSpecies
+    const csvEntries = flattenedTree.filter(taxon => taxon.node.csvEntry);
+    console.log('[FILTERED TREE] csvEntries length:', csvEntries.length);
+
+    const neededNodeNames = new Set<string>();
+    csvEntries.forEach(entry => {
+      const entryName = entry.node.originalName || entry.name;
+      neededNodeNames.add(entryName);
+      entry.path.forEach(ancestorName => neededNodeNames.add(ancestorName));
+    });
+    console.log('[FILTERED TREE] neededNodeNames size:', neededNodeNames.size);
+
+    // Filter to only include nodes that are being displayed
+    const result = flattenedTree.filter(taxon =>
+      neededNodeNames.has(taxon.node.originalName || taxon.name)
+    );
+    console.log('[FILTERED TREE] Final result length:', result.length);
+
+    return result;
+  }, [nmaxTaxonomicTree]);
+
+  // Create parent-child relationship map for visual indicators
+  const parentChildRelationships = useMemo(() => {
+    const relationships = new Map<string, { color: string; role: 'parent' | 'child' }>();
+
+    if (!filteredFlattenedTree || filteredFlattenedTree.length === 0) {
+      return relationships;
+    }
+
+    // Define colors for parent-child pairs
+    const colors = [
+      '#ef4444', // red
+      '#3b82f6', // blue
+      '#10b981', // green
+      '#f59e0b', // amber
+      '#8b5cf6', // violet
+      '#ec4899', // pink
+      '#14b8a6', // teal
+      '#f97316', // orange
+    ];
+
+    let colorIndex = 0;
+
+    // Find all parent-child relationships where both are CSV entries
+    const visibleSpecies = taxonomicallyOrderedSpecies.filter(species => parameterStates[species]?.visible);
+
+    filteredFlattenedTree.forEach((taxon, index) => {
+      const taxonName = taxon.node.originalName || taxon.name;
+
+      // Skip if this taxon is not visible or not a CSV entry
+      if (!visibleSpecies.includes(taxonName) || !taxon.node.csvEntry) {
+        return;
+      }
+
+      // Look for children that are also CSV entries and visible
+      for (let i = index + 1; i < filteredFlattenedTree.length; i++) {
+        const potentialChild = filteredFlattenedTree[i];
+        const childName = potentialChild.node.originalName || potentialChild.name;
+
+        // Stop when we've moved past potential children
+        if (potentialChild.indentLevel <= taxon.indentLevel) {
+          break;
+        }
+
+        // Check if this is a direct child and is a CSV entry and is visible
+        const isDirectChild = (
+          potentialChild.indentLevel === taxon.indentLevel + 1 &&
+          potentialChild.path.includes(taxon.name) &&
+          potentialChild.node.csvEntry &&
+          visibleSpecies.includes(childName)
+        );
+
+        if (isDirectChild) {
+          // Assign the same color to both parent and child
+          const color = colors[colorIndex % colors.length];
+
+          if (!relationships.has(taxonName)) {
+            relationships.set(taxonName, { color, role: 'parent' });
+          }
+          relationships.set(childName, { color, role: 'child' });
+
+          colorIndex++;
+        }
+      }
+    });
+
+    console.log('[PARENT-CHILD RELATIONSHIPS] relationships:', Array.from(relationships.entries()));
+    return relationships;
+  }, [filteredFlattenedTree, taxonomicallyOrderedSpecies, parameterStates]);
 
   // Determine which brush indices to use based on mode
   const activeBrushStart = timeAxisMode === 'common' && globalBrushRange ? (globalBrushRange.startIndex ?? 0) : (brushStartIndex ?? 0);
@@ -3221,6 +3359,8 @@ export function PinChartDisplay({
               series={taxonomicallyOrderedSpecies.filter(species => parameterStates[species]?.visible)}
               speciesIndentMap={speciesIndentMap}
               speciesRankMap={speciesRankMap}
+              filteredFlattenedTree={filteredFlattenedTree}
+              parentChildRelationships={parentChildRelationships}
               containerHeight={dynamicChartHeight}
               brushStartIndex={activeBrushStart}
               brushEndIndex={activeBrushEnd}
