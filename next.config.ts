@@ -1,6 +1,11 @@
 import type {NextConfig} from 'next';
 import withPWAInit from '@ducanh2912/next-pwa';
 import { withSentryConfig } from '@sentry/nextjs';
+import bundleAnalyzer from '@next/bundle-analyzer';
+
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === 'true',
+});
 
 const withPWA = withPWAInit({
   dest: 'public',
@@ -348,6 +353,9 @@ const nextConfig: NextConfig = {
 // Wrap config with PWA
 const pwaConfig = withPWA(nextConfig);
 
+// Wrap with bundle analyzer
+const analyzedConfig = withBundleAnalyzer(pwaConfig);
+
 // Only apply Sentry if environment variables are configured
 const shouldUseSentry = !!(process.env.SENTRY_ORG && process.env.SENTRY_PROJECT);
 
@@ -357,7 +365,7 @@ if (!shouldUseSentry) {
 
 export default shouldUseSentry
   ? withSentryConfig(
-      pwaConfig,
+      analyzedConfig,
       {
         // For all available options, see:
         // https://github.com/getsentry/sentry-webpack-plugin#options
@@ -388,4 +396,4 @@ export default shouldUseSentry
         disableLogger: true,
       }
     )
-  : pwaConfig;
+  : analyzedConfig;

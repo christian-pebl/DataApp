@@ -1,4 +1,4 @@
-const lighthouse = require('lighthouse');
+const lighthouse = require('lighthouse').default;
 const chromeLauncher = require('chrome-launcher');
 const fs = require('fs');
 const path = require('path');

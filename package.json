@@ -81,6 +81,7 @@
   "devDependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
     "@lhci/cli": "^0.15.1",
+    "@next/bundle-analyzer": "^16.0.3",
     "@playwright/test": "^1.56.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",

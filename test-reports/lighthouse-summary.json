@@ -1,0 +1,18 @@
+{
+  "url": "https://data-app-gamma.vercel.app",
+  "timestamp": "2025-11-17T22:31:55.190Z",
+  "scores": {
+    "performance": 96,
+    "accessibility": 100,
+    "bestPractices": 96,
+    "seo": 100
+  },
+  "metrics": {
+    "firstContentfulPaint": 1067,
+    "largestContentfulPaint": 1517,
+    "timeToInteractive": 3361,
+    "speedIndex": 4247,
+    "totalBlockingTime": 144,
+    "cumulativeLayoutShift": 0.0012917041455252408
+  }
+}
