@@ -365,12 +365,12 @@ class FileStorageService {
     try {
       console.log('📥 Downloading file by ID:', fileId);
 
-      let fileData: { file_path: string; file_name: string } | null = null;
+      let fileData: { file_path: string; file_name: string; updated_at?: string } | null = null;
 
-      // First, try to get file metadata from pin_files
+      // First, try to get file metadata from pin_files (including updated_at for cache busting)
       const { data: pinFileData, error: pinFileError } = await this.supabase
         .from('pin_files')
-        .select('file_path, file_name')
+        .select('file_path, file_name, updated_at')
         .eq('id', fileId)
         .single();
 
@@ -396,9 +396,18 @@ class FileStorageService {
         }
       }
 
-      console.log('📄 File metadata:', { filePath: fileData.file_path, fileName: fileData.file_name });
+      console.log('📄 File metadata:', { filePath: fileData.file_path, fileName: fileData.file_name, updatedAt: fileData.updated_at });
+
+      // Build file path with cache-busting query parameter
+      let downloadPath = fileData.file_path;
+      if (fileData.updated_at) {
+        const timestamp = new Date(fileData.updated_at).getTime();
+        // Note: Supabase storage.download() doesn't support query params, but we log for debugging
+        console.log(`📌 Cache-busting timestamp: ${timestamp} (${fileData.updated_at})`);
+      }
 
       // Download the file using the file path
+      // Note: Supabase's .download() method handles auth and should bypass most caches
       const { data, error } = await this.supabase.storage
         .from('pin-files')
         .download(fileData.file_path);

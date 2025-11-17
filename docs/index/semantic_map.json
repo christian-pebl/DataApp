@@ -1,0 +1,407 @@
+{
+  "version": "1.0.0",
+  "generated": "2025-10-15",
+  "repository": "DataApp",
+  "description": "Machine-readable semantic structure for AI agent navigation",
+
+  "modules": {
+    "app/map-drawing": {
+      "purpose": "Interactive map interface for creating and managing pins, lines, and areas with project organization",
+      "type": "page",
+      "complexity": "critical",
+      "size": "6877 lines",
+      "keyComponents": ["page.tsx"],
+      "dependencies": [
+        "components/map/LeafletMap",
+        "lib/supabase/map-data-service",
+        "hooks/use-map-data"
+      ],
+      "usedBy": ["app/layout.tsx"],
+      "entryPoint": true,
+      "features": ["pin_creation", "line_drawing", "area_drawing", "project_management", "data_visualization"],
+      "technicalDebt": "Monolithic 6,877-line component needs urgent refactoring (Epic 7)"
+    },
+
+    "app/data-explorer": {
+      "purpose": "Data visualization and exploration interface with file upload and chart display",
+      "type": "page",
+      "complexity": "high",
+      "size": "883 lines",
+      "keyComponents": ["page.tsx"],
+      "dependencies": [
+        "components/map/OpenLayersMap",
+        "lib/supabase/file-storage-service",
+        "components/dataflow/PlotInstance"
+      ],
+      "usedBy": ["app/layout.tsx"],
+      "entryPoint": true,
+      "features": ["file_upload", "csv_parsing", "chart_display", "data_filtering", "map_selection"]
+    },
+
+    "components/map": {
+      "purpose": "Map rendering and interaction components for both Leaflet and OpenLayers",
+      "type": "component_group",
+      "complexity": "high",
+      "keyComponents": [
+        "LeafletMap.tsx",
+        "OpenLayersMap.tsx",
+        "InteractivePinMap.tsx"
+      ],
+      "dependencies": [
+        "leaflet",
+        "ol",
+        "lib/coordinate-utils"
+      ],
+      "usedBy": [
+        "app/map-drawing",
+        "app/data-explorer"
+      ],
+      "features": ["pin_markers", "line_drawing", "area_drawing", "popups", "tooltips", "mobile_touch"],
+      "technicalDebt": "LeafletMap.tsx is 1,395 lines with 15 useEffect hooks (Epic 7.2)"
+    },
+
+    "components/pin-data": {
+      "purpose": "Data visualization components for time-series charts and marine data",
+      "type": "component_group",
+      "complexity": "critical",
+      "keyComponents": [
+        "PinChartDisplay.tsx",
+        "PinMergedPlot.tsx",
+        "PinMarineDeviceData.tsx",
+        "DataTimeline.tsx",
+        "csvParser.ts"
+      ],
+      "dependencies": [
+        "recharts",
+        "lib/dateParser",
+        "lib/units",
+        "lib/supabase/file-storage-service"
+      ],
+      "usedBy": [
+        "app/map-drawing",
+        "app/data-explorer"
+      ],
+      "features": ["chart_rendering", "data_merging", "time_filtering", "moving_average", "csv_parsing", "date_format_detection"],
+      "technicalDebt": "PinChartDisplay (2,421 lines), PinMergedPlot (1,399 lines), PinMarineDeviceData (1,376 lines) need refactoring (Epic 8)"
+    },
+
+    "components/sharing": {
+      "purpose": "Pin and project sharing functionality with permissions and public links",
+      "type": "component_group",
+      "complexity": "medium",
+      "keyComponents": [
+        "ShareDialog.tsx",
+        "ShareDialogSimplified.tsx"
+      ],
+      "dependencies": [
+        "lib/supabase/sharing-service",
+        "components/ui"
+      ],
+      "usedBy": ["app/map-drawing"],
+      "features": ["share_pins", "share_projects", "permissions", "public_links", "password_protection"]
+    },
+
+    "components/auth": {
+      "purpose": "Authentication and user management UI",
+      "type": "component_group",
+      "complexity": "medium",
+      "keyComponents": ["UserMenu.tsx"],
+      "dependencies": [
+        "lib/supabase/client",
+        "@supabase/auth-ui-react"
+      ],
+      "usedBy": ["app/layout.tsx"],
+      "features": ["login", "logout", "user_profile"]
+    },
+
+    "components/ui": {
+      "purpose": "Reusable UI primitives based on Radix UI and shadcn/ui",
+      "type": "component_library",
+      "complexity": "low",
+      "keyComponents": [
+        "button.tsx",
+        "dialog.tsx",
+        "tooltip.tsx",
+        "scroll-area.tsx",
+        "sidebar.tsx"
+      ],
+      "dependencies": ["@radix-ui/*"],
+      "usedBy": ["all_components"],
+      "features": ["accessible_ui", "composable_components"]
+    },
+
+    "components/dataflow": {
+      "purpose": "Data flow visualization and plot management",
+      "type": "component_group",
+      "complexity": "high",
+      "keyComponents": [
+        "PlotInstance.tsx",
+        "ChartDisplay.tsx",
+        "HeatmapDisplay.tsx"
+      ],
+      "dependencies": [
+        "recharts",
+        "lib/units",
+        "lib/supabase/file-storage-service"
+      ],
+      "usedBy": ["app/data-explorer"],
+      "features": ["plot_instances", "chart_configuration", "heatmap_rendering"]
+    },
+
+    "components/marine": {
+      "purpose": "Marine-specific data visualization and device management",
+      "type": "component_group",
+      "complexity": "medium",
+      "keyComponents": ["MarinePlotsGrid.tsx"],
+      "dependencies": ["recharts"],
+      "usedBy": ["app/map-drawing"],
+      "features": ["marine_plots", "device_data"]
+    },
+
+    "lib/supabase": {
+      "purpose": "Database services and API layer for all Supabase operations",
+      "type": "service_layer",
+      "complexity": "critical",
+      "keyComponents": [
+        "map-data-service.ts",
+        "file-storage-service.ts",
+        "pin-import-service.ts",
+        "project-service.ts",
+        "data-sync-service.ts",
+        "user-validation-service.ts",
+        "client.ts",
+        "server.ts"
+      ],
+      "dependencies": ["@supabase/supabase-js"],
+      "usedBy": ["all_components", "all_hooks"],
+      "features": [
+        "pin_crud",
+        "line_crud",
+        "area_crud",
+        "project_crud",
+        "file_upload",
+        "file_download",
+        "csv_parsing",
+        "data_sync",
+        "authentication",
+        "sharing"
+      ],
+      "technicalDebt": "map-data-service.ts is 1,149 lines, many 'any' types (Epic 6)"
+    },
+
+    "lib/coordinate-utils": {
+      "purpose": "Coordinate transformation and distance calculations",
+      "type": "utility",
+      "complexity": "low",
+      "dependencies": [],
+      "usedBy": ["components/map"],
+      "functions": ["convertCoordinates", "calculateDistance", "getBounds"]
+    },
+
+    "lib/dateParser": {
+      "purpose": "Date parsing with multiple format detection",
+      "type": "utility",
+      "complexity": "medium",
+      "dependencies": ["date-fns"],
+      "usedBy": ["components/pin-data"],
+      "functions": ["parseDate", "detectDateFormat", "formatDate"],
+      "features": ["multiple_date_formats", "auto_detection"]
+    },
+
+    "lib/units": {
+      "purpose": "Unit conversion for marine and scientific data",
+      "type": "utility",
+      "complexity": "low",
+      "dependencies": [],
+      "usedBy": ["components/pin-data", "components/dataflow"],
+      "functions": ["convertUnit", "formatValue", "getUnitLabel"]
+    },
+
+    "lib/geometry": {
+      "purpose": "Geometric calculations for lines and areas",
+      "type": "utility",
+      "complexity": "medium",
+      "dependencies": [],
+      "usedBy": ["components/map"],
+      "functions": ["calculateLineLength", "calculateAreaSize", "pointInPolygon"]
+    },
+
+    "hooks/use-map-data": {
+      "purpose": "React hook for managing map data state and operations",
+      "type": "hook",
+      "complexity": "high",
+      "size": "696 lines",
+      "dependencies": [
+        "lib/supabase/map-data-service",
+        "react-query"
+      ],
+      "usedBy": ["app/map-drawing"],
+      "features": ["pin_state", "line_state", "area_state", "real_time_updates"]
+    },
+
+    "hooks/use-unit-conversion": {
+      "purpose": "React hook for unit conversion preferences",
+      "type": "hook",
+      "complexity": "low",
+      "dependencies": ["lib/units"],
+      "usedBy": ["components/pin-data"],
+      "features": ["unit_preferences", "conversion_state"]
+    },
+
+    "mcp-servers/pin-sharing": {
+      "purpose": "MCP server for pin sharing functionality",
+      "type": "mcp_server",
+      "complexity": "medium",
+      "technology": "Node.js + TypeScript",
+      "dependencies": ["@supabase/supabase-js", "@modelcontextprotocol/sdk"],
+      "features": ["share_pin", "create_public_link", "verify_access"],
+      "technicalDebt": "18 TypeScript errors in index.ts (Epic 1)"
+    },
+
+    "mcp-servers/playwright-browser": {
+      "purpose": "MCP server for browser automation",
+      "type": "mcp_server",
+      "complexity": "low",
+      "technology": "Node.js + Playwright",
+      "dependencies": ["playwright"],
+      "features": ["browser_automation"]
+    }
+  },
+
+  "dependencyGraph": {
+    "app/map-drawing/page.tsx": [
+      "components/map/LeafletMap",
+      "lib/supabase/map-data-service",
+      "hooks/use-map-data",
+      "components/sharing/ShareDialog",
+      "components/pin-data/PinChartDisplay"
+    ],
+    "app/data-explorer/page.tsx": [
+      "components/map/OpenLayersMap",
+      "lib/supabase/file-storage-service",
+      "components/dataflow/PlotInstance",
+      "components/pin-data/csvParser"
+    ],
+    "components/map/LeafletMap": [
+      "leaflet",
+      "lib/coordinate-utils",
+      "lib/geometry"
+    ],
+    "components/map/OpenLayersMap": [
+      "ol",
+      "lib/coordinate-utils"
+    ],
+    "components/pin-data/PinChartDisplay": [
+      "recharts",
+      "lib/dateParser",
+      "lib/units",
+      "lib/supabase/file-storage-service"
+    ],
+    "components/pin-data/PinMergedPlot": [
+      "recharts",
+      "lib/dateParser",
+      "lib/units"
+    ],
+    "components/pin-data/csvParser": [
+      "lib/dateParser"
+    ],
+    "lib/supabase/map-data-service": [
+      "@supabase/supabase-js",
+      "lib/supabase/client"
+    ],
+    "lib/supabase/file-storage-service": [
+      "@supabase/supabase-js",
+      "lib/supabase/client",
+      "components/pin-data/csvParser"
+    ],
+    "hooks/use-map-data": [
+      "lib/supabase/map-data-service",
+      "@tanstack/react-query"
+    ]
+  },
+
+  "reverseDependencyGraph": {
+    "leaflet": ["components/map/LeafletMap"],
+    "ol": ["components/map/OpenLayersMap"],
+    "recharts": ["components/pin-data/*", "components/dataflow/*"],
+    "@supabase/supabase-js": ["lib/supabase/*"],
+    "lib/coordinate-utils": ["components/map/*"],
+    "lib/dateParser": ["components/pin-data/*"],
+    "lib/units": ["components/pin-data/*", "components/dataflow/*"],
+    "lib/supabase/map-data-service": ["app/map-drawing", "hooks/use-map-data"],
+    "lib/supabase/file-storage-service": ["app/data-explorer", "components/pin-data/*"],
+    "components/map/LeafletMap": ["app/map-drawing"],
+    "components/map/OpenLayersMap": ["app/data-explorer"]
+  },
+
+  "entryPoints": [
+    "app/map-drawing/page.tsx",
+    "app/data-explorer/page.tsx",
+    "app/api/*"
+  ],
+
+  "criticalPaths": [
+    {
+      "name": "pin_creation",
+      "flow": ["User clicks map", "LeafletMap", "map-data-service.createPin()", "Supabase", "Database"],
+      "files": ["components/map/LeafletMap.tsx", "lib/supabase/map-data-service.ts"]
+    },
+    {
+      "name": "file_upload_and_chart",
+      "flow": ["User uploads CSV", "file-storage-service.uploadCSVFile()", "csvParser.parseCSV()", "PinChartDisplay renders"],
+      "files": ["lib/supabase/file-storage-service.ts", "components/pin-data/csvParser.ts", "components/pin-data/PinChartDisplay.tsx"]
+    },
+    {
+      "name": "real_time_map_updates",
+      "flow": ["Database change", "Supabase real-time", "use-map-data hook", "LeafletMap updates"],
+      "files": ["hooks/use-map-data.ts", "components/map/LeafletMap.tsx"]
+    }
+  ],
+
+  "codeSmells": {
+    "monolithicComponents": [
+      "app/map-drawing/page.tsx (6,877 lines)",
+      "components/pin-data/PinChartDisplay.tsx (2,421 lines)",
+      "components/pin-data/PinMergedPlot.tsx (1,399 lines)",
+      "components/map/LeafletMap.tsx (1,395 lines)",
+      "components/pin-data/PinMarineDeviceData.tsx (1,376 lines)"
+    ],
+    "typeIssues": {
+      "anyTypes": 112,
+      "typeAssertions": 335,
+      "typeErrors": 67
+    },
+    "debugCode": {
+      "consoleLogs": 457
+    }
+  },
+
+  "metrics": {
+    "totalFiles": 139,
+    "totalLines": 35649,
+    "largestFile": {
+      "path": "app/map-drawing/page.tsx",
+      "lines": 6877
+    },
+    "testCoverage": 0,
+    "dependencies": 68,
+    "healthScore": 3.5
+  },
+
+  "aiAgentHints": {
+    "commonQueries": {
+      "where_is_pin_creation": "lib/supabase/map-data-service.ts:createPin()",
+      "where_is_csv_parsing": "components/pin-data/csvParser.ts:parseCSV()",
+      "where_is_map_rendering": "components/map/LeafletMap.tsx",
+      "where_is_chart_rendering": "components/pin-data/PinChartDisplay.tsx",
+      "where_is_authentication": "lib/supabase/client.ts",
+      "where_is_file_upload": "lib/supabase/file-storage-service.ts:uploadCSVFile()"
+    },
+    "loadingStrategy": {
+      "map_questions": ["app/map-drawing/page.tsx", "components/map/LeafletMap.tsx", "lib/supabase/map-data-service.ts"],
+      "chart_questions": ["components/pin-data/", "lib/supabase/file-storage-service.ts"],
+      "database_questions": ["lib/supabase/"],
+      "authentication_questions": ["lib/supabase/client.ts", "components/auth/"]
+    }
+  }
+}

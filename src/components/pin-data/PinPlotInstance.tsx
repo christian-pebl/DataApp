@@ -120,11 +120,13 @@ export function PinPlotInstance({
     setHaplotypeData(null);
 
     try {
-      // Check if this is a haplotype file
-      const isHaplFile = csvFiles.length > 0 && csvFiles[0].name.toLowerCase().includes('hapl');
+      // Check file type for special handling
+      const fileName = csvFiles[0]?.name.toLowerCase() || '';
+      const isHaplFile = csvFiles.length > 0 && fileName.includes('hapl');
+      const isNmaxFile = csvFiles.length > 0 && (fileName.includes('_nmax') || fileName.includes('_nmx'));
 
       if (isHaplFile) {
-        // Parse as haplotype data
+        // _hapl files: Parse ONLY as haplotype data (heatmap only)
         const haplotypeResult = await parseHaplotypeCsv(csvFiles[0]);
         setHaplotypeData(haplotypeResult);
 
@@ -152,6 +154,33 @@ export function PinPlotInstance({
           toast({
             title: "Haplotype Data Processed Successfully",
             description: `Loaded ${haplotypeResult.summary.totalSpecies} species across ${haplotypeResult.summary.totalSites} sites`
+          });
+        }
+      } else if (isNmaxFile) {
+        // _nmax files: Parse as BOTH normal CSV (for time series) AND haplotype data (for heatmap toggle)
+        // Parse as normal CSV first
+        const result = await parseMultipleCSVFiles(csvFiles, fileType, formatOverride);
+        setParseResult(result);
+
+        // Also parse as haplotype data for heatmap toggle option
+        const haplotypeResult = await parseHaplotypeCsv(csvFiles[0]);
+        setHaplotypeData(haplotypeResult);
+
+        // Notify parent of parsed data
+        if (onDataParsed) {
+          onDataParsed(instanceId, result);
+        }
+
+        if (result.errors.length > 0) {
+          toast({
+            variant: result.data.length > 0 ? "default" : "destructive",
+            title: result.data.length > 0 ? "Data Processed with Warnings" : "Processing Error",
+            description: `${result.errors.length} issue${result.errors.length > 1 ? 's' : ''} found. ${result.data.length} valid data points loaded.`
+          });
+        } else {
+          toast({
+            title: "NMAX Data Processed Successfully",
+            description: `Loaded ${result.data.length} data points. Heatmap view available.`
           });
         }
       } else {

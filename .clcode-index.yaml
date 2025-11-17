@@ -1,0 +1,266 @@
+# Claude Code Navigation Index
+# This file helps AI agents navigate the codebase efficiently
+version: "1.0"
+generated: "2025-10-15"
+
+# Top-level navigation structure
+navigation_index:
+  core: "Core application logic and main pages"
+  components: "Reusable React components organized by feature"
+  lib: "Utilities, services, and helper functions"
+  hooks: "Custom React hooks for state and logic"
+  types: "TypeScript type definitions and interfaces"
+  mcp-servers: "MCP server integrations (pin-sharing, playwright-browser)"
+
+# Main entry points for AI agents
+entry_points:
+  map_drawing:
+    path: "src/app/map-drawing/page.tsx"
+    description: "Main interactive map interface with drawing tools"
+    features: ["pins", "lines", "areas", "projects"]
+
+  data_explorer:
+    path: "src/app/data-explorer/page.tsx"
+    description: "Data visualization and exploration interface"
+    features: ["file_upload", "chart_display", "data_filtering"]
+
+  api:
+    path: "src/app/api/"
+    description: "API routes for server-side operations"
+
+# Feature areas organized by functionality
+feature_areas:
+  map:
+    description: "Interactive map with drawing tools (pins, lines, areas)"
+    components:
+      - src/app/map-drawing/
+      - src/components/map/LeafletMap.tsx
+      - src/components/map/OpenLayersMap.tsx
+    services:
+      - src/lib/supabase/map-data-service.ts
+    utilities:
+      - src/lib/coordinate-utils.ts
+      - src/lib/geometry.ts
+    state:
+      - src/hooks/use-map-data.ts
+
+  data_visualization:
+    description: "Time-series charting, data analysis, and CSV parsing"
+    components:
+      - src/components/pin-data/PinChartDisplay.tsx
+      - src/components/pin-data/PinMergedPlot.tsx
+      - src/components/pin-data/PinMarineDeviceData.tsx
+      - src/components/pin-data/DataTimeline.tsx
+      - src/components/dataflow/PlotInstance.tsx
+    services:
+      - src/lib/supabase/file-storage-service.ts
+    utilities:
+      - src/components/pin-data/csvParser.ts
+      - src/lib/dateParser.ts
+      - src/lib/units.ts
+
+  sharing:
+    description: "Pin and project sharing functionality"
+    components:
+      - src/components/sharing/ShareDialog.tsx
+      - src/components/sharing/ShareDialogSimplified.tsx
+    services:
+      - src/lib/supabase/sharing-service.ts (if exists)
+    mcp:
+      - mcp-servers/pin-sharing/
+
+  authentication:
+    description: "User authentication and management"
+    components:
+      - src/components/auth/UserMenu.tsx
+    services:
+      - src/lib/supabase/client.ts
+      - src/lib/supabase/server.ts
+    utilities:
+      - src/lib/supabase/user-validation-service.ts
+
+  database:
+    description: "Supabase database operations"
+    services:
+      - src/lib/supabase/map-data-service.ts
+      - src/lib/supabase/file-storage-service.ts
+      - src/lib/supabase/pin-import-service.ts
+      - src/lib/supabase/project-service.ts
+      - src/lib/supabase/data-sync-service.ts
+
+# AI agent hints for faster context loading
+agent_hints:
+  context_loading_strategy:
+    - "For map-related questions: Load map-drawing/page.tsx + LeafletMap.tsx + map-data-service.ts"
+    - "For chart questions: Load components/pin-data/ + file-storage-service.ts"
+    - "For database questions: Load lib/supabase/ directory"
+    - "For type definitions: Check relevant component files first, then types/"
+
+  priority_files:
+    critical:
+      - "src/app/map-drawing/page.tsx"  # Main map interface (6,877 lines - needs refactoring)
+      - "src/components/map/LeafletMap.tsx"  # Core map component
+      - "src/lib/supabase/map-data-service.ts"  # Database operations
+
+    high:
+      - "src/components/pin-data/PinChartDisplay.tsx"  # Chart rendering
+      - "src/components/pin-data/PinMergedPlot.tsx"  # Merged data plots
+      - "src/lib/supabase/file-storage-service.ts"  # File operations
+      - "src/hooks/use-map-data.ts"  # Map state management
+
+    medium:
+      - "src/components/pin-data/csvParser.ts"  # CSV parsing logic
+      - "src/lib/coordinate-utils.ts"  # Coordinate transformations
+      - "src/lib/units.ts"  # Unit conversions
+
+  ignore_patterns:
+    - "node_modules/"
+    - ".next/"
+    - "mcp-servers/**/node_modules/"
+    - "**/*.backup"
+    - "nul"
+    - ".git/"
+
+# Code organization conventions
+conventions:
+  naming:
+    components: "PascalCase (e.g., PinEditor.tsx, LeafletMap.tsx)"
+    hooks: "camelCase with 'use' prefix (e.g., useMapState.ts, use-map-data.ts)"
+    utilities: "kebab-case or camelCase (e.g., coordinate-utils.ts, csvParser.ts)"
+    services: "kebab-case with -service suffix (e.g., map-data-service.ts)"
+    types: "PascalCase or kebab-case (e.g., MapTypes.ts, types.ts)"
+
+  structure:
+    - "Tests should be co-located with source files (when added)"
+    - "Components grouped by feature area under components/"
+    - "Services centralized in lib/supabase/"
+    - "Reusable UI components in components/ui/"
+    - "Next.js App Router pages in app/"
+
+  imports:
+    - "Use @ alias for src/ directory (e.g., @/components, @/lib)"
+    - "Prefer named imports over default imports"
+    - "Group imports: React → External → Internal → Styles"
+
+# Known issues and technical debt (from Phase 1 review)
+technical_debt:
+  critical:
+    - file: "src/app/map-drawing/page.tsx"
+      issue: "6,877 lines - monolithic component"
+      status: "Needs urgent refactoring"
+      epic: "Epic 7"
+
+    - file: "Multiple files"
+      issue: "67 TypeScript errors blocking build"
+      status: "In progress"
+      epic: "Epic 1"
+
+    - file: "Codebase-wide"
+      issue: "0% test coverage"
+      status: "Test infrastructure needed"
+      epic: "Epic 2"
+
+  high:
+    - file: "src/components/map/LeafletMap.tsx"
+      issue: "1,395 lines - complex component with 15 useEffect hooks"
+      status: "Needs refactoring"
+      epic: "Epic 7.2"
+
+    - file: "src/components/pin-data/PinChartDisplay.tsx"
+      issue: "2,421 lines - too complex"
+      status: "Needs refactoring"
+      epic: "Epic 8.1"
+
+    - file: "Multiple files"
+      issue: "457 console.log statements"
+      status: "Needs cleanup"
+      epic: "Epic 5"
+
+    - file: "Multiple files"
+      issue: "112 'any' type usages"
+      status: "Needs type improvements"
+      epic: "Epic 6"
+
+# Quick reference for common queries
+quick_reference:
+  where_is:
+    pin_creation: "src/lib/supabase/map-data-service.ts:createPin()"
+    line_creation: "src/lib/supabase/map-data-service.ts:createLine()"
+    area_creation: "src/lib/supabase/map-data-service.ts:createArea()"
+    csv_parsing: "src/components/pin-data/csvParser.ts:parseCSV()"
+    date_parsing: "src/lib/dateParser.ts"
+    coordinate_conversion: "src/lib/coordinate-utils.ts"
+    map_initialization: "src/components/map/LeafletMap.tsx (useEffect at line ~244)"
+    chart_rendering: "src/components/pin-data/PinChartDisplay.tsx"
+    file_upload: "src/lib/supabase/file-storage-service.ts:uploadCSVFile()"
+    authentication: "src/lib/supabase/client.ts"
+
+  data_flow:
+    pin_lifecycle: "User creates pin → LeafletMap → map-data-service → Supabase → DB"
+    file_upload: "User uploads CSV → file-storage-service → Parse → Supabase → DB"
+    chart_display: "Load data → PinChartDisplay → Process → Recharts → Render"
+
+  dependencies:
+    map: "Leaflet.js for main map, OpenLayers for data-explorer"
+    charts: "Recharts for visualizations"
+    database: "Supabase (PostgreSQL)"
+    ui: "Radix UI components (23 packages)"
+    framework: "Next.js 15 (App Router)"
+
+# Architectural notes for agents
+architecture:
+  pattern: "Next.js App Router with React Server Components and Client Components"
+  state_management: "React hooks + Supabase real-time subscriptions"
+  styling: "Tailwind CSS + Radix UI primitives"
+  api: "Next.js API routes + Supabase client-side SDK"
+
+  known_boundaries:
+    - "mcp-servers/ are independent Node.js services"
+    - "components/ui/ are generic reusable components (shadcn/ui based)"
+    - "lib/supabase/ is the data access layer"
+    - "app/ contains Next.js pages and routes"
+
+  context_notes:
+    - "LeafletMap uses dynamic imports to avoid SSR issues"
+    - "OpenLayersMap is mobile-optimized for touch interactions"
+    - "CSV parsing handles multiple date formats"
+    - "Marine data fetching uses external APIs"
+
+# Performance notes
+performance:
+  bottlenecks:
+    - "Large components cause slow HMR (6,877-line page)"
+    - "Missing React.memo on list items"
+    - "Bundle size ~3-4MB (target: <2MB)"
+
+  optimization_opportunities:
+    - "Code-split chart libraries"
+    - "Lazy load map components"
+    - "Virtual scrolling for DataTimeline"
+    - "Remove unused dependencies"
+
+# Version and maintenance
+maintenance:
+  last_review: "2025-10-15"
+  health_score: "3.5/10 (target: 8.5/10)"
+  next_review: "After Epic 3 completion"
+
+  update_triggers:
+    - "After major refactoring (Epics 7, 8)"
+    - "When new feature areas are added"
+    - "When file structure changes significantly"
+    - "Monthly during active development"
+
+# Additional resources
+resources:
+  documentation:
+    - "docs/review/01_full_codebase_review.md - Comprehensive analysis"
+    - "docs/review/02_optimization_and_cleanup_plan.md - Execution plan"
+    - "docs/automation/run_log.md - Change history"
+
+  diagrams:
+    - "docs/index/semantic_map.json - Machine-readable structure (to be generated)"
+    - "CODE_MAP.md - Quick reference map (to be generated)"
+
+  guides:
+    - "docs/ai_assist/agent_hints.md - Detailed navigation guide (to be created)"

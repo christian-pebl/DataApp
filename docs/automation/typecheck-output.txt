@@ -1,0 +1,129 @@
+
+> nextn@0.1.0 typecheck
+> tsc --noEmit
+
+mcp-servers/pin-sharing/src/index.ts(187,24): error TS2352: Conversion of type 'Record<string, unknown> | undefined' to type 'SharePinParams' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'SharePinParams': pinId, permission
+mcp-servers/pin-sharing/src/index.ts(231,24): error TS2352: Conversion of type 'Record<string, unknown> | undefined' to type 'CreatePublicLinkParams' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'permission' is missing in type 'Record<string, unknown>' but required in type 'CreatePublicLinkParams'.
+mcp-servers/pin-sharing/src/index.ts(475,19): error TS2339: Property 'expires_at' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(475,48): error TS2339: Property 'expires_at' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(490,19): error TS2339: Property 'max_uses' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(490,37): error TS2339: Property 'used_count' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(490,57): error TS2339: Property 'max_uses' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(505,19): error TS2339: Property 'password_hash' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(521,77): error TS2339: Property 'password_hash' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(541,31): error TS2339: Property 'used_count' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(544,27): error TS2339: Property 'id' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(550,35): error TS2339: Property 'id' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(561,32): error TS2339: Property 'id' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(562,35): error TS2339: Property 'permission' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(563,28): error TS2339: Property 'pin' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(564,32): error TS2339: Property 'project' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(565,38): error TS2339: Property 'max_uses' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(565,55): error TS2339: Property 'max_uses' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(565,72): error TS2339: Property 'used_count' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+src/app/data-explorer/page.tsx(246,14): error TS2322: Type 'ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>' is not assignable to type 'never'.
+src/app/map-drawing/page.tsx(301,19): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: TooltipProps<ValueType, string>): Tooltip<ValueType, string>', gave the following error.
+    Type '(value: number | null | undefined, name: string, props: Payload<ValueType, string>) => [Element, string]' is not assignable to type 'Formatter<ValueType, string>'.
+      Types of parameters 'value' and 'value' are incompatible.
+        Type 'ValueType' is not assignable to type 'number | null | undefined'.
+          Type 'string' is not assignable to type 'number'.
+  Overload 2 of 2, '(props: TooltipProps<ValueType, string>, context: any): Tooltip<ValueType, string>', gave the following error.
+    Type '(value: number | null | undefined, name: string, props: Payload<ValueType, string>) => [Element, string]' is not assignable to type 'Formatter<ValueType, string>'.
+      Types of parameters 'value' and 'value' are incompatible.
+        Type 'ValueType' is not assignable to type 'number | null | undefined'.
+          Type 'string' is not assignable to type 'number'.
+src/app/map-drawing/page.tsx(488,28): error TS2339: Property 'location' does not exist on type 'Pin'.
+src/app/map-drawing/page.tsx(554,144): error TS2345: Argument of type '{}' is not assignable to parameter of type 'Record<CombinedParameterKey, SeriesAvailabilityStatus> | (() => Record<CombinedParameterKey, SeriesAvailabilityStatus>)'.
+src/app/map-drawing/page.tsx(606,9): error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ milfordhaven: { name: string; lat: number; lon: number; }; ramseysound: { name: string; lat: number; lon: number; }; bidefordbay: { name: string; lat: number; lon: number; }; blakeneyoverfalls: { name: string; lat: number; lon: number; }; pabayinnersound: { ...; }; lochbay: { ...; }; lochsunart: { ...; }; }'.
+  No index signature with a parameter of type 'string' was found on type '{ milfordhaven: { name: string; lat: number; lon: number; }; ramseysound: { name: string; lat: number; lon: number; }; bidefordbay: { name: string; lat: number; lon: number; }; blakeneyoverfalls: { name: string; lat: number; lon: number; }; pabayinnersound: { ...; }; lochbay: { ...; }; lochsunart: { ...; }; }'.
+src/app/map-drawing/page.tsx(703,54): error TS2304: Cannot find name 'Line'.
+src/app/map-drawing/page.tsx(704,58): error TS2304: Cannot find name 'Line'.
+src/app/map-drawing/page.tsx(1589,30): error TS2345: Argument of type 'LatLng' is not assignable to parameter of type '[number, number]'.
+src/app/map-drawing/page.tsx(1600,30): error TS2345: Argument of type 'LatLng' is not assignable to parameter of type '[number, number]'.
+src/app/map-drawing/page.tsx(1631,20): error TS2339: Property 'points' does not exist on type 'Line'.
+src/app/map-drawing/page.tsx(1632,18): error TS2339: Property 'points' does not exist on type 'Line'.
+src/app/map-drawing/page.tsx(1632,33): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(1643,20): error TS2339: Property 'points' does not exist on type 'Area'.
+src/app/map-drawing/page.tsx(1644,18): error TS2339: Property 'points' does not exist on type 'Area'.
+src/app/map-drawing/page.tsx(1644,33): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(1658,24): error TS2339: Property 'fitBounds' does not exist on type 'LeafletMap'.
+src/app/map-drawing/page.tsx(2355,50): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2658,7): error TS2304: Cannot find name 'setLines'.
+src/app/map-drawing/page.tsx(2658,16): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2658,33): error TS7006: Parameter 'line' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2748,29): error TS2345: Argument of type '{ lat: number; lng: number; label: string | undefined; notes: any; color: any; size: any; projectId: any; labelVisible: any; }' is not assignable to parameter of type 'Omit<Pin, "id">'.
+  Types of property 'label' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+src/app/map-drawing/page.tsx(2759,40): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2759,45): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2760,40): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2760,45): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2768,45): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2783,30): error TS2345: Argument of type '{ path: any; label: string | undefined; notes: any; color: any; size: any; projectId: any; labelVisible: any; }' is not assignable to parameter of type 'Omit<Line, "id">'.
+  Types of property 'label' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+src/app/map-drawing/page.tsx(2794,40): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2794,45): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2795,40): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2795,45): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2803,45): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2820,30): error TS2345: Argument of type '{ path: any; label: string | undefined; notes: any; color: any; size: any; transparency: any; fillVisible: any; projectId: any; labelVisible: any; }' is not assignable to parameter of type 'Omit<Area, "id">'.
+  Types of property 'label' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+src/app/map-drawing/page.tsx(2898,50): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2925,7): error TS2304: Cannot find name 'setPins'.
+src/app/map-drawing/page.tsx(2925,15): error TS7006: Parameter 'prevPins' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2926,22): error TS7006: Parameter 'pin' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3478,13): error TS2322: Type 'MutableRefObject<LeafletMap | null>' is not assignable to type 'MutableRefObject<Map | null>'.
+  Type 'LeafletMap | null' is not assignable to type 'Map | null'.
+    Type 'LeafletMap' is missing the following properties from type 'Map': getRenderer, addControl, removeControl, addLayer, and 74 more.
+src/app/map-drawing/page.tsx(3492,13): error TS2322: Type 'LatLng | null' is not assignable to type 'L.LatLng | null'.
+  Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3493,13): error TS2322: Type 'LatLng | null' is not assignable to type 'LatLng | null | undefined'.
+  Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3497,13): error TS2322: Type 'LatLng[]' is not assignable to type 'L.LatLng[]'.
+  Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3498,13): error TS2322: Type 'LatLng | null' is not assignable to type 'L.LatLng | null'.
+  Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3499,13): error TS2322: Type 'LatLng | null' is not assignable to type 'L.LatLng | null'.
+  Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3500,13): error TS2322: Type 'LatLng | null' is not assignable to type 'L.LatLng | null'.
+  Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3503,13): error TS2322: Type '{ path: LatLng[]; } | null' is not assignable to type '{ path: L.LatLng[]; } | null'.
+  Type '{ path: LatLng[]; }' is not assignable to type '{ path: L.LatLng[]; }'.
+    Types of property 'path' are incompatible.
+      Type 'LatLng[]' is not assignable to type 'L.LatLng[]'.
+        Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3506,13): error TS2322: Type '{ path: LatLng[]; } | null' is not assignable to type '{ path: L.LatLng[]; } | null'.
+  Type '{ path: LatLng[]; }' is not assignable to type '{ path: L.LatLng[]; }'.
+    Types of property 'path' are incompatible.
+      Type 'LatLng[]' is not assignable to type 'L.LatLng[]'.
+        Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3928,66): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3928,71): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3929,66): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3929,71): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3938,66): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3938,71): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3939,66): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3939,71): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3992,71): error TS2538: Type 'null' cannot be used as an index type.
+src/app/map-drawing/page.tsx(3995,80): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(4047,84): error TS2538: Type 'null' cannot be used as an index type.
+src/app/map-drawing/page.tsx(4048,51): error TS7006: Parameter 'meta' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(4133,69): error TS2464: A computed property name must be of type 'string', 'number', 'symbol', or 'any'.
+src/app/map-drawing/page.tsx(4133,99): error TS2538: Type 'null' cannot be used as an index type.
+src/app/map-drawing/page.tsx(4133,130): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(4620,53): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(4620,60): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(5195,65): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/app/map-drawing/page.tsx(5195,84): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/app/map-drawing/page.tsx(6079,21): error TS2322: Type '{ lat: number; l

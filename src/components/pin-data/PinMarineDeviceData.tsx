@@ -15,9 +15,11 @@ import { PlotTypeSelector } from "./PlotTypeSelector";
 import { MergeRulesDialog, DEFAULT_MERGE_RULES, type MergeRule } from "./MergeRulesDialog";
 import { SavePlotViewDialog } from "./SavePlotViewDialog";
 import { LoadPlotViewDialog } from "./LoadPlotViewDialog";
+import { PresenceAbsenceDialog, type PresenceAbsenceResult } from "./PresenceAbsenceDialog";
+import { PresenceAbsenceTable } from "./PresenceAbsenceTable";
 import { parseISO, isValid, formatISO, format } from 'date-fns';
 import { useToast } from "@/hooks/use-toast";
-import type { ParseResult } from "./csvParser";
+import { parseHaplotypeCsv, type ParseResult, type HaplotypeParseResult } from "./csvParser";
 import type { CombinedDataPoint } from "@/app/om-marine-explorer/shared";
 import type { SavedPlotViewConfig, SavedPlotView, PlotViewValidationResult } from "@/lib/supabase/plot-view-types";
 import type { PinFile } from "@/lib/supabase/file-storage-service";
@@ -61,7 +63,7 @@ interface MergedParameterConfig {
 interface PlotConfig {
   id: string;
   title: string;
-  type: 'device' | 'marine-meteo';
+  type: 'device' | 'marine-meteo' | 'presence-absence';
   // For device plots
   fileType?: 'GP' | 'FPOD' | 'Subcam';
   files?: File[];
@@ -88,6 +90,8 @@ interface PlotConfig {
     direction?: '1-2' | '2-1'; // For subtraction
     missingDataMode?: 'skip' | 'zero'; // How to handle missing data
   };
+  // For presence-absence plots
+  presenceAbsenceData?: any; // Will be imported from PresenceAbsenceDialog
 }
 
 interface PinFile {
@@ -214,6 +218,10 @@ function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availabl
   const [showSavePlotViewDialog, setShowSavePlotViewDialog] = useState(false);
   const [showLoadPlotViewDialog, setShowLoadPlotViewDialog] = useState(false);
   const [serializedViewConfig, setSerializedViewConfig] = useState<SavedPlotViewConfig | null>(null);
+
+  // Presence-Absence dialog state
+  const [showPresenceAbsenceDialog, setShowPresenceAbsenceDialog] = useState(false);
+  const [presenceAbsenceFiles, setPresenceAbsenceFiles] = useState<Array<{ fileName: string; parsedData: HaplotypeParseResult; selected: boolean }>>([]);
 
   // Merge rule toggle handler
   const handleMergeRuleToggle = useCallback((suffix: string, enabled: boolean) => {
@@ -1575,6 +1583,15 @@ function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availabl
     return firstBaseParam === secondBaseParam;
   }, [plots, plotVisibilityState, getBaseParameterName]);
 
+  // Check if presence-absence table can be created (2+ HAPL/NMAX files)
+  const canCreatePresenceAbsence = useMemo(() => {
+    const haplFiles = plots.filter(plot =>
+      plot.type === 'device' &&
+      plot.fileName?.toLowerCase().match(/_hapl|_nmax/i)
+    );
+    return haplFiles.length >= 2;
+  }, [plots]);
+
   // Handler for merging first 2 plots
   const handleMergePlots = useCallback(() => {
     if (plots.length < 2) return;
@@ -2410,6 +2427,74 @@ function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availabl
     });
   }, [plots, toast]);
 
+  // Handler for presence-absence table creation
+  const handlePresenceAbsenceClick = useCallback(async () => {
+    // Get all HAPL/NMAX plots
+    const haplPlots = plots.filter(plot =>
+      plot.type === 'device' &&
+      plot.fileName?.toLowerCase().match(/_hapl|_nmax/i)
+    );
+
+    if (haplPlots.length < 2) {
+      toast({
+        variant: "destructive",
+        title: "Not Enough Files",
+        description: "You need at least 2 HAPL or NMAX files to create a presence-absence table."
+      });
+      return;
+    }
+
+    // Parse each file to get species data
+    const filesWithData: Array<{ fileName: string; parsedData: HaplotypeParseResult; selected: boolean }> = [];
+
+    for (const plot of haplPlots) {
+      if (plot.files && plot.files.length > 0) {
+        try {
+          const parsedData = await parseHaplotypeCsv(plot.files[0]);
+          filesWithData.push({
+            fileName: plot.fileName || plot.files[0].name,
+            parsedData: parsedData,
+            selected: true // All selected by default
+          });
+        } catch (error) {
+          console.error(`Failed to parse ${plot.fileName}:`, error);
+        }
+      }
+    }
+
+    if (filesWithData.length < 2) {
+      toast({
+        variant: "destructive",
+        title: "Parsing Error",
+        description: "Could not parse enough files to create a presence-absence table."
+      });
+      return;
+    }
+
+    setPresenceAbsenceFiles(filesWithData);
+    setShowPresenceAbsenceDialog(true);
+    setShowPlotTypeSelector(false);
+  }, [plots, toast]);
+
+  // Handler for confirming presence-absence table
+  const handleConfirmPresenceAbsence = useCallback((result: PresenceAbsenceResult) => {
+    // Create a new plot with the presence-absence data
+    const newPlot: PlotConfig = {
+      id: `presence-absence-${Date.now()}`,
+      title: `Presence-Absence (${result.fileCount} files)`,
+      type: 'presence-absence',
+      presenceAbsenceData: result
+    };
+
+    setPlots([...plots, newPlot]);
+    setShowPresenceAbsenceDialog(false);
+
+    toast({
+      title: "Presence-Absence Table Created",
+      description: `Comparing ${result.totalSpecies} species across ${result.fileCount} files`
+    });
+  }, [plots, toast]);
+
   // Initialize with one plot for the initially selected files
   // TESTING: Always add an empty plot on mount for quick testing
   React.useEffect(() => {
@@ -2545,6 +2630,18 @@ function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availabl
                   );
                 }
 
+                // Render presence-absence plot
+                if (plot.type === 'presence-absence' && plot.presenceAbsenceData) {
+                  return (
+                    <PresenceAbsenceTable
+                      key={plot.id}
+                      data={plot.presenceAbsenceData}
+                      plotId={plot.id}
+                      onClose={() => removePlot(plot.id)}
+                    />
+                  );
+                }
+
                 // Render marine/meteo plot
                 return (
                   <PinMarineMeteoPlot
@@ -2605,9 +2702,11 @@ function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availabl
             setShowPlotTypeSelector(false);
           }}
           onSelectCopyPrevious={handleCopyPreviousPlot}
+          onSelectPresenceAbsence={handlePresenceAbsenceClick}
           canMergePlots={canMergePlots}
           canSubtractPlots={canSubtractPlots}
           canCopyPrevious={plots.length > 0}
+          canCreatePresenceAbsence={canCreatePresenceAbsence}
           onCancel={() => setShowPlotTypeSelector(false)}
         />
       )}
@@ -3134,6 +3233,15 @@ function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availabl
           onLoad={restorePlotViewState}
         />
       )}
+
+      {/* Presence-Absence Dialog */}
+      <PresenceAbsenceDialog
+        open={showPresenceAbsenceDialog}
+        onOpenChange={setShowPresenceAbsenceDialog}
+        availableFiles={presenceAbsenceFiles}
+        onConfirm={handleConfirmPresenceAbsence}
+        onCancel={() => setShowPresenceAbsenceDialog(false)}
+      />
 
       {/* Merge Rules Dialog */}
       {multiFileConfirmData && (

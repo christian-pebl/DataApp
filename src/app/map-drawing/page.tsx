@@ -668,6 +668,7 @@ function MapDrawingPageContent() {
   // Multi-selection state for batch operations
   const [selectedObjectIds, setSelectedObjectIds] = useState<Set<string>>(new Set());
   const [showBatchDeleteConfirmDialog, setShowBatchDeleteConfirmDialog] = useState(false);
+  const [isBulkDeleteMode, setIsBulkDeleteMode] = useState(false);
   const [showUploadPinSelector, setShowUploadPinSelector] = useState(false);
   const [selectedUploadPinId, setSelectedUploadPinId] = useState<string>('');
   const [selectedUploadAreaId, setSelectedUploadAreaId] = useState<string>(''); // NEW: For area uploads
@@ -1001,11 +1002,8 @@ function MapDrawingPageContent() {
         const result = await plotViewService.listPlotViews(projectId);
 
         if (result.success && result.data) {
-          console.log('📊 [DATA EXPLORER PANEL] Loaded', result.data.length, 'saved plots');
           setSavedPlots(result.data);
         } else if (!result.success) {
-          // Handle authentication errors or other failures gracefully
-          console.log('ℹ️ [DATA EXPLORER PANEL] Could not load saved plots:', result.error || 'Unknown error');
           setSavedPlots([]);
         }
       } catch (error) {
@@ -1995,11 +1993,13 @@ function MapDrawingPageContent() {
 
   const getSelectedObjects = (): Array<{ id: string; type: 'pin' | 'line' | 'area'; label: string }> => {
     // Get all objects across all projects (since selections can span projects)
-    return [
+    const allObjects = [
       ...pins.map(pin => ({ ...pin, type: 'pin' as const })),
       ...lines.map(line => ({ ...line, type: 'line' as const })),
       ...areas.map(area => ({ ...area, type: 'area' as const }))
-    ].filter(obj => selectedObjectIds.has(obj.id));
+    ];
+
+    return allObjects.filter(obj => selectedObjectIds.has(obj.id));
   };
 
   // Batch delete handler
@@ -2028,7 +2028,7 @@ function MapDrawingPageContent() {
         }
         successCount++;
       } catch (error) {
-        console.error(`Error deleting ${obj.type} ${obj.id}:`, error);
+        console.error(`Error deleting ${obj.type} ${obj.label}:`, error);
         errorCount++;
       }
     }
@@ -2052,6 +2052,7 @@ function MapDrawingPageContent() {
     // Clear selections and close dialog
     clearObjectSelection();
     setShowBatchDeleteConfirmDialog(false);
+    setIsBulkDeleteMode(false);
   };
 
   const handleToggleLabel = useCallback(async (id: string, type: 'pin' | 'line' | 'area') => {
@@ -4464,6 +4465,106 @@ function MapDrawingPageContent() {
     }
   }, [handleDownloadFileForPlot, pins, areas, toast]);
 
+  const handleOpenStackedPlotsFromPanel = useCallback(async (filesToOpen: (PinFile & { pinLabel: string })[]) => {
+    console.log('📚 [DATA EXPLORER PANEL] Opening stacked plots for:', filesToOpen.map(f => f.fileName));
+
+    if (filesToOpen.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Files Selected",
+        description: "Please select files to open"
+      });
+      return;
+    }
+
+    try {
+      // Determine file type from first file (assume all same type)
+      let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+      const firstFileName = filesToOpen[0].fileName;
+      const parts = firstFileName.split('_');
+      const position0 = parts[0]?.toLowerCase() || '';
+      const position1 = parts[1]?.toLowerCase() || '';
+
+      if (position0.includes('fpod') || position1.includes('fpod')) {
+        fileType = 'FPOD';
+      } else if (position0.includes('subcam') || position1.includes('subcam')) {
+        fileType = 'Subcam';
+      }
+
+      // Set GPS coordinates from first file for marine/meteo integration
+      const firstFile = filesToOpen[0];
+      if (firstFile.pinId || firstFile.areaId) {
+        console.log('📍 [DATA EXPLORER PANEL] Fetching GPS coordinates for:', firstFile.pinId || firstFile.areaId);
+
+        if (firstFile.pinId) {
+          const pin = pins.find(p => p.id === firstFile.pinId);
+          if (pin) {
+            setObjectGpsCoords({ lat: pin.lat, lng: pin.lng });
+            setObjectName(pin.label || firstFile.pinLabel || 'Pin');
+            console.log('✅ [DATA EXPLORER PANEL] Set GPS coords from pin:', { lat: pin.lat, lng: pin.lng });
+          }
+        } else if (firstFile.areaId) {
+          const area = areas.find(a => a.id === firstFile.areaId);
+          if (area && area.path && area.path.length > 0) {
+            const centerLat = area.path.reduce((sum, p) => sum + p.lat, 0) / area.path.length;
+            const centerLng = area.path.reduce((sum, p) => sum + p.lng, 0) / area.path.length;
+            setObjectGpsCoords({ lat: centerLat, lng: centerLng });
+            setObjectName(area.name || firstFile.pinLabel || 'Area');
+            console.log('✅ [DATA EXPLORER PANEL] Set GPS coords from area centroid:', { lat: centerLat, lng: centerLng });
+          }
+        }
+      }
+
+      // Download ALL files
+      toast({
+        title: "Loading Stacked Plots",
+        description: `Downloading ${filesToOpen.length} files...`
+      });
+
+      const downloadedFiles: File[] = [];
+      for (const file of filesToOpen) {
+        const downloadedFile = await handleDownloadFileForPlot(
+          file.pinId || null,
+          file.fileName,
+          file.areaId || null,
+          file
+        );
+
+        if (downloadedFile) {
+          downloadedFiles.push(downloadedFile);
+        } else {
+          console.warn('⚠️ Failed to download file:', file.fileName);
+        }
+      }
+
+      if (downloadedFiles.length === 0) {
+        throw new Error('All file downloads failed');
+      }
+
+      console.log(`✅ Downloaded ${downloadedFiles.length}/${filesToOpen.length} files for stacked plots`);
+
+      // Open in marine device modal with ALL files
+      setSelectedFileType(fileType);
+      setSelectedFiles(downloadedFiles);
+      setShowMarineDeviceModal(true);
+      setShowDataExplorerPanel(false); // Close panel
+
+      toast({
+        title: "Stacked Plots Loaded",
+        description: `Successfully loaded ${downloadedFiles.length} files`
+      });
+
+      console.log('✅ [DATA EXPLORER PANEL] Opened stacked plots in marine device modal');
+    } catch (error) {
+      console.error('❌ [DATA EXPLORER PANEL] Error opening stacked plots:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to open stacked plots"
+      });
+    }
+  }, [handleDownloadFileForPlot, pins, areas, toast]);
+
   const handleDeleteFileForPlot = useCallback(async (file: PinFile & { pinLabel: string }) => {
     console.log('🗑️ [DATA EXPLORER PANEL] Delete file clicked:', file.fileName);
 
@@ -6639,6 +6740,64 @@ function MapDrawingPageContent() {
                                 >
                                   <Settings className="h-3 w-3" />
                                 </Button>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant={isBulkDeleteMode ? "destructive" : "outline"}
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          console.log('🗑️ [BULK DELETE MODE] Trash button clicked');
+                                          console.log('🗑️ [BULK DELETE MODE] Current isBulkDeleteMode:', isBulkDeleteMode);
+                                          if (isBulkDeleteMode) {
+                                            // Cancel bulk delete mode
+                                            console.log('🗑️ [BULK DELETE MODE] Canceling bulk delete mode');
+                                            setIsBulkDeleteMode(false);
+                                            clearObjectSelection();
+                                          } else {
+                                            // Enter bulk delete mode
+                                            console.log('🗑️ [BULK DELETE MODE] Entering bulk delete mode');
+                                            setIsBulkDeleteMode(true);
+                                          }
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right">
+                                      <p>{isBulkDeleteMode ? 'Cancel bulk delete' : 'Bulk delete objects'}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                {isBulkDeleteMode && selectedObjectIds.size > 0 && (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="destructive"
+                                          size="sm"
+                                          className="h-6 px-2 text-xs"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            console.log('✅ [BULK DELETE] Confirm button clicked');
+                                            console.log('✅ [BULK DELETE] selectedObjectIds size:', selectedObjectIds.size);
+                                            console.log('✅ [BULK DELETE] selectedObjectIds array:', Array.from(selectedObjectIds));
+                                            console.log('✅ [BULK DELETE] Opening batch delete confirmation dialog');
+                                            setShowBatchDeleteConfirmDialog(true);
+                                          }}
+                                        >
+                                          <Check className="h-3 w-3 mr-1" />
+                                          Confirm ({selectedObjectIds.size})
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="right">
+                                        <p>Delete {selectedObjectIds.size} selected object{selectedObjectIds.size !== 1 ? 's' : ''}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                )}
                               </div>
                             </div>
 
@@ -6752,8 +6911,8 @@ function MapDrawingPageContent() {
                                 </div>
                               )}
 
-                              {/* Select All / Clear All button - show when settings dialog is open */}
-                              {totalObjects > 0 && showProjectSettingsDialog && (
+                              {/* Select All / Clear All button - show when in bulk delete mode or settings dialog is open */}
+                              {totalObjects > 0 && (isBulkDeleteMode || showProjectSettingsDialog) && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -6795,8 +6954,8 @@ function MapDrawingPageContent() {
                                             : 'bg-muted/30'
                                       }`}
                                     >
-                                      {/* Checkbox for multi-selection - show when settings dialog is open */}
-                                      {showProjectSettingsDialog && (
+                                      {/* Checkbox for multi-selection - show when in bulk delete mode or settings dialog is open */}
+                                      {(isBulkDeleteMode || showProjectSettingsDialog) && (
                                         <Checkbox
                                           checked={selectedObjectIds.has(object.id)}
                                           onCheckedChange={() => toggleObjectSelection(object.id)}
@@ -6816,12 +6975,12 @@ function MapDrawingPageContent() {
                                       )}
                                       <button
                                         onClick={() => {
-                                          if (!showProjectSettingsDialog) {
+                                          if (!showProjectSettingsDialog && !isBulkDeleteMode) {
                                             setSelectedObjectId(selectedObjectId === object.id ? null : object.id);
                                             setItemToEdit(object);
                                           }
                                         }}
-                                        className={`truncate flex-1 text-left ${!showProjectSettingsDialog ? 'hover:text-accent cursor-pointer' : 'cursor-default'}`}
+                                        className={`truncate flex-1 text-left ${!showProjectSettingsDialog && !isBulkDeleteMode ? 'hover:text-accent cursor-pointer' : 'cursor-default'}`}
                                       >
                                         {object.label || `Unnamed ${object.type.charAt(0).toUpperCase() + object.type.slice(1)}`}
                                       </button>
@@ -7557,14 +7716,17 @@ function MapDrawingPageContent() {
       <BatchDeleteConfirmDialog
         open={showBatchDeleteConfirmDialog}
         onOpenChange={setShowBatchDeleteConfirmDialog}
-        selectedObjects={getSelectedObjects().map(obj => {
-          const fileCount = obj.type === 'pin'
-            ? (pinFileMetadata[obj.id]?.length || pinFiles[obj.id]?.length || 0)
-            : obj.type === 'area'
-            ? (areaFileMetadata[obj.id]?.length || 0)
-            : 0;
-          return { ...obj, fileCount };
-        })}
+        selectedObjects={(() => {
+          const selected = getSelectedObjects().map(obj => {
+            const fileCount = obj.type === 'pin'
+              ? (pinFileMetadata[obj.id]?.length || pinFiles[obj.id]?.length || 0)
+              : obj.type === 'area'
+              ? (areaFileMetadata[obj.id]?.length || 0)
+              : 0;
+            return { ...obj, fileCount };
+          });
+          return selected;
+        })()}
         selectedCount={selectedObjectIds.size}
         onConfirmDelete={handleBatchDelete}
         onCancel={() => setShowBatchDeleteConfirmDialog(false)}
@@ -7829,6 +7991,7 @@ function MapDrawingPageContent() {
           onFileDelete={handleDeleteFileForPlot}
           onFileRename={handleRenameFileForPlot}
           getFileDateRange={getFileDateRange}
+          onOpenStackedPlots={handleOpenStackedPlotsFromPanel}
 
           // Saved plots tab
           savedPlots={savedPlots}

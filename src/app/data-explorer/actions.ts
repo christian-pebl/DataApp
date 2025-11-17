@@ -1176,3 +1176,445 @@ export async function fetchRawCsvAction(fileId: string): Promise<{
     };
   }
 }
+
+/**
+ * Update CSV file in storage with edited content
+ * Replaces the existing file with new CSV content
+ */
+export async function updateCsvFileAction(fileId: string, csvContent: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    console.log('[Data Explorer Actions] Updating CSV file:', fileId);
+
+    const supabase = await createClient();
+
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error('[Data Explorer Actions] Authentication error:', authError);
+      return {
+        success: false,
+        error: 'Authentication required'
+      };
+    }
+
+    // Get file metadata to verify ownership
+    const { data: fileData, error: getError } = await supabase
+      .from('pin_files')
+      .select('pin_id, area_id, file_path, file_name')
+      .eq('id', fileId)
+      .single();
+
+    if (getError || !fileData) {
+      console.error('[Data Explorer Actions] Error fetching file:', getError);
+      return {
+        success: false,
+        error: 'File not found'
+      };
+    }
+
+    // Verify user owns the pin or area associated with this file
+    let ownershipVerified = false;
+
+    if (fileData.pin_id) {
+      const { data: pinData, error: pinError } = await supabase
+        .from('pins')
+        .select('user_id')
+        .eq('id', fileData.pin_id)
+        .single();
+
+      if (!pinError && pinData && pinData.user_id === user.id) {
+        ownershipVerified = true;
+      }
+    } else if (fileData.area_id) {
+      const { data: areaData, error: areaError } = await supabase
+        .from('areas')
+        .select('user_id')
+        .eq('id', fileData.area_id)
+        .single();
+
+      if (!areaError && areaData && areaData.user_id === user.id) {
+        ownershipVerified = true;
+      }
+    }
+
+    if (!ownershipVerified) {
+      console.error('[Data Explorer Actions] User does not own this file');
+      return {
+        success: false,
+        error: 'You do not have permission to modify this file'
+      };
+    }
+
+    if (!fileData.file_path) {
+      console.error('[Data Explorer Actions] No file path found');
+      return {
+        success: false,
+        error: 'File path not found'
+      };
+    }
+
+    // Convert CSV content to blob
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+
+    // Upload new file (this will replace the existing file at the same path)
+    // Use no-cache to ensure edits are immediately visible
+    const { error: uploadError } = await supabase.storage
+      .from('pin-files')
+      .upload(fileData.file_path, blob, {
+        cacheControl: 'no-cache, no-store, must-revalidate',
+        upsert: true // This replaces the existing file
+      });
+
+    if (uploadError) {
+      console.error('[Data Explorer Actions] Error uploading updated file:', uploadError);
+      return {
+        success: false,
+        error: 'Failed to upload updated file'
+      };
+    }
+
+    // Update the updated_at timestamp in the database to invalidate caches
+    console.log('[Data Explorer Actions] Updating file timestamp for cache invalidation...');
+    const { error: timestampError } = await supabase
+      .from('pin_files')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', fileId);
+
+    if (timestampError) {
+      console.warn('[Data Explorer Actions] Failed to update timestamp (non-critical):', timestampError);
+      // Don't fail the whole operation if timestamp update fails
+    }
+
+    console.log('[Data Explorer Actions] CSV file updated successfully');
+
+    return {
+      success: true
+    };
+  } catch (error) {
+    console.error('[Data Explorer Actions] Error updating CSV file:', error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update CSV file'
+    };
+  }
+}
+
+/**
+ * Single cell transform request
+ */
+interface SingleCellTransformRequest {
+  fileId: string;
+  cell: { rowIdx: number; cellIdx: number; value: string };
+  prompt: string;
+  cellCount: number; // For model selection
+}
+
+interface SingleCellTransformResponse {
+  success: boolean;
+  newValue?: string;
+  model?: string;
+  modelSelectionReason?: string;
+  complexityFactors?: {
+    isVeryComplexPrompt: boolean;
+    isComplexPrompt: boolean;
+    isComplexData: boolean;
+    isSimpleTask: boolean;
+    cellCount: number;
+    promptLength: number;
+    cellValueLength: number;
+  };
+  error?: string;
+  reasoning?: string;
+  tokensUsed?: number;
+}
+
+/**
+ * Batch transform cells using OpenAI
+ */
+interface BatchTransformRequest {
+  fileId: string;
+  cells: Array<{ rowIdx: number; cellIdx: number; value: string }>;
+  prompt: string;
+}
+
+interface BatchTransformResponse {
+  success: boolean;
+  results?: Array<{ rowIdx: number; cellIdx: number; newValue: string }>;
+  model?: string;
+  error?: string;
+}
+
+/**
+ * Transform a single cell using OpenAI (for real-time progress updates)
+ */
+export async function transformSingleCellAction(
+  request: SingleCellTransformRequest
+): Promise<SingleCellTransformResponse> {
+  try {
+    const supabase = await createClient();
+
+    // 1. Authenticate user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { success: false, error: 'Unauthorized' };
+    }
+
+    // 2. Verify file ownership
+    const { data: fileData, error: fileError } = await supabase
+      .from('pin_files')
+      .select('id, pin_id, area_id')
+      .eq('id', request.fileId)
+      .single();
+
+    if (fileError || !fileData) {
+      return { success: false, error: 'File not found' };
+    }
+
+    // Verify ownership through pin or area
+    let ownershipVerified = false;
+
+    if (fileData.pin_id) {
+      const { data: pinData, error: pinError } = await supabase
+        .from('pins')
+        .select('user_id')
+        .eq('id', fileData.pin_id)
+        .single();
+
+      if (!pinError && pinData && pinData.user_id === user.id) {
+        ownershipVerified = true;
+      }
+    }
+
+    if (!ownershipVerified && fileData.area_id) {
+      const { data: areaData, error: areaError } = await supabase
+        .from('areas')
+        .select('user_id')
+        .eq('id', fileData.area_id)
+        .single();
+
+      if (!areaError && areaData && areaData.user_id === user.id) {
+        ownershipVerified = true;
+      }
+    }
+
+    if (!ownershipVerified) {
+      return { success: false, error: 'You do not have permission to access this file' };
+    }
+
+    // 3. OPTIMIZATION: Try multiple strategies for transformation
+    const startTime = Date.now();
+
+    // Step 1: Check cache first
+    const { transformCache } = await import('@/lib/transform-cache');
+    const cachedResult = transformCache.get(request.cell.value, request.prompt);
+
+    if (cachedResult) {
+      const duration = Date.now() - startTime;
+      console.log(`[Data Explorer Actions] Cache hit - ${request.cell.value} → ${cachedResult} (${duration}ms)`);
+
+      return {
+        success: true,
+        newValue: cachedResult,
+        model: 'cache',
+        modelSelectionReason: 'Retrieved from cache (instant)',
+        complexityFactors: {
+          isVeryComplexPrompt: false,
+          isComplexPrompt: false,
+          isComplexData: false,
+          isSimpleTask: true,
+          cellCount: request.cellCount,
+          promptLength: request.prompt.length,
+          cellValueLength: request.cell.value.length
+        },
+        reasoning: `Cached result (${duration}ms)`,
+        tokensUsed: 0
+      };
+    }
+
+    // Step 2: Detect if this is a taxonomic task and try WoRMS
+    const isTaxonomicTask = /taxonom|species|genus|family|order|class|phylum|rank|classify|worms|scientific\s+name/i.test(request.prompt);
+
+    if (isTaxonomicTask) {
+      const { classifyTaxon } = await import('@/lib/worms-service');
+
+      const wormsResult = await classifyTaxon(request.cell.value, false);
+
+      if (wormsResult.found) {
+        const duration = Date.now() - startTime;
+        console.log(`[Data Explorer Actions] WoRMS lookup success - ${request.cell.value} → ${wormsResult.formattedName} (${duration}ms)`);
+
+        // Cache the WoRMS result
+        transformCache.set(request.cell.value, request.prompt, wormsResult.formattedName, 'worms');
+
+        return {
+          success: true,
+          newValue: wormsResult.formattedName,
+          model: 'worms-database',
+          modelSelectionReason: `WoRMS database lookup (${wormsResult.confidence} confidence)`,
+          complexityFactors: {
+            isVeryComplexPrompt: false,
+            isComplexPrompt: true,
+            isComplexData: false,
+            isSimpleTask: false,
+            cellCount: request.cellCount,
+            promptLength: request.prompt.length,
+            cellValueLength: request.cell.value.length
+          },
+          reasoning: `Found in WoRMS database - ${wormsResult.record?.rank} (${wormsResult.confidence} confidence, ${duration}ms)`,
+          tokensUsed: 0
+        };
+      }
+
+      console.log(`[Data Explorer Actions] WoRMS lookup failed for "${request.cell.value}", falling back to LLM`);
+    }
+
+    // Step 3: Fall back to LLM transformation
+    const { selectOptimalModel, transformCellValue } = await import('@/lib/openai-service');
+
+    const modelSelection = selectOptimalModel({
+      cellCount: request.cellCount,
+      prompt: request.prompt,
+      sampleCellValue: request.cell.value
+    });
+
+    const response = await transformCellValue({
+      prompt: request.prompt,
+      cellValue: request.cell.value,
+      model: modelSelection.model
+    });
+
+    // Cache the LLM result
+    transformCache.set(request.cell.value, request.prompt, response.transformedValue, 'llm', modelSelection.model);
+
+    const totalDuration = Date.now() - startTime;
+
+    return {
+      success: true,
+      newValue: response.transformedValue,
+      model: modelSelection.model,
+      modelSelectionReason: modelSelection.reason,
+      complexityFactors: modelSelection.complexityFactors,
+      reasoning: response.reasoning || `LLM transformation completed (${totalDuration}ms)`,
+      tokensUsed: response.tokensUsed
+    };
+  } catch (error) {
+    console.error('[Data Explorer Actions] Single cell transform failed:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function batchTransformCellsAction(
+  request: BatchTransformRequest
+): Promise<BatchTransformResponse> {
+  try {
+    const supabase = await createClient();
+
+    console.log('[Data Explorer Actions] Starting batch transform for', request.cells.length, 'cells');
+
+    // 1. Authenticate user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { success: false, error: 'Unauthorized' };
+    }
+
+    // 2. Verify file ownership (similar to fetchRawCsvAction)
+    const { data: fileData, error: fileError } = await supabase
+      .from('pin_files')
+      .select('id, pin_id, area_id')
+      .eq('id', request.fileId)
+      .single();
+
+    if (fileError || !fileData) {
+      return { success: false, error: 'File not found' };
+    }
+
+    // Verify ownership through pin or area
+    let ownershipVerified = false;
+
+    if (fileData.pin_id) {
+      const { data: pinData, error: pinError } = await supabase
+        .from('pins')
+        .select('user_id')
+        .eq('id', fileData.pin_id)
+        .single();
+
+      if (!pinError && pinData && pinData.user_id === user.id) {
+        ownershipVerified = true;
+      }
+    }
+
+    if (!ownershipVerified && fileData.area_id) {
+      const { data: areaData, error: areaError } = await supabase
+        .from('areas')
+        .select('user_id')
+        .eq('id', fileData.area_id)
+        .single();
+
+      if (!areaError && areaData && areaData.user_id === user.id) {
+        ownershipVerified = true;
+      }
+    }
+
+    if (!ownershipVerified) {
+      return { success: false, error: 'You do not have permission to access this file' };
+    }
+
+    // 3. Import OpenAI service
+    const { selectOptimalModel, transformCellValue } = await import('@/lib/openai-service');
+
+    // 4. Select optimal model
+    const model = selectOptimalModel({
+      cellCount: request.cells.length,
+      prompt: request.prompt,
+      sampleCellValue: request.cells[0]?.value || ''
+    });
+
+    console.log('[Data Explorer Actions] Selected model:', model, 'for', request.cells.length, 'cells');
+
+    // 5. Process cells sequentially (with rate limiting)
+    const results: Array<{ rowIdx: number; cellIdx: number; newValue: string }> = [];
+
+    for (const cell of request.cells) {
+      try {
+        const response = await transformCellValue({
+          prompt: request.prompt,
+          cellValue: cell.value,
+          model
+        });
+
+        results.push({
+          rowIdx: cell.rowIdx,
+          cellIdx: cell.cellIdx,
+          newValue: response.transformedValue
+        });
+
+        console.log('[Data Explorer Actions] Transformed cell', cell.rowIdx, cell.cellIdx);
+
+        // Rate limiting: 50 requests per minute for GPT-4, 500/min for GPT-3.5
+        // Use 1.2 second delay to be safe (allows 50/min)
+        await new Promise(resolve => setTimeout(resolve, 1200));
+      } catch (error) {
+        console.error('[Data Explorer Actions] Cell transformation error:', error);
+
+        // On error, keep original value
+        results.push({
+          rowIdx: cell.rowIdx,
+          cellIdx: cell.cellIdx,
+          newValue: cell.value
+        });
+      }
+    }
+
+    console.log('[Data Explorer Actions] Batch transform complete:', results.length, 'cells processed');
+
+    return { success: true, results, model };
+  } catch (error) {
+    console.error('[Data Explorer Actions] Batch transform failed:', error);
+    return { success: false, error: String(error) };
+  }
+}

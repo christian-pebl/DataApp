@@ -20,6 +20,7 @@ interface DataExplorerPanelProps {
   onFileDelete: (file: PinFile & { pinLabel: string }) => void;
   onFileRename: (file: PinFile & { pinLabel: string }, newName: string) => Promise<boolean>;
   getFileDateRange: (file: PinFile) => Promise<any>;
+  onOpenStackedPlots?: (files: (PinFile & { pinLabel: string })[]) => void;
 
   // Saved plots tab props
   savedPlots: SavedPlotView[];
@@ -55,6 +56,7 @@ export function DataExplorerPanel({
   onFileDelete,
   onFileRename,
   getFileDateRange,
+  onOpenStackedPlots,
   savedPlots,
   isLoadingPlots,
   onPlotClick,
@@ -121,6 +123,7 @@ export function DataExplorerPanel({
                   onFileDelete={onFileDelete}
                   onFileRename={onFileRename}
                   getFileDateRange={getFileDateRange}
+                  onOpenStackedPlots={onOpenStackedPlots}
                 />
               </TabsContent>
 

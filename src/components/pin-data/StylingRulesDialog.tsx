@@ -234,7 +234,7 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
       chartBottomMargin: 10,
       chartHeight: 208,
       xAxisTitleFontSize: 10,
-      heatmapRowHeight: 35 // Default heatmap row height in pixels
+      heatmapRowHeight: 15 // Default heatmap row height in pixels (compact for nmax files)
     }
   },
   // Spot-sample / Discrete sampling files styling (CROP, CHEM, WQ, EDNA)

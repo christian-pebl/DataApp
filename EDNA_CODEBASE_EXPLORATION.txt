@@ -1,0 +1,267 @@
+# eDNA and Spot-Sampling File Implementation - Codebase Exploration Report
+
+## Executive Summary
+This document provides a comprehensive exploration of how eDNA and spot-sampling files 
+are currently handled in the DataApp codebase.
+
+## 1. eDNA FILE HANDLING
+
+### 1.1 eDNA Utilities (src/lib/edna-utils.ts)
+
+Key Functions:
+- extractEdnaDate(fileName) - Extracts date from PROJECTNAME_EDNA_ALL_YYMM format
+- formatEdnaDate(date) - Formats to DD/MM/YYYY
+- abbreviateStationLabel(label, projectPrefix) - Abbreviates labels
+- isEdnaMetaFile(fileName) - Detects "_meta" or "_metadata" files
+- extractProjectPrefix(fileName) - Gets prefix like "ALGA"
+- getEdnaMetaConcentrationParams() - Returns eDNA concentration column names
+
+### 1.2 eDNA Meta File Detection
+
+In csvParser.ts, detectEdnaMetaHeaderRow() function:
+- Detects eDNA _Meta files: pattern "edna" + ("_meta" OR "_metadata")
+- Scans first 10 rows for concentration parameter names
+- Returns correct header row index
+- Falls back to row 0 if not found
+
+## 2. SPOT-SAMPLING FILE DETECTION & PROCESSING
+
+### 2.1 File Type Detection
+
+Location: src/components/pin-data/PinChartDisplay.tsx (Line 2109)
+
+Pattern:
+isDiscreteFile = /(crop|chemsw|chemwq|edna)/i.test(fileName)
+
+File types detected: CROP, CHEM, WQ, EDNA
+
+### 2.2 Sample ID Column Detection
+
+Location: src/lib/statistical-utils.ts detectSampleIdColumn()
+
+Priority:
+1. "Sample ID" (case-insensitive)
+2. "Sample"
+3. "Station"
+4. Contains "sample"
+5. Second column (fallback)
+
+### 2.3 Decision Logic
+
+In PinChartDisplay.tsx (Lines 2113-2125):
+
+If isDiscreteFile AND detectedSampleIdColumn AND headers:
+  - Render PinChartDisplaySpotSample
+  - Pass: data, headers, detectedSampleIdColumn, fileName
+
+Else:
+  - Render timeseries LineChart
+
+## 3. SPOT-SAMPLING VISUALIZATION
+
+### 3.1 PinChartDisplaySpotSample Component
+
+Location: src/components/pin-data/PinChartDisplaySpotSample.tsx
+
+Features:
+- Groups data by: Date + Sample ID + Parameter
+- Detects eDNA and abbreviates station labels
+- Assigns colors to unique sample IDs
+- Two chart types: Column chart or Whisker plot
+- Side panel for parameter visibility
+- Chart/Table toggle
+
+Default chart type logic:
+fileName.endsWith('_indiv.csv') ? 'whisker' : 'column'
+
+### 3.2 Data Grouping
+
+Location: src/lib/statistical-utils.ts groupBySampleAndDate()
+
+Grouping key: ${isoDate}|${sampleId}${bladeIdKey}|${param}
+
+Calculates:
+- Mean, Standard Deviation, Standard Error
+- Min, Q1, Median, Q3, Max
+
+### 3.3 Column Chart with Error Bars
+
+Location: src/components/pin-data/ColumnChartWithErrorBars.tsx
+
+Displays:
+- Mean value as column
+- Error bar showing +-SD (or tiny bar for single samples)
+- Two color modes: unique colors per sample, or single color
+- Configurable margins, fonts, gaps
+
+### 3.4 Whisker Plot (Box Plot)
+
+Location: src/components/pin-data/WhiskerPlot.tsx
+
+Displays:
+- Box: Q1 to Q3
+- Line in box: Median
+- Whiskers: Q1 to min, Q3 to max
+- Caps: small lines at min/max
+- Single values: single dot
+- Y-axis starts at 0
+
+## 4. STYLING RULES SYSTEM
+
+### 4.1 Styling Rules Definition
+
+Location: src/components/pin-data/StylingRulesDialog.tsx (Lines 98-293)
+
+Version: 11
+
+Key rules:
+
+1. "_indiv.csv" - Individual measurements (whisker plots default)
+   Parameters: length (cm), width (cm), Fouling (% area), Fertility, Yield
+
+2. "_Meta.csv" - eDNA Metadata (column charts default)
+   Parameters: eDNA Concentration, 18SSSU Marker Concentration, COILB Marker Concentration
+
+### 4.2 Styling Properties
+
+For spotSample files:
+- barGap: gap between bars (4px default)
+- barCategoryGap: gap between categories (10% default)
+- whiskerBoxWidth: width of whisker box (40px default)
+- whiskerSpacing: spacing between plots (80px default)
+- chartMarginTop/Right/Left/Bottom
+- xAxisLabelRotation (-45 degrees default)
+- xAxisLabelFontSize (11px default)
+- chartHeight (350px default)
+- parameterOrder: array of parameter names to display in order
+
+### 4.3 Rule Matching
+
+In PinChartDisplaySpotSample.tsx:
+Find first enabled rule where fileName.endsWith(rule.suffix)
+
+IMPORTANT: More specific patterns must come BEFORE general patterns
+Example: "_diff_std.csv" before "_std.csv"
+
+### 4.4 Parameter Ordering
+
+If parameterOrder is defined:
+- Only show those parameters
+- Display in that specific order
+- Filters out metadata columns (Station ID, Image ID, etc)
+
+For eDNA _Meta.csv: Shows only 3 concentration parameters
+
+## 5. INTEGRATION POINTS FOR _CRED FILES
+
+### 5.1 File Type Detection
+
+File: src/components/pin-data/PinChartDisplay.tsx (Line 2109)
+
+CHANGE:
+From: /(crop|chemsw|chemwq|edna)/i
+To: /(crop|chemsw|chemwq|edna|_cred)/i
+
+### 5.2 Styling Rules
+
+File: src/components/pin-data/StylingRulesDialog.tsx
+
+ADD new rule after _Meta.csv:
+
+{
+  suffix: "_Cred.csv",
+  styleName: "edna_cred_style",
+  description: "eDNA Credibility metrics...",
+  enabled: true,
+  properties: {
+    spotSample: {
+      // Copy styling from _Meta.csv
+      parameterOrder: [
+        // Define credibility metric column names
+      ]
+    }
+  }
+}
+
+### 5.3 File Selection Dialog (Optional)
+
+File: src/components/pin-data/FileSelectionDialog.tsx
+
+Add type detection for EDNA_CRED if desired
+
+### 5.4 CSV Parser (If Needed)
+
+File: src/components/pin-data/csvParser.ts
+
+Only if _Cred files have special header structure:
+- Extend detectEdnaMetaHeaderRow() function
+- Or create separate detection function
+
+### 5.5 Data Processing
+
+NO custom processing needed - existing groupBySampleAndDate() is generic.
+
+Reuse existing:
+- Sample ID column detection
+- Date/time parsing
+- Statistical calculations
+- Chart rendering
+
+## 6. DATA FLOW
+
+CSV Upload
+  -> parseCSVFile() [csvParser.ts]
+     - detectEdnaMetaHeaderRow() (if needed)
+     - detectTimeColumn()
+     - detectSampleIdColumn()
+     - Return ParseResult with detectedSampleIdColumn
+  -> PinChartDisplay [PinChartDisplay.tsx]
+     - Check: isDiscreteFile = /(crop|chemsw|chemwq|edna|_cred)/i
+     - If isDiscreteFile AND detectedSampleIdColumn AND headers:
+       -> Return PinChartDisplaySpotSample
+     - Else:
+       -> Return timeseries LineChart
+  -> PinChartDisplaySpotSample
+     - Load styling rules from localStorage
+     - Find matching rule by fileName.endsWith(suffix)
+     - Group data: groupBySampleAndDate()
+     - If eDNA: abbreviate station labels
+     - Default chart type: _indiv.csv -> whisker, else -> column
+     - Render charts with styling properties
+
+## 7. KEY CODE PATTERNS
+
+### Pattern 1: File Type Detection
+Use case-insensitive regex in PinChartDisplay
+
+### Pattern 2: Styling Rule Structure
+Follow _Meta.csv rule format with spotSample properties
+
+### Pattern 3: Data Processing
+Generic groupBySampleAndDate() works for all spot-sample files
+
+### Pattern 4: eDNA Station Label Handling
+Apply abbreviateStationLabel() if isEdnaMetaFile()
+
+## 8. FILE MAP
+
+Key files:
+- src/lib/edna-utils.ts - eDNA utilities
+- src/lib/statistical-utils.ts - Grouping and statistics
+- src/components/pin-data/csvParser.ts - CSV parsing
+- src/components/pin-data/PinChartDisplay.tsx - File type detection
+- src/components/pin-data/PinChartDisplaySpotSample.tsx - Spot-sample rendering
+- src/components/pin-data/ColumnChartWithErrorBars.tsx - Column chart
+- src/components/pin-data/WhiskerPlot.tsx - Whisker/box plot
+- src/components/pin-data/StylingRulesDialog.tsx - Styling rules
+
+## SUMMARY
+
+To add _Cred file support:
+
+1. Update file type detection pattern in PinChartDisplay.tsx
+2. Add _Cred.csv styling rule in StylingRulesDialog.tsx
+3. (Optional) Extend CSV parser if _Cred files have special headers
+4. Everything else reuses existing infrastructure
+
+The codebase has excellent infrastructure for handling spot-sampling data.

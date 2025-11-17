@@ -43,6 +43,7 @@ interface DataTimelineProps {
   onRenameFile?: (file: PinFile & { pinLabel: string }, newName: string) => Promise<boolean>;
   onDatesUpdated?: () => void;
   onSelectMultipleFiles?: (files: (PinFile & { pinLabel: string })[]) => void;
+  onOpenStackedPlots?: (files: (PinFile & { pinLabel: string })[]) => void;
   projectId?: string;
   onMergedFileClick?: (mergedFile: MergedFile) => void;
   onAddFilesToMergedFile?: (mergedFile: MergedFile) => void;
@@ -215,7 +216,7 @@ const parseFileGrouping = (fileName: string): { project: string; dataType: strin
   return { project, dataType, station, groupKey };
 };
 
-export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFile, onRenameFile, onDatesUpdated, onSelectMultipleFiles, projectId, onMergedFileClick, onAddFilesToMergedFile, multiFileMergeMode = false, onMultiFileMergeModeChange }: DataTimelineProps) {
+export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFile, onRenameFile, onDatesUpdated, onSelectMultipleFiles, onOpenStackedPlots, projectId, onMergedFileClick, onAddFilesToMergedFile, multiFileMergeMode = false, onMultiFileMergeModeChange }: DataTimelineProps) {
   const { toast } = useToast();
   const [filesWithDates, setFilesWithDates] = useState<FileWithDateRange[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'timeline'>('table');
@@ -233,6 +234,10 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
   const [mergeFiles, setMergeFiles] = useState<FileWithDateRange[]>([]);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
 
+  // Stack plot mode state
+  const [stackPlotMode, setStackPlotMode] = useState(false);
+  const [selectedForStack, setSelectedForStack] = useState<Set<string>>(new Set());
+
   // Raw CSV viewer state
   const [showRawViewer, setShowRawViewer] = useState(false);
   const [selectedFileForRaw, setSelectedFileForRaw] = useState<{ id: string; name: string } | null>(null);
@@ -240,6 +245,19 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
   // Toggle file selection for multi-file mode
   const toggleFileSelection = (fileId: string) => {
     setSelectedFileIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fileId)) {
+        newSet.delete(fileId);
+      } else {
+        newSet.add(fileId);
+      }
+      return newSet;
+    });
+  };
+
+  // Toggle file selection for stack plot mode
+  const toggleStackSelection = (fileId: string) => {
+    setSelectedForStack(prev => {
       const newSet = new Set(prev);
       if (newSet.has(fileId)) {
         newSet.delete(fileId);
@@ -268,6 +286,58 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
     onSelectMultipleFiles(selectedFiles);
 
     // Don't reset immediately - will reset after successful merge
+  };
+
+  // Handle opening stacked plots
+  const handleOpenStackedPlots = async () => {
+    if (selectedForStack.size < 2) {
+      toast({
+        variant: "destructive",
+        title: "Selection Required",
+        description: "Please select at least 2 files to open as stacked plots"
+      });
+      return;
+    }
+
+    const selectedFiles = filesWithDates
+      .filter(f => selectedForStack.has(f.file.id))
+      .map(f => f.file)
+      .sort((a, b) => a.fileName.localeCompare(b.fileName)); // Sort alphabetically
+
+    // Use the dedicated stacked plots callback if available
+    if (onOpenStackedPlots) {
+      onOpenStackedPlots(selectedFiles);
+      // Reset selections and exit stack mode
+      setSelectedForStack(new Set());
+      setStackPlotMode(false);
+      return;
+    }
+
+    // Fallback to sequential opening if callback not provided
+    toast({
+      title: "Opening Stacked Plots",
+      description: `Loading ${selectedFiles.length} files sequentially...`
+    });
+
+    // Open each file sequentially with a small delay between each
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      await onFileClick(file);
+
+      // Small delay to ensure plots render properly before opening next one
+      if (i < selectedFiles.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+
+    toast({
+      title: "Stacked Plots Opened",
+      description: `Successfully opened ${selectedFiles.length} files in stacked plots`
+    });
+
+    // Reset selections and exit stack mode
+    setSelectedForStack(new Set());
+    setStackPlotMode(false);
   };
 
   // Reset merge mode when files change (after successful merge)
@@ -818,8 +888,8 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
         </h3>
 
         <div className="flex items-center gap-2">
-          {/* Select All Button - Show when in merge mode */}
-          {multiFileMergeMode && (
+          {/* Select All Button - Show when in merge mode or stack plot mode */}
+          {(multiFileMergeMode || stackPlotMode) && (
             <Button
               variant="outline"
               size="sm"
@@ -827,11 +897,50 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
               onClick={() => {
                 // Select all files in current view
                 const allFileIds = new Set(sortedFilesWithDates.map(f => f.file.id));
-                setSelectedFileIds(allFileIds);
+                if (stackPlotMode) {
+                  setSelectedForStack(allFileIds);
+                } else if (multiFileMergeMode) {
+                  setSelectedFileIds(allFileIds);
+                }
               }}
             >
               <CheckCircle2 className="h-3 w-3 mr-1" />
               <span className="text-xs">Select All ({sortedFilesWithDates.length})</span>
+            </Button>
+          )}
+
+          {/* Stack Plots - Open Stacked Plots Button (when 2+ selected) */}
+          {stackPlotMode && selectedForStack.size >= 2 ? (
+            <Button
+              variant="default"
+              size="sm"
+              className="h-6 px-2 bg-blue-600 hover:bg-blue-700"
+              onClick={handleOpenStackedPlots}
+            >
+              <PlayCircle className="h-3 w-3 mr-1" />
+              <span className="text-xs">Open Stacked Plots ({selectedForStack.size})</span>
+            </Button>
+          ) : (
+            // "📊 Stack Plots" button to toggle stack plot mode
+            <Button
+              variant={stackPlotMode ? 'default' : 'outline'}
+              size="sm"
+              className="h-6 px-2"
+              onClick={() => {
+                const newMode = !stackPlotMode;
+                setStackPlotMode(newMode);
+                if (!newMode) {
+                  setSelectedForStack(new Set());
+                }
+                // Turn off merge mode when entering stack mode
+                if (newMode && multiFileMergeMode) {
+                  onMultiFileMergeModeChange?.(false);
+                  setSelectedFileIds(new Set());
+                }
+              }}
+            >
+              <Layers className="h-3 w-3 mr-1" />
+              <span className="text-xs">Stack Plots</span>
             </Button>
           )}
 
@@ -859,6 +968,11 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                   onMultiFileMergeModeChange?.(newMode);
                   if (!newMode) {
                     setSelectedFileIds(new Set());
+                  }
+                  // Turn off stack mode when entering merge mode
+                  if (newMode && stackPlotMode) {
+                    setStackPlotMode(false);
+                    setSelectedForStack(new Set());
                   }
                 }}
               >
@@ -939,7 +1053,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-border/30 text-xs font-medium text-muted-foreground">
-                    {multiFileMergeMode && <th className="text-left pb-2 pr-2 w-8"></th>}
+                    {(multiFileMergeMode || stackPlotMode) && <th className="text-left pb-2 pr-2 w-8"></th>}
                     <th className="text-left pb-2 pr-2">Pin</th>
                     <th className="text-left pb-2 pr-2">File Name</th>
                     <th className="text-center pb-2 px-2 bg-muted/10 rounded-tl-sm">Start Date</th>
@@ -958,12 +1072,12 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                         className="h-[22px] text-xs hover:bg-muted/30 transition-colors opacity-0 animate-[fadeIn_0.4s_ease-in-out_forwards]"
                         style={{ animationDelay: `${index * 30}ms` }}
                       >
-                        {/* Checkbox for multi-file selection */}
-                        {multiFileMergeMode && (
+                        {/* Checkbox for multi-file selection (merge or stack plot mode) */}
+                        {(multiFileMergeMode || stackPlotMode) && (
                           <td className="pr-2 align-middle">
                             <Checkbox
-                              checked={selectedFileIds.has(file.id)}
-                              onCheckedChange={() => toggleFileSelection(file.id)}
+                              checked={stackPlotMode ? selectedForStack.has(file.id) : selectedFileIds.has(file.id)}
+                              onCheckedChange={() => stackPlotMode ? toggleStackSelection(file.id) : toggleFileSelection(file.id)}
                               className="flex-shrink-0"
                             />
                           </td>
@@ -1564,6 +1678,15 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                     {/* LEFT CELL: File Info */}
                     <td className="pr-4 align-middle">
                       <div className="flex items-center gap-2">
+                        {/* Checkbox for stack plot mode */}
+                        {(multiFileMergeMode || stackPlotMode) && (
+                          <Checkbox
+                            checked={stackPlotMode ? selectedForStack.has(file.id) : selectedFileIds.has(file.id)}
+                            onCheckedChange={() => stackPlotMode ? toggleStackSelection(file.id) : toggleFileSelection(file.id)}
+                            className="flex-shrink-0 w-3 h-3"
+                          />
+                        )}
+
                         {/* Pin color indicator / Merge icon */}
                         {isMergedFile(file) ? (
                           <Combine

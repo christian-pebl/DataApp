@@ -1,0 +1,40 @@
+NMAX AND HAPL FILES - CODEBASE ANALYSIS SUMMARY
+
+1. FILE DETECTION
+   Location: src/components/pin-data/PinPlotInstance.tsx (lines 123-124)
+   Method: Filename check for "hapl" substring (case-insensitive)
+   Code: csvFiles[0].name.toLowerCase().includes('hapl')
+
+2. PARSING FUNCTION
+   Location: src/components/pin-data/csvParser.ts (lines 935-1079)
+   Name: parseHaplotypeCsv(file: File)
+   Returns: HaplotypeParseResult with species[], sites[], data[], errors[], summary
+
+3. VISUALIZATION
+   Location: src/components/pin-data/HaplotypeHeatmap.tsx (670 lines)
+   Type: SVG-based heatmap with species (rows) x sites (columns)
+   Colors: Purple gradient for haplotype counts
+
+4. STACKED PLOTS
+   Location: src/components/pin-data/PinMarineDeviceData.tsx
+   Manager: Maintains array of PlotConfig objects
+   Workflow: User clicks "Add Plot" -> selects file -> parseHaplotypeCsv() -> HaplotypeHeatmap renders
+
+5. SPECIES NAMES
+   Storage: HaplotypeParseResult.species (string[])
+   Order: Alphabetically sorted (A-Z)
+   Source: "species" column in CSV
+   Display: Y-axis labels in heatmap (truncated >35 chars)
+
+KEY FILES:
+- csvParser.ts: Parsing logic
+- HaplotypeHeatmap.tsx: Visualization
+- PinPlotInstance.tsx: File detection and routing
+- PinMarineDeviceData.tsx: Plot stack management
+- FileSelectionDialog.tsx: File selection UI
+
+COLUMN TYPES IN CSV:
+1. Metadata: score, phylum, nns, redlist_status (NOT site data)
+2. Taxonomy: kingdom, phylum, class, order, family, genus, species, date, common (NOT site data)
+3. Sites: Everything else (contains haplotype counts, becomes X-axis)
+

@@ -11,6 +11,7 @@ interface FilesOverviewProps {
   onFileDelete: (file: PinFile & { pinLabel: string }) => void;
   onFileRename: (file: PinFile & { pinLabel: string }, newName: string) => Promise<boolean>;
   getFileDateRange: (file: PinFile) => Promise<any>;
+  onOpenStackedPlots?: (files: (PinFile & { pinLabel: string })[]) => void;
 }
 
 /**
@@ -29,7 +30,8 @@ export function FilesOverview({
   onFileClick,
   onFileDelete,
   onFileRename,
-  getFileDateRange
+  getFileDateRange,
+  onOpenStackedPlots
 }: FilesOverviewProps) {
   if (isLoading) {
     return (
@@ -57,6 +59,7 @@ export function FilesOverview({
       onFileClick={onFileClick}
       onDeleteFile={onFileDelete}
       onRenameFile={onFileRename}
+      onOpenStackedPlots={onOpenStackedPlots}
     />
   );
 }

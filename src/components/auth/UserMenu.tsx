@@ -67,8 +67,15 @@ export default function UserMenu({ user, projectId }: UserMenuProps) {
   // Theme management
   useEffect(() => {
     const storedTheme = typeof window !== 'undefined' ? localStorage.getItem("theme") : null
-    if (storedTheme) setTheme(storedTheme as 'light' | 'dark')
-    else if (typeof window !== 'undefined' && window.matchMedia("(prefers-color-scheme: dark)").matches) setTheme("dark")
+    if (storedTheme) {
+      setTheme(storedTheme as 'light' | 'dark')
+    } else {
+      // Default to light mode if no preference is stored
+      setTheme("light")
+      if (typeof window !== 'undefined') {
+        localStorage.setItem("theme", "light")
+      }
+    }
   }, [])
 
   useEffect(() => {

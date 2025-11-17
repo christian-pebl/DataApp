@@ -1,0 +1,142 @@
+NMAX HEATMAP & TAXONOMIC TREE EXPLORATION - INDEX
+
+This exploration provides complete documentation of how the nmax heatmap
+and taxonomic tree components work together to display hierarchical
+eDNA species data.
+
+DOCUMENTS CREATED
+=================
+
+1. NMAX_HEATMAP_TAXONOMY_EXPLORATION.md (6.4 KB)
+   - Complete technical overview
+   - All data structures and interfaces
+   - Data flow from CSV to visualization
+   - Critical code sections with line numbers
+   - File locations reference
+
+2. NMAX_HEATMAP_VISUAL_EXAMPLE.md (5.4 KB)
+   - Concrete example using Acartia tonsa species
+   - Shows TreeNode hierarchy structure
+   - FlattenedTaxon linear layout
+   - Heatmap rendering with indent levels
+   - Parent-child relationship visualization
+   - Sorting algorithm examples
+   - Connection line drawing logic
+
+3. NMAX_HEATMAP_QUICK_REFERENCE.txt (3.2 KB)
+   - Quick lookup for key concepts
+   - All interfaces summarized
+   - File paths and critical line numbers
+   - Data flow in 5 steps
+   - Parent-child tracking methods
+   - Sorting mode explanations
+   - Example walkthrough
+
+QUICK START
+===========
+
+If you need to understand:
+
+"How are parent-child relationships tracked?"
+  -> Read QUICK_REFERENCE.txt section "PARENT-CHILD TRACKING"
+  -> See VISUAL_EXAMPLE.md section "FINDING PARENT-CHILD RELATIONSHIPS"
+
+"Where is the heatmap code?"
+  -> See TAXONOMY_EXPLORATION.md section "7. Critical Code Sections"
+  -> Lines 809-946 in HaplotypeHeatmap.tsx
+
+"How does the indent level work?"
+  -> Read QUICK_REFERENCE.txt "INDENT LEVELS"
+  -> Critical lines 312-324 in taxonomic-tree-builder.ts
+
+"How is the tree built from CSV?"
+  -> See VISUAL_EXAMPLE.md "TREENODE HIERARCHY" section
+  -> TAXONOMY_EXPLORATION.md section "2.2 Building the Taxonomy Tree"
+
+"How does hierarchical sorting filter species?"
+  -> QUICK_REFERENCE.txt "SORTING MODES" section
+  -> VISUAL_EXAMPLE.md "HIERARCHICAL SORTING" section
+  -> HaplotypeHeatmap.tsx lines 289-294
+
+KEY INSIGHTS
+============
+
+1. TWO-TIER SYSTEM
+   - TreeNode: Full hierarchical structure for tree view
+   - FlattenedTaxon: Linear array for heatmap display
+   - Both represent the same hierarchy, different purpose
+
+2. RANK-BASED INDENTATION
+   - Indent level is determined by RANK, not tree depth
+   - Kingdom & Phylum = 0, Class = 2, Order = 3, etc.
+   - This is CRITICAL for consistent visual hierarchy
+
+3. PARENT-CHILD IN HEATMAP
+   - Uses FlattenedTaxon.path array for lineage
+   - Uses indentLevel matching for direct child detection
+   - Connection lines drawn only in hierarchical mode
+   - Only leaf nodes shown as data rows
+
+4. FILTERING LAYERS
+   - Credibility filters applied at metadata level
+   - Empty rows (all zeros) can be hidden
+   - Hierarchical mode filters to leaf nodes only
+   - Alphabetical mode applies A-Z sort
+
+5. DATA ENRICHMENT
+   - CSV provides basic metadata (credibility, phylum)
+   - WoRMS/GBIF APIs provide full taxonomy hierarchy
+   - Supabase caches taxonomy results
+   - Enrichment happens on component mount
+
+ABSOLUTE FILE PATHS
+====================
+
+Documentation:
+  C:\Users\Christian Abulhawa\DataApp\NMAX_HEATMAP_TAXONOMY_EXPLORATION.md
+  C:\Users\Christian Abulhawa\DataApp\NMAX_HEATMAP_VISUAL_EXAMPLE.md
+  C:\Users\Christian Abulhawa\DataApp\NMAX_HEATMAP_QUICK_REFERENCE.txt
+
+Core Components:
+  C:\Users\Christian Abulhawa\DataApp\src\components\pin-data\HaplotypeHeatmap.tsx
+  C:\Users\Christian Abulhawa\DataApp\src\components\pin-data\TaxonomicTreeView.tsx
+  C:\Users\Christian Abulhawa\DataApp\src\components\pin-data\csvParser.ts
+
+Taxonomy Services:
+  C:\Users\Christian Abulhawa\DataApp\src\lib\taxonomic-tree-builder.ts
+  C:\Users\Christian Abulhawa\DataApp\src\lib\taxonomy-service.ts
+
+NEXT STEPS
+==========
+
+To modify the heatmap:
+
+1. Understand the current flow:
+   -> Read TAXONOMY_EXPLORATION.md section "2. Data Flow Architecture"
+
+2. Locate the code:
+   -> Use Critical Code Sections (section 7) for exact line numbers
+   -> Check the example in VISUAL_EXAMPLE.md
+
+3. Make changes:
+   -> Remember rank-based indentation (lines 312-324)
+   -> Update both TreeNode building AND flattening logic
+   -> Test both hierarchical and alphabetical modes
+
+4. Common changes:
+   -> Add new rank: Update indent mapping (taxonomic-tree-builder.ts:312-324)
+   -> Change parent-child detection: Update HaplotypeHeatmap.tsx:815-825
+   -> Modify indentation: Update HaplotypeHeatmap.tsx:880 and 1095-1096
+   -> Change row labels: Update HaplotypeHeatmap.tsx:873-946
+
+DOCUMENT USAGE NOTES
+====================
+
+- All documents use absolute Windows paths
+- Line numbers refer to current codebase state (Nov 17, 2025)
+- Code references are from git branch: refactor/map-drawing-component-extraction
+- Visual examples use Acartia tonsa as sample species
+
+Created: November 17, 2025
+Last updated: November 17, 2025
+

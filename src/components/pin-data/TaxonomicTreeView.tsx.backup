@@ -1,0 +1,356 @@
+"use client";
+
+import React, { useState, useMemo } from 'react';
+import { ChevronRight, ChevronDown } from 'lucide-react';
+import type { TreeNode } from '@/lib/taxonomic-tree-builder';
+import { getRankColor, getRankIndentation } from '@/lib/taxonomic-tree-builder';
+import { cn } from '@/lib/utils';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+
+interface TaxonomicTreeViewProps {
+  tree: TreeNode;
+  containerHeight: number;
+  onSpeciesClick?: (speciesName: string) => void;
+}
+
+interface TreeNodeComponentProps {
+  node: TreeNode;
+  level: number;
+  onSpeciesClick?: (speciesName: string) => void;
+}
+
+function TreeNodeComponent({ node, level, onSpeciesClick }: TreeNodeComponentProps) {
+  const [isExpanded, setIsExpanded] = useState(true); // Auto-expand entire tree to show all species
+
+  const hasChildren = node.children.length > 0;
+  // Increase indentation: genus at 0, species at 24px
+  const baseIndent = level * 20;
+  const indentation = node.rank === 'species' ? baseIndent + 12 : baseIndent;
+
+  // Check if this entry exists in CSV (either as leaf or marked with csvEntry flag)
+  const isCSVEntry = node.csvEntry;
+
+  // A CSV entry with children that are also CSV entries should be prominent
+  const isDataEntryWithDataChildren = isCSVEntry && hasChildren &&
+    node.children.some(child => child.csvEntry);
+
+  // Detect unrecognized species (not found in WoRMS/GBIF database)
+  // Only apply to actual species (rank === 'species'), not to higher-level taxa that happen to be leaf nodes
+  const isUnrecognizedSpecies = node.rank === 'species' && node.isLeaf && (
+    !node.source ||
+    node.source === 'unknown'
+  );
+
+  // Calculate total haplotype count for species nodes
+  const totalHaplotypes = useMemo(() => {
+    if (!node.siteOccurrences) return 0;
+    return Array.from(node.siteOccurrences.values()).reduce((sum, count) => sum + count, 0);
+  }, [node.siteOccurrences]);
+
+  // Get confidence color
+  const getConfidenceColor = (confidence?: 'high' | 'medium' | 'low') => {
+    if (!confidence) return '#9ca3af'; // gray-400
+    switch (confidence) {
+      case 'high': return '#10b981'; // green-500
+      case 'medium': return '#f59e0b'; // amber-500
+      case 'low': return '#ef4444'; // red-500
+      default: return '#9ca3af';
+    }
+  };
+
+  return (
+    <div className="font-mono text-sm">
+      {/* Current Node */}
+      <div
+        className={cn(
+          "flex items-center gap-2 py-1 px-2 hover:bg-gray-100 rounded cursor-pointer transition-colors",
+          // Data entry with data children: darker and more prominent
+          isDataEntryWithDataChildren && "bg-blue-50/50 opacity-100",
+          // Regular CSV entry nodes (without children or children not in CSV): emerald background
+          isCSVEntry && !isDataEntryWithDataChildren && "bg-emerald-50 opacity-100",
+          // Parent-only nodes (not in CSV): semi-transparent
+          !isCSVEntry && "opacity-25"
+        )}
+        style={{ paddingLeft: `${indentation + 8}px` }}
+        onClick={() => hasChildren && setIsExpanded(!isExpanded)}
+      >
+        {/* Expand/Collapse Icon */}
+        <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
+          {hasChildren && (
+            isExpanded ? (
+              <ChevronDown className="w-4 h-4 text-gray-500" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-gray-500" />
+            )
+          )}
+        </div>
+
+        {/* Rank Badge */}
+        <span
+          className="text-xs font-bold px-1.5 py-0.5 rounded uppercase flex-shrink-0"
+          style={{
+            backgroundColor: getRankColor(node.rank),
+            color: 'white'
+          }}
+        >
+          {node.rank === 'unknown' ? '?' : node.rank.charAt(0)}
+        </span>
+
+        {/* Node Name */}
+        <span
+          className={cn(
+            "flex-1 truncate",
+            // Data entry with data children: dark and bold
+            isDataEntryWithDataChildren && "font-semibold text-gray-800",
+            // Regular CSV entry nodes: emerald color
+            isCSVEntry && !isDataEntryWithDataChildren && "font-semibold text-emerald-700",
+            // Non-CSV nodes: gray
+            !isCSVEntry && "text-gray-700",
+            // ALL CSV entry nodes are clickable
+            isCSVEntry && "cursor-pointer hover:bg-gray-200/50 px-1 rounded transition-colors",
+            // Unrecognized species: special underline styling
+            isUnrecognizedSpecies && "underline decoration-orange-500 decoration-2"
+          )}
+          onClick={(e) => {
+            if (isCSVEntry && onSpeciesClick) {
+              e.stopPropagation(); // Prevent tree expand/collapse
+              onSpeciesClick(node.originalName || node.name);
+            }
+          }}
+          title={isCSVEntry ? `Click to edit "${node.originalName || node.name}" in raw CSV viewer` : undefined}
+        >
+          {node.originalName || node.name}
+        </span>
+
+        {/* Species Count Badge */}
+        {!isCSVEntry && hasChildren && (
+          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold flex-shrink-0">
+            {node.speciesCount} {node.speciesCount === 1 ? 'sp.' : 'spp.'}
+          </span>
+        )}
+
+        {/* Haplotype Count for CSV Entries */}
+        {isCSVEntry && node.siteOccurrences && (
+          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-semibold flex-shrink-0">
+            {totalHaplotypes} hapl.
+          </span>
+        )}
+
+        {/* Taxonomy Source and Confidence for CSV Entries */}
+        {isCSVEntry && node.source && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <span className="text-xs text-gray-500">
+              {node.source.toUpperCase()}
+            </span>
+            {node.confidence && (
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: getConfidenceColor(node.confidence) }}
+                title={`Confidence: ${node.confidence}`}
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Children */}
+      {hasChildren && isExpanded && (
+        <div className="border-l-2 border-gray-200 ml-2">
+          {node.children.map((child, index) => (
+            <TreeNodeComponent
+              key={`${child.name}-${child.rank}-${index}`}
+              node={child}
+              level={level + 1}
+              onSpeciesClick={onSpeciesClick}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function TaxonomicTreeView({ tree, containerHeight, onSpeciesClick }: TaxonomicTreeViewProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [selectedSpecies, setSelectedSpecies] = useState<string | null>(null);
+
+  // Handle species click with confirmation
+  const handleSpeciesClick = (speciesName: string) => {
+    console.log('[TAXONOMIC TREE] Species clicked:', speciesName);
+    setSelectedSpecies(speciesName);
+    setShowConfirmDialog(true);
+  };
+
+  const handleConfirmEdit = () => {
+    console.log('[TAXONOMIC TREE] Confirm edit clicked for:', selectedSpecies);
+    console.log('[TAXONOMIC TREE] Has onSpeciesClick callback:', !!onSpeciesClick);
+    if (selectedSpecies && onSpeciesClick) {
+      console.log('[TAXONOMIC TREE] Calling onSpeciesClick with:', selectedSpecies);
+      onSpeciesClick(selectedSpecies);
+    }
+    setShowConfirmDialog(false);
+    setSelectedSpecies(null);
+  };
+
+  // Filter tree based on search query
+  const filteredTree = useMemo(() => {
+    if (!searchQuery.trim()) return tree;
+
+    // Recursive filter function
+    function filterNode(node: TreeNode): TreeNode | null {
+      // Check if current node matches
+      const nameMatches = node.name.toLowerCase().includes(searchQuery.toLowerCase());
+
+      // Check if any children match
+      const filteredChildren = node.children
+        .map(child => filterNode(child))
+        .filter((child): child is TreeNode => child !== null);
+
+      // Include this node if it matches or has matching children
+      if (nameMatches || filteredChildren.length > 0) {
+        return {
+          ...node,
+          children: filteredChildren,
+          speciesCount: filteredChildren.reduce((sum, child) => sum + child.speciesCount, 0)
+        };
+      }
+
+      return null;
+    }
+
+    const filtered = filterNode(tree);
+    return filtered || tree;
+  }, [tree, searchQuery]);
+
+  return (
+    <div
+      className="flex flex-col gap-3 bg-white border rounded-md"
+      style={{ minHeight: `${containerHeight}px` }}
+    >
+      {/* Header with Search */}
+      <div className="p-3 border-b bg-gray-50">
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <input
+              type="text"
+              placeholder="Search species or taxonomic groups..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="text-sm text-gray-600">
+            <span className="font-semibold">{filteredTree.speciesCount}</span> species
+          </div>
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center gap-4 mt-3 text-xs text-gray-600">
+          <div className="flex items-center gap-1">
+            <span className="w-4 h-4 rounded" style={{ backgroundColor: getRankColor('kingdom') }}></span>
+            <span>Kingdom</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="w-4 h-4 rounded" style={{ backgroundColor: getRankColor('phylum') }}></span>
+            <span>Phylum</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="w-4 h-4 rounded" style={{ backgroundColor: getRankColor('class') }}></span>
+            <span>Class</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="w-4 h-4 rounded" style={{ backgroundColor: getRankColor('order') }}></span>
+            <span>Order</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="w-4 h-4 rounded" style={{ backgroundColor: getRankColor('family') }}></span>
+            <span>Family</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="w-4 h-4 rounded" style={{ backgroundColor: getRankColor('genus') }}></span>
+            <span>Genus</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="w-4 h-4 rounded" style={{ backgroundColor: getRankColor('species') }}></span>
+            <span>Species</span>
+          </div>
+        </div>
+
+        {/* Confidence Legend */}
+        <div className="flex items-center gap-4 mt-2 text-xs text-gray-600 border-t pt-2">
+          <span className="font-medium">Taxonomy Confidence:</span>
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+            <span>High</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+            <span>Medium</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full bg-red-500"></div>
+            <span>Low</span>
+          </div>
+        </div>
+
+        {/* Clickable Species Legend */}
+        <div className="flex items-center gap-2 mt-2 text-xs text-gray-600 border-t pt-2">
+          <span className="font-medium">Species:</span>
+          <span className="text-gray-700">All species names are clickable to edit in raw CSV viewer</span>
+        </div>
+        <div className="flex items-center gap-2 mt-1 text-xs text-gray-600">
+          <span className="font-medium">Unrecognized:</span>
+          <span className="underline decoration-orange-500 decoration-2">Species name</span>
+          <span className="text-gray-500">- Not found in WoRMS/GBIF database</span>
+        </div>
+      </div>
+
+      {/* Tree Container */}
+      <div className="flex-1 px-3 pb-3">
+        {filteredTree.children.length > 0 ? (
+          filteredTree.children.map((child, index) => (
+            <TreeNodeComponent
+              key={`${child.name}-${child.rank}-${index}`}
+              node={child}
+              level={0}
+              onSpeciesClick={handleSpeciesClick}
+            />
+          ))
+        ) : (
+          <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+            No species found matching "{searchQuery}"
+          </div>
+        )}
+      </div>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Species Name?</DialogTitle>
+            <DialogDescription>
+              Do you want to edit the species name "{selectedSpecies}" in the raw CSV file?
+              This will open the CSV editor where you can correct the species name and re-validate against the WoRMS database.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowConfirmDialog(false);
+                setSelectedSpecies(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmEdit}>
+              Open Editor
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
