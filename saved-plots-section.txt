@@ -1,0 +1,112 @@
+
+        {/* Saved Plots Section */}
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2 pt-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-1.5 font-futura">
+                  <Bookmark className="h-4 w-4 text-primary" />
+                  Saved Plots
+                </CardTitle>
+                <p className="text-xs text-muted-foreground pebl-body-main">
+                  Quick access to your saved plot configurations
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSavedPlots(!showSavedPlots)}
+                className="h-8 px-3 text-xs"
+              >
+                {showSavedPlots ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
+                {showSavedPlots ? 'Hide' : 'Show'}
+              </Button>
+            </div>
+          </CardHeader>
+          {showSavedPlots && (
+            <CardContent className="p-3">
+              {isLoadingActiveProject ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
+                  <span className="text-sm text-muted-foreground">Loading saved plots...</span>
+                </div>
+              ) : !activeProjectId ? (
+                <div className="text-center py-8">
+                  <Info className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">No project selected</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Visit the map-drawing page to create and manage projects
+                  </p>
+                </div>
+              ) : savedPlots.length === 0 ? (
+                <div className="text-center py-8">
+                  <FolderOpen className="h-8 w-8 mx-auto mb-2 text-muted-foreground opacity-50" />
+                  <p className="text-sm font-medium text-muted-foreground">No saved plots yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Save plot configurations from the map-drawing page to see them here
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs text-muted-foreground">
+                      {savedPlots.length} saved {savedPlots.length === 1 ? 'plot' : 'plots'} available
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowLoadPlotViewDialog(true)}
+                      className="h-7 text-xs"
+                    >
+                      <Eye className="h-3 w-3 mr-1.5" />
+                      View All
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {savedPlots.slice(0, 6).map((plot) => (
+                      <Card key={plot.id} className="hover:bg-accent/50 transition-colors cursor-pointer">
+                        <CardContent className="p-3">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-sm font-medium truncate" title={plot.name}>
+                                {plot.name}
+                              </h4>
+                              {plot.description && (
+                                <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                                  {plot.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="text-xs text-muted-foreground">
+                              {plot.view_config.metadata.totalPlots} {plot.view_config.metadata.totalPlots === 1 ? 'plot' : 'plots'}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setShowLoadPlotViewDialog(true)}
+                              className="h-6 text-xs"
+                            >
+                              Load
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  {savedPlots.length > 6 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowLoadPlotViewDialog(true)}
+                      className="w-full h-8 text-xs mt-2"
+                    >
+                      View {savedPlots.length - 6} more saved {savedPlots.length - 6 === 1 ? 'plot' : 'plots'}
+                    </Button>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          )}
+        </Card>

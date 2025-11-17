@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useRef, useCallback, useMemo, useEffect, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -15,9 +15,11 @@ import { PlotTypeSelector } from "./PlotTypeSelector";
 import { MergeRulesDialog, DEFAULT_MERGE_RULES, type MergeRule } from "./MergeRulesDialog";
 import { SavePlotViewDialog } from "./SavePlotViewDialog";
 import { LoadPlotViewDialog } from "./LoadPlotViewDialog";
+import { PresenceAbsenceDialog, type PresenceAbsenceResult } from "./PresenceAbsenceDialog";
+import { PresenceAbsenceTable } from "./PresenceAbsenceTable";
 import { parseISO, isValid, formatISO, format } from 'date-fns';
 import { useToast } from "@/hooks/use-toast";
-import type { ParseResult } from "./csvParser";
+import { parseHaplotypeCsv, type ParseResult, type HaplotypeParseResult } from "./csvParser";
 import type { CombinedDataPoint } from "@/app/om-marine-explorer/shared";
 import type { SavedPlotViewConfig, SavedPlotView, PlotViewValidationResult } from "@/lib/supabase/plot-view-types";
 import type { PinFile } from "@/lib/supabase/file-storage-service";
@@ -61,7 +63,7 @@ interface MergedParameterConfig {
 interface PlotConfig {
   id: string;
   title: string;
-  type: 'device' | 'marine-meteo';
+  type: 'device' | 'marine-meteo' | 'presence-absence';
   // For device plots
   fileType?: 'GP' | 'FPOD' | 'Subcam';
   files?: File[];
@@ -88,6 +90,8 @@ interface PlotConfig {
     direction?: '1-2' | '2-1'; // For subtraction
     missingDataMode?: 'skip' | 'zero'; // How to handle missing data
   };
+  // For presence-absence plots
+  presenceAbsenceData?: any; // Will be imported from PresenceAbsenceDialog
 }
 
 interface PinFile {
@@ -140,12 +144,13 @@ interface PinMarineDeviceDataProps {
   initialViewToLoad?: string; // Plot view ID to auto-load on mount
 }
 
-export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, multiFileMergeMode = 'sequential', objectLocation, objectName, allProjectFilesForTimeline, getFileDateRange, projectId, onRefreshFiles, availableProjects, initialViewToLoad }: PinMarineDeviceDataProps) {
+function PinMarineDeviceData({ fileType, files, onRequestFileSelection, availableFiles, onDownloadFile, multiFileMergeMode = 'sequential', objectLocation, objectName, allProjectFilesForTimeline, getFileDateRange, projectId, onRefreshFiles, availableProjects, initialViewToLoad }: PinMarineDeviceDataProps) {
   const { toast } = useToast();
 
   // State for managing plots with file data
   const [plots, setPlots] = useState<PlotConfig[]>([]);
   const plotsInitialized = useRef(false);
+  const autoLoadInProgress = useRef(false);
   const [showFileSelector, setShowFileSelector] = useState(false);
   const [showPlotTypeSelector, setShowPlotTypeSelector] = useState(false);
 
@@ -213,6 +218,10 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   const [showSavePlotViewDialog, setShowSavePlotViewDialog] = useState(false);
   const [showLoadPlotViewDialog, setShowLoadPlotViewDialog] = useState(false);
   const [serializedViewConfig, setSerializedViewConfig] = useState<SavedPlotViewConfig | null>(null);
+
+  // Presence-Absence dialog state
+  const [showPresenceAbsenceDialog, setShowPresenceAbsenceDialog] = useState(false);
+  const [presenceAbsenceFiles, setPresenceAbsenceFiles] = useState<Array<{ fileName: string; parsedData: HaplotypeParseResult; selected: boolean }>>([]);
 
   // Merge rule toggle handler
   const handleMergeRuleToggle = useCallback((suffix: string, enabled: boolean) => {
@@ -312,40 +321,41 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     // Get parameter names (excluding time)
     const params = data.headers.filter(h => h !== 'time');
 
-    // Find the time range where BOTH parameters have non-zero/non-null values
+    // Find the time range where ANY parameter has non-zero/non-null values
+    // Changed from .every() to .some() to show full time range in merged plots
     let startIdx = -1;
     let endIdx = -1;
 
-    // Find first row where both parameters have values
+    // Find first row where at least one parameter has a value
     for (let i = 0; i < aggregatedData.length; i++) {
       const row = aggregatedData[i];
-      const hasAllParams = params.every(param => {
+      const hasAnyParam = params.some(param => {
         const val = row[param];
         return val !== null && val !== undefined && val !== 0 && !isNaN(Number(val));
       });
-      if (hasAllParams) {
+      if (hasAnyParam) {
         startIdx = i;
         break;
       }
     }
 
-    // Find last row where both parameters have values
+    // Find last row where at least one parameter has a value
     for (let i = aggregatedData.length - 1; i >= 0; i--) {
       const row = aggregatedData[i];
-      const hasAllParams = params.every(param => {
+      const hasAnyParam = params.some(param => {
         const val = row[param];
         return val !== null && val !== undefined && val !== 0 && !isNaN(Number(val));
       });
-      if (hasAllParams) {
+      if (hasAnyParam) {
         endIdx = i;
         break;
       }
     }
 
-    // Trim the data to only include the range where both parameters exist
+    // Trim the data to only remove completely empty edges
     const trimmedData = (startIdx >= 0 && endIdx >= startIdx)
       ? aggregatedData.slice(startIdx, endIdx + 1)
-      : aggregatedData; // Keep all data if we couldn't find overlap
+      : aggregatedData; // Keep all data if we couldn't find any valid data
 
     console.log('⏱️ Time rounding applied:', {
       interval,
@@ -1105,17 +1115,17 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
   useEffect(() => {
     const checkForPendingPlotLoad = async () => {
       try {
-        // console.log('🔍 [PINMARINEDEVICEDATA] useEffect triggered - checking for pending plot load');
-        // console.log('🔍 [PINMARINEDEVICEDATA] Current state:', {
-        //   projectId: projectId || 'NOT SET',
-        //   fileType,
-        //   filesLength: files.length,
-        //   hasRestoreFunction: !!restorePlotViewState
-        // });
+        console.log('🔍 [PINMARINEDEVICEDATA] useEffect triggered - checking for pending plot load');
+        console.log('🔍 [PINMARINEDEVICEDATA] Current state:', {
+          projectId: projectId || 'NOT SET',
+          fileType,
+          filesLength: files.length,
+          hasRestoreFunction: !!restorePlotViewState
+        });
 
         const storedData = sessionStorage.getItem('pebl-load-plot-view');
         if (!storedData) {
-          // console.log('ℹ️ [PINMARINEDEVICEDATA] No pending plot load in sessionStorage');
+          console.log('ℹ️ [PINMARINEDEVICEDATA] No pending plot load in sessionStorage');
           return;
         }
 
@@ -1144,6 +1154,10 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         sessionStorage.removeItem('pebl-load-plot-view');
         console.log('🗑️ [PINMARINEDEVICEDATA] Cleared sessionStorage to prevent duplicate loads');
 
+        // Set ref to prevent initialization useEffect from adding empty plot
+        autoLoadInProgress.current = true;
+        console.log('🚀 [PINMARINEDEVICEDATA] Set autoLoadInProgress = true');
+
         if (!projectId) {
           console.error('❌ [PINMARINEDEVICEDATA] Cannot auto-load plot: No projectId available');
           console.error('❌ [PINMARINEDEVICEDATA] projectId is:', projectId);
@@ -1152,6 +1166,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             title: "Cannot Load Plot",
             description: "Project context not available"
           });
+          autoLoadInProgress.current = false;
           return;
         }
 
@@ -1179,6 +1194,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             title: "Failed to Load Plot",
             description: loadResult.error || "Could not load the saved plot"
           });
+          autoLoadInProgress.current = false;
           return;
         }
 
@@ -1206,6 +1222,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             title: "Cannot Load Plot",
             description: "This plot references files that are no longer available"
           });
+          autoLoadInProgress.current = false;
           return;
         }
 
@@ -1215,6 +1232,11 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         await restorePlotViewState(loadResult.data, validation);
 
         console.log('✅ [PINMARINEDEVICEDATA] Plot view restoration complete!');
+
+        // Reset auto-load flag after successful restoration
+        autoLoadInProgress.current = false;
+        plotsInitialized.current = true; // Mark plots as initialized to prevent empty plot creation
+        console.log('✅ [PINMARINEDEVICEDATA] Reset autoLoadInProgress = false and plotsInitialized = true');
 
       } catch (error) {
         console.error('❌ [PINMARINEDEVICEDATA] Error auto-loading plot view:', error);
@@ -1226,6 +1248,9 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         });
         // Clear the flag on error
         sessionStorage.removeItem('pebl-load-plot-view');
+        // Reset auto-load flag after error
+        autoLoadInProgress.current = false;
+        console.log('❌ [PINMARINEDEVICEDATA] Reset autoLoadInProgress = false (error)');
       }
     };
 
@@ -1372,7 +1397,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
 
       // Recreate the subtraction computation
       const { param1, param2 } = computationParams;
-      const { direction = '1-2', missingDataMode = 'skip' } = computationConfig || {};
+      const { direction = '1-2', missingDataMode = 'skip', includeZeroValues = false } = computationConfig || {};
 
       // Helper to find data key
       const findDataKey = (dataPoint: any, paramName: string): string | null => {
@@ -1420,7 +1445,14 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         let resultValue: number | null = null;
 
         if (val1 !== undefined && val2 !== undefined) {
-          resultValue = direction === '1-2' ? val1 - val2 : val2 - val1;
+          // Check if we should show zero for points where one value is zero
+          if (!includeZeroValues && (val1 === 0 || val2 === 0)) {
+            // Show as zero instead of skipping - preserves timeline
+            resultValue = 0;
+          } else {
+            // Calculate actual difference
+            resultValue = direction === '1-2' ? val1 - val2 : val2 - val1;
+          }
         } else if (missingDataMode === 'zero') {
           const useVal1 = val1 ?? 0;
           const useVal2 = val2 ?? 0;
@@ -1550,6 +1582,15 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     // e.g., "Porpoise clicks [Station A]" and "Porpoise clicks [Station B]" should match
     return firstBaseParam === secondBaseParam;
   }, [plots, plotVisibilityState, getBaseParameterName]);
+
+  // Check if presence-absence table can be created (2+ HAPL/NMAX files)
+  const canCreatePresenceAbsence = useMemo(() => {
+    const haplFiles = plots.filter(plot =>
+      plot.type === 'device' &&
+      plot.fileName?.toLowerCase().match(/_hapl|_nmax/i)
+    );
+    return haplFiles.length >= 2;
+  }, [plots]);
 
   // Handler for merging first 2 plots
   const handleMergePlots = useCallback(() => {
@@ -1690,9 +1731,10 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     const source1Label = getSourceLabel(firstPlot);
     const source2Label = getSourceLabel(secondPlot);
 
-    // Create parameter names with source labels
-    const param1WithSource = `${param1} [${source1Label}]`;
-    const param2WithSource = `${param2} [${source2Label}]`;
+    // Create parameter names with source labels and plot numbers to ensure uniqueness
+    // Even if both parameters have the same name, adding " 1" and " 2" prevents key collision
+    const param1WithSource = `${param1} [${source1Label}] 1`;
+    const param2WithSource = `${param2} [${source2Label}] 2`;
 
     console.log('🏷️ Parameter labels with source:', {
       param1,
@@ -1708,28 +1750,72 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
 
     // Build maps: time -> value for each parameter
     const leftMap = new Map<string, any>();
+    let leftSkipped = 0;
     firstPlotData.data.forEach(point => {
       const value = point[actualParam1Key];
       if (value !== null && value !== undefined && !isNaN(Number(value))) {
         leftMap.set(normalizeTimeToISO(point.time), value);
+      } else {
+        leftSkipped++;
       }
     });
 
     const rightMap = new Map<string, any>();
+    let rightSkipped = 0;
     secondPlotData.data.forEach(point => {
       const value = point[actualParam2Key];
       if (value !== null && value !== undefined && !isNaN(Number(value))) {
         rightMap.set(normalizeTimeToISO(point.time), value);
+      } else {
+        rightSkipped++;
       }
     });
 
+    console.log('🗺️ MAP POPULATION DEBUG:', {
+      leftMapSize: leftMap.size,
+      rightMapSize: rightMap.size,
+      leftSkipped,
+      rightSkipped,
+      leftTotalPoints: firstPlotData.data.length,
+      rightTotalPoints: secondPlotData.data.length,
+      sampleLeftPoint: firstPlotData.data[0],
+      sampleRightPoint: secondPlotData.data[0],
+      actualParam1Key,
+      actualParam2Key,
+      sampleLeftValue: firstPlotData.data[0]?.[actualParam1Key],
+      sampleRightValue: secondPlotData.data[0]?.[actualParam2Key],
+      leftDataKeys: Object.keys(firstPlotData.data[0] || {}),
+      rightDataKeys: Object.keys(secondPlotData.data[0] || {})
+    });
+
     // Get UNION of all timestamps (sorted)
+    const leftKeys = Array.from(leftMap.keys());
+    const rightKeys = Array.from(rightMap.keys());
+
+    console.log('🔍 TIMESTAMP UNION ANALYSIS:', {
+      leftKeysCount: leftKeys.length,
+      rightKeysCount: rightKeys.length,
+      sampleLeftKeys: leftKeys.slice(0, 5),
+      sampleRightKeys: rightKeys.slice(0, 5),
+      leftKeysLast: leftKeys.slice(-5),
+      rightKeysLast: rightKeys.slice(-5),
+      // Check for overlaps
+      firstRightInLeft: leftMap.has(rightKeys[0]),
+      lastRightInLeft: leftMap.has(rightKeys[rightKeys.length - 1])
+    });
+
     const allTimestamps = Array.from(
       new Set([
-        ...Array.from(leftMap.keys()),
-        ...Array.from(rightMap.keys())
+        ...leftKeys,
+        ...rightKeys
       ])
     ).sort();
+
+    console.log('🎯 UNION RESULT:', {
+      totalUniqueTimestamps: allTimestamps.length,
+      expectedIfNoOverlap: leftKeys.length + rightKeys.length,
+      overlapCount: (leftKeys.length + rightKeys.length) - allTimestamps.length
+    });
 
     // Create merged data with each timestamp having values from both maps (or null)
     const mergedData = allTimestamps.map(time => ({
@@ -2188,6 +2274,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       computationConfig: {
         direction: subtractDirection,
         missingDataMode: subtractMissingDataMode,
+        includeZeroValues: false, // Default: exclude zero values
       },
     };
 
@@ -2197,15 +2284,55 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     // Force common mode for subtracted plots
     setTimeAxisMode('common');
 
+    // Initialize visibility state with default 1-day moving average for _diff_std plots
+    if (bothAreStd) {
+      console.log('📊 [SUBTRACT] Initializing _diff_std plot with 1-day moving average default');
+      setPlotVisibilityState(prev => ({
+        ...prev,
+        [subtractedPlot.id]: {
+          params: [resultParamName], // Make the difference parameter visible by default
+          colors: {
+            [resultParamName]: '#3b82f6' // Default blue color
+          },
+          settings: {
+            [resultParamName]: {
+              movingAverage: {
+                enabled: true,
+                windowDays: 1,
+                showLine: true
+              }
+            }
+          }
+        }
+      }));
+    }
+
     // Close preview
     setShowSubtractPreview(false);
     setSubtractPreviewData(null);
 
     toast({
       title: "Subtraction Complete",
-      description: `Created plot: ${resultParamName}`
+      description: `Created plot: ${resultParamName}${bothAreStd ? ' (1-day MA enabled)' : ''}`
     });
   }, [subtractPreviewData, plots, plotVisibilityState, subtractDirection, subtractMissingDataMode, toast]);
+
+  // Handler for updating includeZeroValues setting for subtracted plots
+  const handleIncludeZeroValuesChange = useCallback((plotId: string, include: boolean) => {
+    setPlots(prevPlots => prevPlots.map(plot => {
+      if (plot.id === plotId && plot.computationType === 'subtract' && plot.computationConfig) {
+        console.log(`🔄 [SUBTRACT] Updating includeZeroValues for plot "${plot.title}" to:`, include);
+        return {
+          ...plot,
+          computationConfig: {
+            ...plot.computationConfig,
+            includeZeroValues: include
+          }
+        };
+      }
+      return plot;
+    }));
+  }, []);
 
   // Handler for adding marine/meteo plot
   const handleAddMarineMeteoPlot = useCallback(() => {
@@ -2247,7 +2374,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       toast({
         variant: "destructive",
         title: "Cannot Add Marine/Meteo Data",
-        description: "Could not extract time range from first plot."
+        description: "Could not extract time range from first plot. Haplotype files don't have time data."
       });
       return;
     }
@@ -2300,10 +2427,86 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     });
   }, [plots, toast]);
 
+  // Handler for presence-absence table creation
+  const handlePresenceAbsenceClick = useCallback(async () => {
+    // Get all HAPL/NMAX plots
+    const haplPlots = plots.filter(plot =>
+      plot.type === 'device' &&
+      plot.fileName?.toLowerCase().match(/_hapl|_nmax/i)
+    );
+
+    if (haplPlots.length < 2) {
+      toast({
+        variant: "destructive",
+        title: "Not Enough Files",
+        description: "You need at least 2 HAPL or NMAX files to create a presence-absence table."
+      });
+      return;
+    }
+
+    // Parse each file to get species data
+    const filesWithData: Array<{ fileName: string; parsedData: HaplotypeParseResult; selected: boolean }> = [];
+
+    for (const plot of haplPlots) {
+      if (plot.files && plot.files.length > 0) {
+        try {
+          const parsedData = await parseHaplotypeCsv(plot.files[0]);
+          filesWithData.push({
+            fileName: plot.fileName || plot.files[0].name,
+            parsedData: parsedData,
+            selected: true // All selected by default
+          });
+        } catch (error) {
+          console.error(`Failed to parse ${plot.fileName}:`, error);
+        }
+      }
+    }
+
+    if (filesWithData.length < 2) {
+      toast({
+        variant: "destructive",
+        title: "Parsing Error",
+        description: "Could not parse enough files to create a presence-absence table."
+      });
+      return;
+    }
+
+    setPresenceAbsenceFiles(filesWithData);
+    setShowPresenceAbsenceDialog(true);
+    setShowPlotTypeSelector(false);
+  }, [plots, toast]);
+
+  // Handler for confirming presence-absence table
+  const handleConfirmPresenceAbsence = useCallback((result: PresenceAbsenceResult) => {
+    // Create a new plot with the presence-absence data
+    const newPlot: PlotConfig = {
+      id: `presence-absence-${Date.now()}`,
+      title: `Presence-Absence (${result.fileCount} files)`,
+      type: 'presence-absence',
+      presenceAbsenceData: result
+    };
+
+    setPlots([...plots, newPlot]);
+    setShowPresenceAbsenceDialog(false);
+
+    toast({
+      title: "Presence-Absence Table Created",
+      description: `Comparing ${result.totalSpecies} species across ${result.fileCount} files`
+    });
+  }, [plots, toast]);
+
   // Initialize with one plot for the initially selected files
   // TESTING: Always add an empty plot on mount for quick testing
   React.useEffect(() => {
     if (!plotsInitialized.current && plots.length === 0) {
+      // Check if auto-load is in progress
+      if (autoLoadInProgress.current) {
+        // Don't add empty plot, let the auto-load useEffect handle restoration
+        console.log('⏭️ [INIT] Skipping empty plot initialization - auto-load in progress');
+        plotsInitialized.current = true;
+        return;
+      }
+
       if (files.length > 0) {
         // If files are provided, add a plot with those files
         addPlot('device', files, { fileType, customTitle: getFileName(files) });
@@ -2321,7 +2524,7 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
       }
       plotsInitialized.current = true;
     }
-  }, [addPlot, plots.length, fileType, files]);
+  }, [addPlot, plots.length, fileType, files, getFileName]);
 
   return (
     <div className="h-full flex flex-col">
@@ -2419,6 +2622,22 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                       initialCompactView={plotVisibilityState[plot.id]?.plotSettings?.compactView}
                       initialCustomParameterNames={plotVisibilityState[plot.id]?.plotSettings?.customParameterNames}
                       pinId={plot.pinId}
+                      // Subtracted plot settings
+                      isSubtractedPlot={plot.computationType === 'subtract'}
+                      includeZeroValues={plot.computationConfig?.includeZeroValues ?? false}
+                      onIncludeZeroValuesChange={(include) => handleIncludeZeroValuesChange(plot.id, include)}
+                    />
+                  );
+                }
+
+                // Render presence-absence plot
+                if (plot.type === 'presence-absence' && plot.presenceAbsenceData) {
+                  return (
+                    <PresenceAbsenceTable
+                      key={plot.id}
+                      data={plot.presenceAbsenceData}
+                      plotId={plot.id}
+                      onClose={() => removePlot(plot.id)}
                     />
                   );
                 }
@@ -2453,7 +2672,6 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    console.log('Add Plot clicked, availableFiles:', availableFiles);
                     setShowPlotTypeSelector(true);
                   }}
                   className="gap-2"
@@ -2484,9 +2702,11 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             setShowPlotTypeSelector(false);
           }}
           onSelectCopyPrevious={handleCopyPreviousPlot}
+          onSelectPresenceAbsence={handlePresenceAbsenceClick}
           canMergePlots={canMergePlots}
           canSubtractPlots={canSubtractPlots}
           canCopyPrevious={plots.length > 0}
+          canCreatePresenceAbsence={canCreatePresenceAbsence}
           onCancel={() => setShowPlotTypeSelector(false)}
         />
       )}
@@ -2506,12 +2726,21 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
             console.log('[PinMarineDeviceData] User selected project:', newProjectId);
           }}
           onFileSelected={async (file) => {
+            // Detect file type from filename
+            const lowerFileName = file.fileName.toLowerCase();
+            let detectedFileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+            if (lowerFileName.includes('subcam')) {
+              detectedFileType = 'Subcam';
+            } else if (lowerFileName.includes('fpod')) {
+              detectedFileType = 'FPOD';
+            }
+
             // Map the file to FileOption format for download handling
             const fileOption = {
               pinId: file.pinId || null,
               areaId: file.areaId || null,
               pinName: file.pinLabel,
-              fileType: 'GP' as 'GP' | 'FPOD' | 'Subcam', // Will detect properly from filename
+              fileType: detectedFileType,
               files: [], // No files loaded yet
               fileName: file.fileName,
               metadata: file
@@ -3005,6 +3234,15 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
         />
       )}
 
+      {/* Presence-Absence Dialog */}
+      <PresenceAbsenceDialog
+        open={showPresenceAbsenceDialog}
+        onOpenChange={setShowPresenceAbsenceDialog}
+        availableFiles={presenceAbsenceFiles}
+        onConfirm={handleConfirmPresenceAbsence}
+        onCancel={() => setShowPresenceAbsenceDialog(false)}
+      />
+
       {/* Merge Rules Dialog */}
       {multiFileConfirmData && (
         <MergeRulesDialog
@@ -3085,3 +3323,50 @@ export function PinMarineDeviceData({ fileType, files, onRequestFileSelection, a
     </div>
   );
 }
+
+// Custom comparison function for React.memo()
+// Focus on data props that affect rendering
+const arePropsEqual = (prevProps: PinMarineDeviceDataProps, nextProps: PinMarineDeviceDataProps): boolean => {
+  // Check file-related props
+  if (prevProps.fileType !== nextProps.fileType ||
+      prevProps.files !== nextProps.files ||
+      prevProps.availableFiles !== nextProps.availableFiles) {
+    return false;
+  }
+
+  // Check location props
+  if (prevProps.objectLocation?.lat !== nextProps.objectLocation?.lat ||
+      prevProps.objectLocation?.lon !== nextProps.objectLocation?.lon ||
+      prevProps.objectName !== nextProps.objectName) {
+    return false;
+  }
+
+  // Check project props
+  if (prevProps.projectId !== nextProps.projectId ||
+      prevProps.availableProjects !== nextProps.availableProjects) {
+    return false;
+  }
+
+  // Check initial view to load
+  if (prevProps.initialViewToLoad !== nextProps.initialViewToLoad) {
+    return false;
+  }
+
+  // Check merge mode
+  if (prevProps.multiFileMergeMode !== nextProps.multiFileMergeMode) {
+    return false;
+  }
+
+  // Check timeline data (reference equality)
+  if (prevProps.allProjectFilesForTimeline !== nextProps.allProjectFilesForTimeline) {
+    return false;
+  }
+
+  // Callbacks are assumed to be memoized in parent
+  // If they change, component should re-render
+
+  return true; // Props are equal, skip re-render
+};
+
+// Export memoized component for better performance (reduces re-renders for large data processing)
+export default memo(PinMarineDeviceData, arePropsEqual);

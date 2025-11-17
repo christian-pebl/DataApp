@@ -154,8 +154,6 @@ class PlotViewService {
         return { success: false, error: 'Authentication required' };
       }
 
-      console.log('📋 Listing plot views for project:', projectId);
-
       const { data, error } = await this.supabase
         .from('saved_plot_views')
         .select('*')
@@ -164,12 +162,11 @@ class PlotViewService {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('❌ Error listing plot views:', error);
+        console.error('Error listing plot views:', error);
         perfLogger.end(`listPlotViews-${projectId.slice(0, 8)}`, 'error');
         return { success: false, error: error.message };
       }
 
-      console.log(`✅ Found ${data.length} plot views`);
       perfLogger.end(`listPlotViews-${projectId.slice(0, 8)}`, `${data.length} views`);
 
       return {

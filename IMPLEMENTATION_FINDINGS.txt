@@ -1,0 +1,273 @@
+PROJECT SETTINGS IMPLEMENTATION - KEY FINDINGS
+
+All functionality in: C:\Users\Christian Abulhawa\DataApp\src\app\map-drawing\page.tsx
+
+==== COG BUTTON LOCATIONS ====
+
+Location 1: Active Project Header (Line 6020-6031)
+- Position: Top-left sidebar, active project section
+- Icon: Settings (h-3 w-3)
+- Trigger: Opens project settings dialog
+- Handler: setCurrentProjectContext + setProjectNameEdit + setShowProjectSettingsDialog(true)
+
+Location 2: Project Menu Items (Line 6408-6420)
+- Position: Within Projects Dropdown menu
+- Icon: Settings (h-3 w-3)
+- Trigger: Opens project settings dialog for selected project
+- Handler: Same pattern as Location 1
+
+Location 3: Projects Dropdown (Lines 6012-6031)
+- Position: Dropdown list area
+- Same implementation as Location 1
+
+==== SETTINGS DIALOG ====
+
+Main Dialog: Lines 8043-8111
+- State: showProjectSettingsDialog
+- Z-Index: z-[9999]
+- Contains:
+  1. Project Name Input (8063-8067) - Currently editable, no save logic
+  2. Delete Project Button (8075-8085) - Opens confirmation dialog
+  3. Cancel Button (8088-8093) - Closes dialog
+  4. Save Changes Button (8094-8106) - Shows "Coming Soon" toast (NEEDS IMPLEMENTATION)
+
+Delete Confirmation Dialog: Lines 8113-8205
+- Warning alert with list of items being deleted
+- Delete logic: Lines 8149-8194
+  - Calls projectService.deleteProject(projectId)
+  - Refreshes projects via loadDynamicProjects()
+  - Shows success/error toast
+
+==== UI GREYING OUT ====
+
+Dialog Modal Behavior:
+- DialogContent has z-[9999] class
+- Automatically creates semi-transparent backdrop
+- Prevents interaction with content below
+- No custom greying implementation needed
+
+Z-Index Stacking:
+- z-[9999]: Dialogs
+- z-[1600]: Sidebar
+- z-[1300]: Data dropdowns
+- z-[1200]: Select dropdowns
+- z-[1000]: Main controls
+- z-[500]: Loading spinner
+
+==== SIDE TAB / SIDEBAR ====
+
+Main Sidebar Panel: Lines 5740-5779
+- Fixed positioning with animation
+- State: showMainMenu (open/close)
+- Width: Dynamic via sidebarWidth state
+- Z-Index: z-[1600]
+- Animation: -translate-x-full (closed) to translate-x-0 (open)
+- Duration: 300ms ease-in-out
+
+Resize Handle: Lines 5757-5766
+- Position: Right edge (-right-1)
+- Cursor: col-resize
+- Handler: handleResizeStart
+
+Collapse Button: Lines 5769-5777
+- Position: Right edge (-right-2.5)
+- Icon: ChevronRight (rotated)
+- Click: setShowMainMenu(false)
+
+==== CURRENTLY SELECTED/FILTERED OBJECTS SECTION ====
+
+Active Project Overview: Lines 5825-6237
+
+This is the sidebar section showing currently selected objects!
+
+Components:
+
+1. Project Header (5926-5952)
+   - Project name
+   - "Active Project" label
+   - Object count: "{total} objects ({pins} pins, {lines} lines, {areas} areas)"
+   - Expandable toggle
+
+2. Action Buttons (5953-6032)
+   - Project Data (Database icon)
+   - Toggle All Labels (Eye/EyeOff icon)
+   - Toggle All Objects (MapPin icon)
+   - Settings (Cog icon)
+
+3. Object Type Filter (6043-6126)
+   - All (default)
+   - Pins (blue dot icon)
+   - Lines (green line icon)
+   - Areas (red square icon)
+
+4. Objects List (6128-6237)
+   - Type indicator (icon)
+   - Object name (clickable to select)
+   - File count badge (if files exist)
+   - Label visibility toggle (Eye/EyeOff)
+   - Visibility toggle (MapPin)
+
+==== OBJECT SELECTION ====
+
+State Variables:
+- selectedObjectId (Line 424) - Which object is selected
+- itemToEdit (Line 928) - Object data for editing
+- objectTypeFilter (Line 425) - Filter: 'all' | 'pin' | 'line' | 'area'
+
+Selection Handler (Line 6160-6164):
+- Click toggles selection
+- Sets selectedObjectId
+- Updates itemToEdit
+- Triggers right panel editor update
+
+Visual Feedback (Line 6145-6149):
+- Selected: bg-accent/20 border border-accent/40
+- Unselected: bg-muted/30
+
+==== PROJECT MENU ====
+
+Menu Toggle (6243-6258):
+- Text: "Project Menu"
+- Icon: FolderOpen
+- State: showProjectsDropdown
+- Click: setShowProjectsDropdown(!showProjectsDropdown)
+
+Projects Dropdown (6261-6447):
+- Shows all projects
+- Active project sorted first
+- Each project shows:
+  - Name
+  - Object count badge
+  - Expand/collapse arrow
+  - Visibility toggle (eye)
+  - Activate button
+  - Project Data button
+  - Settings cog button (6408-6420)
+
+Add New Project (6432-6446):
+- Icon: Plus
+- Click: Opens add project dialog
+
+==== CHECKBOX IMPLEMENTATION ====
+
+1. Parameter Visibility (Line 260-265)
+   - In data parameters section
+   - Toggles plot visibility
+
+2. Label Visibility (Line 5549-5557)
+   - In object editor panel
+   - Shows/hides object label
+   - Property: itemToEdit.labelVisible
+
+3. Fill Visibility (Line 5563-5568)
+   - In object editor panel (areas only)
+   - Shows/hides area fill
+   - Property: itemToEdit.fillVisible
+
+Pattern:
+<Checkbox 
+  id="identifier"
+  checked={condition}
+  onCheckedChange={(checked) => handler()}
+/>
+
+==== RIGHT SIDE OBJECT DETAILS PANEL ====
+
+Location: Lines 4300-5597
+Position: Absolute top-right (top-8 right-4)
+Width: w-72
+Z-Index: Behind sidebar
+
+View Mode (4333-4544):
+- Displays object info
+- Edit button available
+- Share button (pins only)
+
+Edit Mode (5380-5596):
+- Label field
+- Notes textarea
+- Coordinates editor (Lat/Lng)
+- Color picker (12 presets + custom)
+- Size selector
+- Transparency (areas)
+- Visibility checkboxes
+- Save/Cancel buttons
+
+==== STATE DECLARATIONS ====
+
+Line 418: showMainMenu
+Line 421: showProjectInfo
+Line 424: selectedObjectId
+Line 425: objectTypeFilter
+Line 426: sidebarWidth
+Line 427: originalSidebarWidth
+Line 428: isResizing
+Line 661: showProjectSettingsDialog
+Line 662: projectNameEdit
+Line 663: showDeleteConfirmDialog
+Line 664: currentProjectContext
+Line 928: itemToEdit
+
+==== KEY PATTERNS ====
+
+1. Dialog Pattern:
+   - State controls visibility
+   - onOpenChange manages state
+   - z-[9999] for stacking
+   - DialogContent for styling
+
+2. Sidebar Pattern:
+   - Fixed position with transform animation
+   - Dynamic width via state
+   - Resizable from right edge
+   - Z-index below dialogs
+
+3. Selection Pattern:
+   - selectedObjectId for highlighting
+   - itemToEdit for data/editing
+   - Visual feedback with accent colors
+   - Single select mode
+
+4. Filter Pattern:
+   - objectTypeFilter state
+   - Filter buttons change styling
+   - List filtered before rendering
+
+==== WHAT'S IMPLEMENTED ====
+
+✓ Cog button shows settings dialog
+✓ Settings dialog opens and closes
+✓ Delete project confirmation dialog works
+✓ Delete project logic executes
+✓ Sidebar opens/closes with animation
+✓ Sidebar resizable
+✓ Object list displays
+✓ Object selection and highlighting
+✓ Type filtering (All/Pins/Lines/Areas)
+✓ Label/visibility toggles
+✓ Project menu displays all projects
+✓ Right panel editor shows object details
+✓ Checkboxes for visibility toggles
+
+==== WHAT'S TODO ====
+
+✗ Project rename functionality (Line 8097-8100)
+  - Input field exists (8063-8067)
+  - Save button shows "Coming Soon"
+  - Need to:
+    1. Add validation
+    2. Call update function
+    3. Refresh project list
+    4. Handle errors
+
+==== REFERENCE FILES CREATED ====
+
+1. PROJECT_SETTINGS_IMPLEMENTATION_GUIDE.md
+   - Complete implementation guide
+   - All details and patterns
+   - Line numbers and code snippets
+
+2. PROJECT_SETTINGS_QUICK_REFERENCE.txt
+   - Quick line-by-line reference
+   - Fast lookup of locations
+

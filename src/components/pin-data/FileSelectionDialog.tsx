@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { DataTimeline } from './DataTimeline';
 import { type PinFile } from '@/lib/supabase/file-storage-service';
 import { fileStorageService } from '@/lib/supabase/file-storage-service';
+import { mergedFilesService } from '@/lib/supabase/merged-files-service';
 import { projectService } from '@/lib/supabase/project-service';
 import { pinAreaService } from '@/lib/supabase/pin-area-service';
 import { type Project, type Pin, type Area } from '@/lib/supabase/types';
@@ -83,11 +84,37 @@ export function FileSelectionDialog({
       // Get pins and areas for labels
       const { pins, areas } = await pinAreaService.getProjectObjects(projectId);
 
-      // Get all files for the project
+      // Get all regular files for the project
       const files = await fileStorageService.getProjectFiles(projectId);
 
+      // Get all merged files for the project
+      const mergedFilesResult = await mergedFilesService.getMergedFilesByProject(projectId);
+      const mergedFiles = mergedFilesResult.success ? mergedFilesResult.data || [] : [];
+
+      console.log(`[FileSelectionDialog] Loaded ${files.length} regular files and ${mergedFiles.length} merged files`);
+
+      // Convert merged files to PinFile format
+      const mergedFilesAsPinFiles = mergedFiles.map(mf => ({
+        id: mf.id,
+        pinId: mf.pinId,
+        areaId: null,
+        fileName: mf.fileName,
+        filePath: mf.filePath,
+        fileSize: mf.fileSize,
+        fileType: mf.fileType,
+        projectId: mf.projectId,
+        uploadedAt: new Date(mf.createdAt),
+        startDate: mf.startDate ? new Date(mf.startDate) : undefined,
+        endDate: mf.endDate ? new Date(mf.endDate) : undefined,
+        isDiscrete: false,
+        uniqueDates: undefined
+      }));
+
+      // Combine regular files and merged files
+      const allFiles = [...files, ...mergedFilesAsPinFiles];
+
       // Enrich with labels
-      const filesWithLabels = files.map(file => {
+      const filesWithLabels = allFiles.map(file => {
         let label = 'Unknown';
         if (file.pinId) {
           const pin = pins.find(p => p.id === file.pinId);

@@ -54,6 +54,7 @@
     "lucide-react": "^0.475.0",
     "next": "15.2.3",
     "node-fetch": "^3.3.2",
+    "openai": "^6.8.1",
     "papaparse": "^5.5.3",
     "pg": "^8.16.3",
     "react": "^18.3.1",
@@ -83,5 +84,22 @@
     "svgo": "^4.0.0",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
-  }
+  },
+  "description": "This is a NextJS starter in Firebase Studio.",
+  "main": "add-rls-policies.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/christian-pebl/DataApp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/christian-pebl/DataApp/issues"
+  },
+  "homepage": "https://github.com/christian-pebl/DataApp#readme"
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Palette, Info, Settings } from "lucide-react";
+import { Palette, Info, Settings, Check, X } from "lucide-react";
 
 // Define the styling properties for each rule
 export interface StyleProperties {
@@ -36,8 +36,11 @@ export interface StyleProperties {
   xAxisTitleFontSize?: number; // Font size for X-axis title (default: 14 = 0.875rem)
   yAxisMultiLine?: boolean; // Enable multi-line y-axis titles (splits long titles at halfway point)
   yAxisMultiLineWordThreshold?: number; // Minimum number of words before splitting (default: 3)
+  leftYAxisTitleOffset?: number; // Horizontal offset for left Y-axis title in multi-axis mode (default: 0, in px)
+  rightYAxisTitleOffset?: number; // Horizontal offset for right Y-axis title in multi-axis mode (default: 0, in px)
   heatmapRowHeight?: number; // Height of each row in heatmap view (default: 35, in px)
   heatmapCellWidth?: number; // Width of each cell in heatmap view (default: 85, in px)
+  heatmapMaxValue?: number; // Maximum value for color scale saturation (default: auto-detect from data)
 
   // Parameter-level styling properties
   defaultLineStyle?: 'solid' | 'dashed' | 'dotted'; // Line style for parameters (default: solid)
@@ -222,6 +225,8 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
       yAxisWidth: 80,
       yAxisMultiLine: true, // Enable multi-line Y-axis titles
       yAxisMultiLineWordThreshold: 3, // Split titles with 3+ words
+      leftYAxisTitleOffset: 0, // Default left Y-axis title offset in multi-axis mode
+      rightYAxisTitleOffset: 0, // Default right Y-axis title offset in multi-axis mode
       plotToParametersGap: 12,
       chartRightMargin: 12,
       xAxisTitlePosition: 20,
@@ -229,7 +234,7 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
       chartBottomMargin: 10,
       chartHeight: 208,
       xAxisTitleFontSize: 10,
-      heatmapRowHeight: 35 // Default heatmap row height in pixels
+      heatmapRowHeight: 15 // Default heatmap row height in pixels (compact for nmax files)
     }
   },
   // Spot-sample / Discrete sampling files styling (CROP, CHEM, WQ, EDNA)
@@ -567,6 +572,129 @@ interface StylingRulesDialogProps {
   onSampleColorChange?: (sampleId: string, color: string) => void; // Callback when sample color changes
 }
 
+// Editable numeric value component for slider labels
+interface EditableNumericLabelProps {
+  value: number;
+  unit?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  onChange: (value: number) => void;
+  className?: string;
+}
+
+function EditableNumericLabel({ value, unit = 'px', min, max, step = 1, onChange, className = '' }: EditableNumericLabelProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value.toString());
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setEditValue(value.toString());
+  }, [value]);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  const handleConfirm = () => {
+    const numValue = parseFloat(editValue);
+    if (!isNaN(numValue)) {
+      // Clamp to min/max if provided
+      let clampedValue = numValue;
+      if (min !== undefined && numValue < min) clampedValue = min;
+      if (max !== undefined && numValue > max) clampedValue = max;
+
+      // Round to step if provided
+      if (step && step !== 1) {
+        clampedValue = Math.round(clampedValue / step) * step;
+      }
+
+      onChange(clampedValue);
+      setEditValue(clampedValue.toString());
+    } else {
+      // Reset to current value if invalid
+      setEditValue(value.toString());
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditValue(value.toString());
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleConfirm();
+    } else if (e.key === 'Escape') {
+      handleCancel();
+    }
+  };
+
+  // Prevent blur from closing the editor when clicking confirm/cancel buttons
+  const handleBlur = (e: React.FocusEvent) => {
+    // Check if the blur is due to clicking inside our container
+    if (containerRef.current && containerRef.current.contains(e.relatedTarget as Node)) {
+      return; // Don't close, user is clicking confirm/cancel
+    }
+    // If clicking outside, cancel the edit
+    handleCancel();
+  };
+
+  if (isEditing) {
+    return (
+      <div ref={containerRef} className="relative inline-flex flex-col items-end gap-1">
+        <Input
+          ref={inputRef}
+          type="text"
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+          className={`h-5 w-16 px-1 text-xs text-right ${className}`}
+        />
+        <div className="flex gap-1">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-5 w-5 p-0 hover:bg-green-100 hover:text-green-700"
+            onClick={handleConfirm}
+            title="Confirm (Enter)"
+          >
+            <Check className="h-3 w-3" />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-5 w-5 p-0 hover:bg-red-100 hover:text-red-700"
+            onClick={handleCancel}
+            title="Cancel (Esc)"
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <span
+      onClick={() => setIsEditing(true)}
+      className={`text-xs text-muted-foreground cursor-pointer hover:text-foreground hover:underline ${className}`}
+      title="Click to edit"
+    >
+      {value}{unit}
+    </span>
+  );
+}
+
 export function StylingRulesDialog({
   open,
   onOpenChange,
@@ -597,6 +725,20 @@ export function StylingRulesDialog({
   // Track whether advanced controls are shown
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // Local state for text inputs to make typing responsive
+  const [localXAxisTitle, setLocalXAxisTitle] = useState("");
+  const [localYAxisTitle, setLocalYAxisTitle] = useState("");
+  const [localSecondaryYAxisTitle, setLocalSecondaryYAxisTitle] = useState("");
+
+  // Local state for heatmap max value (pending confirmation)
+  const [localHeatmapMaxValue, setLocalHeatmapMaxValue] = useState<number>(0);
+  const [heatmapMaxValueChanged, setHeatmapMaxValueChanged] = useState(false);
+
+  // Debounce timers
+  const xAxisDebounceTimer = useRef<NodeJS.Timeout | null>(null);
+  const yAxisDebounceTimer = useRef<NodeJS.Timeout | null>(null);
+  const secondaryYAxisDebounceTimer = useRef<NodeJS.Timeout | null>(null);
+
   // Update selected rule when dialog opens or filename changes
   React.useEffect(() => {
     if (open && activeRule) {
@@ -606,12 +748,89 @@ export function StylingRulesDialog({
 
   const selectedRule = styleRules.find(r => r.suffix === selectedRuleSuffix);
 
+  // Initialize local state when selected rule changes
+  useEffect(() => {
+    if (selectedRule) {
+      setLocalXAxisTitle(selectedRule.properties.xAxisTitle || "Time");
+      setLocalYAxisTitle(selectedRule.properties.yAxisTitle || "");
+      setLocalSecondaryYAxisTitle(selectedRule.properties.secondaryYAxis?.title || "");
+      setLocalHeatmapMaxValue(selectedRule.properties.heatmapMaxValue || 0);
+      setHeatmapMaxValueChanged(false); // Reset changed flag when rule changes
+    }
+  }, [selectedRule?.suffix, selectedRule?.properties.xAxisTitle, selectedRule?.properties.yAxisTitle, selectedRule?.properties.secondaryYAxis?.title, selectedRule?.properties.heatmapMaxValue]);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (xAxisDebounceTimer.current) clearTimeout(xAxisDebounceTimer.current);
+      if (yAxisDebounceTimer.current) clearTimeout(yAxisDebounceTimer.current);
+      if (secondaryYAxisDebounceTimer.current) clearTimeout(secondaryYAxisDebounceTimer.current);
+    };
+  }, []);
+
   if (!selectedRule) return <>{children}</>;
 
   // Handler functions for property updates
   const handlePropertyChange = (property: string, value: any) => {
     if (!onStyleRuleUpdate) return;
     onStyleRuleUpdate(selectedRule.suffix, { [property]: value });
+  };
+
+  // Debounced handler for X-axis title
+  const handleXAxisTitleChange = (value: string) => {
+    setLocalXAxisTitle(value); // Update local state immediately for responsive typing
+
+    // Clear existing timer
+    if (xAxisDebounceTimer.current) {
+      clearTimeout(xAxisDebounceTimer.current);
+    }
+
+    // Set new timer to update parent after 300ms of no typing (faster feedback)
+    xAxisDebounceTimer.current = setTimeout(() => {
+      handlePropertyChange('xAxisTitle', value);
+    }, 300);
+  };
+
+  // Debounced handler for Y-axis title
+  const handleYAxisTitleChange = (value: string) => {
+    setLocalYAxisTitle(value); // Update local state immediately for responsive typing
+
+    // Clear existing timer
+    if (yAxisDebounceTimer.current) {
+      clearTimeout(yAxisDebounceTimer.current);
+    }
+
+    // Set new timer to update parent after 300ms of no typing (faster feedback)
+    yAxisDebounceTimer.current = setTimeout(() => {
+      handlePropertyChange('yAxisTitle', value);
+    }, 300);
+  };
+
+  // Handler for heatmap max value change (local state only, requires confirmation)
+  const handleHeatmapMaxValueChange = (value: number) => {
+    setLocalHeatmapMaxValue(value);
+    setHeatmapMaxValueChanged(true);
+  };
+
+  // Handler to confirm and apply heatmap max value
+  const handleConfirmHeatmapMaxValue = () => {
+    handlePropertyChange('heatmapMaxValue', localHeatmapMaxValue);
+    setHeatmapMaxValueChanged(false);
+  };
+
+  // Debounced handler for secondary Y-axis title
+  const handleSecondaryYAxisTitleChange = (value: string) => {
+    setLocalSecondaryYAxisTitle(value); // Update local state immediately for responsive typing
+
+    // Clear existing timer
+    if (secondaryYAxisDebounceTimer.current) {
+      clearTimeout(secondaryYAxisDebounceTimer.current);
+    }
+
+    // Set new timer to update parent after 300ms of no typing (faster feedback)
+    secondaryYAxisDebounceTimer.current = setTimeout(() => {
+      handleSecondaryYAxisChange('title', value);
+    }, 300);
   };
 
   const handleSecondaryYAxisChange = (property: string, value: any) => {
@@ -823,9 +1042,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Gap Between Bars</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.spotSample?.barGap ?? 4}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.spotSample?.barGap ?? 4}
+                          unit="px"
+                          min={0}
+                          max={20}
+                          step={1}
+                          onChange={(value) => handleSpotSamplePropertyChange('barGap', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.spotSample?.barGap ?? 4]}
@@ -841,9 +1065,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Gap Between Categories</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.spotSample?.barCategoryGap ?? 10}%
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.spotSample?.barCategoryGap ?? 10}
+                          unit="%"
+                          min={0}
+                          max={50}
+                          step={5}
+                          onChange={(value) => handleSpotSamplePropertyChange('barCategoryGap', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.spotSample?.barCategoryGap ?? 10]}
@@ -991,9 +1220,14 @@ export function StylingRulesDialog({
                             </TooltipContent>
                           </Tooltip>
                         </div>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.spotSample?.whiskerSpacing ?? 80}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.spotSample?.whiskerSpacing ?? 80}
+                          unit="px"
+                          min={20}
+                          max={200}
+                          step={5}
+                          onChange={(value) => handleSpotSamplePropertyChange('whiskerSpacing', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.spotSample?.whiskerSpacing ?? 80]}
@@ -1009,9 +1243,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Whisker Box Width</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.spotSample?.whiskerBoxWidth ?? 40}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.spotSample?.whiskerBoxWidth ?? 40}
+                          unit="px"
+                          min={10}
+                          max={100}
+                          step={5}
+                          onChange={(value) => handleSpotSamplePropertyChange('whiskerBoxWidth', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.spotSample?.whiskerBoxWidth ?? 40]}
@@ -1029,9 +1268,14 @@ export function StylingRulesDialog({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">Chart Height</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {selectedRule.properties.spotSample?.chartHeight ?? 350}px
-                    </span>
+                    <EditableNumericLabel
+                      value={selectedRule.properties.spotSample?.chartHeight ?? 350}
+                      unit="px"
+                      min={200}
+                      max={800}
+                      step={50}
+                      onChange={(value) => handleSpotSamplePropertyChange('chartHeight', value)}
+                    />
                   </div>
                   <Slider
                     value={[selectedRule.properties.spotSample?.chartHeight ?? 350]}
@@ -1047,9 +1291,14 @@ export function StylingRulesDialog({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">Chart Width</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {selectedRule.properties.spotSample?.chartWidth ? `${selectedRule.properties.spotSample.chartWidth}px` : 'Auto'}
-                    </span>
+                    <EditableNumericLabel
+                      value={selectedRule.properties.spotSample?.chartWidth ?? 400}
+                      unit="px"
+                      min={200}
+                      max={1200}
+                      step={50}
+                      onChange={(value) => handleSpotSamplePropertyChange('chartWidth', value)}
+                    />
                   </div>
                   <Slider
                     value={[selectedRule.properties.spotSample?.chartWidth ?? 400]}
@@ -1065,9 +1314,14 @@ export function StylingRulesDialog({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">Y-Axis Label Font Size</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {selectedRule.properties.spotSample?.yAxisLabelFontSize ?? 12}px
-                    </span>
+                    <EditableNumericLabel
+                      value={selectedRule.properties.spotSample?.yAxisLabelFontSize ?? 12}
+                      unit="px"
+                      min={8}
+                      max={20}
+                      step={1}
+                      onChange={(value) => handleSpotSamplePropertyChange('yAxisLabelFontSize', value)}
+                    />
                   </div>
                   <Slider
                     value={[selectedRule.properties.spotSample?.yAxisLabelFontSize ?? 12]}
@@ -1086,9 +1340,14 @@ export function StylingRulesDialog({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">Y-Axis Title Font Size</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {selectedRule.properties.spotSample?.yAxisTitleFontSize ?? 14}px
-                    </span>
+                    <EditableNumericLabel
+                      value={selectedRule.properties.spotSample?.yAxisTitleFontSize ?? 14}
+                      unit="px"
+                      min={10}
+                      max={24}
+                      step={1}
+                      onChange={(value) => handleSpotSamplePropertyChange('yAxisTitleFontSize', value)}
+                    />
                   </div>
                   <Slider
                     value={[selectedRule.properties.spotSample?.yAxisTitleFontSize ?? 14]}
@@ -1107,9 +1366,14 @@ export function StylingRulesDialog({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">Y-Axis Title Offset</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {selectedRule.properties.spotSample?.yAxisTitleOffset ?? 40}px
-                    </span>
+                    <EditableNumericLabel
+                      value={selectedRule.properties.spotSample?.yAxisTitleOffset ?? 40}
+                      unit="px"
+                      min={0}
+                      max={100}
+                      step={5}
+                      onChange={(value) => handleSpotSamplePropertyChange('yAxisTitleOffset', value)}
+                    />
                   </div>
                   <Slider
                     value={[selectedRule.properties.spotSample?.yAxisTitleOffset ?? 40]}
@@ -1318,9 +1582,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Column Width</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.spotSample?.barSize ?? 40}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.spotSample?.barSize ?? 40}
+                          unit="px"
+                          min={10}
+                          max={100}
+                          step={5}
+                          onChange={(value) => handleSpotSamplePropertyChange('barSize', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.spotSample?.barSize ?? 40]}
@@ -1336,9 +1605,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Gap Between Columns</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.spotSample?.barCategoryGap ?? "10%"}
-                        </span>
+                        <EditableNumericLabel
+                          value={parseInt((selectedRule.properties.spotSample?.barCategoryGap ?? "10%").toString().replace('%', ''))}
+                          unit="%"
+                          min={0}
+                          max={50}
+                          step={5}
+                          onChange={(value) => handleSpotSamplePropertyChange('barCategoryGap', `${value}%`)}
+                        />
                       </div>
                       <Slider
                         value={[parseInt((selectedRule.properties.spotSample?.barCategoryGap ?? "10%").toString().replace('%', ''))]}
@@ -1372,9 +1646,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Whisker Line Width</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.spotSample?.whiskerLineWidth ?? 2}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.spotSample?.whiskerLineWidth ?? 2}
+                          unit="px"
+                          min={1}
+                          max={5}
+                          step={0.5}
+                          onChange={(value) => handleSpotSamplePropertyChange('whiskerLineWidth', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.spotSample?.whiskerLineWidth ?? 2]}
@@ -1390,9 +1669,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Box Border Width</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.spotSample?.whiskerBoxBorderWidth ?? 2}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.spotSample?.whiskerBoxBorderWidth ?? 2}
+                          unit="px"
+                          min={1}
+                          max={5}
+                          step={0.5}
+                          onChange={(value) => handleSpotSamplePropertyChange('whiskerBoxBorderWidth', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.spotSample?.whiskerBoxBorderWidth ?? 2]}
@@ -1408,9 +1692,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Cap Width (% of box)</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.spotSample?.whiskerCapWidth ?? 20}%
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.spotSample?.whiskerCapWidth ?? 20}
+                          unit="%"
+                          min={0}
+                          max={100}
+                          step={5}
+                          onChange={(value) => handleSpotSamplePropertyChange('whiskerCapWidth', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.spotSample?.whiskerCapWidth ?? 20]}
@@ -1426,9 +1715,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">X-Axis Label Rotation</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.spotSample?.xAxisLabelRotation ?? -45}°
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.spotSample?.xAxisLabelRotation ?? -45}
+                          unit="°"
+                          min={-90}
+                          max={90}
+                          step={5}
+                          onChange={(value) => handleSpotSamplePropertyChange('xAxisLabelRotation', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.spotSample?.xAxisLabelRotation ?? -45]}
@@ -1444,9 +1738,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">X-Axis Label Font Size</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.spotSample?.xAxisLabelFontSize ?? 11}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.spotSample?.xAxisLabelFontSize ?? 11}
+                          unit="px"
+                          min={8}
+                          max={20}
+                          step={1}
+                          onChange={(value) => handleSpotSamplePropertyChange('xAxisLabelFontSize', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.spotSample?.xAxisLabelFontSize ?? 11]}
@@ -1521,9 +1820,10 @@ export function StylingRulesDialog({
                 <div className="space-y-1">
                   <Label className="text-xs">X-Axis Title</Label>
                   <Input
-                    value={selectedRule.properties.xAxisTitle || "Time"}
-                    onChange={(e) => handlePropertyChange('xAxisTitle', e.target.value)}
+                    value={localXAxisTitle}
+                    onChange={(e) => handleXAxisTitleChange(e.target.value)}
                     className="h-7 text-xs"
+                    placeholder="Time"
                   />
                 </div>
 
@@ -1531,9 +1831,10 @@ export function StylingRulesDialog({
                 <div className="space-y-1">
                   <Label className="text-xs">Y-Axis Title</Label>
                   <Input
-                    value={selectedRule.properties.yAxisTitle || ""}
-                    onChange={(e) => handlePropertyChange('yAxisTitle', e.target.value)}
+                    value={localYAxisTitle}
+                    onChange={(e) => handleYAxisTitleChange(e.target.value)}
                     className="h-7 text-xs"
+                    placeholder="Parameter name"
                   />
                 </div>
 
@@ -1541,9 +1842,14 @@ export function StylingRulesDialog({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">Chart Height</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {selectedRule.properties.chartHeight || 208}px
-                    </span>
+                    <EditableNumericLabel
+                      value={selectedRule.properties.chartHeight || 208}
+                      unit="px"
+                      min={150}
+                      max={400}
+                      step={10}
+                      onChange={(value) => handlePropertyChange('chartHeight', value)}
+                    />
                   </div>
                   <Slider
                     value={[selectedRule.properties.chartHeight || 208]}
@@ -1559,9 +1865,14 @@ export function StylingRulesDialog({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">Y-Axis Width</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {selectedRule.properties.yAxisWidth || 80}px
-                    </span>
+                    <EditableNumericLabel
+                      value={selectedRule.properties.yAxisWidth || 80}
+                      unit="px"
+                      min={40}
+                      max={150}
+                      step={5}
+                      onChange={(value) => handlePropertyChange('yAxisWidth', value)}
+                    />
                   </div>
                   <Slider
                     value={[selectedRule.properties.yAxisWidth || 80]}
@@ -1572,6 +1883,75 @@ export function StylingRulesDialog({
                     className="w-full"
                   />
                 </div>
+
+                {/* Y-Axis Title Offsets - show only for _nmax files in multi-axis mode */}
+                {selectedRule.suffix === "_nmax.csv" && (
+                  <div className="space-y-3 p-3 bg-muted/30 rounded-md">
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-xs font-semibold">Multi-Axis Y-Axis Title Offsets</Label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs text-xs">
+                          <p>Adjust horizontal position of Y-axis titles when in multi-axis view. Positive values move titles right, negative values move left.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+
+                    {/* Left Y-Axis Title Offset */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Left Y-Axis Title Offset</Label>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.leftYAxisTitleOffset ?? 0}
+                          unit="px"
+                          min={-50}
+                          max={50}
+                          step={2}
+                          onChange={(value) => handlePropertyChange('leftYAxisTitleOffset', value)}
+                        />
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.leftYAxisTitleOffset ?? 0]}
+                        onValueChange={(values) => handlePropertyChange('leftYAxisTitleOffset', values[0])}
+                        min={-50}
+                        max={50}
+                        step={2}
+                        className="w-full"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        Adjusts position of left Y-axis title in multi-axis mode
+                      </p>
+                    </div>
+
+                    {/* Right Y-Axis Title Offset */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Right Y-Axis Title Offset</Label>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.rightYAxisTitleOffset ?? 0}
+                          unit="px"
+                          min={-50}
+                          max={50}
+                          step={2}
+                          onChange={(value) => handlePropertyChange('rightYAxisTitleOffset', value)}
+                        />
+                      </div>
+                      <Slider
+                        value={[selectedRule.properties.rightYAxisTitleOffset ?? 0]}
+                        onValueChange={(values) => handlePropertyChange('rightYAxisTitleOffset', values[0])}
+                        min={-50}
+                        max={50}
+                        step={2}
+                        className="w-full"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        Adjusts position of right Y-axis title in multi-axis mode
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Heatmap Row Height - show for nmax and Hapl files */}
                 {(selectedRule.suffix === "_nmax.csv" || selectedRule.suffix === "_Hapl.csv") && (
@@ -1584,13 +1964,18 @@ export function StylingRulesDialog({
                             <Info className="h-3 w-3 text-muted-foreground cursor-help" />
                           </TooltipTrigger>
                           <TooltipContent side="right" className="max-w-xs text-xs">
-                            <p>Height of each species row in heatmap view (range: -40 to 80px, default: 35px). Use lower values for more compact display.</p>
+                            <p>Height of each species row in heatmap view (range: 10 to 80px, default: 35px). Use lower values for more compact display with smaller text.</p>
                           </TooltipContent>
                         </Tooltip>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {selectedRule.properties.heatmapRowHeight || 35}px
-                      </span>
+                      <EditableNumericLabel
+                        value={selectedRule.properties.heatmapRowHeight || 35}
+                        unit="px"
+                        min={10}
+                        max={80}
+                        step={1}
+                        onChange={(value) => handlePropertyChange('heatmapRowHeight', value)}
+                      />
                     </div>
                     <Slider
                       value={[selectedRule.properties.heatmapRowHeight || 35]}
@@ -1600,6 +1985,56 @@ export function StylingRulesDialog({
                       step={1}
                       className="w-full"
                     />
+                  </div>
+                )}
+
+                {/* Heatmap Max Value - show for nmax files only */}
+                {selectedRule.suffix === "_nmax.csv" && (
+                  <div className="space-y-1.5 p-3 bg-muted/30 rounded-md">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Label className="text-xs font-semibold">Heatmap Max Value</Label>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-xs text-xs">
+                            <p>Maximum value for color scale saturation. Values at or above this threshold will show the darkest color. Leave at 0 to auto-detect from data (default).</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <EditableNumericLabel
+                        value={localHeatmapMaxValue}
+                        unit=""
+                        min={0}
+                        max={1000}
+                        step={10}
+                        onChange={handleHeatmapMaxValueChange}
+                      />
+                    </div>
+                    <Slider
+                      value={[localHeatmapMaxValue]}
+                      onValueChange={(values) => handleHeatmapMaxValueChange(values[0])}
+                      min={0}
+                      max={200}
+                      step={5}
+                      className="w-full"
+                    />
+                    <div className="flex items-center gap-2">
+                      <p className="text-[10px] text-muted-foreground flex-1">
+                        Set to 0 for automatic detection, or specify custom max value for color saturation
+                      </p>
+                      {heatmapMaxValueChanged && (
+                        <Button
+                          size="sm"
+                          variant="default"
+                          className="h-6 px-2 text-[10px]"
+                          onClick={handleConfirmHeatmapMaxValue}
+                        >
+                          Apply
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -1618,9 +2053,14 @@ export function StylingRulesDialog({
                           </TooltipContent>
                         </Tooltip>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {selectedRule.properties.heatmapCellWidth || 85}px
-                      </span>
+                      <EditableNumericLabel
+                        value={selectedRule.properties.heatmapCellWidth || 85}
+                        unit="px"
+                        min={40}
+                        max={150}
+                        step={5}
+                        onChange={(value) => handlePropertyChange('heatmapCellWidth', value)}
+                      />
                     </div>
                     <Slider
                       value={[selectedRule.properties.heatmapCellWidth || 85]}
@@ -1653,9 +2093,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">X-Axis Title Position</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.xAxisTitlePosition ?? 20}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.xAxisTitlePosition ?? 20}
+                          unit="px"
+                          min={0}
+                          max={100}
+                          step={5}
+                          onChange={(value) => handlePropertyChange('xAxisTitlePosition', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.xAxisTitlePosition ?? 20]}
@@ -1671,9 +2116,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">X-Axis Title Font Size</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.xAxisTitleFontSize ?? 10}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.xAxisTitleFontSize ?? 10}
+                          unit="px"
+                          min={8}
+                          max={20}
+                          step={1}
+                          onChange={(value) => handlePropertyChange('xAxisTitleFontSize', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.xAxisTitleFontSize ?? 10]}
@@ -1689,9 +2139,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Chart Right Margin</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.chartRightMargin ?? 80}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.chartRightMargin ?? 80}
+                          unit="px"
+                          min={0}
+                          max={200}
+                          step={10}
+                          onChange={(value) => handlePropertyChange('chartRightMargin', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.chartRightMargin ?? 80]}
@@ -1707,9 +2162,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Chart Bottom Margin</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.chartBottomMargin ?? 10}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.chartBottomMargin ?? 10}
+                          unit="px"
+                          min={0}
+                          max={100}
+                          step={5}
+                          onChange={(value) => handlePropertyChange('chartBottomMargin', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.chartBottomMargin ?? 10]}
@@ -1725,9 +2185,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Plot to Parameters Gap</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.plotToParametersGap ?? 12}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.plotToParametersGap ?? 12}
+                          unit="px"
+                          min={0}
+                          max={50}
+                          step={2}
+                          onChange={(value) => handlePropertyChange('plotToParametersGap', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.plotToParametersGap ?? 12]}
@@ -1761,9 +2226,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Default Opacity</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {(selectedRule.properties.defaultOpacity ?? 1.0).toFixed(1)}
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.defaultOpacity ?? 1.0}
+                          unit=""
+                          min={0.1}
+                          max={1.0}
+                          step={0.1}
+                          onChange={(value) => handlePropertyChange('defaultOpacity', value)}
+                        />
                       </div>
                       <Slider
                         value={[(selectedRule.properties.defaultOpacity ?? 1.0) * 100]}
@@ -1779,9 +2249,14 @@ export function StylingRulesDialog({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Default Line Width</Label>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedRule.properties.defaultLineWidth ?? 1}px
-                        </span>
+                        <EditableNumericLabel
+                          value={selectedRule.properties.defaultLineWidth ?? 1}
+                          unit="px"
+                          min={1}
+                          max={5}
+                          step={0.5}
+                          onChange={(value) => handlePropertyChange('defaultLineWidth', value)}
+                        />
                       </div>
                       <Slider
                         value={[selectedRule.properties.defaultLineWidth ?? 1]}
@@ -1802,9 +2277,10 @@ export function StylingRulesDialog({
                         <div className="space-y-1">
                           <Label className="text-xs">Secondary Y-Axis Title</Label>
                           <Input
-                            value={selectedRule.properties.secondaryYAxis.title || ""}
-                            onChange={(e) => handleSecondaryYAxisChange('title', e.target.value)}
+                            value={localSecondaryYAxisTitle}
+                            onChange={(e) => handleSecondaryYAxisTitleChange(e.target.value)}
                             className="h-7 text-xs"
+                            placeholder="Secondary axis label"
                           />
                         </div>
 
@@ -1812,9 +2288,14 @@ export function StylingRulesDialog({
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between">
                             <Label className="text-xs">Secondary Y-Axis Width</Label>
-                            <span className="text-xs text-muted-foreground">
-                              {selectedRule.properties.secondaryYAxis.width ?? 80}px
-                            </span>
+                            <EditableNumericLabel
+                              value={selectedRule.properties.secondaryYAxis.width ?? 80}
+                              unit="px"
+                              min={40}
+                              max={200}
+                              step={10}
+                              onChange={(value) => handleSecondaryYAxisChange('width', value)}
+                            />
                           </div>
                           <Slider
                             value={[selectedRule.properties.secondaryYAxis.width ?? 80]}
@@ -1840,9 +2321,14 @@ export function StylingRulesDialog({
                                 </TooltipContent>
                               </Tooltip>
                             </div>
-                            <span className="text-xs text-muted-foreground">
-                              {selectedRule.properties.secondaryYAxis.divideBy ?? 60}
-                            </span>
+                            <EditableNumericLabel
+                              value={selectedRule.properties.secondaryYAxis.divideBy ?? 60}
+                              unit=""
+                              min={1}
+                              max={100}
+                              step={1}
+                              onChange={(value) => handleSecondaryYAxisChange('divideBy', value)}
+                            />
                           </div>
                           <Slider
                             value={[selectedRule.properties.secondaryYAxis.divideBy ?? 60]}

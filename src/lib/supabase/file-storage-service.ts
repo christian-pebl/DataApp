@@ -365,12 +365,12 @@ class FileStorageService {
     try {
       console.log('📥 Downloading file by ID:', fileId);
 
-      let fileData: { file_path: string; file_name: string } | null = null;
+      let fileData: { file_path: string; file_name: string; updated_at?: string } | null = null;
 
-      // First, try to get file metadata from pin_files
+      // First, try to get file metadata from pin_files (including updated_at for cache busting)
       const { data: pinFileData, error: pinFileError } = await this.supabase
         .from('pin_files')
-        .select('file_path, file_name')
+        .select('file_path, file_name, updated_at')
         .eq('id', fileId)
         .single();
 
@@ -396,9 +396,18 @@ class FileStorageService {
         }
       }
 
-      console.log('📄 File metadata:', { filePath: fileData.file_path, fileName: fileData.file_name });
+      console.log('📄 File metadata:', { filePath: fileData.file_path, fileName: fileData.file_name, updatedAt: fileData.updated_at });
+
+      // Build file path with cache-busting query parameter
+      let downloadPath = fileData.file_path;
+      if (fileData.updated_at) {
+        const timestamp = new Date(fileData.updated_at).getTime();
+        // Note: Supabase storage.download() doesn't support query params, but we log for debugging
+        console.log(`📌 Cache-busting timestamp: ${timestamp} (${fileData.updated_at})`);
+      }
 
       // Download the file using the file path
+      // Note: Supabase's .download() method handles auth and should bypass most caches
       const { data, error } = await this.supabase.storage
         .from('pin-files')
         .download(fileData.file_path);
@@ -700,7 +709,6 @@ class FileStorageService {
    */
   async getProjectFiles(projectId: string): Promise<PinFile[]> {
     perfLogger.start(`getProjectFiles-${projectId.slice(0, 8)}`);
-    console.log(`🔍 [FILE-STORAGE] getProjectFiles called for project: ${projectId}`);
 
     try {
       // Get current user to ensure they have access
@@ -712,10 +720,7 @@ class FileStorageService {
         return []
       }
 
-      console.log(`✅ [FILE-STORAGE] User authenticated: ${user.id}`);
-
       // Query all files for the project - RLS policies will handle access control
-      console.log(`📡 [FILE-STORAGE] Querying pin_files table with project_id = ${projectId}`);
       const { data, error } = await this.supabase
         .from('pin_files')
         .select('*')
@@ -728,24 +733,14 @@ class FileStorageService {
         return []
       }
 
-      console.log(`📊 [FILE-STORAGE] Query returned ${data?.length || 0} files`);
-
       if (data && data.length > 0) {
-        const fileNames = data.map(f => f.file_name);
-        console.log(`📋 [FILE-STORAGE] All file names:`, fileNames);
-
         const nmaxFiles = data.filter(f => f.file_name.includes('_nmax'));
-        if (nmaxFiles.length > 0) {
-          console.log(`🎯 [FILE-STORAGE] Found ${nmaxFiles.length} _nmax files:`, nmaxFiles.map(f => f.file_name));
-        } else {
-          console.log(`⚠️ [FILE-STORAGE] No _nmax files found in results!`);
-        }
-
-        // Log files by pin/area attachment
         const pinFiles = data.filter(f => f.pin_id && !f.area_id);
         const areaFiles = data.filter(f => f.area_id && !f.pin_id);
         const orphanedFiles = data.filter(f => !f.pin_id && !f.area_id);
-        console.log(`📌 [FILE-STORAGE] Files breakdown: ${pinFiles.length} pin files, ${areaFiles.length} area files, ${orphanedFiles.length} orphaned`);
+        console.log(`📊 [FILE-STORAGE] ${data.length} files (${pinFiles.length} pin, ${areaFiles.length} area, ${nmaxFiles.length} nmax${orphanedFiles.length > 0 ? `, ${orphanedFiles.length} orphaned` : ''})`);
+      } else {
+        console.log(`📊 [FILE-STORAGE] Query returned 0 files`);
       }
 
       perfLogger.end(`getProjectFiles-${projectId.slice(0, 8)}`, `${data?.length || 0} files`);

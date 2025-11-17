@@ -515,25 +515,34 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
   }, [lines, enableSync, isAuthenticated, isOnline, saveToLocalStorage, toast])
 
   const deleteLine = useCallback(async (id: string) => {
+    console.log('🗑️ useMapData.deleteLine - Called for ID:', id)
+    console.log('🗑️ useMapData.deleteLine - Conditions:', { enableSync, isAuthenticated, isOnline })
+
     const updatedLines = lines.filter(line => line.id !== id)
+    console.log('🗑️ useMapData.deleteLine - Lines before:', lines.length, 'after:', updatedLines.length)
     setLines(updatedLines)
 
     // Only save to localStorage if not authenticated
     if (!isAuthenticated || !enableSync) {
+      console.log('💾 useMapData.deleteLine - Saving to localStorage (not authenticated)')
       saveToLocalStorage('map-drawing-lines', updatedLines)
     }
 
     if (enableSync && isAuthenticated && isOnline) {
+      console.log('🌐 useMapData.deleteLine - Syncing to database...')
       try {
         await mapDataService.deleteLine(id)
+        console.log('✅ useMapData.deleteLine - Database sync successful')
       } catch (error) {
-        console.error('Error syncing line deletion to database:', error)
+        console.error('❌ useMapData.deleteLine - Database sync failed:', error)
         toast({
           variant: "destructive",
           title: "Sync Error",
           description: "Line deleted locally but failed to sync to database."
         })
       }
+    } else {
+      console.log('⏭️ useMapData.deleteLine - Skipping database sync')
     }
   }, [lines, enableSync, isAuthenticated, isOnline, saveToLocalStorage, toast])
 
@@ -605,25 +614,34 @@ export function useMapData({ projectId = 'default', enableSync = true }: UseMapD
   }, [areas, enableSync, isAuthenticated, isOnline, saveToLocalStorage, toast])
 
   const deleteArea = useCallback(async (id: string) => {
+    console.log('🗑️ useMapData.deleteArea - Called for ID:', id)
+    console.log('🗑️ useMapData.deleteArea - Conditions:', { enableSync, isAuthenticated, isOnline })
+
     const updatedAreas = areas.filter(area => area.id !== id)
+    console.log('🗑️ useMapData.deleteArea - Areas before:', areas.length, 'after:', updatedAreas.length)
     setAreas(updatedAreas)
 
     // Only save to localStorage if not authenticated
     if (!isAuthenticated || !enableSync) {
+      console.log('💾 useMapData.deleteArea - Saving to localStorage (not authenticated)')
       saveToLocalStorage('map-drawing-areas', updatedAreas)
     }
 
     if (enableSync && isAuthenticated && isOnline) {
+      console.log('🌐 useMapData.deleteArea - Syncing to database...')
       try {
         await mapDataService.deleteArea(id)
+        console.log('✅ useMapData.deleteArea - Database sync successful')
       } catch (error) {
-        console.error('Error syncing area deletion to database:', error)
+        console.error('❌ useMapData.deleteArea - Database sync failed:', error)
         toast({
           variant: "destructive",
           title: "Sync Error",
           description: "Area deleted locally but failed to sync to database."
         })
       }
+    } else {
+      console.log('⏭️ useMapData.deleteArea - Skipping database sync')
     }
   }, [areas, enableSync, isAuthenticated, isOnline, saveToLocalStorage, toast])
 

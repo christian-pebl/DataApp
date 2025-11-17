@@ -1,0 +1,204 @@
+// Handler for subtracting first 2 plots
+  const handleSubtractPlots = () => {
+    if (plots.length < 2) return;
+
+    const firstPlot = plots[0];
+    const secondPlot = plots[1];
+
+    const firstState = plotVisibilityState[firstPlot.id];
+    const secondState = plotVisibilityState[secondPlot.id];
+
+    if (!firstState || !secondState || firstState.params.length !== 1 || secondState.params.length !== 1) {
+      return;
+    }
+
+    const param1 = firstState.params[0];
+    const param2 = secondState.params[0];
+
+    console.log('➖ Subtract: Parameter names from visibility state:', {
+      param1,
+      param2,
+    });
+
+    // Get the actual data from both plots
+    const firstPlotData = plotsData[firstPlot.id];
+    const secondPlotData = plotsData[secondPlot.id];
+
+    if (!firstPlotData || !secondPlotData) {
+      console.error('Cannot subtract: plot data not loaded');
+      return;
+    }
+
+    // Helper function to find the actual data key for a parameter
+    const findDataKey = (dataPoint: any, paramName: string): string | null => {
+      if (paramName in dataPoint) return paramName;
+
+      const normalizedParam = paramName.replace(/\s+/g, '').toLowerCase();
+      for (const key of Object.keys(dataPoint)) {
+        if (key.toLowerCase() === normalizedParam) {
+          return key;
+        }
+      }
+
+      const cleanedParam = paramName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      for (const key of Object.keys(dataPoint)) {
+        const cleanedKey = key.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        if (cleanedKey.includes(cleanedParam) || cleanedParam.includes(cleanedKey)) {
+          return key;
+        }
+      }
+
+      return null;
+    };
+
+    // Find actual data keys for both parameters
+    const firstSamplePoint = firstPlotData.data[0];
+    const secondSamplePoint = secondPlotData.data[0];
+    const actualParam1Key = findDataKey(firstSamplePoint, param1) || param1;
+    const actualParam2Key = findDataKey(secondSamplePoint, param2) || param2;
+
+    // Helper function to normalize time to ISO format
+    const normalizeTimeToISO = (timeStr: string): string => {
+      try {
+        const date = parseISO(timeStr);
+        if (isValid(date)) {
+          return date.toISOString();
+        }
+        return timeStr;
+      } catch (e) {
+        return timeStr;
+      }
+    };
+
+    // Get source labels for each parameter
+    const getSourceLabel = (plot: PlotConfig): string => {
+      if (plot.type === 'marine-meteo') return 'OM';
+      if (plot.fileType) return plot.fileType;
+      if (plot.fileName) {
+        const parts = plot.fileName.split('_');
+        if (parts.length >= 2) {
+          const extractedType = parts[1].toUpperCase();
+          if (['GP', 'FPOD', 'SC', 'SUBCAM'].includes(extractedType)) {
+            return extractedType === 'SUBCAM' ? 'SC' : extractedType;
+          }
+        }
+      }
+      return 'GP';
+    };
+
+    const source1Label = getSourceLabel(firstPlot);
+    const source2Label = getSourceLabel(secondPlot);
+
+    // Build maps: time -> value for each parameter
+    const leftMap = new Map<string, any>();
+    firstPlotData.data.forEach(point => {
+      const value = point[actualParam1Key];
+      if (value !== null && value !== undefined && !isNaN(Number(value))) {
+        leftMap.set(normalizeTimeToISO(point.time), value);
+      }
+    });
+
+    const rightMap = new Map<string, any>();
+    secondPlotData.data.forEach(point => {
+      const value = point[actualParam2Key];
+      if (value !== null && value !== undefined && !isNaN(Number(value))) {
+        rightMap.set(normalizeTimeToISO(point.time), value);
+      }
+    });
+
+    // Get UNION of all timestamps (sorted)
+    const allTimestamps = Array.from(
+      new Set([
+        ...Array.from(leftMap.keys()),
+        ...Array.from(rightMap.keys())
+      ])
+    ).sort();
+
+    // Create smart parameter name by omitting matching text
+    // e.g., "Porpoise clicks [Station A]" and "Porpoise clicks [Station B]" -> "Difference (A - B)"
+    const smartParameterName = (() => {
+      const base1 = getBaseParameterName(param1);
+      const base2 = getBaseParameterName(param2);
+
+      // Extract the differing parts (typically the source/station names)
+      const extractDifference = (fullName: string, baseName: string): string => {
+        // Try to extract text within brackets first
+        const bracketMatch = fullName.match(/\[(.*?)\]/);
+        if (bracketMatch) {
+          return bracketMatch[1];
+        }
+        // If no brackets, return the source label
+        return fullName.replace(baseName, '').trim() || fullName;
+      };
+
+      const diff1 = extractDifference(param1, base1) || source1Label;
+      const diff2 = extractDifference(param2, base2) || source2Label;
+
+      return `Difference (${diff1} - ${diff2})`;
+    })();
+
+    // Perform subtraction based on direction
+    const subtractedData = allTimestamps.map(time => {
+      const val1 = leftMap.get(time);
+      const val2 = rightMap.get(time);
+
+      let result: number | null = null;
+
+      if (val1 !== null && val1 !== undefined && val2 !== null && val2 !== undefined) {
+        // Both values exist
+        result = subtractDirection === '1-2' ? Number(val1) - Number(val2) : Number(val2) - Number(val1);
+      } else if (subtractMissingDataMode === 'zero') {
+        // Use zero for missing values
+        const v1 = val1 !== null && val1 !== undefined ? Number(val1) : 0;
+        const v2 = val2 !== null && val2 !== undefined ? Number(val2) : 0;
+        result = subtractDirection === '1-2' ? v1 - v2 : v2 - v1;
+      }
+      // else: skip mode, result stays null
+
+      return {
+        time,
+        [smartParameterName]: result
+      };
+    });
+
+    // Filter out null results if in skip mode
+    const filteredData = subtractMissingDataMode === 'skip'
+      ? subtractedData.filter(row => row[smartParameterName] !== null)
+      : subtractedData;
+
+    console.log('➖ SUBTRACT DEBUG:', {
+      smartParameterName,
+      direction: subtractDirection,
+      missingDataMode: subtractMissingDataMode,
+      leftMapSize: leftMap.size,
+      rightMapSize: rightMap.size,
+      allTimestampsCount: allTimestamps.length,
+      filteredDataCount: filteredData.length,
+      sampleResult: filteredData[0]
+    });
+
+    // Create ParseResult structure for the RAW subtracted data
+    const rawSubtractedData: ParseResult = {
+      data: filteredData as any,
+      headers: ['time', smartParameterName],
+      errors: [],
+      summary: {
+        totalRows: filteredData.length,
+        validRows: filteredData.length,
+        columns: 2,
+        timeColumn: 'time'
+      }
+    };
+
+    // Save raw data
+    setSubtractRawData(rawSubtractedData);
+
+    // Apply default time rounding (1 hr)
+    const roundedData = applyTimeRounding(rawSubtractedData, timeRoundingInterval);
+
+    // TODO: Check for units mismatch and set warning
+
+    // Show preview dialog with rounded data
+    setSubtractPreviewData(roundedData);
+    setShowSubtractPreview(true);
+  };

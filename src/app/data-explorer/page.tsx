@@ -71,7 +71,7 @@ import { useActiveProject } from '@/hooks/use-active-project';
 import { LoadPlotViewDialog } from '@/components/pin-data/LoadPlotViewDialog';
 import type { SavedPlotView, PlotViewValidationResult } from '@/lib/supabase/plot-view-types';
 import { DataTimeline } from '@/components/pin-data/DataTimeline';
-import { PinMarineDeviceData } from '@/components/pin-data/PinMarineDeviceData';
+import PinMarineDeviceData from '@/components/pin-data/PinMarineDeviceData';
 import type { PinFile } from '@/lib/supabase/file-storage-service';
 import { getAllUserFilesAction, renameFileAction, deleteFileAction, fetchFileDataAction, downloadFileAction, type UserFileDetails } from './actions';
 
@@ -172,6 +172,8 @@ export default function DataExplorerPage() {
   const [showMarineDeviceModal, setShowMarineDeviceModal] = useState(false);
   const [selectedFileType, setSelectedFileType] = useState<'GP' | 'FPOD' | 'Subcam' | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedPinLocation, setSelectedPinLocation] = useState<{ lat: number; lng: number } | undefined>(undefined);
+  const [selectedObjectName, setSelectedObjectName] = useState<string | undefined>(undefined);
 
   // Home Location Logic
   useEffect(() => {
@@ -486,6 +488,77 @@ export default function DataExplorerPage() {
       const actualFile = new File([blob], fileName, {
         type: file.fileType || 'text/csv'
       });
+
+      // Fetch pin/area location for marine data
+      console.log('[Data Explorer] 🔍 Starting location fetch for file:', {
+        fileName: file.fileName,
+        pinId: file.pinId,
+        pinLabel: file.pinLabel,
+        isMergedFile,
+        fileId: file.id
+      });
+
+      let location: { lat: number; lng: number } | undefined = undefined;
+      let objectName: string | undefined = file.pinLabel || undefined;
+
+      if (file.pinId && file.pinId !== 'merged') {
+        console.log('[Data Explorer] 📍 Fetching pin location for:', file.pinId);
+        const { createClient } = await import('@/lib/supabase/client');
+        const supabase = createClient();
+
+        // Check if it's a pin or area by checking both tables
+        const { data: pinData } = await supabase
+          .from('pins')
+          .select('latitude, longitude, label')
+          .eq('id', file.pinId)
+          .single();
+
+        if (pinData && pinData.latitude && pinData.longitude) {
+          location = { lat: pinData.latitude, lng: pinData.longitude };
+          objectName = pinData.label || objectName;
+          console.log('[Data Explorer] ✅ Found pin location:', location);
+        } else {
+          // Try fetching as an area
+          const { data: areaData } = await supabase
+            .from('areas')
+            .select('path, name')
+            .eq('id', file.pinId) // pinId might actually be an areaId
+            .single();
+
+          if (areaData && areaData.path && Array.isArray(areaData.path) && areaData.path.length > 0) {
+            // Calculate centroid of area polygon
+            const centroid = areaData.path.reduce(
+              (acc, point) => ({ lat: acc.lat + point.lat, lng: acc.lng + point.lng }),
+              { lat: 0, lng: 0 }
+            );
+            location = {
+              lat: centroid.lat / areaData.path.length,
+              lng: centroid.lng / areaData.path.length
+            };
+            objectName = areaData.name || objectName;
+            console.log('[Data Explorer] ✅ Found area location (centroid):', location);
+          } else {
+            console.warn('[Data Explorer] ⚠️ No location found for pin/area:', file.pinId);
+          }
+        }
+      } else if (isMergedFile) {
+        console.log('[Data Explorer] ℹ️ Merged file - no specific location');
+      } else {
+        console.log('[Data Explorer] ⚠️ Skipping location fetch - pinId:', file.pinId);
+      }
+
+      // Store location and object name
+      console.log('[Data Explorer] 💾 Setting location state:', {
+        location,
+        objectName
+      });
+
+      // TEMPORARY TEST: Force a known location for debugging
+      const testLocation = { lat: 51.7128, lng: -5.0341 }; // Milford Haven
+      console.log('[Data Explorer] 🧪 TEST: Forcing test location:', testLocation);
+
+      setSelectedPinLocation(testLocation);  // Use test location
+      setSelectedObjectName(objectName || 'Test Location');
 
       // Open modal with the downloaded file
       setSelectedFileType(fileType);
@@ -1421,6 +1494,8 @@ export default function DataExplorerPage() {
             // Clear the selected files when closing
             setSelectedFileType(null);
             setSelectedFiles([]);
+            setSelectedPinLocation(undefined);
+            setSelectedObjectName(undefined);
           }
         }}
       >
@@ -1439,6 +1514,8 @@ export default function DataExplorerPage() {
                 allProjectFilesForTimeline={filesForTimeline}
                 getFileDateRange={getFileDateRange}
                 onDownloadFile={handleDownloadFileForPlot}
+                objectLocation={selectedPinLocation}
+                objectName={selectedObjectName}
               />
             ) : (
               <div className="flex items-center justify-center h-full">

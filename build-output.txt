@@ -1,0 +1,155 @@
+
+> nextn@0.1.0 build
+> next build
+
+   ▲ Next.js 15.2.3
+   - Environments: .env.local
+   - Experiments (use with caution):
+     · allowedDevOrigins
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Skipping validation of types
+   Skipping linting
+   Collecting page data ...
+   Generating static pages (0/17) ...
+Failed to initialize Supabase in layout: Error: Dynamic server usage: Route /auth couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at m (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\447.js:12:42338)
+    at u (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\367.js:25:25918)
+    at a (C:\Users\Christian Abulhawa\DataApp\.next\server\app\api\files\merge\route.js:1:479)
+    at p (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\748.js:10:10284)
+    at stringify (<anonymous>) {
+  description: "Route /auth couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+Failed to initialize Supabase in layout: Error: Dynamic server usage: Route /ea-explorer couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at m (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\447.js:12:42338)
+    at u (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\367.js:25:25918)
+    at a (C:\Users\Christian Abulhawa\DataApp\.next\server\app\api\files\merge\route.js:1:479)
+    at p (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\748.js:10:10284)
+    at stringify (<anonymous>) {
+  description: "Route /ea-explorer couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+Failed to initialize Supabase in layout: Error: Dynamic server usage: Route / couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at m (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\447.js:12:42338)
+    at u (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\367.js:25:25918)
+    at a (C:\Users\Christian Abulhawa\DataApp\.next\server\app\api\files\merge\route.js:1:479)
+    at p (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\748.js:10:10284)
+    at stringify (<anonymous>) {
+  description: "Route / couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+Failed to initialize Supabase in layout: Error: Dynamic server usage: Route /ea-water-explorer couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at m (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\447.js:12:42338)
+    at u (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\367.js:25:25918)
+    at a (C:\Users\Christian Abulhawa\DataApp\.next\server\app\api\files\merge\route.js:1:479)
+    at p (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\748.js:10:10284)
+    at stringify (<anonymous>) {
+  description: "Route /ea-water-explorer couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+Failed to initialize Supabase in layout: Error: Dynamic server usage: Route /auth/auth-code-error couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at m (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\447.js:12:42338)
+    at u (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\367.js:25:25918)
+    at a (C:\Users\Christian Abulhawa\DataApp\.next\server\app\api\files\merge\route.js:1:479)
+    at p (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\748.js:10:10284)
+    at stringify (<anonymous>) {
+  description: "Route /auth/auth-code-error couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+   Generating static pages (4/17) 
+Failed to initialize Supabase in layout: Error: Dynamic server usage: Route /weather couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at m (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\447.js:12:42338)
+    at u (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\367.js:25:25918)
+    at a (C:\Users\Christian Abulhawa\DataApp\.next\server\app\api\files\merge\route.js:1:479)
+    at p (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\748.js:10:10284)
+    at stringify (<anonymous>) {
+  description: "Route /weather couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+Failed to initialize Supabase in layout: Error: Dynamic server usage: Route /data-explorer couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at m (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\447.js:12:42338)
+    at u (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\367.js:25:25918)
+    at a (C:\Users\Christian Abulhawa\DataApp\.next\server\app\api\files\merge\route.js:1:479)
+    at p (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\748.js:10:10284)
+    at stringify (<anonymous>) {
+  description: "Route /data-explorer couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+   Generating static pages (8/17) 
+Failed to initialize Supabase in layout: Error: Dynamic server usage: Route /irradiance-explorer couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at m (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\447.js:12:42338)
+    at u (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\367.js:25:25918)
+    at a (C:\Users\Christian Abulhawa\DataApp\.next\server\app\api\files\merge\route.js:1:479)
+    at p (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\748.js:10:10284)
+    at stringify (<anonymous>) {
+  description: "Route /irradiance-explorer couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+Failed to initialize Supabase in layout: Error: Dynamic server usage: Route /map-location-selector couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at m (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\447.js:12:42338)
+    at u (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\367.js:25:25918)
+    at a (C:\Users\Christian Abulhawa\DataApp\.next\server\app\api\files\merge\route.js:1:479)
+    at p (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\748.js:10:10284)
+    at stringify (<anonymous>) {
+  description: "Route /map-location-selector couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+Failed to initialize Supabase in layout: Error: Dynamic server usage: Route /_not-found couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at m (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\447.js:12:42338)
+    at u (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\367.js:25:25918)
+    at a (C:\Users\Christian Abulhawa\DataApp\.next\server\app\api\files\merge\route.js:1:479)
+    at p (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\748.js:10:10284)
+    at stringify (<anonymous>) {
+  description: "Route /_not-found couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+Failed to initialize Supabase in layout: Error: Dynamic server usage: Route /map-drawing couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at m (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\447.js:12:42338)
+    at u (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\367.js:25:25918)
+    at a (C:\Users\Christian Abulhawa\DataApp\.next\server\app\api\files\merge\route.js:1:479)
+    at p (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\748.js:10:10284)
+    at stringify (<anonymous>) {
+  description: "Route /map-drawing couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+   Generating static pages (12/17) 
+Failed to initialize Supabase in layout: Error: Dynamic server usage: Route /om-marine-explorer couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at m (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\447.js:12:42338)
+    at u (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\367.js:25:25918)
+    at a (C:\Users\Christian Abulhawa\DataApp\.next\server\app\api\files\merge\route.js:1:479)
+    at p (C:\Users\Christian Abulhawa\DataApp\.next\server\chunks\748.js:10:10284)
+    at stringify (<anonymous>) {
+  description: "Route /om-marine-explorer couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+ ✓ Generating static pages (17/17)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                  Size  First Load JS
+┌ ƒ /                                       134 B         367 kB
+├ ƒ /_not-found                             198 B         318 kB
+├ ƒ /api/files/merge                        131 B         367 kB
+├ ƒ /auth                                   550 B         418 kB
+├ ƒ /auth/auth-code-error                   134 B         367 kB
+├ ƒ /auth/callback                          133 B         367 kB
+├ ƒ /data-explorer                        16.8 kB         470 kB
+├ ƒ /ea-explorer                            133 B         367 kB
+├ ƒ /ea-water-explorer                      132 B         367 kB
+├ ƒ /invite/[token]                        2.1 kB         455 kB
+├ ƒ /irradiance-explorer                    224 B         318 kB
+├ ƒ /map-drawing                           115 kB         568 kB
+├ ƒ /map-location-selector                  134 B         367 kB
+├ ƒ /om-marine-explorer                     475 B         318 kB
+├ ƒ /shared/[token]                        3.7 kB         456 kB
+└ ƒ /weather                                476 B         318 kB
++ First Load JS shared by all              319 kB
+  ├ chunks/framework-52e5eab8bf422a17.js   193 kB
+  ├ chunks/vendor-a400ca7e0fc03886.js      121 kB
+  └ other shared chunks (total)           4.92 kB
+
+
+ƒ  (Dynamic)  server-rendered on demand
+

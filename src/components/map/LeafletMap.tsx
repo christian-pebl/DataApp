@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, memo } from 'react';
 import type { LatLngExpression, Map as LeafletMap, LatLng, DivIconOptions, CircleMarker, Polyline, Polygon, LayerGroup, Popup, LocationEvent, LeafletMouseEvent, CircleMarkerOptions, Tooltip as LeafletTooltip, Marker } from 'leaflet';
 import type { Settings } from '@/hooks/use-settings';
 
@@ -1458,4 +1458,81 @@ const LeafletMap = ({
     return <div ref={mapContainerRef} className="h-full w-full z-0 min-h-[500px]" style={{ height: '100%', minHeight: '500px' }} />;
 };
 
-export default LeafletMap;
+// Custom comparison function for React.memo()
+// Only re-render if critical props that affect map rendering change
+const arePropsEqual = (prevProps: LeafletMapProps, nextProps: LeafletMapProps): boolean => {
+    // Check map position props
+    const centerEqual =
+        Array.isArray(prevProps.center) && Array.isArray(nextProps.center)
+            ? prevProps.center[0] === nextProps.center[0] && prevProps.center[1] === nextProps.center[1]
+            : prevProps.center === nextProps.center;
+
+    if (!centerEqual || prevProps.zoom !== nextProps.zoom) {
+        return false;
+    }
+
+    // Check data arrays (reference equality - they should be memoized in parent)
+    if (prevProps.pins !== nextProps.pins ||
+        prevProps.lines !== nextProps.lines ||
+        prevProps.areas !== nextProps.areas) {
+        return false;
+    }
+
+    // Check drawing state
+    if (prevProps.isDrawingLine !== nextProps.isDrawingLine ||
+        prevProps.isDrawingArea !== nextProps.isDrawingArea ||
+        prevProps.lineStartPoint !== nextProps.lineStartPoint ||
+        prevProps.areaStartPoint !== nextProps.areaStartPoint ||
+        prevProps.currentMousePosition !== nextProps.currentMousePosition ||
+        prevProps.currentAreaEndPoint !== nextProps.currentAreaEndPoint) {
+        return false;
+    }
+
+    // Check pending items
+    if (prevProps.pendingPin !== nextProps.pendingPin ||
+        prevProps.pendingLine !== nextProps.pendingLine ||
+        prevProps.pendingArea !== nextProps.pendingArea ||
+        prevProps.pendingAreaPath !== nextProps.pendingAreaPath) {
+        return false;
+    }
+
+    // Check editing state
+    if (prevProps.editingGeometry !== nextProps.editingGeometry ||
+        prevProps.itemToEdit !== nextProps.itemToEdit ||
+        prevProps.lineEditMode !== nextProps.lineEditMode ||
+        prevProps.editingLineId !== nextProps.editingLineId ||
+        prevProps.tempLinePath !== nextProps.tempLinePath ||
+        prevProps.areaEditMode !== nextProps.areaEditMode ||
+        prevProps.editingAreaId !== nextProps.editingAreaId ||
+        prevProps.tempAreaPath !== nextProps.tempAreaPath) {
+        return false;
+    }
+
+    // Check visibility and UI props
+    if (prevProps.projectVisibility !== nextProps.projectVisibility ||
+        prevProps.activeProjectId !== nextProps.activeProjectId ||
+        prevProps.showPopups !== nextProps.showPopups ||
+        prevProps.useEditPanel !== nextProps.useEditPanel ||
+        prevProps.disableDefaultPopups !== nextProps.disableDefaultPopups ||
+        prevProps.popupMode !== nextProps.popupMode) {
+        return false;
+    }
+
+    // Check settings
+    if (prevProps.settings !== nextProps.settings) {
+        return false;
+    }
+
+    // Check current location
+    if (prevProps.currentLocation !== nextProps.currentLocation) {
+        return false;
+    }
+
+    // For callbacks, we assume they are memoized in the parent component
+    // If they're not, they'll cause re-renders, which is expected behavior
+
+    return true; // Props are equal, skip re-render
+};
+
+// Export memoized component for better performance
+export default memo(LeafletMap, arePropsEqual);

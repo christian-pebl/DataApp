@@ -1,0 +1,447 @@
+.next/types/app/invite/[token]/page.ts(34,29): error TS2344: Type '{ params: { token: string; }; }' does not satisfy the constraint 'PageProps'.
+  Types of property 'params' are incompatible.
+    Type '{ token: string; }' is missing the following properties from type 'Promise<any>': then, catch, finally, [Symbol.toStringTag]
+mcp-servers/pin-sharing/src/index.ts(187,24): error TS2352: Conversion of type 'Record<string, unknown> | undefined' to type 'SharePinParams' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'SharePinParams': pinId, permission
+mcp-servers/pin-sharing/src/index.ts(231,24): error TS2352: Conversion of type 'Record<string, unknown> | undefined' to type 'CreatePublicLinkParams' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'permission' is missing in type 'Record<string, unknown>' but required in type 'CreatePublicLinkParams'.
+mcp-servers/pin-sharing/src/index.ts(475,19): error TS2339: Property 'expires_at' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(475,48): error TS2339: Property 'expires_at' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(490,19): error TS2339: Property 'max_uses' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(490,37): error TS2339: Property 'used_count' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(490,57): error TS2339: Property 'max_uses' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(505,19): error TS2339: Property 'password_hash' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(521,77): error TS2339: Property 'password_hash' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(541,31): error TS2339: Property 'used_count' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(544,27): error TS2339: Property 'id' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(550,35): error TS2339: Property 'id' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(561,32): error TS2339: Property 'id' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(562,35): error TS2339: Property 'permission' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(563,28): error TS2339: Property 'pin' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(564,32): error TS2339: Property 'project' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(565,38): error TS2339: Property 'max_uses' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(565,55): error TS2339: Property 'max_uses' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+mcp-servers/pin-sharing/src/index.ts(565,72): error TS2339: Property 'used_count' does not exist on type 'ParserError<"Unable to parse renamed field at `pin:pins!pin_id(*, user:auth.users!user_id(email)),\n            project:projects!project_id(*, user:auth.users!user_id(email))\n          `">'.
+src/app/data-explorer/page.tsx(246,14): error TS2322: Type 'ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>' is not assignable to type 'never'.
+src/app/map-drawing/page.tsx(301,19): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: TooltipProps<ValueType, string>): Tooltip<ValueType, string>', gave the following error.
+    Type '(value: number | null | undefined, name: string, props: Payload<ValueType, string>) => [Element, string]' is not assignable to type 'Formatter<ValueType, string>'.
+      Types of parameters 'value' and 'value' are incompatible.
+        Type 'ValueType' is not assignable to type 'number | null | undefined'.
+          Type 'string' is not assignable to type 'number'.
+  Overload 2 of 2, '(props: TooltipProps<ValueType, string>, context: any): Tooltip<ValueType, string>', gave the following error.
+    Type '(value: number | null | undefined, name: string, props: Payload<ValueType, string>) => [Element, string]' is not assignable to type 'Formatter<ValueType, string>'.
+      Types of parameters 'value' and 'value' are incompatible.
+        Type 'ValueType' is not assignable to type 'number | null | undefined'.
+          Type 'string' is not assignable to type 'number'.
+src/app/map-drawing/page.tsx(488,28): error TS2339: Property 'location' does not exist on type 'Pin'.
+src/app/map-drawing/page.tsx(554,144): error TS2345: Argument of type '{}' is not assignable to parameter of type 'Record<CombinedParameterKey, SeriesAvailabilityStatus> | (() => Record<CombinedParameterKey, SeriesAvailabilityStatus>)'.
+src/app/map-drawing/page.tsx(606,9): error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ milfordhaven: { name: string; lat: number; lon: number; }; ramseysound: { name: string; lat: number; lon: number; }; bidefordbay: { name: string; lat: number; lon: number; }; blakeneyoverfalls: { name: string; lat: number; lon: number; }; pabayinnersound: { ...; }; lochbay: { ...; }; lochsunart: { ...; }; }'.
+  No index signature with a parameter of type 'string' was found on type '{ milfordhaven: { name: string; lat: number; lon: number; }; ramseysound: { name: string; lat: number; lon: number; }; bidefordbay: { name: string; lat: number; lon: number; }; blakeneyoverfalls: { name: string; lat: number; lon: number; }; pabayinnersound: { ...; }; lochbay: { ...; }; lochsunart: { ...; }; }'.
+src/app/map-drawing/page.tsx(703,54): error TS2304: Cannot find name 'Line'.
+src/app/map-drawing/page.tsx(704,58): error TS2304: Cannot find name 'Line'.
+src/app/map-drawing/page.tsx(1589,30): error TS2345: Argument of type 'LatLng' is not assignable to parameter of type '[number, number]'.
+src/app/map-drawing/page.tsx(1600,30): error TS2345: Argument of type 'LatLng' is not assignable to parameter of type '[number, number]'.
+src/app/map-drawing/page.tsx(1631,20): error TS2339: Property 'points' does not exist on type 'Line'.
+src/app/map-drawing/page.tsx(1632,18): error TS2339: Property 'points' does not exist on type 'Line'.
+src/app/map-drawing/page.tsx(1632,33): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(1643,20): error TS2339: Property 'points' does not exist on type 'Area'.
+src/app/map-drawing/page.tsx(1644,18): error TS2339: Property 'points' does not exist on type 'Area'.
+src/app/map-drawing/page.tsx(1644,33): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(1658,24): error TS2339: Property 'fitBounds' does not exist on type 'LeafletMap'.
+src/app/map-drawing/page.tsx(2355,50): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2658,7): error TS2304: Cannot find name 'setLines'.
+src/app/map-drawing/page.tsx(2658,16): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2658,33): error TS7006: Parameter 'line' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2748,29): error TS2345: Argument of type '{ lat: number; lng: number; label: string | undefined; notes: any; color: any; size: any; projectId: any; labelVisible: any; }' is not assignable to parameter of type 'Omit<Pin, "id">'.
+  Types of property 'label' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+src/app/map-drawing/page.tsx(2759,40): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2759,45): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2760,40): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2760,45): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2768,45): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2783,30): error TS2345: Argument of type '{ path: any; label: string | undefined; notes: any; color: any; size: any; projectId: any; labelVisible: any; }' is not assignable to parameter of type 'Omit<Line, "id">'.
+  Types of property 'label' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+src/app/map-drawing/page.tsx(2794,40): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2794,45): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2795,40): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2795,45): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2803,45): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2820,30): error TS2345: Argument of type '{ path: any; label: string | undefined; notes: any; color: any; size: any; transparency: any; fillVisible: any; projectId: any; labelVisible: any; }' is not assignable to parameter of type 'Omit<Area, "id">'.
+  Types of property 'label' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+src/app/map-drawing/page.tsx(2898,50): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2925,7): error TS2304: Cannot find name 'setPins'.
+src/app/map-drawing/page.tsx(2925,15): error TS7006: Parameter 'prevPins' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(2926,22): error TS7006: Parameter 'pin' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3478,13): error TS2322: Type 'MutableRefObject<LeafletMap | null>' is not assignable to type 'MutableRefObject<Map | null>'.
+  Type 'LeafletMap | null' is not assignable to type 'Map | null'.
+    Type 'LeafletMap' is missing the following properties from type 'Map': getRenderer, addControl, removeControl, addLayer, and 74 more.
+src/app/map-drawing/page.tsx(3492,13): error TS2322: Type 'LatLng | null' is not assignable to type 'L.LatLng | null'.
+  Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3493,13): error TS2322: Type 'LatLng | null' is not assignable to type 'LatLng | null | undefined'.
+  Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3497,13): error TS2322: Type 'LatLng[]' is not assignable to type 'L.LatLng[]'.
+  Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3498,13): error TS2322: Type 'LatLng | null' is not assignable to type 'L.LatLng | null'.
+  Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3499,13): error TS2322: Type 'LatLng | null' is not assignable to type 'L.LatLng | null'.
+  Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3500,13): error TS2322: Type 'LatLng | null' is not assignable to type 'L.LatLng | null'.
+  Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3503,13): error TS2322: Type '{ path: LatLng[]; } | null' is not assignable to type '{ path: L.LatLng[]; } | null'.
+  Type '{ path: LatLng[]; }' is not assignable to type '{ path: L.LatLng[]; }'.
+    Types of property 'path' are incompatible.
+      Type 'LatLng[]' is not assignable to type 'L.LatLng[]'.
+        Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3506,13): error TS2322: Type '{ path: LatLng[]; } | null' is not assignable to type '{ path: L.LatLng[]; } | null'.
+  Type '{ path: LatLng[]; }' is not assignable to type '{ path: L.LatLng[]; }'.
+    Types of property 'path' are incompatible.
+      Type 'LatLng[]' is not assignable to type 'L.LatLng[]'.
+        Type 'LatLng' is missing the following properties from type 'LatLng': equals, distanceTo, wrap, toBounds, clone
+src/app/map-drawing/page.tsx(3928,66): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3928,71): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3929,66): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3929,71): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3938,66): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3938,71): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3939,66): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3939,71): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(3992,71): error TS2538: Type 'null' cannot be used as an index type.
+src/app/map-drawing/page.tsx(3995,80): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(4047,84): error TS2538: Type 'null' cannot be used as an index type.
+src/app/map-drawing/page.tsx(4048,51): error TS7006: Parameter 'meta' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(4133,69): error TS2464: A computed property name must be of type 'string', 'number', 'symbol', or 'any'.
+src/app/map-drawing/page.tsx(4133,99): error TS2538: Type 'null' cannot be used as an index type.
+src/app/map-drawing/page.tsx(4133,130): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(4620,53): error TS7006: Parameter 'point' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(4620,60): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/app/map-drawing/page.tsx(5195,65): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/app/map-drawing/page.tsx(5195,84): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/app/map-drawing/page.tsx(6079,21): error TS2322: Type '{ lat: number; lng: number; } | null' is not assignable to type '{ lat: number; lng: number; } | undefined'.
+  Type 'null' is not assignable to type '{ lat: number; lng: number; } | undefined'.
+src/app/shared/[token]/page.tsx(116,63): error TS2339: Property 'filePath' does not exist on type 'PinFile'.
+src/components/branding/PEBLLogo.tsx(106,47): error TS2322: Type 'null' is not assignable to type 'string | undefined'.
+src/components/dataflow/ChartDisplay.tsx(224,13): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: TooltipProps<ValueType, string>): Tooltip<ValueType, string>', gave the following error.
+    Type '(value: number | null | undefined, name: string) => [string, string]' is not assignable to type 'Formatter<ValueType, string>'.
+      Types of parameters 'value' and 'value' are incompatible.
+        Type 'ValueType' is not assignable to type 'number | null | undefined'.
+          Type 'string' is not assignable to type 'number'.
+  Overload 2 of 2, '(props: TooltipProps<ValueType, string>, context: any): Tooltip<ValueType, string>', gave the following error.
+    Type '(value: number | null | undefined, name: string) => [string, string]' is not assignable to type 'Formatter<ValueType, string>'.
+      Types of parameters 'value' and 'value' are incompatible.
+        Type 'ValueType' is not assignable to type 'number | null | undefined'.
+          Type 'string' is not assignable to type 'number'.
+src/components/dataflow/HeatmapDisplay.tsx(200,23): error TS2322: Type '{ children: string; key: string; x: number; y: number; textAnchor: string; dominantBaseline: string; className: string; title: string; }' is not assignable to type 'SVGTextElementAttributes<SVGTextElement>'.
+  Property 'title' does not exist on type 'SVGTextElementAttributes<SVGTextElement>'.
+src/components/map/LeafletMap.tsx(4,33): error TS2440: Import declaration conflicts with local declaration of 'LeafletMap'.
+src/components/map/LeafletMap.tsx(12,10): error TS2307: Cannot find module 'leaflet/dist/leaflet.css' or its corresponding type declarations.
+src/components/map/LeafletMap.tsx(326,40): error TS2345: Argument of type 'number[] | LatLngTuple' is not assignable to parameter of type 'LatLngExpression'.
+  Type 'number[]' is not assignable to type 'LatLngExpression'.
+    Type 'number[]' is not assignable to type 'LatLngTuple'.
+      Target requires 2 element(s) but source may have fewer.
+src/components/map/LeafletMap.tsx(341,35): error TS2339: Property 'color' does not exist on type 'Pin'.
+src/components/map/LeafletMap.tsx(342,34): error TS2339: Property 'size' does not exist on type 'Pin'.
+src/components/map/LeafletMap.tsx(347,37): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/components/map/LeafletMap.tsx(414,53): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/components/map/LeafletMap.tsx(447,37): error TS2339: Property 'color' does not exist on type 'Line'.
+src/components/map/LeafletMap.tsx(448,38): error TS2339: Property 'size' does not exist on type 'Line'.
+src/components/map/LeafletMap.tsx(454,48): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/components/map/LeafletMap.tsx(566,50): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/components/map/LeafletMap.tsx(703,44): error TS2339: Property 'color' does not exist on type 'Area'.
+src/components/map/LeafletMap.tsx(706,38): error TS2339: Property 'size' does not exist on type 'Area'.
+src/components/map/LeafletMap.tsx(708,73): error TS2339: Property 'transparency' does not exist on type 'Area'.
+src/components/map/LeafletMap.tsx(708,107): error TS2339: Property 'transparency' does not exist on type 'Area'.
+src/components/map/LeafletMap.tsx(712,42): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/components/map/LeafletMap.tsx(783,57): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/components/map/LeafletMap.tsx(802,40): error TS2339: Property 'color' does not exist on type 'Area'.
+src/components/map/LeafletMap.tsx(823,32): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/components/map/LeafletMap.tsx(834,35): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/components/marine/MarinePlotsGrid.tsx(194,19): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: TooltipProps<ValueType, string>): Tooltip<ValueType, string>', gave the following error.
+    Type '(value: number | null | undefined, name: string, props: Payload<ValueType, string>) => [Element, string]' is not assignable to type 'Formatter<ValueType, string>'.
+      Types of parameters 'value' and 'value' are incompatible.
+        Type 'ValueType' is not assignable to type 'number | null | undefined'.
+          Type 'string' is not assignable to type 'number'.
+  Overload 2 of 2, '(props: TooltipProps<ValueType, string>, context: any): Tooltip<ValueType, string>', gave the following error.
+    Type '(value: number | null | undefined, name: string, props: Payload<ValueType, string>) => [Element, string]' is not assignable to type 'Formatter<ValueType, string>'.
+      Types of parameters 'value' and 'value' are incompatible.
+        Type 'ValueType' is not assignable to type 'number | null | undefined'.
+          Type 'string' is not assignable to type 'number'.
+src/components/marine/MarinePlotsGrid.tsx(271,128): error TS2345: Argument of type '{}' is not assignable to parameter of type 'Record<CombinedParameterKey, SeriesAvailabilityStatus> | (() => Record<CombinedParameterKey, SeriesAvailabilityStatus>)'.
+src/components/pin-data/PinChartDisplay.tsx(1468,11): error TS2322: Type 'void' is not assignable to type 'ReactNode'.
+src/components/pin-data/PinChartDisplay.tsx(1607,86): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: Props): XAxis', gave the following error.
+    Object literal may only specify known properties, and 'angle' does not exist in type 'SVGProps<SVGTextElement> | ReactElement<SVGElement, string | JSXElementConstructor<any>> | ((props: any) => ReactElement<...>)'.
+  Overload 2 of 2, '(props: Props, context: any): XAxis', gave the following error.
+    Object literal may only specify known properties, and 'angle' does not exist in type 'SVGProps<SVGTextElement> | ReactElement<SVGElement, string | JSXElementConstructor<any>> | ((props: any) => ReactElement<...>)'.
+src/components/pin-data/PinChartDisplay.tsx(1708,86): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: Props): XAxis', gave the following error.
+    Object literal may only specify known properties, and 'angle' does not exist in type 'SVGProps<SVGTextElement> | ReactElement<SVGElement, string | JSXElementConstructor<any>> | ((props: any) => ReactElement<...>)'.
+  Overload 2 of 2, '(props: Props, context: any): XAxis', gave the following error.
+    Object literal may only specify known properties, and 'angle' does not exist in type 'SVGProps<SVGTextElement> | ReactElement<SVGElement, string | JSXElementConstructor<any>> | ((props: any) => ReactElement<...>)'.
+src/components/pin-data/PinChartDisplay.tsx(1950,29): error TS2322: Type '{ className: string; title: string; }' is not assignable to type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+  Property 'title' does not exist on type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+src/components/pin-data/PinChartDisplay.tsx(1957,29): error TS2322: Type '{ className: string; title: string; }' is not assignable to type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+  Property 'title' does not exist on type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+src/components/pin-data/PinMarineDeviceData.tsx(476,32): error TS2783: 'time' is specified more than once, so this usage will be overwritten.
+src/components/pin-data/PinMergedPlot.tsx(687,84): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: Props): XAxis', gave the following error.
+    Object literal may only specify known properties, and 'angle' does not exist in type 'SVGProps<SVGTextElement> | ReactElement<SVGElement, string | JSXElementConstructor<any>> | ((props: any) => ReactElement<...>)'.
+  Overload 2 of 2, '(props: Props, context: any): XAxis', gave the following error.
+    Object literal may only specify known properties, and 'angle' does not exist in type 'SVGProps<SVGTextElement> | ReactElement<SVGElement, string | JSXElementConstructor<any>> | ((props: any) => ReactElement<...>)'.
+src/components/pin-data/PinMergedPlot.tsx(954,82): error TS2322: Type '{ className: string; title: string; }' is not assignable to type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+  Property 'title' does not exist on type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+src/components/pin-data/PinMergedPlot.tsx(1196,82): error TS2322: Type '{ className: string; title: string; }' is not assignable to type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+  Property 'title' does not exist on type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+src/components/sharing/ShareDialogSimplified.tsx(178,21): error TS2345: Argument of type '{ id: any; shared_with_user_id: any; permission_level: any; created_at: any; profiles: { email: any; full_name: any; username: any; } | null; }[]' is not assignable to parameter of type 'SetStateAction<UserShare[]>'.
+  Type '{ id: any; shared_with_user_id: any; permission_level: any; created_at: any; profiles: { email: any; full_name: any; username: any; } | null; }[]' is not assignable to type 'UserShare[]'.
+    Type '{ id: any; shared_with_user_id: any; permission_level: any; created_at: any; profiles: { email: any; full_name: any; username: any; } | null; }' is not assignable to type 'UserShare'.
+      Types of property 'profiles' are incompatible.
+        Type '{ email: any; full_name: any; username: any; } | null' is not assignable to type '{ email: string; full_name?: string | undefined; username?: string | undefined; } | undefined'.
+          Type 'null' is not assignable to type '{ email: string; full_name?: string | undefined; username?: string | undefined; } | undefined'.
+src/components/sharing/ShareDialogSimplified.tsx(409,53): error TS2339: Property 'createPublicLink' does not exist on type 'SimplifiedSharingService'.
+src/hooks/use-map-data.ts(123,11): error TS7034: Variable 'projectsData' implicitly has type 'any[]' in some locations where its type cannot be determined.
+src/hooks/use-map-data.ts(124,11): error TS7034: Variable 'tagsData' implicitly has type 'any[]' in some locations where its type cannot be determined.
+src/hooks/use-map-data.ts(125,11): error TS7034: Variable 'pinsData' implicitly has type 'any[]' in some locations where its type cannot be determined.
+src/hooks/use-map-data.ts(126,11): error TS7034: Variable 'linesData' implicitly has type 'any[]' in some locations where its type cannot be determined.
+src/hooks/use-map-data.ts(127,11): error TS7034: Variable 'areasData' implicitly has type 'any[]' in some locations where its type cannot be determined.
+src/hooks/use-map-data.ts(181,48): error TS7005: Variable 'projectsData' implicitly has an 'any[]' type.
+src/hooks/use-map-data.ts(182,40): error TS7005: Variable 'tagsData' implicitly has an 'any[]' type.
+src/hooks/use-map-data.ts(183,15): error TS7005: Variable 'pinsData' implicitly has an 'any[]' type.
+src/hooks/use-map-data.ts(184,16): error TS7005: Variable 'linesData' implicitly has an 'any[]' type.
+src/hooks/use-map-data.ts(185,16): error TS7005: Variable 'areasData' implicitly has an 'any[]' type.
+src/lib/supabase/data-sync-service.ts(3,33): error TS2307: Cannot find module '@/types/map' or its corresponding type declarations.
+src/lib/supabase/file-storage-service.ts(198,35): error TS2339: Property 'statusCode' does not exist on type 'StorageError'.
+src/lib/supabase/file-storage-service.ts(199,30): error TS2339: Property 'error' does not exist on type 'StorageError'.
+src/lib/supabase/file-storage-service.ts(211,32): error TS2339: Property 'statusCode' does not exist on type 'StorageError'.
+src/lib/supabase/map-data-service.ts(29,19): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(30,21): error TS2339: Property 'name' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(31,28): error TS2339: Property 'description' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(32,35): error TS2339: Property 'created_at' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(44,8): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "projects", never, "POST">', gave the following error.
+    Argument of type '{ name: string; description: string | null; user_id: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "projects", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'name' does not exist in type 'never[]'.
+src/lib/supabase/map-data-service.ts(55,16): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(56,18): error TS2339: Property 'name' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(57,25): error TS2339: Property 'description' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(58,32): error TS2339: Property 'created_at' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(65,15): error TS2345: Argument of type '{ name: string | undefined; description: string | null; updated_at: string; }' is not assignable to parameter of type 'never'.
+src/lib/supabase/map-data-service.ts(77,16): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(78,18): error TS2339: Property 'name' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(79,25): error TS2339: Property 'description' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(80,32): error TS2339: Property 'created_at' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(110,15): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(111,17): error TS2339: Property 'name' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(112,18): error TS2339: Property 'color' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(113,22): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(125,8): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "tags", never, "POST">', gave the following error.
+    Argument of type '{ name: string; color: string; project_id: string; user_id: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "tags", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'name' does not exist in type 'never[]'.
+src/lib/supabase/map-data-service.ts(137,16): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(138,18): error TS2339: Property 'name' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(139,19): error TS2339: Property 'color' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(140,23): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(183,15): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(184,16): error TS2339: Property 'lat' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(185,16): error TS2339: Property 'lng' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(186,18): error TS2339: Property 'label' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(187,25): error TS2339: Property 'label_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(188,26): error TS2339: Property 'object_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(189,18): error TS2339: Property 'notes' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(190,22): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(193,19): error TS2339: Property 'user_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(250,15): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "pins", never, "POST">', gave the following error.
+    Argument of type '{ lat: number; lng: number; label: string; notes: string | null; label_visible: boolean; object_visible: boolean; project_id: string | null; user_id: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "pins", never, "POST">', gave the following error.
+    Argument of type '{ lat: number; lng: number; label: string; notes: string | null; label_visible: boolean; object_visible: boolean; project_id: string | null; user_id: string; }' is not assignable to parameter of type 'never[]'.
+      Type '{ lat: number; lng: number; label: string; notes: string | null; label_visible: boolean; object_visible: boolean; project_id: string | null; user_id: string; }' is missing the following properties from type 'never[]': length, pop, push, concat, and 35 more.
+src/lib/supabase/map-data-service.ts(283,22): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(289,17): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "pin_tags", never, "POST">', gave the following error.
+    Argument of type '{ pin_id: any; tag_id: string; }[]' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "pin_tags", never, "POST">', gave the following error.
+    Argument of type '{ pin_id: any; tag_id: string; }[]' is not assignable to parameter of type 'never[]'.
+      Type '{ pin_id: any; tag_id: string; }' is not assignable to type 'never'.
+src/lib/supabase/map-data-service.ts(295,16): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(296,17): error TS2339: Property 'lat' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(297,17): error TS2339: Property 'lng' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(298,19): error TS2339: Property 'label' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(299,26): error TS2339: Property 'label_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(300,19): error TS2339: Property 'notes' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(301,23): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(372,15): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+src/lib/supabase/map-data-service.ts(421,12): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "pins", never, "POST">', gave the following error.
+    Argument of type '{ id: string; lat: number; lng: number; label: string; notes: string | null; label_visible: boolean; project_id: string | null; user_id: string; created_at: string; updated_at: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "pins", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'id' does not exist in type 'never[]'.
+src/lib/supabase/map-data-service.ts(439,28): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(440,29): error TS2339: Property 'lat' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(441,29): error TS2339: Property 'lng' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(442,31): error TS2339: Property 'label' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(443,38): error TS2339: Property 'label_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(444,31): error TS2339: Property 'notes' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(445,35): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(457,27): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(458,70): error TS2339: Property 'lat' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(459,70): error TS2339: Property 'lng' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(460,76): error TS2339: Property 'label' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(461,98): error TS2339: Property 'label_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(462,77): error TS2339: Property 'notes' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(463,89): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(502,19): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "pin_tags", never, "POST">', gave the following error.
+    Argument of type '{ pin_id: string; tag_id: string; }[]' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "pin_tags", never, "POST">', gave the following error.
+    Argument of type '{ pin_id: string; tag_id: string; }[]' is not assignable to parameter of type 'never[]'.
+      Type '{ pin_id: string; tag_id: string; }' is not assignable to type 'never'.
+src/lib/supabase/map-data-service.ts(507,22): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(508,23): error TS2339: Property 'lat' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(509,23): error TS2339: Property 'lng' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(510,25): error TS2339: Property 'label' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(511,32): error TS2339: Property 'label_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(512,25): error TS2339: Property 'notes' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(513,29): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(550,16): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(551,18): error TS2339: Property 'path' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(552,19): error TS2339: Property 'label' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(553,26): error TS2339: Property 'label_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(554,27): error TS2339: Property 'object_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(555,19): error TS2339: Property 'notes' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(556,23): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(558,19): error TS2339: Property 'color' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(559,18): error TS2339: Property 'size' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(586,15): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "lines", never, "POST">', gave the following error.
+    Argument of type '{ path: { lat: number; lng: number; }[]; label: string; notes: string | null; label_visible: boolean; object_visible: boolean; project_id: string | null; user_id: string; color: string; size: number; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "lines", never, "POST">', gave the following error.
+    Argument of type '{ path: { lat: number; lng: number; }[]; label: string; notes: string | null; label_visible: boolean; object_visible: boolean; project_id: string | null; user_id: string; color: string; size: number; }' is not assignable to parameter of type 'never[]'.
+      Type '{ path: { lat: number; lng: number; }[]; label: string; notes: string | null; label_visible: boolean; object_visible: boolean; project_id: string | null; user_id: string; color: string; size: number; }' is missing the following properties from type 'never[]': length, pop, push, concat, and 35 more.
+src/lib/supabase/map-data-service.ts(609,23): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(615,17): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "line_tags", never, "POST">', gave the following error.
+    Argument of type '{ line_id: any; tag_id: string; }[]' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "line_tags", never, "POST">', gave the following error.
+    Argument of type '{ line_id: any; tag_id: string; }[]' is not assignable to parameter of type 'never[]'.
+      Type '{ line_id: any; tag_id: string; }' is not assignable to type 'never'.
+src/lib/supabase/map-data-service.ts(621,16): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(622,18): error TS2339: Property 'path' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(623,19): error TS2339: Property 'label' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(624,26): error TS2339: Property 'label_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(625,27): error TS2339: Property 'object_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(626,19): error TS2339: Property 'notes' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(627,23): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(629,19): error TS2339: Property 'color' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(630,18): error TS2339: Property 'size' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(665,15): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+src/lib/supabase/map-data-service.ts(691,12): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "lines", never, "POST">', gave the following error.
+    Argument of type '{ id: string; path: { lat: number; lng: number; }[]; label: string; notes: string | null; label_visible: boolean; object_visible: boolean; project_id: string | null; user_id: string; color: string; size: number; created_at: string; updated_at: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "lines", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'id' does not exist in type 'never[]'.
+src/lib/supabase/map-data-service.ts(711,29): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(712,31): error TS2339: Property 'path' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(713,32): error TS2339: Property 'label' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(714,39): error TS2339: Property 'label_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(715,40): error TS2339: Property 'object_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(716,32): error TS2339: Property 'notes' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(717,36): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(719,32): error TS2339: Property 'color' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(720,31): error TS2339: Property 'size' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(768,19): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "line_tags", never, "POST">', gave the following error.
+    Argument of type '{ line_id: string; tag_id: string; }[]' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "line_tags", never, "POST">', gave the following error.
+    Argument of type '{ line_id: string; tag_id: string; }[]' is not assignable to parameter of type 'never[]'.
+      Type '{ line_id: string; tag_id: string; }' is not assignable to type 'never'.
+src/lib/supabase/map-data-service.ts(773,23): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(774,25): error TS2339: Property 'path' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(775,26): error TS2339: Property 'label' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(776,33): error TS2339: Property 'label_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(777,34): error TS2339: Property 'object_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(778,26): error TS2339: Property 'notes' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(779,30): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(781,26): error TS2339: Property 'color' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(782,25): error TS2339: Property 'size' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(818,16): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(819,18): error TS2339: Property 'path' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(820,19): error TS2339: Property 'label' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(821,26): error TS2339: Property 'label_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(822,27): error TS2339: Property 'object_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(823,19): error TS2339: Property 'notes' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(824,25): error TS2339: Property 'fill_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(825,23): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(827,19): error TS2339: Property 'color' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(828,18): error TS2339: Property 'size' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(829,26): error TS2339: Property 'transparency' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(858,15): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "areas", never, "POST">', gave the following error.
+    Argument of type '{ path: { lat: number; lng: number; }[]; label: string; notes: string | null; label_visible: boolean; object_visible: boolean; fill_visible: boolean; project_id: string | null; user_id: string; color: string; size: number; transparency: number; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "areas", never, "POST">', gave the following error.
+    Argument of type '{ path: { lat: number; lng: number; }[]; label: string; notes: string | null; label_visible: boolean; object_visible: boolean; fill_visible: boolean; project_id: string | null; user_id: string; color: string; size: number; transparency: number; }' is not assignable to parameter of type 'never[]'.
+      Type '{ path: { lat: number; lng: number; }[]; label: string; notes: string | null; label_visible: boolean; object_visible: boolean; fill_visible: boolean; project_id: string | null; user_id: string; color: string; size: number; transparency: number; }' is missing the following properties from type 'never[]': length, pop, push, concat, and 35 more.
+src/lib/supabase/map-data-service.ts(881,23): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(887,17): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "area_tags", never, "POST">', gave the following error.
+    Argument of type '{ area_id: any; tag_id: string; }[]' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "area_tags", never, "POST">', gave the following error.
+    Argument of type '{ area_id: any; tag_id: string; }[]' is not assignable to parameter of type 'never[]'.
+      Type '{ area_id: any; tag_id: string; }' is not assignable to type 'never'.
+src/lib/supabase/map-data-service.ts(893,16): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(894,18): error TS2339: Property 'path' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(895,19): error TS2339: Property 'label' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(896,26): error TS2339: Property 'label_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(897,27): error TS2339: Property 'object_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(898,19): error TS2339: Property 'notes' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(899,25): error TS2339: Property 'fill_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(900,23): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(902,19): error TS2339: Property 'color' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(903,18): error TS2339: Property 'size' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(904,26): error TS2339: Property 'transparency' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(932,15): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+src/lib/supabase/map-data-service.ts(969,19): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "area_tags", never, "POST">', gave the following error.
+    Argument of type '{ area_id: string; tag_id: string; }[]' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "area_tags", never, "POST">', gave the following error.
+    Argument of type '{ area_id: string; tag_id: string; }[]' is not assignable to parameter of type 'never[]'.
+      Type '{ area_id: string; tag_id: string; }' is not assignable to type 'never'.
+src/lib/supabase/map-data-service.ts(974,16): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(975,18): error TS2339: Property 'path' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(976,19): error TS2339: Property 'label' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(977,26): error TS2339: Property 'label_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(978,27): error TS2339: Property 'object_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(979,19): error TS2339: Property 'notes' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(980,25): error TS2339: Property 'fill_visible' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(981,23): error TS2339: Property 'project_id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(983,19): error TS2339: Property 'color' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(984,18): error TS2339: Property 'size' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(985,26): error TS2339: Property 'transparency' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(1008,15): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+src/lib/supabase/map-data-service.ts(1023,15): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+src/lib/supabase/map-data-service.ts(1038,15): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+src/lib/supabase/map-data-service.ts(1049,15): error TS2345: Argument of type '{ privacy_level: "public" | "private" | "specific"; updated_at: string; }' is not assignable to parameter of type 'never'.
+src/lib/supabase/map-data-service.ts(1081,14): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "pin_shares", never, "POST">', gave the following error.
+    Argument of type '{ pin_id: string; shared_with_user_id: any; shared_by_user_id: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "pin_shares", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'pin_id' does not exist in type 'never[]'.
+src/lib/supabase/map-data-service.ts(1083,45): error TS2339: Property 'id' does not exist on type 'never'.
+src/lib/supabase/map-data-service.ts(1117,15): error TS2345: Argument of type '{ read: boolean; }' is not assignable to parameter of type 'never'.
+src/lib/supabase/pin-copy-service-old.ts(2,37): error TS2307: Cannot find module './notification-service' or its corresponding type declarations.
+src/lib/supabase/user-validation-service.ts(37,23): error TS2339: Property 'user_exists' does not exist on type '{}'.
+src/lib/supabase/user-validation-service.ts(38,23): error TS2339: Property 'user_id' does not exist on type '{}'.
+src/lib/supabase/user-validation-service.ts(39,25): error TS2339: Property 'full_name' does not exist on type '{}'.

@@ -23,6 +23,7 @@ import {
   ResponsiveContainer,
   Brush
 } from 'recharts';
+import { Slider } from '@/components/ui/slider';
 import { format, parseISO, isValid } from 'date-fns';
 import { parseMultipleCSVFiles, type ParseResult, type ParsedDataPoint } from './csvParser';
 import { fetchCombinedDataAction } from '@/app/om-marine-explorer/actions';
@@ -224,6 +225,10 @@ export function PinMergedPlot({
 
   // Y-axis mode state
   const [yAxisMode, setYAxisMode] = useState<'single' | 'multi'>('multi');
+
+  // Chart styling state
+  const [chartHeight, setChartHeight] = useState(200);
+  const [yAxisWidth, setYAxisWidth] = useState(80);
 
   // Color states (allow user to change colors)
   const [leftColor, setLeftColor] = useState(leftParam.color);
@@ -501,7 +506,7 @@ export function PinMergedPlot({
 
       // Calculate MA for left parameter
       if (leftSettings.movingAverage?.enabled) {
-        const windowDays = leftSettings.movingAverage.windowDays || 7;
+        const windowDays = leftSettings.movingAverage.windowDays || 1;
         const windowSize = windowDays * 24;
         const windowStart = Math.max(0, index - windowSize + 1);
         const windowValues: number[] = [];
@@ -523,7 +528,7 @@ export function PinMergedPlot({
 
       // Calculate MA for right parameter
       if (rightSettings.movingAverage?.enabled) {
-        const windowDays = rightSettings.movingAverage.windowDays || 7;
+        const windowDays = rightSettings.movingAverage.windowDays || 1;
         const windowSize = windowDays * 24;
         const windowStart = Math.max(0, index - windowSize + 1);
         const windowValues: number[] = [];
@@ -687,7 +692,7 @@ export function PinMergedPlot({
           {/* Chart and Brush Column */}
           <div className="flex-1 space-y-3">
             {/* Chart Container */}
-            <div style={{ height: '250px' }}>
+            <div style={{ height: `${chartHeight}px` }}>
             {leftError || rightError ? (
               <div className="flex flex-col items-center justify-center h-full text-center gap-2">
                 <AlertCircle className="h-8 w-8 text-destructive" />
@@ -710,7 +715,7 @@ export function PinMergedPlot({
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={displayData} margin={{ top: 5, right: yAxisMode === 'single' ? 20 : 60, left: 60, bottom: 5 }}>
+            <LineChart data={displayData} margin={{ top: 5, right: yAxisMode === 'single' ? 20 : yAxisWidth, left: yAxisWidth, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
 
               {/* X-Axis */}
@@ -896,6 +901,38 @@ export function PinMergedPlot({
 
           {/* Parameter Panel on the right */}
           <div className={cn("space-y-2 transition-all duration-300", isParameterPanelExpanded ? "w-56" : "w-40")}>
+            {/* Chart Height Control */}
+            <div className="space-y-1.5 pb-2 border-b">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Chart Height</Label>
+                <span className="text-xs text-muted-foreground">{chartHeight}px</span>
+              </div>
+              <Slider
+                value={[chartHeight]}
+                onValueChange={(values) => setChartHeight(values[0])}
+                min={150}
+                max={600}
+                step={10}
+                className="w-full"
+              />
+            </div>
+
+            {/* Y-Axis Width Control */}
+            <div className="space-y-1.5 pb-2 border-b">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Y-Axis Width</Label>
+                <span className="text-xs text-muted-foreground">{yAxisWidth}px</span>
+              </div>
+              <Slider
+                value={[yAxisWidth]}
+                onValueChange={(values) => setYAxisWidth(values[0])}
+                min={40}
+                max={120}
+                step={5}
+                className="w-full"
+              />
+            </div>
+
             {/* Y-Axis Mode Toggle */}
             <div className="flex items-center justify-center gap-2 pb-2 border-b">
               <span className="text-xs text-muted-foreground">Single</span>

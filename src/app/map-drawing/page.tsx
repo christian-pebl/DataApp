@@ -88,6 +88,14 @@ import { BatchDateConfirmDialog } from '@/components/pin-data/BatchDateConfirmDi
 import { hasTimeColumn, createFileWithDateColumn } from '@/lib/csv-date-injector';
 import { extractEdnaDate, isEdnaMetaFile } from '@/lib/edna-utils';
 
+// ============================================================================
+// DATA EXPLORER PANEL IMPORTS - NEW ADDITION
+// ============================================================================
+import { isFeatureEnabled } from '@/lib/feature-flags';
+import LazyDataExplorerPanel from '@/components/data-explorer/LazyDataExplorerPanel';
+import type { SavedPlotView } from '@/lib/supabase/plot-view-types';
+// ============================================================================
+
 // Lazy load heavy dialog components
 const ShareDialogSimplified = dynamic(
   () => import('@/components/sharing/ShareDialogSimplified').then(mod => ({ default: mod.ShareDialogSimplified })),
@@ -133,7 +141,19 @@ const LeafletMap = dynamic(() => import('@/components/map/LeafletMap').then(mod 
 });
 
 import { Project, Tag, Pin, Line as LineType, Area } from '@/lib/supabase/types';
-import { PinMarineDeviceData } from '@/components/pin-data/PinMarineDeviceData';
+import PinMarineDeviceData from '@/components/pin-data/PinMarineDeviceData';
+// Lazy-loaded dialog components (reduce initial bundle size)
+import {
+  LazyFileUploadDialog as FileUploadDialog,
+  LazyProjectSettingsDialog as ProjectSettingsDialog,
+  LazyMarineDeviceModal as MarineDeviceModal,
+  LazyProjectsDialog as ProjectsDialog,
+  LazyDeleteProjectConfirmDialog as DeleteProjectConfirmDialog,
+  LazyBatchDeleteConfirmDialog as BatchDeleteConfirmDialog,
+  LazyDuplicateWarningDialog as DuplicateWarningDialog,
+  LazyAddProjectDialog as AddProjectDialog,
+  LazyProjectDataDialog as ProjectDataDialog
+} from '@/components/map-drawing/dialogs/LazyDialogs';
 
 type DrawingMode = 'none' | 'pin' | 'line' | 'area';
 
@@ -641,7 +661,6 @@ function MapDrawingPageContent() {
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
   const [showProjectDataDialog, setShowProjectDataDialog] = useState(false);
   const [showProjectSettingsDialog, setShowProjectSettingsDialog] = useState(false);
-  const [projectNameEdit, setProjectNameEdit] = useState('');
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
   const [currentProjectContext, setCurrentProjectContext] = useState<string>('');
   const [showAddProjectDialog, setShowAddProjectDialog] = useState(false);
@@ -649,8 +668,7 @@ function MapDrawingPageContent() {
   // Multi-selection state for batch operations
   const [selectedObjectIds, setSelectedObjectIds] = useState<Set<string>>(new Set());
   const [showBatchDeleteConfirmDialog, setShowBatchDeleteConfirmDialog] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectDescription, setNewProjectDescription] = useState('');
+  const [isBulkDeleteMode, setIsBulkDeleteMode] = useState(false);
   const [showUploadPinSelector, setShowUploadPinSelector] = useState(false);
   const [selectedUploadPinId, setSelectedUploadPinId] = useState<string>('');
   const [selectedUploadAreaId, setSelectedUploadAreaId] = useState<string>(''); // NEW: For area uploads
@@ -658,7 +676,6 @@ function MapDrawingPageContent() {
   const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
   const [duplicateFiles, setDuplicateFiles] = useState<{fileName: string, existingFile: PinFile}[]>([]);
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
-  const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isUpdatingProject, setIsUpdatingProject] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
 
@@ -681,6 +698,12 @@ function MapDrawingPageContent() {
   // Data restoration state
   const [showDataRestore, setShowDataRestore] = useState(false);
   const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
+
+  // One-time initialization guards for consolidated effects
+  const hasInitializedGPS = useRef(false);
+  const hasInitializedCache = useRef(false);
+  const hasCheckedRedirect = useRef(false);
+  const hasLoadedProjects = useRef(false);
   
   // Pin Meteo Data State (copied from data explorer)
   const [pinMeteoDateRange, setPinMeteoDateRange] = useState<DateRange | undefined>(() => {
@@ -712,6 +735,15 @@ function MapDrawingPageContent() {
   const [showMarineDeviceModal, setShowMarineDeviceModal] = useState(false);
   const [selectedFileType, setSelectedFileType] = useState<'GP' | 'FPOD' | 'Subcam' | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isLoadingFromSavedPlot, setIsLoadingFromSavedPlot] = useState(false);
+
+  // ============================================================================
+  // DATA EXPLORER PANEL STATE - NEW ADDITION (Safe to remove/disable)
+  // ============================================================================
+  const [showDataExplorerPanel, setShowDataExplorerPanel] = useState(false);
+  const [savedPlots, setSavedPlots] = useState<SavedPlotView[]>([]);
+  const [isLoadingSavedPlots, setIsLoadingSavedPlots] = useState(false);
+  // ============================================================================
 
   // Store object GPS coordinates for marine/meteo data
   const [objectGpsCoords, setObjectGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -797,10 +829,80 @@ function MapDrawingPageContent() {
     }
   }, []);
 
-  // Load dynamic projects on component mount
+  // ============================================================================
+  // CONSOLIDATED: Initial Setup & Authentication
+  // Replaces 5 separate effects: Load Dynamic Projects, Check GPS Permission,
+  // Clear File Date Cache, Check LocalStorage Data, Authentication & Restore Dialog
+  // Lines replaced: 818, 864, 1052, 1072, 2532
+  // ============================================================================
   useEffect(() => {
-    loadDynamicProjects();
-  }, [loadDynamicProjects]);
+    // 1. Initialize file date cache (one-time)
+    if (!hasInitializedCache.current) {
+      hasInitializedCache.current = true;
+      setFileDateCache({});
+    }
+
+    // 2. Check GPS permission (one-time)
+    if (!hasInitializedGPS.current) {
+      hasInitializedGPS.current = true;
+      const checkLocationPermission = async () => {
+        if ('permissions' in navigator) {
+          try {
+            const permission = await navigator.permissions.query({ name: 'geolocation' });
+            setLocationPermission(permission.state);
+            permission.addEventListener('change', () => {
+              setLocationPermission(permission.state);
+            });
+          } catch (error) {
+            console.log('Permissions API not supported');
+            setLocationPermission('unknown');
+          }
+        }
+      };
+      checkLocationPermission();
+    }
+
+    // 3. Load dynamic projects (one-time)
+    if (!hasLoadedProjects.current) {
+      hasLoadedProjects.current = true;
+      loadDynamicProjects();
+    }
+
+    // 4. Clean up legacy localStorage (when authenticated and data loaded)
+    if (typeof window !== 'undefined' && isAuthenticated && !isDataLoading) {
+      const hasLocalData =
+        localStorage.getItem('map-drawing-pins') ||
+        localStorage.getItem('map-drawing-lines') ||
+        localStorage.getItem('map-drawing-areas');
+
+      if (hasLocalData) {
+        console.log('🧹 Clearing legacy localStorage data (authentication-only mode)');
+        localStorage.removeItem('map-drawing-pins');
+        localStorage.removeItem('map-drawing-lines');
+        localStorage.removeItem('map-drawing-areas');
+      }
+    }
+
+    // 5. Check authentication and show restore dialog
+    const checkAuthAndRestore = async () => {
+      if (!hasCheckedAuth && isAuthenticated) {
+        setHasCheckedAuth(true);
+
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (session) {
+          const lastSync = localStorage.getItem('map-drawing-last-sync');
+          const timeSinceSync = lastSync ? Date.now() - new Date(lastSync).getTime() : Infinity;
+
+          if (timeSinceSync > 5 * 60 * 1000 || !lastSync) {
+            setShowDataRestore(true);
+          }
+        }
+      }
+    };
+    checkAuthAndRestore();
+  }, [isAuthenticated, isDataLoading, loadDynamicProjects, hasCheckedAuth]);
   
   // Drawing state
   const [drawingMode, setDrawingMode] = useState<DrawingMode>('none');
@@ -843,41 +945,81 @@ function MapDrawingPageContent() {
     }
   }, [showDataDropdown, showMeteoDataSection, sidebarWidth, originalSidebarWidth]);
 
-  // Check GPS permission status on mount
+  // REMOVED: Check GPS permission status - now in consolidated effect above (line 836)
+  // useEffect(() => {
+  //   const checkLocationPermission = async () => {
+  //     if ('permissions' in navigator) {
+  //       try {
+  //         const permission = await navigator.permissions.query({ name: 'geolocation' });
+  //         setLocationPermission(permission.state);
+  //
+  //         // Listen for permission changes
+  //         permission.addEventListener('change', () => {
+  //           setLocationPermission(permission.state);
+  //         });
+  //       } catch (error) {
+  //         console.log('Permissions API not supported, will use geolocation directly');
+  //         setLocationPermission('unknown');
+  //       }
+  //     } else {
+  //       setLocationPermission('unknown');
+  //     }
+  //   };
+  //
+  //   checkLocationPermission();
+  // }, []);
+
+  // ============================================================================
+  // CONSOLIDATED: Data Explorer Initialization
+  // Replaces 3 separate effects: Auto-Open Marine Device Modal, Load Saved Plots, Auto-Open from Redirect
+  // Lines replaced: 960, 1007, 1037
+  // ============================================================================
   useEffect(() => {
-    const checkLocationPermission = async () => {
-      if ('permissions' in navigator) {
-        try {
-          const permission = await navigator.permissions.query({ name: 'geolocation' });
-          setLocationPermission(permission.state);
-          
-          // Listen for permission changes
-          permission.addEventListener('change', () => {
-            setLocationPermission(permission.state);
-          });
-        } catch (error) {
-          console.log('Permissions API not supported, will use geolocation directly');
-          setLocationPermission('unknown');
+    if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+
+    // 1. Check for redirect to open data explorer (one-time)
+    if (!hasCheckedRedirect.current) {
+      hasCheckedRedirect.current = true;
+      const shouldOpen = localStorage.getItem('pebl-open-data-explorer');
+      if (shouldOpen === 'true') {
+        console.log('🔄 [DATA EXPLORER PANEL] Auto-opening panel from redirect');
+        setShowDataExplorerPanel(true);
+        localStorage.removeItem('pebl-open-data-explorer');
+      }
+    }
+
+    // 2. Load saved plots for current project
+    const loadSavedPlots = async () => {
+      const projectId = currentProjectContext || activeProjectId;
+      if (!projectId) {
+        setSavedPlots([]);
+        return;
+      }
+
+      setIsLoadingSavedPlots(true);
+      try {
+        const { plotViewService } = await import('@/lib/supabase/plot-view-service');
+        const result = await plotViewService.listPlotViews(projectId);
+
+        if (result.success && result.data) {
+          setSavedPlots(result.data);
+        } else if (!result.success) {
+          setSavedPlots([]);
         }
-      } else {
-        setLocationPermission('unknown');
+      } catch (error) {
+        console.error('❌ [DATA EXPLORER PANEL] Error loading saved plots:', error);
+        setSavedPlots([]);
+      } finally {
+        setIsLoadingSavedPlots(false);
       }
     };
+    loadSavedPlots();
 
-    checkLocationPermission();
-  }, []);
-
-  // Auto-open marine device modal when redirected from data-explorer with saved plot
-  useEffect(() => {
+    // 3. Check for saved plot load from sessionStorage
     const checkForSavedPlotLoad = () => {
       try {
-        // console.log('🔍 [MAP-DRAWING] Checking for pending saved plot load...');
-
         const storedData = sessionStorage.getItem('pebl-load-plot-view');
-        if (!storedData) {
-          // console.log('ℹ️ [MAP-DRAWING] No saved plot in sessionStorage');
-          return;
-        }
+        if (!storedData) return;
 
         const parsedData = JSON.parse(storedData);
         const { viewId, viewName, timestamp } = parsedData;
@@ -890,26 +1032,165 @@ function MapDrawingPageContent() {
           currentProjectId: currentProjectContext || activeProjectId
         });
 
-        // Open the modal with dummy data - PinMarineDeviceData will handle the actual loading
         console.log('📂 [MAP-DRAWING] Opening marine device modal for auto-load...');
-        setSelectedFileType('GP'); // Default type, will be overridden by loaded view
-        setSelectedFiles([]); // Empty files, will be downloaded by PinMarineDeviceData
+        setSelectedFileType('GP');
+        setSelectedFiles([]);
+        setIsLoadingFromSavedPlot(true);
         setShowMarineDeviceModal(true);
 
         console.log('✅ [MAP-DRAWING] Modal state set to open. PinMarineDeviceData should now mount and detect sessionStorage.');
 
-        // Note: We don't clear sessionStorage here - PinMarineDeviceData will do that
-        // after it successfully loads the view
-
+        // Note: sessionStorage cleared by PinMarineDeviceData after successful load
       } catch (error) {
         console.error('❌ [MAP-DRAWING] Error checking for saved plot load:', error);
-        // Clear invalid data
         sessionStorage.removeItem('pebl-load-plot-view');
       }
     };
-
     checkForSavedPlotLoad();
   }, [currentProjectContext, activeProjectId]);
+
+  // REMOVED: Old Auto-open marine device modal - now in consolidated effect above (line 1003)
+  // useEffect(() => {
+  //   const checkForSavedPlotLoad = () => {
+  //     try {
+  //       const storedData = sessionStorage.getItem('pebl-load-plot-view');
+  //       if (!storedData) return;
+  //
+  //       const parsedData = JSON.parse(storedData);
+  //       const { viewId, viewName, timestamp } = parsedData;
+  //
+  //       console.log('✅ [MAP-DRAWING] Found saved plot to load:', {
+  //         viewId,
+  //         viewName,
+  //         timestamp,
+  //         timeSinceSet: Date.now() - timestamp,
+  //         currentProjectId: currentProjectContext || activeProjectId
+  //       });
+  //
+  //       console.log('📂 [MAP-DRAWING] Opening marine device modal for auto-load...');
+  //       setSelectedFileType('GP');
+  //       setSelectedFiles([]);
+  //       setIsLoadingFromSavedPlot(true);
+  //       setShowMarineDeviceModal(true);
+  //
+  //       console.log('✅ [MAP-DRAWING] Modal state set to open. PinMarineDeviceData should now mount and detect sessionStorage.');
+  //
+  //     } catch (error) {
+  //       console.error('❌ [MAP-DRAWING] Error checking for saved plot load:', error);
+  //       sessionStorage.removeItem('pebl-load-plot-view');
+  //     }
+  //   };
+  //
+  //   checkForSavedPlotLoad();
+  // }, [currentProjectContext, activeProjectId]);
+
+  // REMOVED: Load saved plots - now in consolidated effect above (line 978)
+  // useEffect(() => {
+  //   if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+  //
+  //   const loadSavedPlots = async () => {
+  //     const projectId = currentProjectContext || activeProjectId;
+  //     if (!projectId) {
+  //       setSavedPlots([]);
+  //       return;
+  //     }
+  //
+  //     setIsLoadingSavedPlots(true);
+  //     try {
+  //       const { plotViewService } = await import('@/lib/supabase/plot-view-service');
+  //       const result = await plotViewService.listPlotViews(projectId);
+  //
+  //       if (result.success && result.data) {
+  //         console.log('📊 [DATA EXPLORER PANEL] Loaded', result.data.length, 'saved plots');
+  //         setSavedPlots(result.data);
+  //       }
+  //     } catch (error) {
+  //       console.error('❌ [DATA EXPLORER PANEL] Error loading saved plots:', error);
+  //     } finally {
+  //       setIsLoadingSavedPlots(false);
+  //     }
+  //   };
+  //
+  //   loadSavedPlots();
+  // }, [currentProjectContext, activeProjectId]);
+
+  // REMOVED: Auto-open from redirect - now in consolidated effect above (line 967)
+  // useEffect(() => {
+  //   if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+  //
+  //   const shouldOpen = localStorage.getItem('pebl-open-data-explorer');
+  //   if (shouldOpen === 'true') {
+  //     console.log('🔄 [DATA EXPLORER PANEL] Auto-opening panel from redirect');
+  //     setShowDataExplorerPanel(true);
+  //     localStorage.removeItem('pebl-open-data-explorer');
+  //   }
+  // }, []);
+
+  // ============================================================================
+  // CONSOLIDATED: Event Listeners
+  // Replaces 2 separate effects: Keyboard Shortcut, Custom Event Listener
+  // Lines replaced: 1115, 1133
+  // ============================================================================
+  useEffect(() => {
+    if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+
+    // 1. Keyboard shortcut handler (Cmd/Ctrl + D)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
+        e.preventDefault();
+        setShowDataExplorerPanel(prev => {
+          console.log('⌨️ [DATA EXPLORER PANEL] Toggling panel via keyboard');
+          return !prev;
+        });
+      }
+    };
+
+    // 2. Custom event handler from UserMenu
+    const handleOpenPanel = () => {
+      console.log('📡 [DATA EXPLORER PANEL] Received open event from UserMenu');
+      setShowDataExplorerPanel(true);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('open-data-explorer-panel', handleOpenPanel);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('open-data-explorer-panel', handleOpenPanel);
+    };
+  }, []);
+
+  // REMOVED: Keyboard shortcut - now in consolidated effect above (line 1118)
+  // useEffect(() => {
+  //   if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+  //
+  //   const handleKeyDown = (e: KeyboardEvent) => {
+  //     if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
+  //       e.preventDefault();
+  //       setShowDataExplorerPanel(prev => {
+  //         console.log('⌨️ [DATA EXPLORER PANEL] Toggling panel via keyboard');
+  //         return !prev;
+  //       });
+  //     }
+  //   };
+  //
+  //   window.addEventListener('keydown', handleKeyDown);
+  //   return () => window.removeEventListener('keydown', handleKeyDown);
+  // }, []);
+
+  // REMOVED: Custom event listener - now in consolidated effect above (line 1125)
+  // useEffect(() => {
+  //   if (!isFeatureEnabled('DATA_EXPLORER_PANEL')) return;
+  //
+  //   const handleOpenPanel = () => {
+  //     console.log('📡 [DATA EXPLORER PANEL] Received open event from UserMenu');
+  //     setShowDataExplorerPanel(true);
+  //   };
+  //
+  //   window.addEventListener('open-data-explorer-panel', handleOpenPanel);
+  //   return () => window.removeEventListener('open-data-explorer-panel', handleOpenPanel);
+  // }, []);
+  // ============================================================================
 
   const [itemToEdit, setItemToEdit] = useState<Pin | Line | Area | null>(null);
   const [editingGeometry, setEditingGeometry] = useState<Line | Area | null>(null);
@@ -953,53 +1234,52 @@ function MapDrawingPageContent() {
   
   // REMOVED: Migration prompt - authentication-only mode means no legacy localStorage data exists
   
-  // Check for existing localStorage data on mount
-  // IMPORTANT: Only check after initial data load completes to avoid race conditions
-  useEffect(() => {
-    // Wait for initial data load to complete
-    if (typeof window !== 'undefined' && isAuthenticated && !isDataLoading) {
-      const hasLocalData =
-        localStorage.getItem('map-drawing-pins') ||
-        localStorage.getItem('map-drawing-lines') ||
-        localStorage.getItem('map-drawing-areas');
+  // REMOVED: Check for existing localStorage data - now in consolidated effect above (line 858)
+  // useEffect(() => {
+  //   // Wait for initial data load to complete
+  //   if (typeof window !== 'undefined' && isAuthenticated && !isDataLoading) {
+  //     const hasLocalData =
+  //       localStorage.getItem('map-drawing-pins') ||
+  //       localStorage.getItem('map-drawing-lines') ||
+  //       localStorage.getItem('map-drawing-areas');
+  //
+  //     // DISABLED: Migration prompt removed - only logged-in users can draw, so no legacy data should exist
+  //     // Just silently clear any stale localStorage data if it exists
+  //     if (hasLocalData) {
+  //       console.log('🧹 Clearing legacy localStorage data (authentication-only mode)');
+  //       localStorage.removeItem('map-drawing-pins');
+  //       localStorage.removeItem('map-drawing-lines');
+  //       localStorage.removeItem('map-drawing-areas');
+  //     }
+  //   }
+  // }, [isAuthenticated, isDataLoading]);
 
-      // DISABLED: Migration prompt removed - only logged-in users can draw, so no legacy data should exist
-      // Just silently clear any stale localStorage data if it exists
-      if (hasLocalData) {
-        console.log('🧹 Clearing legacy localStorage data (authentication-only mode)');
-        localStorage.removeItem('map-drawing-pins');
-        localStorage.removeItem('map-drawing-lines');
-        localStorage.removeItem('map-drawing-areas');
-      }
-    }
-  }, [isAuthenticated, isDataLoading]);
-
-  // Check for authentication and show restore dialog on login
-  useEffect(() => {
-    const checkAuthAndRestore = async () => {
-      if (!hasCheckedAuth && isAuthenticated) {
-        setHasCheckedAuth(true);
-        
-        // Check if this is a fresh login (no data in state but user is authenticated)
-        const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session) {
-          // Check if we need to restore data
-          const lastSync = localStorage.getItem('map-drawing-last-sync');
-          const timeSinceSync = lastSync ? Date.now() - new Date(lastSync).getTime() : Infinity;
-          
-          // Show restore dialog if it's been more than 5 minutes since last sync
-          // or if there's no sync time recorded
-          if (timeSinceSync > 5 * 60 * 1000 || !lastSync) {
-            setShowDataRestore(true);
-          }
-        }
-      }
-    };
-    
-    checkAuthAndRestore();
-  }, [isAuthenticated, hasCheckedAuth]);
+  // REMOVED: Check for authentication and show restore dialog - now in consolidated effect above (line 874)
+  // useEffect(() => {
+  //   const checkAuthAndRestore = async () => {
+  //     if (!hasCheckedAuth && isAuthenticated) {
+  //       setHasCheckedAuth(true);
+  //
+  //       // Check if this is a fresh login (no data in state but user is authenticated)
+  //       const supabase = createClient();
+  //       const { data: { session } } = await supabase.auth.getSession();
+  //
+  //       if (session) {
+  //         // Check if we need to restore data
+  //         const lastSync = localStorage.getItem('map-drawing-last-sync');
+  //         const timeSinceSync = lastSync ? Date.now() - new Date(lastSync).getTime() : Infinity;
+  //
+  //         // Show restore dialog if it's been more than 5 minutes since last sync
+  //         // or if there's no sync time recorded
+  //         if (timeSinceSync > 5 * 60 * 1000 || !lastSync) {
+  //           setShowDataRestore(true);
+  //         }
+  //       }
+  //     }
+  //   };
+  //
+  //   checkAuthAndRestore();
+  // }, [isAuthenticated, hasCheckedAuth]);
   
   // REMOVED: handleMigration - authentication-only mode means no legacy localStorage data exists
 
@@ -1133,68 +1413,70 @@ function MapDrawingPageContent() {
     }
   }, [view, updateMapScale]);
 
-  // Pin Meteo Grid: Initialize plot configurations
+  // ============================================================================
+  // CONSOLIDATED: Pin Meteo Grid Management
+  // Replaces 3 separate effects: Initialize Plot Configurations, Manage Data Availability, Manage Brush Range
+  // Lines replaced: 1368, 1398, 1428
+  // ============================================================================
   useEffect(() => {
-    const configs: PlotConfigInternal[] = ALL_PARAMETERS.map(key => {
-      const baseConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
-      let iconComp: LucideIcon = Info; // Default icon
-      const isDirectional = key === 'waveDirection' || key === 'windDirection10m';
+    // 1. Initialize plot configurations (one-time, if not already set)
+    if (pinMeteoPlotConfigsInternal.length === 0) {
+      const configs: PlotConfigInternal[] = ALL_PARAMETERS.map(key => {
+        const baseConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
+        let iconComp: LucideIcon = Info; // Default icon
+        const isDirectional = key === 'waveDirection' || key === 'windDirection10m';
 
-      // Fallbacks if no icon is in PARAMETER_CONFIG
-      if (key === 'seaLevelHeightMsl') iconComp = Waves;
-      else if (key === 'waveHeight') iconComp = Sailboat;
-      else if (key === 'waveDirection') iconComp = CompassIcon;
-      else if (key === 'wavePeriod') iconComp = TimerIcon;
-      else if (key === 'seaSurfaceTemperature') iconComp = Thermometer;
-      else if (key === 'temperature2m') iconComp = Thermometer;
-      else if (key === 'windSpeed10m') iconComp = WindIcon;
-      else if (key === 'windDirection10m') iconComp = CompassIcon;
-      else if (key === 'ghi') iconComp = SunIcon;
-      
-      return {
-        dataKey: key as CombinedParameterKey,
-        name: baseConfig.name,
-        unit: baseConfig.unit || '',
-        color: baseConfig.color || '--chart-1',
-        Icon: iconComp,
-        isDirectional,
-      };
-    });
-    setPinMeteoPlotConfigsInternal(configs);
-  }, []);
+        // Fallbacks if no icon is in PARAMETER_CONFIG
+        if (key === 'seaLevelHeightMsl') iconComp = Waves;
+        else if (key === 'waveHeight') iconComp = Sailboat;
+        else if (key === 'waveDirection') iconComp = CompassIcon;
+        else if (key === 'wavePeriod') iconComp = TimerIcon;
+        else if (key === 'seaSurfaceTemperature') iconComp = Thermometer;
+        else if (key === 'temperature2m') iconComp = Thermometer;
+        else if (key === 'windSpeed10m') iconComp = WindIcon;
+        else if (key === 'windDirection10m') iconComp = CompassIcon;
+        else if (key === 'ghi') iconComp = SunIcon;
 
-  // Pin Meteo Grid: Manage data availability status
-  useEffect(() => {
+        return {
+          dataKey: key as CombinedParameterKey,
+          name: baseConfig.name,
+          unit: baseConfig.unit || '',
+          color: baseConfig.color || '--chart-1',
+          Icon: iconComp,
+          isDirectional,
+        };
+      });
+      setPinMeteoPlotConfigsInternal(configs);
+    }
+
+    // 2. Manage data availability status
     if (isLoadingPinMeteoData) {
       const pendingAvailability: Partial<Record<CombinedParameterKey, SeriesAvailabilityStatus>> = {};
       ALL_PARAMETERS.forEach(key => {
         pendingAvailability[key as CombinedParameterKey] = 'pending';
       });
       setPinMeteoSeriesDataAvailability(pendingAvailability as Record<CombinedParameterKey, SeriesAvailabilityStatus>);
-      return;
-    }
-    
-    const newAvailability: Partial<Record<CombinedParameterKey, SeriesAvailabilityStatus>> = {};
-    if (!pinMeteoData || pinMeteoData.length === 0) {
-      ALL_PARAMETERS.forEach(key => {
-        newAvailability[key as CombinedParameterKey] = 'unavailable';
-      });
     } else {
-      ALL_PARAMETERS.forEach(key => {
-        const hasData = pinMeteoData.some(
-          point => {
-            const val = point[key as keyof CombinedDataPoint];
-            return val !== undefined && val !== null && !isNaN(Number(val));
-          }
-        );
-        newAvailability[key as CombinedParameterKey] = hasData ? 'available' : 'unavailable';
-      });
+      const newAvailability: Partial<Record<CombinedParameterKey, SeriesAvailabilityStatus>> = {};
+      if (!pinMeteoData || pinMeteoData.length === 0) {
+        ALL_PARAMETERS.forEach(key => {
+          newAvailability[key as CombinedParameterKey] = 'unavailable';
+        });
+      } else {
+        ALL_PARAMETERS.forEach(key => {
+          const hasData = pinMeteoData.some(
+            point => {
+              const val = point[key as keyof CombinedDataPoint];
+              return val !== undefined && val !== null && !isNaN(Number(val));
+            }
+          );
+          newAvailability[key as CombinedParameterKey] = hasData ? 'available' : 'unavailable';
+        });
+      }
+      setPinMeteoSeriesDataAvailability(newAvailability as Record<CombinedParameterKey, SeriesAvailabilityStatus>);
     }
-    setPinMeteoSeriesDataAvailability(newAvailability as Record<CombinedParameterKey, SeriesAvailabilityStatus>);
-  }, [pinMeteoData, isLoadingPinMeteoData]);
 
-  // Pin Meteo Grid: Manage brush range
-  useEffect(() => {
+    // 3. Manage brush range
     if (pinMeteoData && pinMeteoData.length > 0 && pinMeteoBrushEndIndex === undefined) {
       setPinMeteoBrushStartIndex(0);
       setPinMeteoBrushEndIndex(pinMeteoData.length - 1);
@@ -1202,7 +1484,43 @@ function MapDrawingPageContent() {
       setPinMeteoBrushStartIndex(0);
       setPinMeteoBrushEndIndex(undefined);
     }
-  }, [pinMeteoData, pinMeteoBrushEndIndex]);
+  }, [pinMeteoData, isLoadingPinMeteoData, pinMeteoBrushEndIndex, pinMeteoPlotConfigsInternal.length]);
+
+  // REMOVED: Initialize plot configurations - now in consolidated effect above (line 1373)
+  // useEffect(() => {
+  //   const configs: PlotConfigInternal[] = ALL_PARAMETERS.map(key => {
+  //     const baseConfig = PARAMETER_CONFIG[key as CombinedParameterKey];
+  //     let iconComp: LucideIcon = Info;
+  //     const isDirectional = key === 'waveDirection' || key === 'windDirection10m';
+  //     ...
+  //     return { dataKey, name, unit, color, Icon, isDirectional };
+  //   });
+  //   setPinMeteoPlotConfigsInternal(configs);
+  // }, []);
+
+  // REMOVED: Manage data availability status - now in consolidated effect above (line 1411)
+  // useEffect(() => {
+  //   if (isLoadingPinMeteoData) {
+  //     const pendingAvailability = {};
+  //     ALL_PARAMETERS.forEach(key => {
+  //       pendingAvailability[key] = 'pending';
+  //     });
+  //     setPinMeteoSeriesDataAvailability(pendingAvailability);
+  //     return;
+  //   }
+  //   ...
+  // }, [pinMeteoData, isLoadingPinMeteoData]);
+
+  // REMOVED: Manage brush range - now in consolidated effect above (line 1440)
+  // useEffect(() => {
+  //   if (pinMeteoData && pinMeteoData.length > 0 && pinMeteoBrushEndIndex === undefined) {
+  //     setPinMeteoBrushStartIndex(0);
+  //     setPinMeteoBrushEndIndex(pinMeteoData.length - 1);
+  //   } else if ((!pinMeteoData || pinMeteoData.length === 0)) {
+  //     setPinMeteoBrushStartIndex(0);
+  //     setPinMeteoBrushEndIndex(undefined);
+  //   }
+  // }, [pinMeteoData, pinMeteoBrushEndIndex]);
 
   // Fetch merged files - extracted as reusable function
   const fetchMergedFiles = useCallback(async () => {
@@ -1587,49 +1905,49 @@ function MapDrawingPageContent() {
     }
   }, [deletePinData, toast]);
 
-  const handleUpdateLine = async (id: string, label: string, notes: string, projectId?: string, tagIds?: string[]) => {
+  const handleUpdateLine = useCallback(async (id: string, label: string, notes: string, projectId?: string, tagIds?: string[]) => {
     try {
       await updateLineData(id, { label, notes, projectId, tagIds });
       toast({ title: "Line Updated", description: "Line has been updated successfully." });
     } catch (error) {
       console.error('Error updating line:', error);
-      toast({ 
+      toast({
         variant: "destructive",
-        title: "Error", 
-        description: "Failed to update line. Please try again." 
+        title: "Error",
+        description: "Failed to update line. Please try again."
       });
     }
-  };
+  }, [updateLineData, toast]);
 
-  const handleDeleteLine = async (id: string) => {
+  const handleDeleteLine = useCallback(async (id: string) => {
     try {
       await deleteLineData(id);
       toast({ title: "Line Deleted", description: "Line has been deleted from the map." });
     } catch (error) {
       console.error('Error deleting line:', error);
-      toast({ 
+      toast({
         variant: "destructive",
-        title: "Error", 
-        description: "Failed to delete line. Please try again." 
+        title: "Error",
+        description: "Failed to delete line. Please try again."
       });
     }
-  };
+  }, [deleteLineData, toast]);
 
-  const handleUpdateArea = async (id: string, label: string, notes: string, path: {lat: number, lng: number}[], projectId?: string, tagIds?: string[]) => {
+  const handleUpdateArea = useCallback(async (id: string, label: string, notes: string, path: {lat: number, lng: number}[], projectId?: string, tagIds?: string[]) => {
     try {
       await updateAreaData(id, { label, notes, path, projectId, tagIds });
       toast({ title: "Area Updated", description: "Area has been updated successfully." });
     } catch (error) {
       console.error('Error updating area:', error);
-      toast({ 
+      toast({
         variant: "destructive",
-        title: "Error", 
-        description: "Failed to update area. Please try again." 
+        title: "Error",
+        description: "Failed to update area. Please try again."
       });
     }
-  };
+  }, [updateAreaData, toast]);
 
-  const handleDeleteArea = async (id: string) => {
+  const handleDeleteArea = useCallback(async (id: string) => {
     try {
       await deleteAreaData(id);
       toast({ title: "Area Deleted", description: "Area has been deleted from the map." });
@@ -1641,7 +1959,7 @@ function MapDrawingPageContent() {
         description: "Failed to delete area. Please try again."
       });
     }
-  };
+  }, [deleteAreaData, toast]);
 
   // Multi-selection helper functions
   const toggleObjectSelection = (objectId: string) => {
@@ -1675,11 +1993,13 @@ function MapDrawingPageContent() {
 
   const getSelectedObjects = (): Array<{ id: string; type: 'pin' | 'line' | 'area'; label: string }> => {
     // Get all objects across all projects (since selections can span projects)
-    return [
+    const allObjects = [
       ...pins.map(pin => ({ ...pin, type: 'pin' as const })),
       ...lines.map(line => ({ ...line, type: 'line' as const })),
       ...areas.map(area => ({ ...area, type: 'area' as const }))
-    ].filter(obj => selectedObjectIds.has(obj.id));
+    ];
+
+    return allObjects.filter(obj => selectedObjectIds.has(obj.id));
   };
 
   // Batch delete handler
@@ -1708,7 +2028,7 @@ function MapDrawingPageContent() {
         }
         successCount++;
       } catch (error) {
-        console.error(`Error deleting ${obj.type} ${obj.id}:`, error);
+        console.error(`Error deleting ${obj.type} ${obj.label}:`, error);
         errorCount++;
       }
     }
@@ -1732,9 +2052,10 @@ function MapDrawingPageContent() {
     // Clear selections and close dialog
     clearObjectSelection();
     setShowBatchDeleteConfirmDialog(false);
+    setIsBulkDeleteMode(false);
   };
 
-  const handleToggleLabel = async (id: string, type: 'pin' | 'line' | 'area') => {
+  const handleToggleLabel = useCallback(async (id: string, type: 'pin' | 'line' | 'area') => {
     try {
       if (type === 'pin') {
         const pin = pins.find(p => p.id === id);
@@ -1754,15 +2075,15 @@ function MapDrawingPageContent() {
       }
     } catch (error) {
       console.error('Error toggling label:', error);
-      toast({ 
+      toast({
         variant: "destructive",
-        title: "Error", 
-        description: "Failed to toggle label visibility." 
+        title: "Error",
+        description: "Failed to toggle label visibility."
       });
     }
-  };
+  }, [pins, lines, areas, updatePinData, updateLineData, updateAreaData, toast]);
 
-  const handleToggleFill = async (id: string) => {
+  const handleToggleFill = useCallback(async (id: string) => {
     try {
       const area = areas.find(a => a.id === id);
       if (area) {
@@ -1776,7 +2097,7 @@ function MapDrawingPageContent() {
         description: "Failed to toggle fill visibility."
       });
     }
-  };
+  }, [areas, updateAreaData, toast]);
 
   const handleToggleObjectVisibility = async (id: string, type: 'pin' | 'line' | 'area') => {
     try {
@@ -2412,11 +2733,7 @@ function MapDrawingPageContent() {
     }
   }, []);
 
-  // Self-test on page load to verify our date parsing
-  React.useEffect(() => {
-    const testISO = "2024-08-01T00:00:00.000Z";
-    // Date parsing self-test removed - functionality verified
-  }, []);
+  // REMOVED: Date parsing self-test - functionality verified and no longer needed
 
   // Parse various date formats commonly found in CSV files
   // NOTE: Old detectDateFormat() and parseCSVDate() functions removed
@@ -2434,10 +2751,10 @@ function MapDrawingPageContent() {
     error?: string;
   }>>({});
 
-  // Clear the file date cache on component mount (run once)
-  useEffect(() => {
-    setFileDateCache({});
-  }, []);
+  // REMOVED: Clear the file date cache - now in consolidated effect above (line 830)
+  // useEffect(() => {
+  //   setFileDateCache({});
+  // }, []);
 
   // Function to get or analyze file date range
   const getFileDateRange = useCallback(async (file: PinFile) => {
@@ -2458,59 +2775,59 @@ function MapDrawingPageContent() {
     return result;
   }, [analyzeCSVDateRange, fileDateCache]);
 
-  // Close menu when clicking outside
+  // ============================================================================
+  // CONSOLIDATED: UI Event Listeners
+  // Replaces 2 separate effects: Click Outside Handler, Sidebar Resizing
+  // Lines replaced: 2773, 2821
+  // ============================================================================
   useEffect(() => {
+    // 1. Click outside handler for menus and dropdowns
     const handleClickOutside = (event: MouseEvent) => {
       if (showMainMenu) {
         const target = event.target as Element;
         const menuButton = document.querySelector('[data-menu-button]');
         const menuDropdown = document.querySelector('[data-menu-dropdown]');
-        
+
         if (menuButton && !menuButton.contains(target) && menuDropdown && !menuDropdown.contains(target)) {
           setShowMainMenu(false);
         }
       }
-      
+
       // Close data dropdown when clicking outside
       if (showDataDropdown) {
         const target = event.target as Element;
         const dataDropdown = document.querySelector('[data-data-dropdown]');
-        
+
         if (dataDropdown && !dataDropdown.contains(target)) {
           setShowDataDropdown(false);
         }
       }
-      
-          // Close explore dropdown when clicking outside
+
+      // Close explore dropdown when clicking outside
       if (showExploreDropdown) {
         const target = event.target as Element;
         const exploreDropdown = document.querySelector('[data-explore-dropdown]');
-        
+
         if (exploreDropdown && !exploreDropdown.contains(target)) {
           setShowExploreDropdown(false);
         }
       }
-      
+
       // Close marine device modal when clicking outside
       if (showMarineDeviceModal) {
         const target = event.target as Element;
         const modalContent = document.querySelector('[data-marine-modal]');
-        
+
         if (modalContent && !modalContent.contains(target)) {
           // Let the Dialog component handle backdrop clicks
         }
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showMainMenu, showDataDropdown, showExploreDropdown]);
-
-  // Handle sidebar resizing
-  useEffect(() => {
+    // 2. Sidebar resize handlers
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
-      
+
       const newWidth = Math.max(280, Math.min(600, e.clientX)); // Min 280px, max 600px
       setSidebarWidth(newWidth);
     };
@@ -2519,6 +2836,10 @@ function MapDrawingPageContent() {
       setIsResizing(false);
     };
 
+    // Add click outside listener
+    document.addEventListener('mousedown', handleClickOutside);
+
+    // Add resize listeners if resizing is active
     if (isResizing) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
@@ -2529,21 +2850,70 @@ function MapDrawingPageContent() {
       document.body.style.userSelect = '';
     }
 
+    // Cleanup function
     return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [isResizing]);
+  }, [showMainMenu, showDataDropdown, showExploreDropdown, isResizing]);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizing(true);
   }, []);
 
-  // Initialize editing state when itemToEdit changes
+  // ============================================================================
+  // CONSOLIDATED: Object Editing State
+  // Replaces 2 separate effects: Keep itemToEdit in Sync, Initialize Editing State
+  // Lines replaced: 2857, 2900
+  // ============================================================================
   useEffect(() => {
+    // 1. Keep itemToEdit in sync with pins/lines/areas arrays
+    // NOTE: itemToEdit intentionally NOT in dependencies to avoid infinite loop
+    if (itemToEdit) {
+      // Check if it's a pin
+      if ('lat' in itemToEdit && 'lng' in itemToEdit) {
+        const updatedPin = pins.find(p => p.id === itemToEdit.id);
+        if (updatedPin) {
+          // Only update if the data has actually changed (comparing relevant fields)
+          if (updatedPin.label !== itemToEdit.label ||
+              updatedPin.notes !== itemToEdit.notes ||
+              updatedPin.lat !== itemToEdit.lat ||
+              updatedPin.lng !== itemToEdit.lng ||
+              updatedPin.labelVisible !== itemToEdit.labelVisible) {
+            console.log('Updating itemToEdit with updated pin data:', updatedPin);
+            setItemToEdit(updatedPin);
+          }
+        }
+      }
+      // Check if it's a line
+      else if ('path' in itemToEdit && !('fillVisible' in itemToEdit)) {
+        const updatedLine = lines.find(l => l.id === itemToEdit.id);
+        if (updatedLine) {
+          if (updatedLine.label !== itemToEdit.label ||
+              updatedLine.notes !== itemToEdit.notes) {
+            console.log('Updating itemToEdit with updated line data:', updatedLine);
+            setItemToEdit(updatedLine);
+          }
+        }
+      }
+      // Check if it's an area
+      else if ('path' in itemToEdit && 'fillVisible' in itemToEdit) {
+        const updatedArea = areas.find(a => a.id === itemToEdit.id);
+        if (updatedArea) {
+          if (updatedArea.label !== itemToEdit.label ||
+              updatedArea.notes !== itemToEdit.notes) {
+            console.log('Updating itemToEdit with updated area data:', updatedArea);
+            setItemToEdit(updatedArea);
+          }
+        }
+      }
+    }
+
+    // 2. Initialize editing state when itemToEdit changes and edit mode is active
     if (itemToEdit && isEditingObject) {
       setEditingLabel(itemToEdit.label || '');
       setEditingNotes(itemToEdit.notes || '');
@@ -2551,12 +2921,12 @@ function MapDrawingPageContent() {
       // Initialize coordinates and colors based on object type
       if ('lat' in itemToEdit && 'lng' in itemToEdit) {
         console.log('Initializing coordinates:', itemToEdit.lat, itemToEdit.lng, 'format:', coordinateFormat);
-        
+
         const formats = getCoordinateFormats(itemToEdit.lat);
         const lngFormats = getCoordinateFormats(itemToEdit.lng);
-        
+
         console.log('Generated formats:', formats, lngFormats);
-        
+
         // Set coordinates based on current format
         switch (coordinateFormat) {
           case 'degreeMinutes':
@@ -2578,12 +2948,12 @@ function MapDrawingPageContent() {
           // This is an area - initialize area-specific state
           setEditingColor(itemToEdit.color || '#3b82f6'); // Use stored color or blue for areas
           setEditingTransparency(itemToEdit.transparency || 20); // Use stored transparency or default
-          
+
           // Initialize area coordinates for editing
           const areaCoords = itemToEdit.path.map(point => {
             const latFormats = getCoordinateFormats(point.lat);
             const lngFormats = getCoordinateFormats(point.lng);
-            
+
             switch (coordinateFormat) {
               case 'degreeMinutes':
                 return [latFormats.degreeMinutes, lngFormats.degreeMinutes];
@@ -2599,10 +2969,10 @@ function MapDrawingPageContent() {
         }
       }
       setEditingSize(itemToEdit.size || 2); // Use stored size or default to thinner
-      
+
       // Auto-expand notes if there are existing notes
       setShowNotesSection(Boolean(itemToEdit.notes && itemToEdit.notes.trim()));
-      
+
       // Focus the label input field after a brief delay
       setTimeout(() => {
         if (labelInputRef.current) {
@@ -2611,50 +2981,29 @@ function MapDrawingPageContent() {
         }
       }, 100);
     }
-  }, [itemToEdit, isEditingObject, coordinateFormat]);
+  }, [pins, lines, areas, itemToEdit, isEditingObject, coordinateFormat]);
 
-  // Keep itemToEdit in sync with pins/lines/areas arrays
-  useEffect(() => {
-    if (itemToEdit) {
-      // Check if it's a pin
-      if ('lat' in itemToEdit && 'lng' in itemToEdit) {
-        const updatedPin = pins.find(p => p.id === itemToEdit.id);
-        if (updatedPin) {
-          // Only update if the data has actually changed (comparing relevant fields)
-          if (updatedPin.label !== itemToEdit.label || 
-              updatedPin.notes !== itemToEdit.notes ||
-              updatedPin.lat !== itemToEdit.lat ||
-              updatedPin.lng !== itemToEdit.lng ||
-              updatedPin.labelVisible !== itemToEdit.labelVisible) {
-            console.log('Updating itemToEdit with updated pin data:', updatedPin);
-            setItemToEdit(updatedPin);
-          }
-        }
-      } 
-      // Check if it's a line
-      else if ('path' in itemToEdit && !('fillVisible' in itemToEdit)) {
-        const updatedLine = lines.find(l => l.id === itemToEdit.id);
-        if (updatedLine) {
-          if (updatedLine.label !== itemToEdit.label || 
-              updatedLine.notes !== itemToEdit.notes) {
-            console.log('Updating itemToEdit with updated line data:', updatedLine);
-            setItemToEdit(updatedLine);
-          }
-        }
-      }
-      // Check if it's an area
-      else if ('path' in itemToEdit && 'fillVisible' in itemToEdit) {
-        const updatedArea = areas.find(a => a.id === itemToEdit.id);
-        if (updatedArea) {
-          if (updatedArea.label !== itemToEdit.label || 
-              updatedArea.notes !== itemToEdit.notes) {
-            console.log('Updating itemToEdit with updated area data:', updatedArea);
-            setItemToEdit(updatedArea);
-          }
-        }
-      }
-    }
-  }, [pins, lines, areas]); // Removed itemToEdit from dependencies to avoid infinite loop
+  // REMOVED: Initialize editing state - now in consolidated effect above (line 2793)
+  // useEffect(() => {
+  //   if (itemToEdit && isEditingObject) {
+  //     setEditingLabel(itemToEdit.label || '');
+  //     setEditingNotes(itemToEdit.notes || '');
+  //     setEditingProjectId(itemToEdit.projectId || null);
+  //     ...
+  //   }
+  // }, [itemToEdit, isEditingObject, coordinateFormat]);
+
+  // REMOVED: Keep itemToEdit in sync - now in consolidated effect above (line 2783)
+  // useEffect(() => {
+  //   if (itemToEdit) {
+  //     // Check if it's a pin
+  //     if ('lat' in itemToEdit && 'lng' in itemToEdit) {
+  //       const updatedPin = pins.find(p => p.id === itemToEdit.id);
+  //       ...
+  //     }
+  //     ...
+  //   }
+  // }, [pins, lines, areas]);
 
   // Handle coordinate format change
   const handleCoordinateFormatChange = (newFormat: CoordinateFormat) => {
@@ -4042,6 +4391,375 @@ function MapDrawingPageContent() {
       return null;
     }
   }, [pinFileMetadata, areaFileMetadata, mergedFiles, toast]);
+
+  // ============================================================================
+  // DATA EXPLORER PANEL HANDLERS - NEW ADDITION
+  // ============================================================================
+  const handleFileClickFromPanel = useCallback(async (file: PinFile & { pinLabel: string }) => {
+    console.log('📂 [DATA EXPLORER PANEL] File clicked:', file.fileName);
+
+    try {
+      // Determine file type from filename
+      let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+      const parts = file.fileName.split('_');
+      const position0 = parts[0]?.toLowerCase() || '';
+      const position1 = parts[1]?.toLowerCase() || '';
+
+      if (position0.includes('fpod') || position1.includes('fpod')) {
+        fileType = 'FPOD';
+      } else if (position0.includes('subcam') || position1.includes('subcam')) {
+        fileType = 'Subcam';
+      }
+
+      // Fetch GPS coordinates for marine/meteo integration
+      if (file.pinId || file.areaId) {
+        console.log('📍 [DATA EXPLORER PANEL] Fetching GPS coordinates for:', file.pinId || file.areaId);
+
+        if (file.pinId) {
+          // Fetch pin coordinates
+          const pin = pins.find(p => p.id === file.pinId);
+          if (pin) {
+            setObjectGpsCoords({ lat: pin.lat, lng: pin.lng });
+            setObjectName(pin.label || file.pinLabel || 'Pin');
+            console.log('✅ [DATA EXPLORER PANEL] Set GPS coords from pin:', { lat: pin.lat, lng: pin.lng });
+          }
+        } else if (file.areaId) {
+          // Fetch area coordinates (use centroid)
+          const area = areas.find(a => a.id === file.areaId);
+          if (area && area.path && area.path.length > 0) {
+            const centerLat = area.path.reduce((sum, p) => sum + p.lat, 0) / area.path.length;
+            const centerLng = area.path.reduce((sum, p) => sum + p.lng, 0) / area.path.length;
+            setObjectGpsCoords({ lat: centerLat, lng: centerLng });
+            setObjectName(area.name || file.pinLabel || 'Area');
+            console.log('✅ [DATA EXPLORER PANEL] Set GPS coords from area centroid:', { lat: centerLat, lng: centerLng });
+          }
+        }
+      }
+
+      // Download the file (reuse existing handler)
+      const downloadedFile = await handleDownloadFileForPlot(
+        file.pinId || null,
+        file.fileName,
+        file.areaId || null,
+        file
+      );
+
+      if (!downloadedFile) {
+        throw new Error('File download failed');
+      }
+
+      // Open in marine device modal
+      setSelectedFileType(fileType);
+      setSelectedFiles([downloadedFile]);
+      setShowMarineDeviceModal(true);
+      setShowDataExplorerPanel(false); // Close panel
+
+      console.log('✅ [DATA EXPLORER PANEL] File opened in marine device modal');
+    } catch (error) {
+      console.error('❌ [DATA EXPLORER PANEL] Error opening file:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to open file"
+      });
+    }
+  }, [handleDownloadFileForPlot, pins, areas, toast]);
+
+  const handleOpenStackedPlotsFromPanel = useCallback(async (filesToOpen: (PinFile & { pinLabel: string })[]) => {
+    console.log('📚 [DATA EXPLORER PANEL] Opening stacked plots for:', filesToOpen.map(f => f.fileName));
+
+    if (filesToOpen.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Files Selected",
+        description: "Please select files to open"
+      });
+      return;
+    }
+
+    try {
+      // Determine file type from first file (assume all same type)
+      let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+      const firstFileName = filesToOpen[0].fileName;
+      const parts = firstFileName.split('_');
+      const position0 = parts[0]?.toLowerCase() || '';
+      const position1 = parts[1]?.toLowerCase() || '';
+
+      if (position0.includes('fpod') || position1.includes('fpod')) {
+        fileType = 'FPOD';
+      } else if (position0.includes('subcam') || position1.includes('subcam')) {
+        fileType = 'Subcam';
+      }
+
+      // Set GPS coordinates from first file for marine/meteo integration
+      const firstFile = filesToOpen[0];
+      if (firstFile.pinId || firstFile.areaId) {
+        console.log('📍 [DATA EXPLORER PANEL] Fetching GPS coordinates for:', firstFile.pinId || firstFile.areaId);
+
+        if (firstFile.pinId) {
+          const pin = pins.find(p => p.id === firstFile.pinId);
+          if (pin) {
+            setObjectGpsCoords({ lat: pin.lat, lng: pin.lng });
+            setObjectName(pin.label || firstFile.pinLabel || 'Pin');
+            console.log('✅ [DATA EXPLORER PANEL] Set GPS coords from pin:', { lat: pin.lat, lng: pin.lng });
+          }
+        } else if (firstFile.areaId) {
+          const area = areas.find(a => a.id === firstFile.areaId);
+          if (area && area.path && area.path.length > 0) {
+            const centerLat = area.path.reduce((sum, p) => sum + p.lat, 0) / area.path.length;
+            const centerLng = area.path.reduce((sum, p) => sum + p.lng, 0) / area.path.length;
+            setObjectGpsCoords({ lat: centerLat, lng: centerLng });
+            setObjectName(area.name || firstFile.pinLabel || 'Area');
+            console.log('✅ [DATA EXPLORER PANEL] Set GPS coords from area centroid:', { lat: centerLat, lng: centerLng });
+          }
+        }
+      }
+
+      // Download ALL files
+      toast({
+        title: "Loading Stacked Plots",
+        description: `Downloading ${filesToOpen.length} files...`
+      });
+
+      const downloadedFiles: File[] = [];
+      for (const file of filesToOpen) {
+        const downloadedFile = await handleDownloadFileForPlot(
+          file.pinId || null,
+          file.fileName,
+          file.areaId || null,
+          file
+        );
+
+        if (downloadedFile) {
+          downloadedFiles.push(downloadedFile);
+        } else {
+          console.warn('⚠️ Failed to download file:', file.fileName);
+        }
+      }
+
+      if (downloadedFiles.length === 0) {
+        throw new Error('All file downloads failed');
+      }
+
+      console.log(`✅ Downloaded ${downloadedFiles.length}/${filesToOpen.length} files for stacked plots`);
+
+      // Open in marine device modal with ALL files
+      setSelectedFileType(fileType);
+      setSelectedFiles(downloadedFiles);
+      setShowMarineDeviceModal(true);
+      setShowDataExplorerPanel(false); // Close panel
+
+      toast({
+        title: "Stacked Plots Loaded",
+        description: `Successfully loaded ${downloadedFiles.length} files`
+      });
+
+      console.log('✅ [DATA EXPLORER PANEL] Opened stacked plots in marine device modal');
+    } catch (error) {
+      console.error('❌ [DATA EXPLORER PANEL] Error opening stacked plots:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to open stacked plots"
+      });
+    }
+  }, [handleDownloadFileForPlot, pins, areas, toast]);
+
+  const handleDeleteFileForPlot = useCallback(async (file: PinFile & { pinLabel: string }) => {
+    console.log('🗑️ [DATA EXPLORER PANEL] Delete file clicked:', file.fileName);
+
+    try {
+      console.log('Calling deleteFileSimple with ID:', file.id);
+      const success = await fileStorageService.deleteFileSimple(file.id);
+      console.log('Delete result from service:', success);
+
+      if (success) {
+        console.log('Delete successful, reloading files...');
+
+        // Update the metadata state to remove the deleted file
+        if (file.pinId) {
+          setPinFileMetadata(prev => {
+            const updated = { ...prev };
+            if (updated[file.pinId]) {
+              updated[file.pinId] = updated[file.pinId].filter(f => f.id !== file.id);
+            }
+            return updated;
+          });
+        } else if (file.areaId) {
+          setAreaFileMetadata(prev => {
+            const updated = { ...prev };
+            if (updated[file.areaId]) {
+              updated[file.areaId] = updated[file.areaId].filter(f => f.id !== file.id);
+            }
+            return updated;
+          });
+        }
+
+        toast({
+          title: "File Deleted",
+          description: `"${file.fileName}" has been deleted successfully`
+        });
+      } else {
+        throw new Error('Delete operation returned false');
+      }
+    } catch (error) {
+      console.error('❌ [DATA EXPLORER PANEL] Error deleting file:', error);
+      toast({
+        variant: "destructive",
+        title: "Delete Failed",
+        description: error instanceof Error ? error.message : "Failed to delete file"
+      });
+    }
+  }, [toast]);
+
+  const handleRenameFileForPlot = useCallback(async (file: PinFile & { pinLabel: string }, newName: string): Promise<boolean> => {
+    console.log('✏️ [DATA EXPLORER PANEL] Rename file request:', file.fileName, '→', newName);
+
+    try {
+      const success = await fileStorageService.renameFile(file.id, newName);
+      console.log('Rename result from service:', success);
+
+      if (success) {
+        console.log('Rename successful, updating UI...');
+
+        // Update the metadata state with the new filename
+        if (file.pinId) {
+          setPinFileMetadata(prev => {
+            const updated = { ...prev };
+            if (updated[file.pinId]) {
+              updated[file.pinId] = updated[file.pinId].map(f =>
+                f.id === file.id ? { ...f, fileName: newName } : f
+              );
+            }
+            return updated;
+          });
+        } else if (file.areaId) {
+          setAreaFileMetadata(prev => {
+            const updated = { ...prev };
+            if (updated[file.areaId]) {
+              updated[file.areaId] = updated[file.areaId].map(f =>
+                f.id === file.id ? { ...f, fileName: newName } : f
+              );
+            }
+            return updated;
+          });
+        }
+
+        toast({
+          title: "File Renamed",
+          description: `File renamed to "${newName}"`
+        });
+
+        return true;
+      } else {
+        throw new Error('Rename operation returned false');
+      }
+    } catch (error) {
+      console.error('❌ [DATA EXPLORER PANEL] Error renaming file:', error);
+      toast({
+        variant: "destructive",
+        title: "Rename Failed",
+        description: error instanceof Error ? error.message : "Failed to rename file"
+      });
+      return false;
+    }
+  }, [toast]);
+
+  const handlePlotClickFromPanel = useCallback(async (plot: SavedPlotView) => {
+    console.log('📊 [DATA EXPLORER PANEL] Plot clicked:', plot.name);
+
+    try {
+      // Validate plot first
+      const { plotViewService } = await import('@/lib/supabase/plot-view-service');
+      const validation = await plotViewService.validatePlotView(plot.view_config);
+
+      if (!validation.valid) {
+        toast({
+          variant: "destructive",
+          title: "Cannot Open Plot",
+          description: "This plot references files that are no longer available"
+        });
+        return;
+      }
+
+      // Determine file type from the first plot in the saved view
+      let fileType: 'GP' | 'FPOD' | 'Subcam' = 'GP';
+      const firstPlot = plot.view_config.plots?.[0];
+      if (firstPlot?.fileName) {
+        const parts = firstPlot.fileName.split('_');
+        const position0 = parts[0]?.toLowerCase() || '';
+        const position1 = parts[1]?.toLowerCase() || '';
+
+        if (position0.includes('fpod') || position1.includes('fpod')) {
+          fileType = 'FPOD';
+        } else if (position0.includes('subcam') || position1.includes('subcam')) {
+          fileType = 'Subcam';
+        }
+      }
+      console.log('🎯 [DATA EXPLORER PANEL] Detected file type:', fileType, 'from first plot:', firstPlot?.fileName);
+
+      // Use existing auto-load mechanism
+      sessionStorage.setItem('pebl-load-plot-view', JSON.stringify({
+        viewId: plot.id,
+        viewName: plot.name,
+        timestamp: Date.now()
+      }));
+
+      // Open marine device modal with correct file type
+      setSelectedFileType(fileType);
+      setSelectedFiles([]);
+      setIsLoadingFromSavedPlot(true); // Tell modal we're loading from saved plot
+      setShowMarineDeviceModal(true);
+      setShowDataExplorerPanel(false); // Close panel
+
+      console.log('✅ [DATA EXPLORER PANEL] Plot will auto-load in marine device modal');
+
+      toast({
+        title: "Loading Plot",
+        description: `Opening "${plot.name}"`,
+        duration: 2000
+      });
+    } catch (error) {
+      console.error('❌ [DATA EXPLORER PANEL] Error opening plot:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to open plot"
+      });
+    }
+  }, [toast]);
+
+  const handlePlotDeleteFromPanel = useCallback(async (plotId: string) => {
+    console.log('🗑️ [DATA EXPLORER PANEL] Deleting plot:', plotId);
+
+    // Reuse existing plot view service
+    const { plotViewService } = await import('@/lib/supabase/plot-view-service');
+    const result = await plotViewService.deletePlotView(plotId);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Delete failed');
+    }
+
+    // Update local state
+    setSavedPlots(prev => prev.filter(p => p.id !== plotId));
+
+    console.log('✅ [DATA EXPLORER PANEL] Plot deleted successfully');
+  }, []);
+
+  const handlePlotEditFromPanel = useCallback((plot: SavedPlotView) => {
+    console.log('✏️ [DATA EXPLORER PANEL] Edit plot:', plot.name);
+
+    toast({
+      title: "Edit Plot",
+      description: "Plot editing functionality coming soon. You'll be able to edit the name and description."
+    });
+
+    // TODO: Implement edit dialog
+    // - Show dialog with name and description fields
+    // - Call plotViewService.updatePlotView() to save changes
+    // - Update local state: setSavedPlots(prev => prev.map(p => p.id === plot.id ? updated : p))
+  }, [toast]);
+  // ============================================================================
 
   // Handle file type selection
   const handleFileTypeSelection = async (fileType: 'GP' | 'FPOD' | 'Subcam') => {
@@ -5563,30 +6281,55 @@ function MapDrawingPageContent() {
                 )}
               </div>
             )}
-            
-            
-            {/* Floating Drawing Tools Button */}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="ghost"
-                    size="icon" 
-                    onClick={() => setShowFloatingDrawingTools(!showFloatingDrawingTools)}
-                    className={`h-10 w-10 rounded-full shadow-lg border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 ${
-                      (drawingMode !== 'none' || isDrawingLine || isDrawingArea) 
-                        ? 'bg-accent/90 hover:bg-accent text-accent-foreground' 
-                        : 'bg-primary/90 hover:bg-primary text-primary-foreground'
-                    }`}
-                  >
-                    <Edit3 className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Drawing Tools</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+
+
+            {/* Data Explorer Button - Hide when panel is open */}
+            {!showDataExplorerPanel && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('open-data-explorer-panel'));
+                      }}
+                      className="h-10 w-10 rounded-full shadow-lg border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 bg-primary/90 hover:bg-primary text-primary-foreground"
+                    >
+                      <Database className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Data Explorer</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
+            {/* Floating Drawing Tools Button - Hide when panel is open */}
+            {!showDataExplorerPanel && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowFloatingDrawingTools(!showFloatingDrawingTools)}
+                      className={`h-10 w-10 rounded-full shadow-lg border-0 backdrop-blur-sm transition-all duration-200 hover:scale-105 ${
+                        (drawingMode !== 'none' || isDrawingLine || isDrawingArea)
+                          ? 'bg-accent/90 hover:bg-accent text-accent-foreground'
+                          : 'bg-primary/90 hover:bg-primary text-primary-foreground'
+                      }`}
+                    >
+                      <Edit3 className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Drawing Tools</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             
             {/* Floating Drawing Tools Dropdown */}
             {showFloatingDrawingTools && (
@@ -5997,6 +6740,64 @@ function MapDrawingPageContent() {
                                 >
                                   <Settings className="h-3 w-3" />
                                 </Button>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant={isBulkDeleteMode ? "destructive" : "outline"}
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          console.log('🗑️ [BULK DELETE MODE] Trash button clicked');
+                                          console.log('🗑️ [BULK DELETE MODE] Current isBulkDeleteMode:', isBulkDeleteMode);
+                                          if (isBulkDeleteMode) {
+                                            // Cancel bulk delete mode
+                                            console.log('🗑️ [BULK DELETE MODE] Canceling bulk delete mode');
+                                            setIsBulkDeleteMode(false);
+                                            clearObjectSelection();
+                                          } else {
+                                            // Enter bulk delete mode
+                                            console.log('🗑️ [BULK DELETE MODE] Entering bulk delete mode');
+                                            setIsBulkDeleteMode(true);
+                                          }
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right">
+                                      <p>{isBulkDeleteMode ? 'Cancel bulk delete' : 'Bulk delete objects'}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                {isBulkDeleteMode && selectedObjectIds.size > 0 && (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="destructive"
+                                          size="sm"
+                                          className="h-6 px-2 text-xs"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            console.log('✅ [BULK DELETE] Confirm button clicked');
+                                            console.log('✅ [BULK DELETE] selectedObjectIds size:', selectedObjectIds.size);
+                                            console.log('✅ [BULK DELETE] selectedObjectIds array:', Array.from(selectedObjectIds));
+                                            console.log('✅ [BULK DELETE] Opening batch delete confirmation dialog');
+                                            setShowBatchDeleteConfirmDialog(true);
+                                          }}
+                                        >
+                                          <Check className="h-3 w-3 mr-1" />
+                                          Confirm ({selectedObjectIds.size})
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="right">
+                                        <p>Delete {selectedObjectIds.size} selected object{selectedObjectIds.size !== 1 ? 's' : ''}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                )}
                               </div>
                             </div>
 
@@ -6110,8 +6911,8 @@ function MapDrawingPageContent() {
                                 </div>
                               )}
 
-                              {/* Select All / Clear All button - show when settings dialog is open */}
-                              {totalObjects > 0 && showProjectSettingsDialog && (
+                              {/* Select All / Clear All button - show when in bulk delete mode or settings dialog is open */}
+                              {totalObjects > 0 && (isBulkDeleteMode || showProjectSettingsDialog) && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -6153,8 +6954,8 @@ function MapDrawingPageContent() {
                                             : 'bg-muted/30'
                                       }`}
                                     >
-                                      {/* Checkbox for multi-selection - show when settings dialog is open */}
-                                      {showProjectSettingsDialog && (
+                                      {/* Checkbox for multi-selection - show when in bulk delete mode or settings dialog is open */}
+                                      {(isBulkDeleteMode || showProjectSettingsDialog) && (
                                         <Checkbox
                                           checked={selectedObjectIds.has(object.id)}
                                           onCheckedChange={() => toggleObjectSelection(object.id)}
@@ -6174,12 +6975,12 @@ function MapDrawingPageContent() {
                                       )}
                                       <button
                                         onClick={() => {
-                                          if (!showProjectSettingsDialog) {
+                                          if (!showProjectSettingsDialog && !isBulkDeleteMode) {
                                             setSelectedObjectId(selectedObjectId === object.id ? null : object.id);
                                             setItemToEdit(object);
                                           }
                                         }}
-                                        className={`truncate flex-1 text-left ${!showProjectSettingsDialog ? 'hover:text-accent cursor-pointer' : 'cursor-default'}`}
+                                        className={`truncate flex-1 text-left ${!showProjectSettingsDialog && !isBulkDeleteMode ? 'hover:text-accent cursor-pointer' : 'cursor-default'}`}
                                       >
                                         {object.label || `Unnamed ${object.type.charAt(0).toUpperCase() + object.type.slice(1)}`}
                                       </button>
@@ -6623,280 +7424,58 @@ function MapDrawingPageContent() {
       </main>
       
       {/* Projects Dialog */}
-      <Dialog open={showProjectsDialog} onOpenChange={setShowProjectsDialog}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FolderOpen className="h-5 w-5" />
-              Project Menu
-            </DialogTitle>
-            <DialogDescription>
-              Manage project locations, visibility, and set the active project for drawing operations.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="text-sm text-muted-foreground">
-              <p className="mb-2"><strong>Active Project:</strong> {dynamicProjects[activeProjectId]?.name || 'None'}</p>
-              <p className="text-xs">All new objects will be assigned to the active project.</p>
-            </div>
-            
-            <div className="space-y-3">
-              {/* Sort projects with active project first */}
-              {Object.entries(dynamicProjects)
-                .sort(([keyA], [keyB]) => {
-                  if (keyA === activeProjectId) return -1;
-                  if (keyB === activeProjectId) return 1;
-                  return 0;
-                })
-                .map(([key, location]) => {
-                  // Get objects for this project
-                  const projectPins = pins.filter(p => p.projectId === key);
-                  const projectLines = lines.filter(l => l.projectId === key);
-                  const projectAreas = areas.filter(a => a.projectId === key);
-                  const totalObjects = projectPins.length + projectLines.length + projectAreas.length;
-                  
-                  return (
-                    <div key={key} className="border rounded-lg">
-                      <div className="flex items-center justify-between p-3">
-                        <div className="flex items-center gap-3 flex-1">
-                          {/* Project Name and Info */}
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <div className="font-medium">{location.name}</div>
-                              {activeProjectId === key && (
-                                <Crosshair className="h-4 w-4 text-accent" />
-                              )}
-                              {totalObjects > 0 && (
-                                <span className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded">
-                                  {totalObjects} objects
-                                </span>
-                              )}
-                            </div>
-                            {location.lat && location.lon && (
-                              <div className="text-xs text-muted-foreground">
-                                {location.lat.toFixed(6)}, {location.lon.toFixed(6)}
-                              </div>
-                            )}
-                          </div>
-                          
-                          {/* Show Objects Dropdown - Only for active project */}
-                          {activeProjectId === key && totalObjects > 0 && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                const element = document.getElementById(`project-objects-${key}`);
-                                if (element) {
-                                  element.style.display = element.style.display === 'none' ? 'block' : 'none';
-                                }
-                              }}
-                              className="h-8 px-2 text-xs"
-                            >
-                              Show Objects ↓
-                            </Button>
-                          )}
-                          
-                          {/* Visibility Toggle */}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => toggleProjectVisibility(key)}
-                            className="h-8 w-8"
-                            title={projectVisibility[key] ? "Hide project" : "Show project"}
-                          >
-                            {projectVisibility[key] ? (
-                              <Eye className="h-4 w-4 text-primary" />
-                            ) : (
-                              <EyeOff className="h-4 w-4 text-muted-foreground" />
-                            )}
-                          </Button>
-                          
-                          {/* Activate Button */}
-                          <Button
-                            variant={activeProjectId === key ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setActiveProject(key)}
-                            disabled={activeProjectId === key}
-                            className="h-8 px-2"
-                          >
-                            {activeProjectId === key ? "Active" : "Activate"}
-                          </Button>
-                          
-                          {/* Visit Button - Only show for active project */}
-                          {activeProjectId === key && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => goToProjectLocation(key)}
-                              className="h-8 px-2"
-                            >
-                              Visit →
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {/* Objects List - Only for active project */}
-                      {activeProjectId === key && totalObjects > 0 && (
-                        <div id={`project-objects-${key}`} className="border-t bg-muted/30 p-3" style={{display: 'none'}}>
-                          <div className="space-y-2 text-sm">
-                            {projectPins.length > 0 && (
-                              <div>
-                                <div className="font-medium text-xs text-muted-foreground mb-1">PINS ({projectPins.length})</div>
-                                {projectPins.map(pin => (
-                                  <div key={pin.id} className="flex items-center gap-2 py-1">
-                                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                                    <span className="flex-1">{pin.label || 'Unnamed Pin'}</span>
-                                    
-                                    {/* Data indicator for pins with uploaded files */}
-                                    {(pinFiles[pin.id]?.length > 0 || pinFileMetadata[pin.id]?.length > 0) && (
-                                      <div className="flex items-center gap-1 ml-auto">
-                                        <Database className="h-3 w-3 text-accent" />
-                                        <span className="text-xs text-accent font-medium">
-                                          {pinFileMetadata[pin.id]?.length || pinFiles[pin.id]?.length || 0}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            
-                            {projectLines.length > 0 && (
-                              <div>
-                                <div className="font-medium text-xs text-muted-foreground mb-1">LINES ({projectLines.length})</div>
-                                {projectLines.map(line => (
-                                  <div key={line.id} className="flex items-center gap-2 py-1">
-                                    <div className="w-4 h-0.5 bg-green-500"></div>
-                                    <span>{line.label || 'Unnamed Line'}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            
-                            {projectAreas.length > 0 && (
-                              <div>
-                                <div className="font-medium text-xs text-muted-foreground mb-1">AREAS ({projectAreas.length})</div>
-                                {projectAreas.map(area => (
-                                  <div key={area.id} className="flex items-center gap-2 py-1">
-                                    <div className="w-3 h-3 bg-red-500/30 border border-red-500"></div>
-                                    <span className="flex-1">{area.label || 'Unnamed Area'}</span>
-
-                                    {/* Data indicator for areas with uploaded files */}
-                                    {areaFileMetadata[area.id]?.length > 0 && (
-                                      <div className="flex items-center gap-1 ml-auto">
-                                        <Database className="h-3 w-3 text-accent" />
-                                        <span className="text-xs text-accent font-medium">
-                                          {areaFileMetadata[area.id]?.length || 0}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            
-                            {/* Project Data and Settings Buttons */}
-                            <div className="pt-3 border-t border-muted-foreground/20 mt-3">
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 text-xs px-2 flex-1"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setCurrentProjectContext(key);
-                                    setShowProjectDataDialog(true);
-                                  }}
-                                >
-                                  <Database className="h-3 w-3 mr-1" />
-                                  Project Data
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 w-7 p-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setCurrentProjectContext(key);
-                                    setProjectNameEdit(dynamicProjects[key]?.name || '');
-                                    setShowProjectSettingsDialog(true);
-                                  }}
-                                >
-                                  <Settings className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ProjectsDialog
+        open={showProjectsDialog}
+        onOpenChange={setShowProjectsDialog}
+        dynamicProjects={dynamicProjects}
+        activeProjectId={activeProjectId}
+        pins={pins}
+        lines={lines}
+        areas={areas}
+        projectVisibility={projectVisibility}
+        pinFileMetadata={pinFileMetadata}
+        areaFileMetadata={areaFileMetadata}
+        onToggleProjectVisibility={toggleProjectVisibility}
+        onSetActiveProject={setActiveProject}
+        onGoToProjectLocation={goToProjectLocation}
+        onShowProjectData={(projectId) => {
+          setCurrentProjectContext(projectId);
+          setShowProjectDataDialog(true);
+        }}
+        onShowProjectSettings={(projectId) => {
+          setCurrentProjectContext(projectId);
+          setShowProjectSettingsDialog(true);
+        }}
+      />
 
       {/* REMOVED: Migration Dialog - authentication-only mode means no legacy localStorage data exists */}
 
       {/* Marine Device Data Modal */}
-      <Dialog 
-        open={showMarineDeviceModal} 
-        onOpenChange={(open) => {
-          setShowMarineDeviceModal(open);
-          if (!open) {
-            // Clear the selected files when closing
-            setSelectedFileType(null);
-            setSelectedFiles([]);
-            // UI state is preserved - all panels stay as they were
-          }
+      <MarineDeviceModal
+        open={showMarineDeviceModal}
+        onOpenChange={setShowMarineDeviceModal}
+        selectedFileType={selectedFileType}
+        selectedFiles={selectedFiles}
+        isLoadingFromSavedPlot={isLoadingFromSavedPlot}
+        onRequestFileSelection={handleRequestFileSelection}
+        availableFilesForPlots={availableFilesForPlots}
+        onDownloadFile={handleDownloadFileForPlot}
+        objectGpsCoords={objectGpsCoords}
+        objectName={objectName}
+        multiFileMergeMode={multiFileMergeMode}
+        allProjectFilesForTimeline={allProjectFilesForTimeline}
+        getFileDateRange={getFileDateRange}
+        projectId={currentProjectContext || activeProjectId}
+        onRefreshFiles={reloadProjectFiles}
+        availableProjects={Object.entries(dynamicProjects).map(([id, project]) => ({ id, name: project.name }))}
+        onClose={() => {
+          // Clear the selected files when closing
+          setSelectedFileType(null);
+          setSelectedFiles([]);
+          setIsLoadingFromSavedPlot(false);
+          // UI state is preserved - all panels stay as they were
         }}
-      >
-        <DialogContent className="max-w-6xl h-[80vh] marine-device-modal" data-marine-modal>
-          <DialogHeader className="sr-only">
-            <DialogTitle>
-              {selectedFileType ? `${selectedFileType} Data Analysis` : 'Data Viewer'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-hidden">
-            {selectedFileType && selectedFiles.length > 0 ? (
-              (() => {
-                // console.log('📍 Object location for marine/meteo:', {
-                //   objectGpsCoords,
-                //   objectName,
-                //   hasCoords: !!objectGpsCoords
-                // });
-                return (
-                  <PinMarineDeviceData
-                    fileType={selectedFileType}
-                    files={selectedFiles}
-                    onRequestFileSelection={handleRequestFileSelection}
-                    availableFiles={availableFilesForPlots}
-                    onDownloadFile={handleDownloadFileForPlot}
-                    objectLocation={objectGpsCoords}
-                    objectName={objectName}
-                    multiFileMergeMode={multiFileMergeMode}
-                    allProjectFilesForTimeline={allProjectFilesForTimeline}
-                    getFileDateRange={getFileDateRange}
-                    projectId={currentProjectContext || activeProjectId}
-                    onRefreshFiles={reloadProjectFiles}
-                    availableProjects={Object.entries(dynamicProjects).map(([id, project]) => ({ id, name: project.name }))}
-                  />
-                );
-              })()
-            ) : (
-              <div className="flex items-center justify-center h-full text-center">
-                <div className="text-muted-foreground">
-                  <Database className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="font-medium">No files selected</p>
-                  <p className="text-sm">Select a file type to begin analysis</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      />
 
       {/* Share Dialog */}
       {selectedPinForShare && (
@@ -6909,1044 +7488,71 @@ function MapDrawingPageContent() {
       )}
 
       {/* Project Data Dialog */}
-      <Dialog open={showProjectDataDialog} onOpenChange={(open) => {
-        if (!open) {
-          setCurrentProjectContext('');
-          setShowUploadPinSelector(false);
-          setSelectedUploadPinId('');
-          setPendingUploadFiles([]);
-        }
-        setShowProjectDataDialog(open);
-      }}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden z-[9999] flex flex-col">
-          <DialogHeader className="flex-shrink-0 pb-1.5 pr-8">
-            <div className="flex items-center justify-between gap-3">
-              <DialogTitle className="flex items-center gap-1.5 text-sm">
-                <Database className="h-3.5 w-3.5" />
-                <span>Project Data Files</span>
-                <span className="text-muted-foreground font-normal">·</span>
-                <span className="text-muted-foreground font-normal text-xs">
-                  {dynamicProjects[currentProjectContext || activeProjectId]?.name}
-                </span>
-              </DialogTitle>
-              <DialogDescription className="sr-only">
-                Manage and upload data files for the current project
-              </DialogDescription>
-              {/* Action Buttons - Inline with header */}
-              <div className="flex items-center gap-2">
-                {/* Merge Button - Moved to DataTimeline header */}
-
-                {/* Upload Button */}
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="flex items-center gap-1.5 h-7 px-2.5"
-                  disabled={isUploadingFiles}
-                  onClick={handleInitiateFileUpload}
-                >
-                  {isUploadingFiles ? (
-                    <>
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span className="text-xs">Uploading...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-3 w-3" />
-                      <span className="text-xs">Upload</span>
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto">
-            {(() => {
-              let projectFiles = getProjectFiles(currentProjectContext || activeProjectId);
-
-              const groupedFiles = groupFilesByType(projectFiles);
-
-              // Add fileSource property to uploaded files
-              const uploadedFiles = Object.values(groupedFiles).flat().map(file => ({
-                ...file,
-                fileSource: 'upload' as const
-              }));
-
-              // Combine uploaded and merged files for timeline display
-              const allFiles = [...uploadedFiles, ...mergedFiles];
-              const hasFiles = allFiles.length > 0;
-
-              if (!hasFiles) {
-                return (
-                  <div className="text-center py-8">
-                    <Database className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                    <p className="text-muted-foreground">No data files in this project</p>
-                  </div>
-                );
-              }
-              
-              // Handler for clicking file names in timeline
-              const handleTimelineFileClick = async (file: PinFile & { pinLabel: string }) => {
-                try {
-                  // Determine file type from filename
-                  // New format: PROJECTNAME_DATATYPE_STATION_DIRECTION_[PELAGIC]_YYMM-YYMM
-                  // Old format: DATATYPE_ProjectName_Station_YYMM-YYMM
-                  let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' | 'EDNA' = 'GP';
-
-                  const parts = file.fileName.split('_');
-                  const position0 = parts[0]?.toLowerCase() || '';
-                  const position1 = parts[1]?.toLowerCase() || '';
-                  const fileNameLower = file.fileName.toLowerCase();
-
-                  if (position0.includes('crop') || position1.includes('crop')) {
-                    fileType = 'CROP';
-                  } else if (position0.includes('chemsw') || position1.includes('chemsw')) {
-                    fileType = 'CHEMSW';
-                  } else if (position0.includes('chemwq') || position1.includes('chemwq')) {
-                    fileType = 'CHEMWQ';
-                  } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
-                    fileType = 'CHEM';
-                  } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
-                    fileType = 'WQ';
-                  } else if (position0.includes('edna') || position1.includes('edna')) {
-                    fileType = 'EDNA';
-                  } else if (position0.includes('fpod') || position1.includes('fpod')) {
-                    fileType = 'FPOD';
-                  } else if (position0.includes('subcam') || position1.includes('subcam')) {
-                    fileType = 'Subcam';
-                  } else if (position0.includes('gp') || position1.includes('gp')) {
-                    fileType = 'GP';
-                  }
-                  
-                  // Download file content
-                  const fileContent = await fileStorageService.downloadFile(file.filePath);
-                  if (fileContent) {
-                    // Convert blob to File object
-                    const actualFile = new File([fileContent], file.fileName, {
-                      type: file.fileType || 'text/csv'
-                    });
-                    
-                    // Open modal with the downloaded file
-                    openMarineDeviceModal(fileType, [actualFile]);
-                  } else {
-                    toast({
-                      variant: "destructive",
-                      title: "Download Failed",
-                      description: "Could not download file from storage."
-                    });
-                  }
-                } catch (error) {
-                  console.error('Error downloading file:', error);
-                  toast({
-                    variant: "destructive",
-                    title: "Error",
-                    description: "Failed to open file."
-                  });
-                }
-              };
-
-              // Helper function to check if file matches type filter
-              const matchesType = (file: any, type: string): boolean => {
-                const fileName = file.fileName.toLowerCase();
-                if (type === 'SubCam') return fileName.includes('subcam');
-                if (type === 'GP') return fileName.includes('gp');
-                if (type === 'FPOD') return fileName.includes('fpod');
-                return false;
-              };
-
-              // Helper function to extract suffix from filename
-              const extractSuffix = (fileName: string): string => {
-                const nameWithoutExt = fileName.replace(/\.[^/.]+$/, '');
-                const parts = nameWithoutExt.split('_');
-                return parts.length > 0 ? parts[parts.length - 1] : '';
-              };
-
-              // Apply filters to get filtered files
-              const filteredFiles = allFiles.filter(file => {
-                const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
-                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
-
-                // Suffix filter
-                const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
-                  const fileSuffix = extractSuffix(file.fileName);
-                  return fileSuffix === suffix;
-                });
-
-                // Date range filter
-                const dateRangeMatch = selectedDateRanges.length === 0 || selectedDateRanges.some(range => {
-                  const fileRange = extractDateRange(file.fileName);
-                  return fileRange === range;
-                });
-
-                // File source filter (upload vs merged)
-                const fileSourceMatch = selectedFileSources.length === 0 || selectedFileSources.includes(file.fileSource);
-
-                return pinMatch && typeMatch && suffixMatch && dateRangeMatch && fileSourceMatch;
-              });
-
-              // Calculate unique values for cascading filters
-              // Each unique* array shows options available given OTHER active filters
-
-              // For pins: show pins available after applying type, suffix, and dateRange filters
-              const filesForPinOptions = allFiles.filter(file => {
-                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
-                const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
-                  const fileSuffix = extractSuffix(file.fileName);
-                  return fileSuffix === suffix;
-                });
-                const dateRangeMatch = selectedDateRanges.length === 0 || selectedDateRanges.some(range => {
-                  const fileRange = extractDateRange(file.fileName);
-                  return fileRange === range;
-                });
-                return typeMatch && suffixMatch && dateRangeMatch;
-              });
-              const uniquePins = Array.from(new Set(filesForPinOptions.map(file => file.pinLabel))).sort();
-
-              // For types: show types available after applying pin, suffix, and dateRange filters
-              const filesForTypeOptions = allFiles.filter(file => {
-                const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
-                const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
-                  const fileSuffix = extractSuffix(file.fileName);
-                  return fileSuffix === suffix;
-                });
-                const dateRangeMatch = selectedDateRanges.length === 0 || selectedDateRanges.some(range => {
-                  const fileRange = extractDateRange(file.fileName);
-                  return fileRange === range;
-                });
-                return pinMatch && suffixMatch && dateRangeMatch;
-              });
-              // Build type list from filesForTypeOptions
-              const typeMap = new Map<string, any[]>();
-              filesForTypeOptions.forEach(file => {
-                const fileName = file.fileName.toLowerCase();
-                if (fileName.includes('subcam')) {
-                  if (!typeMap.has('SubCam')) typeMap.set('SubCam', []);
-                  typeMap.get('SubCam')!.push(file);
-                }
-                if (fileName.includes('gp')) {
-                  if (!typeMap.has('GP')) typeMap.set('GP', []);
-                  typeMap.get('GP')!.push(file);
-                }
-                if (fileName.includes('fpod')) {
-                  if (!typeMap.has('FPOD')) typeMap.set('FPOD', []);
-                  typeMap.get('FPOD')!.push(file);
-                }
-              });
-              const uniqueTypes = Array.from(typeMap.keys()).sort();
-
-              // For suffixes: show suffixes available after applying pin, type, and dateRange filters
-              const filesForSuffixOptions = allFiles.filter(file => {
-                const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
-                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
-                const dateRangeMatch = selectedDateRanges.length === 0 || selectedDateRanges.some(range => {
-                  const fileRange = extractDateRange(file.fileName);
-                  return fileRange === range;
-                });
-                return pinMatch && typeMatch && dateRangeMatch;
-              });
-              const uniqueSuffixes = Array.from(new Set(filesForSuffixOptions.map(file => {
-                return extractSuffix(file.fileName);
-              }).filter(suffix => suffix !== ''))).sort();
-
-              // For date ranges: show date ranges available after applying pin, type, and suffix filters
-              const filesForDateRangeOptions = allFiles.filter(file => {
-                const pinMatch = selectedPins.length === 0 || selectedPins.includes(file.pinLabel);
-                const typeMatch = selectedTypes.length === 0 || selectedTypes.some(type => matchesType(file, type));
-                const suffixMatch = selectedSuffixes.length === 0 || selectedSuffixes.some(suffix => {
-                  const fileSuffix = extractSuffix(file.fileName);
-                  return fileSuffix === suffix;
-                });
-                return pinMatch && typeMatch && suffixMatch;
-              });
-              const uniqueDateRanges = Array.from(new Set(filesForDateRangeOptions.map(file => {
-                return extractDateRange(file.fileName);
-              }).filter(range => range !== null))).sort() as string[];
-
-
-
-              // Calculate project summary statistics
-              const projectStats = {
-                totalFiles: allFiles.length,
-                filteredFiles: filteredFiles.length,
-                fileTypes: Object.entries(groupedFiles).map(([type, files]) => ({
-                  type: type,
-                  count: files.length
-                })).filter(({ count }) => count > 0),
-                totalSize: allFiles.reduce((sum, file) => sum + (file.fileSize || 0), 0),
-                uniquePins: uniquePins.length
-              };
-
-              const hasActiveFilters = selectedPins.length > 0 || selectedTypes.length > 0 || selectedSuffixes.length > 0 || selectedDateRanges.length > 0 || selectedFileSources.length < 2;
-
-              return (
-                <div className="space-y-2">
-                  {/* Compact Project Summary with Filters */}
-                  <div className="bg-muted/10 rounded p-1.5 border border-border/20">
-                    <div className="flex items-center gap-3 flex-wrap text-[11px]">
-                      {/* Total Files */}
-                      <div className="flex items-center gap-1">
-                        <Database className="h-3 w-3 text-blue-500" />
-                        <span className="font-semibold">
-                          {hasActiveFilters ? `${projectStats.filteredFiles}/${projectStats.totalFiles}` : projectStats.totalFiles}
-                        </span>
-                        <span className="text-muted-foreground">Files</span>
-                        {hasActiveFilters && (
-                          <button
-                            onClick={() => {
-                              setSelectedPins([]);
-                              setSelectedTypes([]);
-                              setSelectedSuffixes([]);
-                              setSelectedDateRanges([]);
-                              setSelectedFileSources(['upload', 'merged']);
-                            }}
-                            className="ml-1 text-primary hover:text-primary/80"
-                            title="Clear all filters"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Unique Pins - Filterable */}
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedPins.length > 0 ? 'bg-green-500/20 border border-green-500/50' : ''}`}>
-                            <MapPin className="h-3 w-3 text-green-500" />
-                            <span className="font-semibold">{selectedPins.length > 0 ? selectedPins.length : projectStats.uniquePins}</span>
-                            <span className="text-muted-foreground">Pins</span>
-                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-56 p-2" align="start">
-                          <div className="space-y-1">
-                            <div className="text-xs font-semibold mb-2 flex items-center justify-between">
-                              <span>Filter by Pin</span>
-                              {selectedPins.length > 0 && (
-                                <button
-                                  onClick={() => setSelectedPins([])}
-                                  className="text-primary hover:text-primary/80 text-[10px]"
-                                >
-                                  Clear
-                                </button>
-                              )}
-                            </div>
-                            {uniquePins.map(pin => (
-                              <label key={pin} className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPins.includes(pin)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedPins([...selectedPins, pin]);
-                                    } else {
-                                      setSelectedPins(selectedPins.filter(p => p !== pin));
-                                    }
-                                  }}
-                                  className="h-3 w-3"
-                                />
-                                <span>{pin}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-
-                      {/* Total Size */}
-                      <div className="flex items-center gap-1">
-                        <Upload className="h-3 w-3 text-orange-500" />
-                        <span className="font-semibold">{(projectStats.totalSize / (1024 * 1024)).toFixed(1)}</span>
-                        <span className="text-muted-foreground">MB</span>
-                      </div>
-
-                      {/* File Source Filter - Uploaded vs Merged */}
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedFileSources.length < 2 ? 'bg-indigo-500/20 border border-indigo-500/50' : ''}`}>
-                            <Cloud className="h-3 w-3 text-indigo-500" />
-                            <span className="font-semibold">{selectedFileSources.length === 2 ? 'All' : selectedFileSources.length === 1 ? '1' : '0'}</span>
-                            <span className="text-muted-foreground">Source</span>
-                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-56 p-2" align="start">
-                          <div className="space-y-1">
-                            <div className="text-xs font-semibold mb-2 flex items-center justify-between">
-                              <span>Filter by Source</span>
-                              {selectedFileSources.length < 2 && (
-                                <button
-                                  onClick={() => setSelectedFileSources(['upload', 'merged'])}
-                                  className="text-primary hover:text-primary/80 text-[10px]"
-                                >
-                                  Show All
-                                </button>
-                              )}
-                            </div>
-                            <label className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={selectedFileSources.includes('upload')}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedFileSources([...selectedFileSources, 'upload']);
-                                  } else {
-                                    setSelectedFileSources(selectedFileSources.filter(s => s !== 'upload'));
-                                  }
-                                }}
-                                className="h-3 w-3"
-                              />
-                              <Upload className="h-3 w-3 text-blue-500" />
-                              <span>Upload Files</span>
-                            </label>
-                            <label className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={selectedFileSources.includes('merged')}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedFileSources([...selectedFileSources, 'merged']);
-                                  } else {
-                                    setSelectedFileSources(selectedFileSources.filter(s => s !== 'merged'));
-                                  }
-                                }}
-                                className="h-3 w-3"
-                              />
-                              <FileCode className="h-3 w-3 text-green-500" />
-                              <span>Merged Files</span>
-                            </label>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-
-                      {/* File Types - Filterable */}
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedTypes.length > 0 ? 'bg-purple-500/20 border border-purple-500/50' : ''}`}>
-                            <BarChart3 className="h-3 w-3 text-purple-500" />
-                            <span className="font-semibold">{selectedTypes.length > 0 ? selectedTypes.length : projectStats.fileTypes.length}</span>
-                            <span className="text-muted-foreground">Types</span>
-                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-56 p-2" align="start">
-                          <div className="space-y-1">
-                            <div className="text-xs font-semibold mb-2 flex items-center justify-between">
-                              <span>Filter by Type</span>
-                              {selectedTypes.length > 0 && (
-                                <button
-                                  onClick={() => setSelectedTypes([])}
-                                  className="text-primary hover:text-primary/80 text-[10px]"
-                                >
-                                  Clear
-                                </button>
-                              )}
-                            </div>
-                            {uniqueTypes.map(type => (
-                              <label key={type} className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedTypes.includes(type)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedTypes([...selectedTypes, type]);
-                                    } else {
-                                      setSelectedTypes(selectedTypes.filter(t => t !== type));
-                                    }
-                                  }}
-                                  className="h-3 w-3"
-                                />
-                                <span>{type}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-
-                      {/* File Suffixes - Filterable */}
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedSuffixes.length > 0 ? 'bg-amber-500/20 border border-amber-500/50' : ''}`}>
-                            <FileCode className="h-3 w-3 text-amber-500" />
-                            <span className="font-semibold">{selectedSuffixes.length > 0 ? selectedSuffixes.length : uniqueSuffixes.length}</span>
-                            <span className="text-muted-foreground">Suffixes</span>
-                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-56 p-2" align="start">
-                          <div className="space-y-1">
-                            <div className="text-xs font-semibold mb-2 flex items-center justify-between">
-                              <span>Filter by Suffix</span>
-                              {selectedSuffixes.length > 0 && (
-                                <button
-                                  onClick={() => setSelectedSuffixes([])}
-                                  className="text-primary hover:text-primary/80 text-[10px]"
-                                >
-                                  Clear
-                                </button>
-                              )}
-                            </div>
-                            {uniqueSuffixes.map(suffix => (
-                              <label key={suffix} className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedSuffixes.includes(suffix)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedSuffixes([...selectedSuffixes, suffix]);
-                                    } else {
-                                      setSelectedSuffixes(selectedSuffixes.filter(s => s !== suffix));
-                                    }
-                                  }}
-                                  className="h-3 w-3"
-                                />
-                                <span className="font-mono">{suffix}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-
-                      {/* Date Ranges - Filterable */}
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors ${selectedDateRanges.length > 0 ? 'bg-cyan-500/20 border border-cyan-500/50' : ''}`}>
-                            <Calendar className="h-3 w-3 text-cyan-500" />
-                            <span className="font-semibold">{selectedDateRanges.length > 0 ? selectedDateRanges.length : uniqueDateRanges.length}</span>
-                            <span className="text-muted-foreground">Date Ranges</span>
-                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-56 p-2" align="start">
-                          <div className="space-y-1">
-                            <div className="text-xs font-semibold mb-2 flex items-center justify-between">
-                              <span>Filter by Date Range</span>
-                              {selectedDateRanges.length > 0 && (
-                                <button
-                                  onClick={() => setSelectedDateRanges([])}
-                                  className="text-primary hover:text-primary/80 text-[10px]"
-                                >
-                                  Clear
-                                </button>
-                              )}
-                            </div>
-                            {uniqueDateRanges.map(range => (
-                              <label key={range} className="flex items-center gap-2 text-xs hover:bg-muted p-1 rounded cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedDateRanges.includes(range)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedDateRanges([...selectedDateRanges, range]);
-                                    } else {
-                                      setSelectedDateRanges(selectedDateRanges.filter(r => r !== range));
-                                    }
-                                  }}
-                                  className="h-3 w-3"
-                                />
-                                <span className="font-mono">{range}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-
-
-                      {/* File Type Distribution - Inline */}
-                      {projectStats.fileTypes.length > 0 && (
-                        <div className="flex items-center gap-1.5 ml-auto">
-                          {projectStats.fileTypes.map(({ type, count }, index) => (
-                            <div key={type} className="bg-muted/80 px-1.5 py-0.5 rounded text-[10px] font-medium">
-                              {type}: {count}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Show skeleton while loading initial data */}
-                  {isLoadingMergedFiles || (isPageLoading && isInitialLoad) ? (
-                    <DataTimelineSkeleton />
-                  ) : (
-                    <DataTimeline
-                      files={filteredFiles}
-                    getFileDateRange={getFileDateRange}
-                    onFileClick={handleTimelineFileClick}
-                    onRenameFile={async (file, newName) => {
-                      console.log('Timeline rename request for file:', file.id, 'New name:', newName);
-
-                      try {
-                        const success = await fileStorageService.renameFile(file.id, newName);
-                        console.log('Rename result from service:', success);
-
-                        if (success) {
-                          console.log('Rename successful, updating UI...');
-                          // Find which pin this file belongs to and update that pin's metadata
-                          const pinId = Object.keys(pinFileMetadata).find(pinId =>
-                            pinFileMetadata[pinId]?.some(f => f.id === file.id)
-                          );
-
-                          if (pinId) {
-                            console.log('Found file in pin metadata, updating pinId:', pinId);
-                            // Update the state immediately to reflect the new name
-                            setPinFileMetadata(prev => ({
-                              ...prev,
-                              [pinId]: prev[pinId]?.map(f =>
-                                f.id === file.id ? { ...f, fileName: newName } : f
-                              ) || []
-                            }));
-                          }
-
-                          // Also check if this file belongs to an area
-                          const areaId = Object.keys(areaFileMetadata).find(areaId =>
-                            areaFileMetadata[areaId]?.some(f => f.id === file.id)
-                          );
-
-                          if (areaId) {
-                            console.log('Found file in area metadata, updating areaId:', areaId);
-                            // Update the area file metadata
-                            setAreaFileMetadata(prev => ({
-                              ...prev,
-                              [areaId]: prev[areaId]?.map(f =>
-                                f.id === file.id ? { ...f, fileName: newName } : f
-                              ) || []
-                            }));
-                          }
-
-                          toast({
-                            title: "File Renamed",
-                            description: `File renamed to ${newName}`
-                          });
-
-                          return true;
-                        } else {
-                          toast({
-                            variant: "destructive",
-                            title: "Rename Failed",
-                            description: "Failed to rename the file. Please try again."
-                          });
-                          return false;
-                        }
-                      } catch (error) {
-                        console.error('Rename file error:', error);
-                        toast({
-                          variant: "destructive",
-                          title: "Error",
-                          description: "An error occurred while renaming the file."
-                        });
-                        return false;
-                      }
-                    }}
-                    onDeleteFile={async (file) => {
-                      console.log('Timeline delete request for file:', file.id, file.fileName);
-
-                      try {
-                        // Check if this is a merged file
-                        const isMergedFile = (file as any).fileSource === 'merged';
-
-                        if (isMergedFile) {
-                          console.log('Deleting merged file with ID:', file.id);
-                          const { deleteMergedFileAction } = await import('@/app/api/merged-files/actions');
-                          const result = await deleteMergedFileAction(file.id);
-
-                          if (result.success) {
-                            console.log('Merged file deleted successfully');
-
-                            // Reload all project files to ensure timeline updates immediately
-                            console.log('🔄 Triggering full project files reload after merged file delete...');
-                            await reloadProjectFiles();
-
-                            toast({
-                              title: "Merged File Deleted",
-                              description: `${file.fileName} has been deleted.`
-                            });
-                          } else {
-                            toast({
-                              variant: "destructive",
-                              title: "Delete Failed",
-                              description: result.error || "Failed to delete the merged file."
-                            });
-                          }
-                        } else {
-                          // Regular uploaded file
-                          console.log('Calling deleteFileSimple with ID:', file.id);
-                          const success = await fileStorageService.deleteFileSimple(file.id);
-                          console.log('Delete result from service:', success);
-
-                          if (success) {
-                            console.log('Delete successful, reloading files...');
-
-                            // Reload all project files to ensure timeline updates immediately
-                            console.log('🔄 Triggering full project files reload after delete...');
-                            await reloadProjectFiles();
-
-                            toast({
-                              title: "File Deleted",
-                              description: `${file.fileName} has been deleted.`
-                            });
-                          } else {
-                            toast({
-                              variant: "destructive",
-                              title: "Delete Failed",
-                              description: "Failed to delete the file. Please try again."
-                            });
-                          }
-                        }
-                      } catch (error) {
-                        console.error('Delete file error:', error);
-                        toast({
-                          variant: "destructive",
-                          title: "Delete Error",
-                          description: "An error occurred while deleting the file."
-                        });
-                      }
-                    }}
-                    onDatesUpdated={async () => {
-                      console.log('📅 Dates updated, reloading files...');
-
-                      // Reload files for all pins to get updated dates
-                      const fileMetadata: Record<string, PinFile[]> = {};
-
-                      for (const pin of pins) {
-                        try {
-                          const files = await fileStorageService.getPinFiles(pin.id);
-                          if (files.length > 0) {
-                            fileMetadata[pin.id] = files;
-                          }
-                        } catch (error) {
-                          console.error(`Error reloading files for pin ${pin.id}:`, error);
-                        }
-                      }
-
-                      console.log('✅ Files reloaded with updated dates');
-                      setPinFileMetadata(fileMetadata);
-                    }}
-                    onSelectMultipleFiles={async (selectedFiles) => {
-                      try {
-                        console.log('🔄 Multi-file selection:', selectedFiles.map(f => f.fileName));
-
-                        // Determine file type from first file
-                        const firstFile = selectedFiles[0];
-                        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' = 'GP';
-
-                        const parts = firstFile.fileName.split('_');
-                        const position0 = parts[0]?.toLowerCase() || '';
-                        const position1 = parts[1]?.toLowerCase() || '';
-                        const fileNameLower = firstFile.fileName.toLowerCase();
-
-                        if (position0.includes('crop') || position1.includes('crop')) {
-                          fileType = 'CROP';
-                        } else if (position0.includes('chemsw') || position1.includes('chemsw')) {
-                          fileType = 'CHEMSW';
-                        } else if (position0.includes('chemwq') || position1.includes('chemwq')) {
-                          fileType = 'CHEMWQ';
-                        } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
-                          fileType = 'CHEM';
-                        } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
-                          fileType = 'WQ';
-                        } else if (position0.includes('fpod') || position1.includes('fpod')) {
-                          fileType = 'FPOD';
-                        } else if (position0.includes('subcam') || position1.includes('subcam')) {
-                          fileType = 'Subcam';
-                        } else if (position0.includes('gp') || position1.includes('gp')) {
-                          fileType = 'GP';
-                        }
-
-                        // Download all files
-                        const downloadedFiles: File[] = [];
-                        for (const file of selectedFiles) {
-                          const fileContent = await fileStorageService.downloadFile(file.filePath);
-                          if (fileContent) {
-                            const actualFile = new File([fileContent], file.fileName, {
-                              type: file.fileType || 'text/csv'
-                            });
-                            downloadedFiles.push(actualFile);
-                          } else {
-                            toast({
-                              variant: "destructive",
-                              title: "Download Failed",
-                              description: `Failed to download ${file.fileName}`
-                            });
-                            return;
-                          }
-                        }
-
-                        // Import multiFileValidator
-                        const { parseFile, validateFilesCompatibility } = await import('@/lib/multiFileValidator');
-
-                        // Parse all files with file IDs
-                        const parsedFiles = await Promise.all(
-                          downloadedFiles.map(async (file, idx) => {
-                            const parsed = await parseFile(file);
-                            return {
-                              ...parsed,
-                              fileId: selectedFiles[idx].id // Add file ID for tracking
-                            };
-                          })
-                        );
-
-                        // Validate compatibility
-                        const validation = validateFilesCompatibility(parsedFiles);
-
-                        // Store data and show confirmation dialog
-                        setMultiFileConfirmData({
-                          parsedFiles,
-                          validation,
-                          downloadedFiles,
-                          fileType,
-                          selectedFiles // Add selectedFiles with pin metadata
-                        });
-                        setShowMultiFileConfirmDialog(true);
-                      } catch (error) {
-                        console.error('Multi-file selection error:', error);
-                        toast({
-                          variant: "destructive",
-                          title: "Error",
-                          description: error instanceof Error ? error.message : 'Failed to process multiple files'
-                        });
-                      }
-                    }}
-                    projectId={activeProjectId}
-                    onMergedFileClick={async (mergedFile) => {
-                      try {
-                        console.log('🔄 Opening merged file:', mergedFile.fileName);
-
-                        // Download the merged file
-                        const { downloadMergedFileAction } = await import('@/app/api/merged-files/actions');
-                        const result = await downloadMergedFileAction(mergedFile.filePath);
-
-                        if (!result.success || !result.data) {
-                          throw new Error(result.error || 'Failed to download merged file');
-                        }
-
-                        // Convert the CSV text back to a File object
-                        const file = new File([result.data], mergedFile.fileName, { type: 'text/csv' });
-
-                        // Determine file type
-                        let fileType: 'GP' | 'FPOD' | 'Subcam' | 'CROP' | 'CHEM' | 'CHEMSW' | 'CHEMWQ' | 'WQ' = 'GP';
-                        const parts = mergedFile.fileName.split('_');
-                        const position0 = parts[0]?.toLowerCase() || '';
-                        const position1 = parts[1]?.toLowerCase() || '';
-                        const fileNameLower = mergedFile.fileName.toLowerCase();
-
-                        if (position0.includes('crop') || position1.includes('crop')) {
-                          fileType = 'CROP';
-                        } else if (position0.includes('chemsw') || position1.includes('chemsw')) {
-                          fileType = 'CHEMSW';
-                        } else if (position0.includes('chemwq') || position1.includes('chemwq')) {
-                          fileType = 'CHEMWQ';
-                        } else if (position0.includes('chem') || position1.includes('chem') || fileNameLower.includes('_chem')) {
-                          fileType = 'CHEM';
-                        } else if (position0.includes('wq') || position1.includes('wq') || fileNameLower.includes('_wq')) {
-                          fileType = 'WQ';
-                        } else if (position0.includes('fpod') || position1.includes('fpod')) {
-                          fileType = 'FPOD';
-                        } else if (position0.includes('subcam') || position1.includes('subcam')) {
-                          fileType = 'Subcam';
-                        } else if (position0.includes('gp') || position1.includes('gp')) {
-                          fileType = 'GP';
-                        }
-
-                        // Open in modal
-                        openMarineDeviceModal(fileType, [file]);
-                      } catch (error) {
-                        console.error('Error opening merged file:', error);
-                        toast({
-                          variant: "destructive",
-                          title: "Error",
-                          description: error instanceof Error ? error.message : 'Failed to open merged file'
-                        });
-                      }
-                    }}
-                    onAddFilesToMergedFile={async (mergedFile) => {
-                      toast({
-                        title: "Add Files Feature",
-                        description: "This feature is coming soon! You'll be able to add more files to this merge."
-                      });
-                      // TODO: Implement add files to merged file dialog
-                    }}
-                    multiFileMergeMode={multiFileMergeMode}
-                    onMultiFileMergeModeChange={setMultiFileMergeMode}
-                  />
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ProjectDataDialog
+        open={showProjectDataDialog}
+        onOpenChange={setShowProjectDataDialog}
+        currentProjectContext={currentProjectContext}
+        activeProjectId={activeProjectId}
+        dynamicProjects={dynamicProjects}
+        pins={pins}
+        lines={lines}
+        areas={areas}
+        pinFileMetadata={pinFileMetadata}
+        areaFileMetadata={areaFileMetadata}
+        mergedFiles={mergedFiles}
+        selectedPins={selectedPins}
+        selectedTypes={selectedTypes}
+        selectedSuffixes={selectedSuffixes}
+        selectedDateRanges={selectedDateRanges}
+        selectedFileSources={selectedFileSources}
+        isUploadingFiles={isUploadingFiles}
+        isLoadingMergedFiles={isLoadingMergedFiles}
+        isPageLoading={isPageLoading}
+        isInitialLoad={isInitialLoad}
+        multiFileMergeMode={multiFileMergeMode}
+        setCurrentProjectContext={setCurrentProjectContext}
+        setShowUploadPinSelector={setShowUploadPinSelector}
+        setSelectedUploadPinId={setSelectedUploadPinId}
+        setPendingUploadFiles={setPendingUploadFiles}
+        setSelectedPins={setSelectedPins}
+        setSelectedTypes={setSelectedTypes}
+        setSelectedSuffixes={setSelectedSuffixes}
+        setSelectedDateRanges={setSelectedDateRanges}
+        setSelectedFileSources={setSelectedFileSources}
+        setPinFileMetadata={setPinFileMetadata}
+        setAreaFileMetadata={setAreaFileMetadata}
+        setMultiFileMergeMode={setMultiFileMergeMode}
+        setMultiFileConfirmData={setMultiFileConfirmData}
+        setShowMultiFileConfirmDialog={setShowMultiFileConfirmDialog}
+        handleInitiateFileUpload={handleInitiateFileUpload}
+        getProjectFiles={getProjectFiles}
+        groupFilesByType={groupFilesByType}
+        extractDateRange={extractDateRange}
+        getFileDateRange={getFileDateRange}
+        reloadProjectFiles={reloadProjectFiles}
+        openMarineDeviceModal={openMarineDeviceModal}
+      />
 
       {/* Pin Selector Dialog - Appears after files are selected */}
-      <Dialog open={showUploadPinSelector} onOpenChange={(open) => {
-        if (!open) {
+      <FileUploadDialog
+        open={showUploadPinSelector}
+        onOpenChange={(open) => {
+          setShowUploadPinSelector(open);
+          if (!open) {
+            setPendingUploadFiles([]);
+          }
+        }}
+        pendingUploadFiles={pendingUploadFiles}
+        pins={pins}
+        areas={areas}
+        currentProjectId={currentProjectContext || activeProjectId}
+        isUploadingFiles={isUploadingFiles}
+        onUpload={(targetId, targetType) => handleFileUpload(targetId, targetType)}
+        onCancel={() => {
           setShowUploadPinSelector(false);
           setPendingUploadFiles([]);
-          setSelectedUploadPinId('');
-          setSelectedUploadAreaId('');
-          setUploadTargetType('pin');
-        }
-      }}>
-        <DialogContent className="sm:max-w-md z-[9999]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Assign Files
-            </DialogTitle>
-            <DialogDescription>
-              {pendingUploadFiles.length} file{pendingUploadFiles.length > 1 ? 's' : ''} selected. Choose where to upload them.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            {/* Show selected files */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Selected Files:</label>
-              <div className="bg-muted/30 rounded-md p-3 max-h-32 overflow-y-auto">
-                {pendingUploadFiles.map((file, index) => (
-                  <div key={index} className="text-xs font-mono text-muted-foreground py-0.5">
-                    {file.name}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Target type selector (Pin vs Area) */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Upload to:</label>
-              <RadioGroup value={uploadTargetType} onValueChange={(value: 'pin' | 'area') => {
-                setUploadTargetType(value);
-                setSelectedUploadPinId('');
-                setSelectedUploadAreaId('');
-              }}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="pin" id="target-pin" />
-                  <Label htmlFor="target-pin" className="flex items-center gap-2 cursor-pointer">
-                    <MapPin className="h-4 w-4 text-blue-500" />
-                    Pin (Single Location)
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="area" id="target-area" />
-                  <Label htmlFor="target-area" className="flex items-center gap-2 cursor-pointer">
-                    <Square className="h-4 w-4 text-purple-500" />
-                    Area (Region/Multi-Site)
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            {/* Pin/Area selector */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                {uploadTargetType === 'pin' ? 'Assign to Pin:' : 'Assign to Area:'}
-              </label>
-              {uploadTargetType === 'pin' ? (
-                <Select value={selectedUploadPinId} onValueChange={setSelectedUploadPinId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select a pin..." />
-                  </SelectTrigger>
-                  <SelectContent className="z-[99999]">
-                    {(() => {
-                      const projectPins = pins.filter(pin => pin.projectId === (currentProjectContext || activeProjectId));
-
-                      if (projectPins.length === 0) {
-                        return (
-                          <div className="p-4 text-center text-sm text-muted-foreground">
-                            No pins found in this project.
-                          </div>
-                        );
-                      }
-
-                      return projectPins.map(pin => (
-                        <SelectItem key={pin.id} value={pin.id}>
-                          <div className="flex items-center gap-2">
-                            <MapPin className="h-3 w-3 text-blue-500" />
-                            <div
-                              className="w-3 h-3 rounded-full"
-                              style={{ backgroundColor: pin.color }}
-                            />
-                            <span>{pin.label || 'Unnamed Pin'}</span>
-                          </div>
-                        </SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Select value={selectedUploadAreaId} onValueChange={setSelectedUploadAreaId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select an area..." />
-                  </SelectTrigger>
-                  <SelectContent className="z-[99999]">
-                    {(() => {
-                      const projectAreas = areas.filter(area => area.projectId === (currentProjectContext || activeProjectId));
-
-                      if (projectAreas.length === 0) {
-                        return (
-                          <div className="p-4 text-center text-sm text-muted-foreground">
-                            No areas found in this project.
-                          </div>
-                        );
-                      }
-
-                      return projectAreas.map(area => (
-                        <SelectItem key={area.id} value={area.id}>
-                          <div className="flex items-center gap-2">
-                            <Square className="h-3 w-3 text-purple-500" />
-                            <span>{area.label || 'Unnamed Area'}</span>
-                          </div>
-                        </SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setShowUploadPinSelector(false);
-                  setPendingUploadFiles([]);
-                  setSelectedUploadPinId('');
-                  setSelectedUploadAreaId('');
-                  setUploadTargetType('pin');
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  const targetId = uploadTargetType === 'pin' ? selectedUploadPinId : selectedUploadAreaId;
-                  if (targetId) {
-                    setShowUploadPinSelector(false);
-                    handleFileUpload(targetId, uploadTargetType);
-                  } else {
-                    toast({
-                      variant: "destructive",
-                      title: `No ${uploadTargetType === 'pin' ? 'Pin' : 'Area'} Selected`,
-                      description: `Please select ${uploadTargetType === 'pin' ? 'a pin' : 'an area'} to upload files to.`
-                    });
-                  }
-                }}
-                disabled={(!selectedUploadPinId && !selectedUploadAreaId) || isUploadingFiles}
-              >
-                {isUploadingFiles ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Uploading...
-                  </>
-                ) : (
-                  'Upload Files'
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        }}
+      />
 
       {/* Duplicate File Warning Dialog */}
       <Dialog open={showDuplicateWarning} onOpenChange={(open) => {
@@ -8058,375 +7664,80 @@ function MapDrawingPageContent() {
       />
 
       {/* Project Settings Dialog */}
-      <Dialog open={showProjectSettingsDialog} onOpenChange={(open) => {
-        if (!open) {
-          setCurrentProjectContext('');
-          clearObjectSelection(); // Clear selections when closing
-        }
-        setShowProjectSettingsDialog(open);
-      }}>
-        <SettingsDialogContent className="sm:max-w-md z-[9999]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              Project Settings
-            </DialogTitle>
-            <DialogDescription>
-              Manage settings for {dynamicProjects[currentProjectContext || activeProjectId]?.name}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            {/* Project Name */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Project Name</label>
-              <Input
-                value={projectNameEdit}
-                onChange={(e) => setProjectNameEdit(e.target.value)}
-                placeholder="Enter project name"
-              />
-              <p className="text-xs text-muted-foreground">
-                Note: This application currently uses predefined projects. Full project management will be available in a future update.
-              </p>
-            </div>
-
-            {/* BATCH DELETE SECTION - Show when objects selected */}
-            {selectedObjectIds.size > 0 && (
-              <div className="p-4 border border-orange-500 rounded bg-orange-50 dark:bg-orange-950/20">
-                <h3 className="text-sm font-semibold mb-2 text-orange-900 dark:text-orange-200">
-                  Batch Delete
-                </h3>
-                <p className="text-xs text-muted-foreground mb-3">
-                  You have selected {selectedObjectIds.size} object{selectedObjectIds.size !== 1 ? 's' : ''} to delete
-                </p>
-
-                {/* List selected objects */}
-                <div className="space-y-1 max-h-32 overflow-y-auto mb-3 text-xs">
-                  {getSelectedObjects().map(obj => (
-                    <div key={obj.id} className="flex items-center gap-2">
-                      {obj.type === 'pin' && <div className="w-2 h-2 rounded-full bg-blue-500"></div>}
-                      {obj.type === 'line' && <div className="w-3 h-0.5 bg-green-500"></div>}
-                      {obj.type === 'area' && <div className="w-2 h-2 bg-red-500/30 border border-red-500"></div>}
-                      <span>{obj.label || `Unnamed ${obj.type}`}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    setShowProjectSettingsDialog(false);
-                    setShowBatchDeleteConfirmDialog(true);
-                  }}
-                  className="w-full flex items-center justify-center gap-2"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete Selected Objects ({selectedObjectIds.size})
-                </Button>
-              </div>
-            )}
-
-            {/* Actions */}
-            <div className="flex justify-between pt-4 border-t">
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  setShowProjectSettingsDialog(false);
-                  setShowDeleteConfirmDialog(true);
-                }}
-                className="flex items-center gap-2"
-                disabled={selectedObjectIds.size > 0} // Disable if batch mode active
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete Project
-              </Button>
-
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowProjectSettingsDialog(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    // TODO: Implement project rename functionality
-                    toast({
-                      title: "Feature Coming Soon",
-                      description: "Project renaming will be available in a future update.",
-                      duration: 3000
-                    });
-                    setShowProjectSettingsDialog(false);
-                  }}
-                >
-                  Save Changes
-                </Button>
-              </div>
-            </div>
-          </div>
-        </SettingsDialogContent>
-      </Dialog>
+      <ProjectSettingsDialog
+        open={showProjectSettingsDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCurrentProjectContext('');
+            clearObjectSelection(); // Clear selections when closing
+          }
+          setShowProjectSettingsDialog(open);
+        }}
+        projectName={dynamicProjects[currentProjectContext || activeProjectId]?.name || ''}
+        selectedObjectIds={selectedObjectIds}
+        selectedObjects={getSelectedObjects()}
+        onDeleteProject={() => {
+          setShowProjectSettingsDialog(false);
+          setShowDeleteConfirmDialog(true);
+        }}
+        onBatchDelete={() => {
+          setShowProjectSettingsDialog(false);
+          setShowBatchDeleteConfirmDialog(true);
+        }}
+        onCancel={() => {
+          setShowProjectSettingsDialog(false);
+        }}
+      />
 
       {/* Delete Project Confirmation Dialog */}
-      <Dialog open={showDeleteConfirmDialog} onOpenChange={(open) => {
-        if (!open) setCurrentProjectContext('');
-        setShowDeleteConfirmDialog(open);
-      }}>
-        <DialogContent className="sm:max-w-md z-[9999]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="h-5 w-5" />
-              Delete Project
-            </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete "{dynamicProjects[currentProjectContext || activeProjectId]?.name}"?
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
-              <p className="text-sm text-destructive font-medium mb-2">This action will permanently delete:</p>
-              <ul className="text-sm text-destructive space-y-1 ml-4 list-disc">
-                <li>All pins, lines, and areas in this project</li>
-                <li>All uploaded data files</li>
-                <li>All project settings and configurations</li>
-              </ul>
-              <p className="text-sm text-destructive font-medium mt-2">This action cannot be undone.</p>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowDeleteConfirmDialog(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={async () => {
-                  console.log('🗑️ Delete Project button clicked');
-                  console.log('📂 Project context:', currentProjectContext);
-                  
-                  const projectId = currentProjectContext || activeProjectId;
-                  if (!projectId) {
-                    console.log('❌ No project ID available for deletion');
-                    toast({
-                      title: "Error",
-                      description: "No project selected for deletion.",
-                      variant: "destructive"
-                    });
-                    return;
-                  }
-
-                  console.log('⏳ Setting isDeletingProject to true');
-                  setIsDeletingProject(true);
-                  try {
-                    console.log('🚀 Calling projectService.deleteProject...');
-                    await projectService.deleteProject(projectId);
-                    console.log('✅ Project deleted successfully');
-
-                    toast({
-                      title: "Project Deleted",
-                      description: `Project "${dynamicProjects[projectId]?.name}" has been deleted successfully.`,
-                      duration: 3000
-                    });
-
-                    setShowDeleteConfirmDialog(false);
-                    setCurrentProjectContext('');
-                    
-                    // Refresh project list to remove deleted project
-                    console.log('🔄 Refreshing project list after deletion...');
-                    await loadDynamicProjects();
-                    
-                  } catch (error) {
-                    console.error('Failed to delete project:', error);
-                    toast({
-                      title: "Deletion Failed",
-                      description: error instanceof Error ? error.message : "Failed to delete project. Please try again.",
-                      variant: "destructive",
-                      duration: 5000
-                    });
-                  } finally {
-                    setIsDeletingProject(false);
-                  }
-                }}
-                disabled={isDeletingProject}
-                className="flex items-center gap-2"
-              >
-                {isDeletingProject && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                {isDeletingProject ? 'Deleting...' : 'Delete Project'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <DeleteProjectConfirmDialog
+        open={showDeleteConfirmDialog}
+        onOpenChange={(open) => {
+          if (!open) setCurrentProjectContext('');
+          setShowDeleteConfirmDialog(open);
+        }}
+        projectName={dynamicProjects[currentProjectContext || activeProjectId]?.name || ''}
+        projectId={currentProjectContext || activeProjectId}
+        onConfirmDelete={async () => {
+          console.log('🗑️ Delete Project button clicked');
+          const projectId = currentProjectContext || activeProjectId;
+          console.log('📂 Project context:', projectId);
+          console.log('🚀 Calling projectService.deleteProject...');
+          await projectService.deleteProject(projectId);
+          console.log('✅ Project deleted successfully');
+          setCurrentProjectContext('');
+          console.log('🔄 Refreshing project list after deletion...');
+          await loadDynamicProjects();
+        }}
+        onCancel={() => setShowDeleteConfirmDialog(false)}
+      />
 
       {/* Batch Delete Confirmation Dialog */}
-      <Dialog open={showBatchDeleteConfirmDialog} onOpenChange={setShowBatchDeleteConfirmDialog}>
-        <DialogContent className="sm:max-w-md z-[9999]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="h-5 w-5" />
-              Confirm Batch Deletion
-            </DialogTitle>
-            <DialogDescription>
-              This action cannot be undone. The following {selectedObjectIds.size} object{selectedObjectIds.size !== 1 ? 's' : ''} will be permanently deleted:
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* List of objects to delete */}
-          <div className="max-h-48 overflow-y-auto border rounded p-3 space-y-2">
-            {getSelectedObjects().map(obj => {
-              const fileCount = obj.type === 'pin'
-                ? (pinFileMetadata[obj.id]?.length || pinFiles[obj.id]?.length || 0)
-                : obj.type === 'area'
-                ? (areaFileMetadata[obj.id]?.length || 0)
-                : 0;
-
-              return (
-                <div key={obj.id} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    {obj.type === 'pin' && <div className="w-2 h-2 rounded-full bg-blue-500"></div>}
-                    {obj.type === 'line' && <div className="w-3 h-0.5 bg-green-500"></div>}
-                    {obj.type === 'area' && <div className="w-2 h-2 bg-red-500/30 border border-red-500"></div>}
-                    <span className="font-medium">{obj.label || `Unnamed ${obj.type}`}</span>
-                  </div>
-                  {fileCount > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      {fileCount} file{fileCount !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => setShowBatchDeleteConfirmDialog(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleBatchDelete}
-              className="flex items-center gap-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete {selectedObjectIds.size} Object{selectedObjectIds.size !== 1 ? 's' : ''}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <BatchDeleteConfirmDialog
+        open={showBatchDeleteConfirmDialog}
+        onOpenChange={setShowBatchDeleteConfirmDialog}
+        selectedObjects={(() => {
+          const selected = getSelectedObjects().map(obj => {
+            const fileCount = obj.type === 'pin'
+              ? (pinFileMetadata[obj.id]?.length || pinFiles[obj.id]?.length || 0)
+              : obj.type === 'area'
+              ? (areaFileMetadata[obj.id]?.length || 0)
+              : 0;
+            return { ...obj, fileCount };
+          });
+          return selected;
+        })()}
+        selectedCount={selectedObjectIds.size}
+        onConfirmDelete={handleBatchDelete}
+        onCancel={() => setShowBatchDeleteConfirmDialog(false)}
+      />
 
       {/* Add New Project Dialog */}
-      <Dialog open={showAddProjectDialog} onOpenChange={(open) => {
-        if (!open) {
-          setNewProjectName('');
-          setNewProjectDescription('');
-        }
-        setShowAddProjectDialog(open);
-      }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Plus className="h-5 w-5" />
-              Add New Project
-            </DialogTitle>
-            <DialogDescription>
-              Create a new project to organize your pins, lines, and areas.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            {/* Project Name */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Project Name *</label>
-              <Input
-                value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
-                placeholder="Enter project name"
-                required
-              />
-            </div>
-            
-            {/* Project Description */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Description</label>
-              <Textarea
-                value={newProjectDescription}
-                onChange={(e) => setNewProjectDescription(e.target.value)}
-                placeholder="Optional description"
-                rows={3}
-              />
-            </div>
-            
-
-            {/* Actions */}
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => setShowAddProjectDialog(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={async () => {
-                  console.log('🔄 Create Project button clicked');
-                  console.log('📝 Project name:', newProjectName);
-                  console.log('📝 Project description:', newProjectDescription);
-                  
-                  if (!newProjectName.trim()) {
-                    console.log('❌ Project name is empty, aborting');
-                    return;
-                  }
-                  
-                  console.log('⏳ Setting isCreatingProject to true');
-                  setIsCreatingProject(true);
-                  try {
-                    console.log('🚀 Calling projectService.createProject...');
-                    const newProject = await projectService.createProject({
-                      name: newProjectName.trim(),
-                      description: newProjectDescription.trim() || undefined
-                    });
-                    console.log('✅ Project created successfully:', newProject);
-
-                    toast({
-                      title: "Project Created",
-                      description: `"${newProject.name}" has been created successfully.`,
-                      duration: 3000
-                    });
-
-                    setShowAddProjectDialog(false);
-                    setNewProjectName('');
-                    setNewProjectDescription('');
-                    
-                    // Refresh project list to show new project
-                    console.log('🔄 Refreshing project list after creation...');
-                    await loadDynamicProjects();
-                    
-                  } catch (error) {
-                    console.error('Failed to create project:', error);
-                    toast({
-                      title: "Creation Failed",
-                      description: error instanceof Error ? error.message : "Failed to create project. Please try again.",
-                      variant: "destructive",
-                      duration: 5000
-                    });
-                  } finally {
-                    setIsCreatingProject(false);
-                  }
-                }}
-                disabled={!newProjectName.trim() || isCreatingProject}
-              >
-                {isCreatingProject && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                {isCreatingProject ? 'Creating...' : 'Create Project'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <AddProjectDialog
+        open={showAddProjectDialog}
+        onOpenChange={setShowAddProjectDialog}
+        onProjectCreated={loadDynamicProjects}
+      />
 
       {/* Merge Rules Dialog */}
       {multiFileConfirmData && (
@@ -8664,6 +7975,35 @@ function MapDrawingPageContent() {
           forceSync();
         }}
       />
+
+      {/* ================================================================ */}
+      {/* DATA EXPLORER PANEL - NEW ADDITION (Safe to remove/disable)     */}
+      {/* ================================================================ */}
+      {isFeatureEnabled('DATA_EXPLORER_PANEL') && (
+        <LazyDataExplorerPanel
+          open={showDataExplorerPanel}
+          onOpenChange={setShowDataExplorerPanel}
+
+          // Files tab
+          files={allProjectFilesForTimeline}
+          isLoadingFiles={false}
+          onFileClick={handleFileClickFromPanel}
+          onFileDelete={handleDeleteFileForPlot}
+          onFileRename={handleRenameFileForPlot}
+          getFileDateRange={getFileDateRange}
+          onOpenStackedPlots={handleOpenStackedPlotsFromPanel}
+
+          // Saved plots tab
+          savedPlots={savedPlots}
+          isLoadingPlots={isLoadingSavedPlots}
+          onPlotClick={handlePlotClickFromPanel}
+          onPlotDelete={handlePlotDeleteFromPanel}
+          onPlotEdit={handlePlotEditFromPanel}
+        />
+      )}
+      {/* ================================================================ */}
+      {/* END DATA EXPLORER PANEL                                         */}
+      {/* ================================================================ */}
 
     </>
   );

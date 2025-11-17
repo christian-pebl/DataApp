@@ -532,6 +532,7 @@ export class MapDataService {
   }
 
   async deletePin(id: string): Promise<void> {
+    // Don't add .eq('user_id', user.id) - RLS policies handle user ownership
     const { error } = await this.supabase
       .from('pins')
       .delete()
@@ -800,12 +801,55 @@ export class MapDataService {
   }
 
   async deleteLine(id: string): Promise<void> {
-    const { error } = await this.supabase
+    console.log('🗑️ MapDataService.deleteLine - Starting deletion for ID:', id)
+
+    // Get current user to verify ownership
+    const { data: { user } } = await this.supabase.auth.getUser()
+    if (!user) {
+      console.error('❌ MapDataService.deleteLine - No authenticated user')
+      throw new Error('User not authenticated')
+    }
+    console.log('👤 MapDataService.deleteLine - User ID:', user.id)
+
+    // First, verify the line exists and belongs to the user
+    const { data: existingLine, error: checkError } = await this.supabase
+      .from('lines')
+      .select('id, label, user_id')
+      .eq('id', id)
+      .single()
+
+    console.log('🔍 MapDataService.deleteLine - Line exists:', !!existingLine)
+    console.log('🔍 MapDataService.deleteLine - Line object:', existingLine)
+    console.log('🔍 MapDataService.deleteLine - Line user_id:', existingLine?.user_id)
+    console.log('🔍 MapDataService.deleteLine - Current user_id:', user.id)
+    console.log('🔍 MapDataService.deleteLine - User IDs match?', existingLine?.user_id === user.id)
+    console.log('🔍 MapDataService.deleteLine - Check error:', checkError)
+
+    // Don't add .eq('user_id', user.id) - RLS policies handle user ownership
+    // Adding it causes 0 rows to be deleted even when user_ids match
+    const { data, error, count } = await this.supabase
       .from('lines')
       .delete()
       .eq('id', id)
+      .select()
 
-    if (error) throw error
+    console.log('🗑️ MapDataService.deleteLine - Deletion result:', {
+      success: !error,
+      deletedCount: data?.length || 0,
+      data: data,
+      error: error
+    })
+
+    if (error) {
+      console.error('❌ MapDataService.deleteLine - Error:', error)
+      throw error
+    }
+
+    if (!data || data.length === 0) {
+      console.warn('⚠️ MapDataService.deleteLine - No rows deleted (line may not exist or wrong user)')
+    } else {
+      console.log('✅ MapDataService.deleteLine - Successfully deleted line:', data[0])
+    }
   }
 
   // Area operations
@@ -1019,12 +1063,32 @@ export class MapDataService {
   }
 
   async deleteArea(id: string): Promise<void> {
-    const { error } = await this.supabase
+    console.log('🗑️ MapDataService.deleteArea - Starting deletion for ID:', id)
+
+    // Don't add .eq('user_id', user.id) - RLS policies handle user ownership
+    const { data, error } = await this.supabase
       .from('areas')
       .delete()
       .eq('id', id)
+      .select()
 
-    if (error) throw error
+    console.log('🗑️ MapDataService.deleteArea - Deletion result:', {
+      success: !error,
+      deletedCount: data?.length || 0,
+      data: data,
+      error: error
+    })
+
+    if (error) {
+      console.error('❌ MapDataService.deleteArea - Error:', error)
+      throw error
+    }
+
+    if (!data || data.length === 0) {
+      console.warn('⚠️ MapDataService.deleteArea - No rows deleted (area may not exist or wrong user)')
+    } else {
+      console.log('✅ MapDataService.deleteArea - Successfully deleted area:', data[0])
+    }
   }
 
   // Batch update operations for performance

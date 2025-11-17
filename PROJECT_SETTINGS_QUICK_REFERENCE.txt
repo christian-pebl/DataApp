@@ -1,0 +1,79 @@
+PROJECT SETTINGS IMPLEMENTATION - QUICK LINE REFERENCE
+
+File: C:\Users\Christian Abulhawa\DataApp\src\app\map-drawing\page.tsx
+
+STATE DECLARATIONS:
+Line 418:  showMainMenu state
+Line 421:  showProjectInfo state
+Line 424:  selectedObjectId state
+Line 425:  objectTypeFilter state
+Line 426:  sidebarWidth state
+Line 661:  showProjectSettingsDialog state
+Line 662:  projectNameEdit state
+Line 664:  currentProjectContext state
+Line 928:  itemToEdit state
+
+MENU & SIDEBAR:
+Line 4277-4296: Main menu toggle button (top-left)
+Line 5740-5779: Sidebar panel (fixed left, z-1600)
+Line 5754-5777: Sidebar resize handle and collapse button
+Line 5781-6450: Sidebar menu content
+
+ACTIVE PROJECT SECTION:
+Line 5825-6237: Active project overview
+Line 5926-5952: Project header with name and count
+Line 5953-6032: Action buttons (Project Data, Labels, Objects, Settings)
+Line 6020-6031: Settings cog button #1 (active project)
+Line 6043-6126: Object type filter buttons
+Line 6128-6237: Objects list with selection
+
+OBJECT LIST ITEM DETAILS:
+Line 6143-6232: Individual object item structure
+Line 6145-6149: Selection highlighting (bg-accent/20)
+Line 6160-6168: Object name button (toggles selection)
+Line 6172-6182: Data indicator (file count)
+Line 6188-6206: Label visibility toggle
+Line 6212-6230: Object visibility toggle
+
+PROJECT MENU:
+Line 6242-6448: Project menu structure
+Line 6243-6258: Project menu toggle button
+Line 6261-6447: Projects dropdown list
+Line 6274-6429: Individual project item
+Line 6408-6420: Settings cog button #2 (project menu)
+Line 6432-6446: Add new project button
+
+DIALOGS:
+Line 8043-8111: Project Settings Dialog
+Line 8063-8067: Project name input field
+Line 8075-8085: Delete Project button
+Line 8094-8106: Save Changes button (TODO implementation)
+Line 8113-8205: Delete Confirmation Dialog
+Line 8149-8194: Delete logic handler
+
+OBJECT DETAILS PANEL (Right side):
+Line 4300-5597: Object details panel
+Line 4301-4544: View mode content
+Line 5380-5596: Edit mode content
+Line 5549-5557: Label visibility checkbox
+Line 5563-5568: Area fill visibility checkbox
+
+HANDLERS & FUNCTIONS:
+Line 1764-1793: handleToggleAllObjects
+Reference lines only - full definitions elsewhere
+
+KEY ELEMENTS:
+- Settings (Cog) Icon: Used in 3 locations
+- Dialog Z-Index: z-[9999] for modals
+- Sidebar Z-Index: z-[1600] for main panel
+- Sidebar Width: Dynamic via state
+- Object Selection: Single select mode
+- Type Filtering: 4 filter options (all/pin/line/area)
+
+UI PATTERNS:
+- Sidebar: Fixed position with translate animation
+- Dialogs: Modal with semi-transparent backdrop
+- Objects: List with hover effects and badges
+- Selection: bg-accent/20 border border-accent/40
+- Unselected: bg-muted/30
+

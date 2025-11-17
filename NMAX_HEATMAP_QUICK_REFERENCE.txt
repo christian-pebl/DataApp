@@ -1,0 +1,103 @@
+QUICK REFERENCE: NMAX HEATMAP & TAXONOMIC TREE
+
+TWO-TIER SYSTEM
+- TreeNode: Full tree with parent-child refs, used in tree view
+- FlattenedTaxon: Linear array with indent levels, used in heatmap
+
+KEY INTERFACES
+
+HaplotypeCellData: species, site, count, metadata
+HaplotypeMetadata: credibility, phylum + taxonomy fields
+TreeNode: name, rank, children[], isLeaf, csvEntry, speciesCount
+FlattenedTaxon: name, rank, indentLevel (0-6), path[], node
+
+INDENT LEVELS (rank-based, NOT tree-depth)
+kingdom/phylum = 0
+class = 2
+order = 3
+family = 4
+genus = 5
+species = 6
+
+CORE FILES
+- HaplotypeHeatmap.tsx: Main heatmap (line 242-311: pipeline, 289-294: sorting, 809-871: lines, 873-946: labels)
+- TaxonomicTreeView.tsx: Tree view (lines 23-171: node rendering)
+- taxonomic-tree-builder.ts: Build & flatten (35-255: build, 308-348: flatten, 312-324: indent mapping)
+- csvParser.ts: CSV parsing
+- taxonomy-service.ts: WoRMS/GBIF lookup
+
+DATA FLOW
+CSV -> parseHaplotypeCSV() -> HaplotypeCellData[]
+Component mount -> lookupSpeciesBatch() -> WoRMS/GBIF -> species_taxonomy
+buildTaxonomicTree() -> TreeNode hierarchy
+flattenTreeForHeatmap() -> FlattenedTaxon[] (linear)
+Heatmap: Filter -> Sort -> Render
+
+PARENT-CHILD TRACKING
+
+TreeNode: node.children[] direct children array
+FlattenedTaxon: child.path.includes(parent.name) + child.indentLevel = parent.indentLevel + 1
+
+Heatmap lines 815-825:
+for (let i = index+1; i < filteredTaxa.length; i++) {
+  if (filteredTaxa[i].indentLevel <= parent.indentLevel) break;
+  if (filteredTaxa[i].indentLevel === parent.indentLevel + 1 &&
+      filteredTaxa[i].path.includes(parent.name)) {
+    // Direct child found
+  }
+}
+
+SORTING MODES
+
+Hierarchical (289-294): Filter flattenedTaxa to leaf nodes only, preserves hierarchy order
+Alphabetical (296-298): Get filtered species names, sort A-Z
+
+HEATMAP RENDERING
+
+Y-axis labels (873-946):
+- Get rank color, badge, abbreviation
+- Indent = indentLevel * 20px
+- Render rank badge + species name
+
+Connection lines (809-871, hierarchical only):
+- Find children with next indent = current+1 and parent name in path
+- Draw vertical line from parent to last child
+- Draw horizontal line to each child
+
+Cell width (314-325):
+width = (maxIndent * 20) + (maxNameLength * 7) + 40
+clamped to 250-500px
+
+EXAMPLE: Acartia tonsa
+
+TreeNode:
+Life -> Animalia (K) -> Chordata (P) -> Actinopterygii (C) -> Copepoda (O) -> Acartia (G) -> Acartia tonsa (S, CSV entry)
+
+FlattenedTaxon flattened as:
+[4] Acartia, rank=genus, indentLevel=5, path=[Animalia,...,Acartia]
+[5] Acartia tonsa, rank=species, indentLevel=6, path=[Animalia,...,Acartia tonsa]
+
+Parent-child check:
+indentLevel[5]=6 === indentLevel[4]=5+1? YES
+"Acartia" in path[5]? YES
+-> Direct child
+
+Heatmap display (hierarchical):
+Shows both Acartia and Acartia tonsa with connection line
+Data cell only for Acartia tonsa (leaf)
+Indent for tonsa: 5*20 + 12 = 112px
+
+TREE VIEW STYLING
+
+CSV with children: bg-blue-50 (prominent)
+CSV no children: bg-emerald-50 (clickable)
+Parent only: opacity-25 (non-interactive)
+
+Elements per node:
+1. Expand/collapse icon
+2. Rank badge (K/P/C/O/F/G/S/?)
+3. Node name (originalName or cleaned)
+4. Species count badge (parents)
+5. Haplotype count badge (CSV entries)
+6. Taxonomy source + confidence dot (CSV)
+

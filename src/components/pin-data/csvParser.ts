@@ -5,6 +5,7 @@
 
 import { detectSampleIdColumn } from '@/lib/statistical-utils';
 import { extractEdnaDate } from '@/lib/edna-utils';
+import { lookupSpeciesBatch, getTaxonomyRankAbbreviation, type TaxonomyResult } from '@/lib/taxonomy-service';
 
 export interface ParsedDataPoint {
   time: string;
@@ -41,6 +42,22 @@ export interface HaplotypeMetadata {
   isInvasive: boolean;
   invasiveSpeciesName: string | null;
   redListStatus: string;
+
+  // Taxonomy data from WoRMS/GBIF APIs
+  taxonomySource?: 'worms' | 'gbif' | 'unknown';
+  taxonId?: string; // AphiaID (WoRMS) or usageKey (GBIF)
+  commonNames?: string[];
+  fullHierarchy?: {
+    kingdom?: string;
+    phylum?: string;
+    class?: string;
+    order?: string;
+    family?: string;
+    genus?: string;
+    species?: string;
+  };
+  taxonomyConfidence?: 'high' | 'medium' | 'low';
+  taxonomyRank?: string; // sp./gen./fam./ord./class./phyl.
 }
 
 export interface HaplotypeCellData {
@@ -72,15 +89,6 @@ function detectDateFormat(lines: string[], timeColumnIndex: number, startRow: nu
   const isoDateValues: string[] = [];
   const isHaplotypeFile = fileName.toLowerCase().includes('hapl');
 
-  console.log('═══════════════════════════════════════════════════════');
-  // console.log('[DATE DETECTION] Starting date format detection...');
-  // console.log('[DATE DETECTION] Time column index:', timeColumnIndex);
-  // console.log('[DATE DETECTION] Start row:', startRow);
-  // console.log('[DATE DETECTION] Sample size:', sampleSize);
-  if (isHaplotypeFile) {
-    console.log('🧬 HAPL_DEBUG: Date format detection for haplotype file');
-  }
-  console.log('═══════════════════════════════════════════════════════');
 
   // Extract date values from sample rows (starting from the first data row)
   for (let i = startRow; i < startRow + sampleSize && i < lines.length; i++) {
@@ -105,25 +113,14 @@ function detectDateFormat(lines: string[], timeColumnIndex: number, startRow: nu
     }
   }
 
-  console.log('[DATE DETECTION] Slash-separated dates found:', dateValues.length);
-  console.log('[DATE DETECTION] Sample slash dates:', dateValues.slice(0, 5));
-  console.log('[DATE DETECTION] ISO format dates found:', isoDateValues.length);
-  console.log('[DATE DETECTION] Sample ISO dates:', isoDateValues.slice(0, 5));
-
-  // 🧬 HAPL_DEBUG: Show all sample dates for haplotype files
-  if (isHaplotypeFile) {
-    console.log('🧬 HAPL_DEBUG: Slash dates found:', dateValues.length);
-    console.log('🧬 HAPL_DEBUG: Sample slash dates:', dateValues.slice(0, 10));
-    console.log('🧬 HAPL_DEBUG: ISO dates found:', isoDateValues.length);
-    console.log('🧬 HAPL_DEBUG: Sample ISO dates:', isoDateValues.slice(0, 10));
-  }
-
   // Priority 1: If we found ISO format dates, use that
   if (isoDateValues.length > 0) {
-    console.log('═══════════════════════════════════════════════════════');
-    console.log('[DATE DETECTION] ✓ Detected format: YYYY-MM-DD (ISO format)');
-    console.log('═══════════════════════════════════════════════════════');
+    console.log(`[DATE DETECTION] ✓ ISO format (${isoDateValues.length} dates)`);
     return 'YYYY-MM-DD';
+  }
+
+  if (dateValues.length > 0) {
+    console.log(`[DATE DETECTION] Slash-separated dates found: ${dateValues.length}`);
   }
 
   // Priority 2: Process slash-separated dates
@@ -332,8 +329,7 @@ export async function parseCSVFile(
     diagnosticLogs.push(`✅ Using row ${headerRowIndex} as header row`);
     diagnosticLogs.push(`📋 Detected ${rawHeaders.length} columns: ${rawHeaders.slice(0, 5).join(', ')}${rawHeaders.length > 5 ? '...' : ''}`);
 
-    console.log(`[CSV PARSER] Using row ${headerRowIndex} as header row`);
-    console.log(`[CSV PARSER] Headers detected:`, rawHeaders.slice(0, 10));
+    console.log(`[CSV PARSER] Headers: ${rawHeaders.length} cols (${rawHeaders.slice(0, 3).join(', ')}${rawHeaders.length > 3 ? '...' : ''})`);
 
     // 🧬 HAPL_DEBUG: Log all headers for haplotype files
     if (isHaplotypeFile) {
@@ -949,11 +945,165 @@ export function isValidTimeFormat(timeStr: string): boolean {
 }
 
 /**
+ * Parse NMAX CSV file (_nmax.csv format)
+ * Structure: Time-series observation data where species names are in column headers (typically starting at column 8)
+ * Each row represents a time point with observation counts for different species
+ */
+async function parseNmaxCsv(file: File): Promise<HaplotypeParseResult> {
+  const result: HaplotypeParseResult = {
+    species: [],
+    sites: [],
+    data: [],
+    errors: [],
+    summary: {
+      totalSpecies: 0,
+      totalSites: 0,
+      totalCells: 0,
+    },
+  };
+
+  try {
+    const text = await file.text();
+    const lines = text.trim().split('\n').filter(line => line.trim() !== '');
+
+    if (lines.length < 2) {
+      result.errors.push('File must have at least header and one data row');
+      return result;
+    }
+
+    // Parse header row
+    const headerValues = parseCSVLine(lines[0]);
+
+    // NMAX files have metadata columns first (Time, Total Observations, etc.)
+    // Species names start appearing around column 7-8
+    const metadataColumns = [
+      'time', 'total observations', 'cumulative observations',
+      'all unique organisms observed today', 'new unique organisms today',
+      'cumulative new unique organisms', 'cumulative unique species'
+    ];
+
+    const speciesIndices: number[] = [];
+    const speciesNames: string[] = [];
+
+    // Identify species columns (those that are not metadata columns)
+    headerValues.forEach((header, index) => {
+      const headerLower = header.toLowerCase().trim();
+
+      // Skip empty headers
+      if (!headerLower) return;
+
+      // Check if this is a metadata column
+      const isMetadata = metadataColumns.some(meta =>
+        headerLower.includes(meta) || meta.includes(headerLower)
+      );
+
+      if (!isMetadata && index >= 7) {
+        // This is likely a species column (taxon name)
+        speciesIndices.push(index);
+        speciesNames.push(header.trim());
+      }
+    });
+
+    if (speciesNames.length === 0) {
+      result.errors.push('No species columns found (expected species names in headers after column 7)');
+      return result;
+    }
+
+    result.species = speciesNames;
+
+    // For NMAX files, we create a single "site" that represents the aggregated observations
+    // Each row is a time point, but for presence-absence we just need to know if species was observed
+    result.sites = ['Observations'];
+
+    // Create presence-absence data by checking if any row has a non-zero count for each species
+    const speciesPresence: Record<string, number> = {};
+
+    // Parse data rows to detect species presence
+    for (let i = 1; i < lines.length; i++) {
+      try {
+        const values = parseCSVLine(lines[i]);
+
+        if (values.length < speciesIndices[0]) continue; // Skip invalid rows
+
+        // Check each species column for presence (non-zero value)
+        speciesIndices.forEach((speciesIndex, idx) => {
+          const countStr = values[speciesIndex]?.trim();
+          const count = countStr ? parseFloat(countStr) : 0;
+
+          if (!isNaN(count) && count > 0) {
+            const speciesName = speciesNames[idx];
+            speciesPresence[speciesName] = (speciesPresence[speciesName] || 0) + count;
+          }
+        });
+
+      } catch (rowError) {
+        result.errors.push(`Row ${i}: ${rowError instanceof Error ? rowError.message : 'Parse error'}`);
+      }
+    }
+
+    // Create presence-absence data (1 if species present, 0 if absent)
+    speciesNames.forEach(speciesName => {
+      const count = speciesPresence[speciesName] || 0;
+
+      result.data.push({
+        species: speciesName,
+        site: 'Observations',
+        count: count > 0 ? 1 : 0, // Convert to presence (1) or absence (0)
+        metadata: {
+          credibility: 'UNKNOWN',
+          phylum: 'Unknown',
+          isInvasive: false,
+          invasiveSpeciesName: null,
+          redListStatus: 'Not Evaluated',
+        },
+      });
+
+      if (count > 0) {
+        result.summary.totalCells++;
+      }
+    });
+
+    // Update summary
+    result.summary.totalSpecies = result.species.length;
+    result.summary.totalSites = 1; // NMAX has one aggregated "site"
+
+    // Sort species alphabetically
+    result.species.sort((a, b) => a.localeCompare(b));
+
+    // Fetch taxonomy data from WoRMS/GBIF
+    try {
+      const taxonomyMap = await lookupSpeciesBatch(result.species);
+
+      // Update metadata for each cell with taxonomy data
+      result.data.forEach(cell => {
+        const taxonomy = taxonomyMap.get(cell.species);
+        if (taxonomy) {
+          cell.metadata.taxonomySource = taxonomy.source;
+          cell.metadata.taxonId = taxonomy.taxonId;
+          cell.metadata.commonNames = taxonomy.commonNames;
+          cell.metadata.fullHierarchy = taxonomy.hierarchy;
+          cell.metadata.taxonomyConfidence = taxonomy.confidence;
+          cell.metadata.taxonomyRank = getTaxonomyRankAbbreviation(taxonomy.rank);
+        }
+      });
+    } catch (taxonomyError) {
+      console.error('⚠️ Taxonomy lookup failed');
+      result.errors.push('Taxonomy lookup failed - data will be displayed without taxonomic information');
+    }
+
+  } catch (error) {
+    result.errors.push(`File parsing error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+
+  return result;
+}
+
+/**
  * Parse Haplotype CSV file (_hapl.csv format)
  * Structure: Species names in first column, metadata columns (score, phylum, NNS, RedList_Status),
  * followed by site columns containing numeric haplotype counts
  */
-export async function parseHaplotypeCsv(file: File): Promise<HaplotypeParseResult> {
+async function parseHaplotypeCsvOriginal(file: File): Promise<HaplotypeParseResult> {
   const result: HaplotypeParseResult = {
     species: [],
     sites: [],
@@ -1092,9 +1242,54 @@ export async function parseHaplotypeCsv(file: File): Promise<HaplotypeParseResul
     // Sort species alphabetically (as specified: 2A)
     result.species.sort((a, b) => a.localeCompare(b));
 
+    // Fetch taxonomy data from WoRMS/GBIF
+    try {
+      const taxonomyMap = await lookupSpeciesBatch(result.species);
+
+      // Update metadata for each cell with taxonomy data
+      result.data.forEach(cell => {
+        const taxonomy = taxonomyMap.get(cell.species);
+        if (taxonomy) {
+          cell.metadata.taxonomySource = taxonomy.source;
+          cell.metadata.taxonId = taxonomy.taxonId;
+          cell.metadata.commonNames = taxonomy.commonNames;
+          cell.metadata.fullHierarchy = taxonomy.hierarchy;
+          cell.metadata.taxonomyConfidence = taxonomy.confidence;
+          cell.metadata.taxonomyRank = getTaxonomyRankAbbreviation(taxonomy.rank);
+        }
+      });
+    } catch (taxonomyError) {
+      console.error('⚠️ Taxonomy lookup failed');
+      result.errors.push('Taxonomy lookup failed - data will be displayed without taxonomic information');
+    }
+
   } catch (error) {
     result.errors.push(`File parsing error: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 
   return result;
+}
+
+/**
+ * Universal parser for HAPL and NMAX files
+ * Detects file type by filename and routes to appropriate parser
+ *
+ * @param file - CSV file to parse (_hapl.csv or _nmax.csv)
+ * @returns HaplotypeParseResult with presence-absence data
+ */
+export async function parseHaplotypeCsv(file: File): Promise<HaplotypeParseResult> {
+  const fileName = file.name.toLowerCase();
+
+  // Detect file type by filename pattern
+  if (fileName.includes('_nmax') || fileName.includes('_nmx')) {
+    // NMAX format: Species in column headers (starting ~column 8)
+    return parseNmaxCsv(file);
+  } else if (fileName.includes('_hapl')) {
+    // HAPL format: Species in first column, sites in headers
+    return parseHaplotypeCsvOriginal(file);
+  } else {
+    // Default to HAPL format for unknown file types
+    console.warn(`Unknown file type for presence-absence: ${file.name}, defaulting to HAPL parser`);
+    return parseHaplotypeCsvOriginal(file);
+  }
 }

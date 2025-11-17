@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
+import dynamic from 'next/dynamic';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Brush, Tooltip as RechartsTooltip, ReferenceLine } from 'recharts';
 import { format, parseISO, isValid } from 'date-fns';
 import { HexColorPicker } from 'react-colorful';
@@ -13,7 +14,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock, Palette, Eye, Grid3x3, Ruler } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock, Palette, Eye, Grid3x3, Ruler, Network, RefreshCw } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
 import type { ParsedDataPoint } from './csvParser';
@@ -24,6 +26,16 @@ import { PinChartDisplaySpotSample } from './PinChartDisplaySpotSample';
 import { HeatmapDisplay } from '@/components/dataflow/HeatmapDisplay';
 import { HaplotypeHeatmap } from './HaplotypeHeatmap';
 import type { HaplotypeParseResult } from './csvParser';
+import { BrushPanHandle } from './BrushPanHandle';
+import { TaxonomicTreeView } from './TaxonomicTreeView';
+import { buildTaxonomicTree, flattenTreeForHeatmap } from '@/lib/taxonomic-tree-builder';
+import { lookupSpeciesBatch } from '@/lib/taxonomy-service';
+
+// Lazy load RawCsvViewer - only loads when user clicks on unrecognized species
+const RawCsvViewer = dynamic(
+  () => import('@/components/data-explorer/RawCsvViewer').then(mod => ({ default: mod.RawCsvViewer })),
+  { ssr: false, loading: () => <div className="animate-pulse p-4">Loading CSV viewer...</div> }
+);
 
 interface PinChartDisplayProps {
   data: ParsedDataPoint[];
@@ -74,6 +86,10 @@ interface PinChartDisplayProps {
   diagnosticLogs?: string[];
   // Haplotype data (for EDNA hapl files)
   haplotypeData?: HaplotypeParseResult;
+  // Subtracted plot settings (for computed/subtracted plots)
+  isSubtractedPlot?: boolean;
+  includeZeroValues?: boolean;
+  onIncludeZeroValuesChange?: (include: boolean) => void;
 }
 
 // Color palette matching the marine data theme
@@ -386,7 +402,10 @@ export function PinChartDisplay({
   detectedSampleIdColumn,
   headers,
   diagnosticLogs,
-  haplotypeData
+  haplotypeData,
+  isSubtractedPlot = false,
+  includeZeroValues = false,
+  onIncludeZeroValuesChange
 }: PinChartDisplayProps) {
   // 🧬 HAPL_DEBUG: Log incoming data for haplotype files
   const isHaplotypeFile = fileName?.toLowerCase().includes('hapl');
@@ -434,12 +453,32 @@ export function PinChartDisplay({
     }
   }, []);
 
-  // Toggle state for switching between chart and table view
-  const [showTable, setShowTable] = useState(false);
+  // Unified view mode for all file types
+  type ViewMode = 'chart' | 'table' | 'heatmap' | 'tree';
+  const [viewMode, setViewMode] = useState<ViewMode>('chart');
 
-  // Heatmap view state - for Subcam nmax files
-  const [showHeatmap, setShowHeatmap] = useState(false);
+  // Legacy support: derive old state variables from unified viewMode
+  const showTable = viewMode === 'table';
+  const nmaxViewMode = viewMode === 'table' ? 'chart' : (viewMode as 'chart' | 'heatmap' | 'tree');
+  const showHeatmap = viewMode === 'heatmap';
   const [heatmapColor, setHeatmapColor] = useState('#1e3a8a'); // Dark blue default
+
+  // Heatmap refresh state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const { toast } = useToast();
+
+  // Species selection panel state (collapsed by default)
+  const [isSpeciesPanelExpanded, setIsSpeciesPanelExpanded] = useState(false);
+
+  // Taxonomy enrichment for nmax species
+  const [nmaxTaxonomyData, setNmaxTaxonomyData] = useState<Map<string, any>>(new Map());
+  const [isFetchingNmaxTaxonomy, setIsFetchingNmaxTaxonomy] = useState(false);
+  const [nmaxFetchedSpeciesList, setNmaxFetchedSpeciesList] = useState<string>(''); // Track which species we've fetched
+
+  // Adjustable cell dimensions for subcam nmax heatmaps
+  const [adjustableNmaxRowHeight, setAdjustableNmaxRowHeight] = useState(15);
+  const [adjustableNmaxCellWidth, setAdjustableNmaxCellWidth] = useState(12);
 
   // Haplotype heatmap view state - for EDNA hapl files (default to true for hapl files)
   const [showHaplotypeHeatmap, setShowHaplotypeHeatmap] = useState(isHaplotypeFile && !!haplotypeData);
@@ -450,6 +489,38 @@ export function PinChartDisplay({
       setShowHaplotypeHeatmap(true);
     }
   }, [isHaplotypeFile, haplotypeData, showHaplotypeHeatmap]);
+
+  // Raw CSV viewer state for haplotype editing
+  const [showRawViewer, setShowRawViewer] = useState(false);
+  const [selectedFileForRaw, setSelectedFileForRaw] = useState<{
+    id: string;
+    name: string;
+    highlightSpecies?: string;
+  } | null>(null);
+
+  // Helper to get file info for raw editing
+  // Note: rawFiles contains browser File objects, not database IDs
+  // We'll use pinId as the fileId since RawCsvViewer can work with pinId
+  const rawFileInfo = useMemo(() => {
+    if (!rawFiles || rawFiles.length === 0 || !pinId) {
+      console.log('[RAW FILE INFO] Missing data:', {
+        hasRawFiles: !!rawFiles,
+        rawFilesLength: rawFiles?.length,
+        hasPinId: !!pinId,
+        fileName
+      });
+      return null;
+    }
+
+    const info = {
+      id: pinId, // Using pinId as fileId - RawCsvViewer will need to adapt
+      name: fileName || rawFiles[0].name,
+      file: rawFiles[0]
+    };
+
+    console.log('[RAW FILE INFO] Created:', info);
+    return info;
+  }, [rawFiles, pinId, fileName]);
 
   // Compact view state - shows only selected parameters without borders
   const [compactView, setCompactView] = useState(initialCompactView ?? false);
@@ -503,6 +574,10 @@ export function PinChartDisplay({
   // X-axis year display toggle
   const [showYearInXAxis, setShowYearInXAxis] = useState(false);
 
+  // X-axis days from start toggle (for _nmax files)
+  const [showDaysFromStart, setShowDaysFromStart] = useState(false);
+  const [maxDaysToShow, setMaxDaysToShow] = useState<number | ''>(''); // Empty means show all
+
   // Custom Y-axis label
   const [customYAxisLabel, setCustomYAxisLabel] = useState<string>(initialCustomYAxisLabel || '');
 
@@ -515,6 +590,9 @@ export function PinChartDisplay({
   const [yAxisRangeParameter, setYAxisRangeParameter] = useState<string | null>(null);
   const [yAxisRangeMin, setYAxisRangeMin] = useState<string>('');
   const [yAxisRangeMax, setYAxisRangeMax] = useState<string>('');
+
+  // Temporary Y-axis range state for pending changes (before Apply is clicked)
+  const [pendingYAxisRanges, setPendingYAxisRanges] = useState<Record<string, { min: string; max: string }>>({});
 
   // Raw CSV viewing state
   const [showRawCSV, setShowRawCSV] = useState(false);
@@ -592,12 +670,16 @@ export function PinChartDisplay({
   //   }
   // }, [data, currentDateFormat]);
 
-  // Apply styling rule defaults when rule changes
+  // Apply styling rule defaults when rule changes (only watch defaultAxisMode specifically)
   React.useEffect(() => {
     if (appliedStyleRule?.properties.defaultAxisMode) {
-      setAxisMode(appliedStyleRule.properties.defaultAxisMode);
+      // Only update if the value is different to prevent unnecessary re-renders
+      setAxisMode(prev => {
+        const newMode = appliedStyleRule.properties.defaultAxisMode;
+        return newMode && newMode !== prev ? newMode : prev;
+      });
     }
-  }, [appliedStyleRule]);
+  }, [appliedStyleRule?.properties.defaultAxisMode]);
 
   // Get all parameters (for table view)
   const allParameters = useMemo(() => {
@@ -659,13 +741,7 @@ export function PinChartDisplay({
     // Get species columns (all columns after metadata columns)
     const species = allParameters.slice(firstSpeciesIndex);
 
-    console.log('[SUBCAM HEATMAP] Detected nmax file:', {
-      fileName,
-      totalParams: allParameters.length,
-      firstSpeciesIndex,
-      speciesCount: species.length,
-      speciesColumns: species
-    });
+    console.log(`[SUBCAM HEATMAP] ${fileName}: ${species.length} species (${allParameters.length} total params)`);
 
     return { isSubcamNmaxFile: true, speciesColumns: species };
   }, [fileType, fileName, allParameters]);
@@ -726,6 +802,31 @@ export function PinChartDisplay({
   // Update parameter states when numericParameters changes (e.g., new data loaded)
   React.useEffect(() => {
     setParameterStates(prev => {
+      // Check if parameters have actually changed
+      const prevParams = Object.keys(prev).filter(k => !k.endsWith('_ma'));
+      const currentParams = numericParameters;
+
+      // If parameters haven't changed, return the same state object to prevent unnecessary re-renders
+      if (prevParams.length === currentParams.length &&
+          prevParams.every(p => currentParams.includes(p))) {
+        // Parameters are the same - check if we need to update any MA states
+        const needsUpdate = Object.keys(prev).some(param => {
+          const state = prev[param];
+          const maKey = `${param}_ma`;
+
+          // Check if MA state needs to be added or removed
+          if (state?.movingAverage?.enabled && state?.movingAverage?.showLine !== false) {
+            return !prev[maKey]; // Needs update if MA is enabled but state doesn't exist
+          } else {
+            return !!prev[maKey]; // Needs update if MA is disabled but state exists
+          }
+        });
+
+        if (!needsUpdate) {
+          return prev; // Return same object to prevent re-render
+        }
+      }
+
       const newState: Record<string, ParameterState> = {};
       // For merged plots (small number of params), show all by default
       const defaultVisibleCount = numericParameters.length <= 3 ? numericParameters.length :
@@ -770,10 +871,10 @@ export function PinChartDisplay({
 
             newState[maKey] = {
               visible: true, // MA parameters are always visible when enabled
-              color: lightenColor(state.color, 0.3), // Lighter shade of base color
-              opacity: savedMASettings.opacity ?? 0.8, // Use saved opacity if available
-              lineStyle: savedMASettings.lineStyle ?? 'dashed', // Use saved line style if available
-              lineWidth: savedMASettings.lineWidth // Use saved line width if available
+              color: savedMASettings.color ?? '#6b7280', // Dark grey by default (Tailwind gray-500)
+              opacity: savedMASettings.opacity ?? 1.0, // Full opacity by default
+              lineStyle: savedMASettings.lineStyle ?? 'solid', // Solid line by default
+              lineWidth: savedMASettings.lineWidth ?? 1 // 1px thickness by default
             };
           } else {
             // Update existing MA parameter to ensure visibility matches showLine
@@ -812,16 +913,21 @@ export function PinChartDisplay({
     // For heatmap mode, calculate height based on number of visible species
     if (showHeatmap && isSubcamNmaxFile) {
       const visibleSpeciesCount = speciesColumns.filter(species => parameterStates[species]?.visible).length;
-      // Get row height from styling rule, default to 35px
-      const rowHeight = appliedStyleRule?.properties.heatmapRowHeight || 35;
+      // Use adjustable row height
+      const rowHeight = adjustableNmaxRowHeight;
       // Calculate height: (rowHeight per species row) + margins (150px for margins/axes/brush)
       const heatmapHeight = Math.max(300, (visibleSpeciesCount * rowHeight) + 150);
-      console.log('[HEATMAP HEIGHT]', {
-        visibleSpeciesCount,
-        rowHeight,
-        calculatedHeight: heatmapHeight
-      });
       return heatmapHeight;
+    }
+
+    // For haplotype heatmap/rarefaction view, return a fixed larger height
+    if (showHaplotypeHeatmap && isHaplotypeFile && haplotypeData) {
+      return 8000; // Double height to show more of the taxonomic tree without scrolling
+    }
+
+    // For nmax tree view, return a fixed larger height to show the entire taxonomic tree
+    if (nmaxViewMode === 'tree' && isSubcamNmaxFile) {
+      return 8000; // Large height to minimize scrolling in tree view
     }
 
     const baseHeight = appliedStyleRule?.properties.chartHeight || 208;
@@ -860,7 +966,7 @@ export function PinChartDisplay({
     // For 4+ parameters, use the full height
     // console.log('[CHART HEIGHT] Using full height for 4+ params:', baseHeight);
     return baseHeight;
-  }, [visibleParameters.length, appliedStyleRule?.properties.chartHeight, appliedStyleRule?.properties.heatmapRowHeight, fileName, appliedStyleRule?.styleName, showHeatmap, isSubcamNmaxFile, speciesColumns, parameterStates]);
+  }, [visibleParameters.length, appliedStyleRule?.properties.chartHeight, appliedStyleRule?.properties.heatmapRowHeight, fileName, appliedStyleRule?.styleName, showHeatmap, isSubcamNmaxFile, speciesColumns, parameterStates, showHaplotypeHeatmap, isHaplotypeFile, haplotypeData, adjustableNmaxRowHeight, nmaxViewMode]);
 
   // Get moving average parameters (for display in parameter list)
   const movingAverageParameters = useMemo(() => {
@@ -971,12 +1077,12 @@ export function PinChartDisplay({
     }
   };
 
-  // Handle heatmap toggle with parameter visibility updates
-  const handleHeatmapToggle = (enabled: boolean) => {
-    setShowHeatmap(enabled);
+  // Handle view mode change (unified for all file types)
+  const handleViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
 
-    // Only adjust visibility for nmax files when toggling TO heatmap mode
-    if (enabled && isSubcamNmaxFile && speciesColumns.length > 0) {
+    // Only adjust visibility for nmax files when switching TO heatmap or tree mode
+    if ((mode === 'heatmap' || mode === 'tree') && isSubcamNmaxFile && speciesColumns.length > 0) {
       setParameterStates(prev => {
         const updated = { ...prev };
 
@@ -996,7 +1102,8 @@ export function PinChartDisplay({
           }
         });
 
-        console.log('[HEATMAP TOGGLE] Updated parameter visibility:', {
+        console.log('[NMAX VIEW MODE] Updated parameter visibility:', {
+          mode,
           hiddenMetadata: metadataParams,
           visibleSpecies: speciesColumns,
           totalSpecies: speciesColumns.length
@@ -1007,9 +1114,279 @@ export function PinChartDisplay({
     }
   };
 
+  // Legacy handler for backward compatibility (used by Switch component)
+  const handleHeatmapToggle = (enabled: boolean) => {
+    handleViewModeChange(enabled ? 'heatmap' : 'chart');
+  };
+
+  // Fetch taxonomy data for nmax species when file loads (needed for both tree and heatmap views)
+  React.useEffect(() => {
+    if (isSubcamNmaxFile && speciesColumns.length > 0 && !isFetchingNmaxTaxonomy) {
+      const currentSpeciesList = speciesColumns.join(',');
+
+      // Only fetch if we haven't fetched this exact species list before
+      if (currentSpeciesList !== nmaxFetchedSpeciesList) {
+        console.log('🔬 Fetching taxonomy for nmax species (new species list detected):', speciesColumns);
+        setIsFetchingNmaxTaxonomy(true);
+
+        lookupSpeciesBatch(speciesColumns, 5)
+          .then(taxonomyMap => {
+            setNmaxTaxonomyData(taxonomyMap);
+            setNmaxFetchedSpeciesList(currentSpeciesList); // Mark this species list as fetched
+            console.log(`✅ Taxonomy data enriched for ${taxonomyMap.size}/${speciesColumns.length} nmax species`);
+          })
+          .catch(error => {
+            console.error('⚠️ Taxonomy lookup failed:', error);
+            setNmaxFetchedSpeciesList(currentSpeciesList); // Mark as attempted even on failure
+          })
+          .finally(() => {
+            setIsFetchingNmaxTaxonomy(false);
+          });
+      }
+    }
+  }, [nmaxViewMode, isSubcamNmaxFile, speciesColumns.join(','), nmaxFetchedSpeciesList, isFetchingNmaxTaxonomy]);
+
+  // Build taxonomic tree for nmax species
+  const nmaxTaxonomicTree = useMemo(() => {
+    console.log('[NMAX TREE BUILD] Conditions check:', {
+      isSubcamNmaxFile,
+      speciesColumnsLength: speciesColumns.length,
+      nmaxTaxonomyDataSize: nmaxTaxonomyData.size
+    });
+
+    if (!isSubcamNmaxFile || speciesColumns.length === 0 || nmaxTaxonomyData.size === 0) {
+      console.log('[NMAX TREE BUILD] Returning null - one or more conditions failed');
+      return null;
+    }
+
+    console.log('[NMAX TREE BUILD] All conditions passed - building tree');
+
+    // Convert nmax species and taxonomy data to haplotype-like cell data format
+    const cellData = speciesColumns.map(species => {
+      const taxonomy = nmaxTaxonomyData.get(species);
+      return {
+        species,
+        site: 'nmax', // Dummy site since nmax doesn't have sites
+        count: 1,
+        metadata: {
+          credibility: 'high',
+          phylum: taxonomy?.hierarchy?.phylum || 'Unknown',
+          fullHierarchy: taxonomy?.hierarchy || {},
+          taxonomySource: taxonomy?.source as 'worms' | 'gbif' | 'unknown' | undefined,
+          taxonId: taxonomy?.taxonId,
+          commonNames: taxonomy?.commonNames || [],
+          taxonomyConfidence: taxonomy?.confidence,
+          taxonomyRank: taxonomy?.rank
+        }
+      };
+    });
+
+    return buildTaxonomicTree(cellData);
+  }, [isSubcamNmaxFile, speciesColumns, nmaxTaxonomyData]);
+
+  // Create taxonomically ordered species list (CSV entries + their parent nodes for hierarchy visualization)
+  const taxonomicallyOrderedSpecies = useMemo(() => {
+    if (!nmaxTaxonomicTree) {
+      return speciesColumns; // Fallback to original order if no tree
+    }
+
+    // Flatten the tree
+    const flattenedTree = flattenTreeForHeatmap(nmaxTaxonomicTree);
+
+    // Step 1: Get all CSV entries (leaf nodes that exist in the actual data)
+    const csvEntries = flattenedTree.filter(taxon => taxon.node.csvEntry);
+
+    // Step 2: Build set of all nodes needed (CSV entries + their ancestors)
+    const neededNodeNames = new Set<string>();
+    csvEntries.forEach(entry => {
+      // Add the entry itself
+      const entryName = entry.node.originalName || entry.name;
+      neededNodeNames.add(entryName);
+
+      // Add all ancestors in the path
+      entry.path.forEach(ancestorName => neededNodeNames.add(ancestorName));
+    });
+
+    // Step 3: Filter to include both CSV entries and their parent nodes
+    const orderedSpeciesWithParents = flattenedTree
+      .filter(taxon => neededNodeNames.has(taxon.node.originalName || taxon.name))
+      .map(taxon => taxon.node.originalName || taxon.name);
+
+    console.log('[Taxonomic Ordering] Total species in tree:', flattenedTree.length);
+    console.log('[Taxonomic Ordering] CSV entries (leaf nodes):', csvEntries.length);
+    console.log('[Taxonomic Ordering] Including parent nodes, total:', orderedSpeciesWithParents.length);
+    console.log('[Taxonomic Ordering] Parent count:', orderedSpeciesWithParents.length - csvEntries.length);
+    console.log('[Taxonomic Ordering] Ordered species with parents:', orderedSpeciesWithParents);
+
+    return orderedSpeciesWithParents;
+  }, [nmaxTaxonomicTree, speciesColumns]);
+
+  // Create species indentation map for heatmap display (includes both CSV entries and parent nodes)
+  const speciesIndentMap = useMemo(() => {
+    if (!nmaxTaxonomicTree) {
+      return new Map<string, number>();
+    }
+
+    const flattenedTree = flattenTreeForHeatmap(nmaxTaxonomicTree);
+    const indentMap = new Map<string, number>();
+
+    // Include ALL taxa in the ordered list (both CSV entries and their parents)
+    flattenedTree.forEach(taxon => {
+      // Use original name if available (preserves rank annotations like "(gen.)")
+      const key = taxon.node.originalName || taxon.name;
+      indentMap.set(key, taxon.indentLevel);
+    });
+
+    console.log('[Taxonomic Ordering] Indentation map size:', indentMap.size);
+
+    return indentMap;
+  }, [nmaxTaxonomicTree]);
+
+  // Create species rank map for heatmap display (includes both CSV entries and parent nodes)
+  const speciesRankMap = useMemo(() => {
+    const rankMap = new Map<string, string>();
+
+    if (!nmaxTaxonomicTree) {
+      // Fallback: Extract rank directly from CSV species names
+      speciesColumns.forEach(speciesName => {
+        const suffixMatch = speciesName.match(/\((phyl|infraclass|class|ord|fam|gen|sp)\.\)/);
+        if (suffixMatch) {
+          rankMap.set(speciesName, suffixMatch[1]);
+        }
+      });
+      return rankMap;
+    }
+
+    // Build rank map from flattened tree (includes all nodes, not just CSV entries)
+    const flattenedTree = flattenTreeForHeatmap(nmaxTaxonomicTree);
+    flattenedTree.forEach(taxon => {
+      const key = taxon.node.originalName || taxon.name;
+      const rankMapping: Record<string, string> = {
+        'kingdom': 'kingdom',
+        'phylum': 'phyl',
+        'class': 'class',
+        'order': 'ord',
+        'family': 'fam',
+        'genus': 'gen',
+        'species': 'sp'
+      };
+      const mappedRank = rankMapping[taxon.rank] || taxon.rank;
+      rankMap.set(key, mappedRank);
+    });
+
+    console.log('[Taxonomic Ordering] Rank map size:', rankMap.size);
+    console.log('[Taxonomic Ordering] Rank map entries:', Array.from(rankMap.entries()));
+
+    return rankMap;
+  }, [speciesColumns, nmaxTaxonomicTree]);
+
+  // Create filtered flattened tree for parent-child connection lines
+  const filteredFlattenedTree = useMemo(() => {
+    console.log('[FILTERED TREE] nmaxTaxonomicTree:', nmaxTaxonomicTree ? 'exists' : 'null/undefined');
+
+    if (!nmaxTaxonomicTree) {
+      console.log('[FILTERED TREE] Returning empty array - nmaxTaxonomicTree is null/undefined');
+      return [];
+    }
+
+    const flattenedTree = flattenTreeForHeatmap(nmaxTaxonomicTree);
+    console.log('[FILTERED TREE] flattenedTree length:', flattenedTree.length);
+
+    // Get the same set of needed nodes as in taxonomicallyOrderedSpecies
+    const csvEntries = flattenedTree.filter(taxon => taxon.node.csvEntry);
+    console.log('[FILTERED TREE] csvEntries length:', csvEntries.length);
+
+    const neededNodeNames = new Set<string>();
+    csvEntries.forEach(entry => {
+      const entryName = entry.node.originalName || entry.name;
+      neededNodeNames.add(entryName);
+      entry.path.forEach(ancestorName => neededNodeNames.add(ancestorName));
+    });
+    console.log('[FILTERED TREE] neededNodeNames size:', neededNodeNames.size);
+
+    // Filter to only include nodes that are being displayed
+    const result = flattenedTree.filter(taxon =>
+      neededNodeNames.has(taxon.node.originalName || taxon.name)
+    );
+    console.log('[FILTERED TREE] Final result length:', result.length);
+
+    return result;
+  }, [nmaxTaxonomicTree]);
+
+  // Create parent-child relationship map for visual indicators
+  const parentChildRelationships = useMemo(() => {
+    const relationships = new Map<string, { color: string; role: 'parent' | 'child' }>();
+
+    if (!filteredFlattenedTree || filteredFlattenedTree.length === 0) {
+      return relationships;
+    }
+
+    // Define colors for parent-child pairs
+    const colors = [
+      '#ef4444', // red
+      '#3b82f6', // blue
+      '#10b981', // green
+      '#f59e0b', // amber
+      '#8b5cf6', // violet
+      '#ec4899', // pink
+      '#14b8a6', // teal
+      '#f97316', // orange
+    ];
+
+    let colorIndex = 0;
+
+    // Find all parent-child relationships where both are CSV entries
+    const visibleSpecies = taxonomicallyOrderedSpecies.filter(species => parameterStates[species]?.visible);
+
+    filteredFlattenedTree.forEach((taxon, index) => {
+      const taxonName = taxon.node.originalName || taxon.name;
+
+      // Skip if this taxon is not visible or not a CSV entry
+      if (!visibleSpecies.includes(taxonName) || !taxon.node.csvEntry) {
+        return;
+      }
+
+      // Look for children that are also CSV entries and visible
+      for (let i = index + 1; i < filteredFlattenedTree.length; i++) {
+        const potentialChild = filteredFlattenedTree[i];
+        const childName = potentialChild.node.originalName || potentialChild.name;
+
+        // Stop when we've moved past potential children
+        if (potentialChild.indentLevel <= taxon.indentLevel) {
+          break;
+        }
+
+        // Check if this is a direct child and is a CSV entry and is visible
+        const isDirectChild = (
+          potentialChild.indentLevel === taxon.indentLevel + 1 &&
+          potentialChild.path.includes(taxon.name) &&
+          potentialChild.node.csvEntry &&
+          visibleSpecies.includes(childName)
+        );
+
+        if (isDirectChild) {
+          // Assign the same color to both parent and child
+          const color = colors[colorIndex % colors.length];
+
+          if (!relationships.has(taxonName)) {
+            relationships.set(taxonName, { color, role: 'parent' });
+          }
+          relationships.set(childName, { color, role: 'child' });
+
+          colorIndex++;
+        }
+      }
+    });
+
+    console.log('[PARENT-CHILD RELATIONSHIPS] relationships:', Array.from(relationships.entries()));
+    return relationships;
+  }, [filteredFlattenedTree, taxonomicallyOrderedSpecies, parameterStates]);
+
   // Determine which brush indices to use based on mode
-  const activeBrushStart = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.startIndex : brushStartIndex;
-  const activeBrushEnd = timeAxisMode === 'common' && globalBrushRange ? globalBrushRange.endIndex : brushEndIndex;
+  const activeBrushStart = timeAxisMode === 'common' && globalBrushRange ? (globalBrushRange.startIndex ?? 0) : (brushStartIndex ?? 0);
+  const activeBrushEnd = timeAxisMode === 'common' && globalBrushRange
+    ? (globalBrushRange.endIndex ?? data.length - 1)  // Fix: fallback for global brush range
+    : (brushEndIndex ?? data.length - 1);             // Fix: fallback for local brush index
 
   // Get data slice for current brush selection
   // Create a stable key for MA settings to track changes
@@ -1114,7 +1491,7 @@ export function PinChartDisplay({
       Object.keys(parameterStates).forEach(param => {
         const state = parameterStates[param];
         if (state?.movingAverage?.enabled) {
-          const windowDays = state.movingAverage.windowDays || 7;
+          const windowDays = state.movingAverage.windowDays || 1;
 
           // Calculate window size based on actual data frequency
           const windowSize = windowDays * pointsPerDay;
@@ -1170,56 +1547,140 @@ export function PinChartDisplay({
     }
   }, [displayData]);
 
-  // Calculate Y-axis domain based on visible parameters in displayData (for single axis mode)
+  // Transform data for "days from start" mode (for _nmax files)
+  const finalDisplayData = useMemo(() => {
+    if (!showDaysFromStart || !isSubcamNmaxFile || displayData.length === 0) {
+      return displayData;
+    }
+
+    // Calculate day numbers from start date
+    const startDate = parseISO(displayData[0].time);
+    if (!isValid(startDate)) {
+      console.warn('[DAYS MODE] Invalid start date, falling back to regular display');
+      return displayData;
+    }
+
+    const dataWithDays = displayData.map((point) => {
+      const pointDate = parseISO(point.time);
+      if (!isValid(pointDate)) {
+        return { ...point, dayNumber: 0 };
+      }
+
+      // Calculate days from start (can be fractional)
+      const diffMs = pointDate.getTime() - startDate.getTime();
+      const dayNumber = diffMs / (1000 * 60 * 60 * 24);
+
+      return {
+        ...point,
+        dayNumber: Math.round(dayNumber * 100) / 100, // Round to 2 decimal places
+      };
+    });
+
+    // Filter by max days if specified
+    if (maxDaysToShow !== '' && maxDaysToShow > 0) {
+      return dataWithDays.filter(point => point.dayNumber <= maxDaysToShow);
+    }
+
+    return dataWithDays;
+  }, [displayData, showDaysFromStart, isSubcamNmaxFile, maxDaysToShow]);
+
+  // Calculate Y-axis domain based on visible parameters in finalDisplayData (for single axis mode)
   const yAxisDomain = useMemo(() => {
-    if (displayData.length === 0 || visibleParameters.length === 0) {
+    if (finalDisplayData.length === 0 || visibleParameters.length === 0) {
       return [0, 100]; // Default domain
     }
 
+    // Check if any visible parameters have custom Y-axis ranges
+    const customRanges = visibleParameters
+      .map(param => parameterStates[param]?.yAxisRange)
+      .filter(range => range?.min !== undefined && range?.max !== undefined);
+
+    // console.log('[Y-AXIS DEBUG] yAxisDomain calculation:', {
+    //   visibleParameters,
+    //   customRanges,
+    //   parameterStates: Object.keys(parameterStates).reduce((acc, key) => {
+    //     if (visibleParameters.includes(key)) {
+    //       acc[key] = parameterStates[key]?.yAxisRange;
+    //     }
+    //     return acc;
+    //   }, {} as Record<string, any>)
+    // });
+
+    // If all visible parameters have custom ranges, use them
+    if (customRanges.length === visibleParameters.length && customRanges.length > 0) {
+      const min = Math.min(...customRanges.map(r => r!.min!));
+      const max = Math.max(...customRanges.map(r => r!.max!));
+      // console.log('[Y-AXIS DEBUG] Using all custom ranges:', { min, max });
+      return [min, max];
+    }
+
+    // Otherwise, calculate from data (may include parameters with custom ranges mixed with auto-scaled ones)
     let min = Infinity;
     let max = -Infinity;
 
-    displayData.forEach(point => {
-      visibleParameters.forEach(param => {
-        const value = point[param];
-        if (typeof value === 'number' && !isNaN(value)) {
-          min = Math.min(min, value);
-          max = Math.max(max, value);
-        }
-      });
-    });
+    visibleParameters.forEach(param => {
+      const customRange = parameterStates[param]?.yAxisRange;
 
-    // Use nice round numbers for 24hr_style, std_style, and stddiff_style, otherwise add 5% padding
-    if (appliedStyleRule?.styleName === '24hr_style' || appliedStyleRule?.styleName === 'std_style' || appliedStyleRule?.styleName === 'stddiff_style') {
-      const { domain } = calculateNiceYAxisDomain(min, max);
-      return domain;
-    } else {
-      const padding = (max - min) * 0.05;
-      return [min - padding, max + padding];
-    }
-  }, [displayData, visibleParameters, appliedStyleRule]);
-
-  // Calculate tick interval for 24hr_style, std_style, and stddiff_style
-  const yAxisTickInterval = useMemo(() => {
-    if ((appliedStyleRule?.styleName === '24hr_style' || appliedStyleRule?.styleName === 'std_style' || appliedStyleRule?.styleName === 'stddiff_style') && displayData.length > 0 && visibleParameters.length > 0) {
-      let min = Infinity;
-      let max = -Infinity;
-
-      displayData.forEach(point => {
-        visibleParameters.forEach(param => {
+      // If this parameter has a custom range, include it in the calculation
+      if (customRange?.min !== undefined && customRange?.max !== undefined) {
+        // console.log('[Y-AXIS DEBUG] Using custom range for param:', param, customRange);
+        min = Math.min(min, customRange.min);
+        max = Math.max(max, customRange.max);
+      } else {
+        // Otherwise, calculate from data
+        finalDisplayData.forEach(point => {
           const value = point[param];
           if (typeof value === 'number' && !isNaN(value)) {
             min = Math.min(min, value);
             max = Math.max(max, value);
           }
         });
+      }
+    });
+
+    // Use nice round numbers for 24hr_style, std_style, and stddiff_style, otherwise add 5% padding
+    if (appliedStyleRule?.styleName === '24hr_style' || appliedStyleRule?.styleName === 'std_style' || appliedStyleRule?.styleName === 'stddiff_style') {
+      const { domain } = calculateNiceYAxisDomain(min, max);
+      // console.log('[Y-AXIS DEBUG] Using nice domain (styled):', domain);
+      return domain;
+    } else {
+      const padding = (max - min) * 0.05;
+      const finalDomain = [min - padding, max + padding];
+      // console.log('[Y-AXIS DEBUG] Using padded domain:', finalDomain);
+      return finalDomain;
+    }
+  }, [finalDisplayData, visibleParameters, appliedStyleRule, parameterStates]);
+
+  // Calculate tick interval for 24hr_style, std_style, and stddiff_style
+  const yAxisTickInterval = useMemo(() => {
+    if ((appliedStyleRule?.styleName === '24hr_style' || appliedStyleRule?.styleName === 'std_style' || appliedStyleRule?.styleName === 'stddiff_style') && finalDisplayData.length > 0 && visibleParameters.length > 0) {
+      let min = Infinity;
+      let max = -Infinity;
+
+      visibleParameters.forEach(param => {
+        const customRange = parameterStates[param]?.yAxisRange;
+
+        // If this parameter has a custom range, include it in the calculation
+        if (customRange?.min !== undefined && customRange?.max !== undefined) {
+          min = Math.min(min, customRange.min);
+          max = Math.max(max, customRange.max);
+        } else {
+          // Otherwise, calculate from data
+          finalDisplayData.forEach(point => {
+            const value = point[param];
+            if (typeof value === 'number' && !isNaN(value)) {
+              min = Math.min(min, value);
+              max = Math.max(max, value);
+            }
+          });
+        }
       });
 
       const { tickInterval } = calculateNiceYAxisDomain(min, max);
       return tickInterval;
     }
     return undefined;
-  }, [displayData, visibleParameters, appliedStyleRule]);
+  }, [finalDisplayData, visibleParameters, appliedStyleRule, parameterStates]);
 
   // Calculate data range and max for Y-axis formatting
   const dataRange = useMemo(() => {
@@ -1260,7 +1721,7 @@ export function PinChartDisplay({
   const parameterDomains = useMemo(() => {
     const domains: Record<string, [number, number]> = {};
 
-    if (displayData.length === 0) {
+    if (finalDisplayData.length === 0) {
       return domains;
     }
 
@@ -1277,7 +1738,7 @@ export function PinChartDisplay({
       let min = Infinity;
       let max = -Infinity;
 
-      displayData.forEach(point => {
+      finalDisplayData.forEach(point => {
         const value = point[param];
         if (typeof value === 'number' && !isNaN(value)) {
           min = Math.min(min, value);
@@ -1291,7 +1752,7 @@ export function PinChartDisplay({
     });
 
     return domains;
-  }, [displayData, visibleParameters, parameterStates]);
+  }, [finalDisplayData, visibleParameters, parameterStates]);
 
   // Set initial brush end index
   React.useEffect(() => {
@@ -1310,6 +1771,83 @@ export function PinChartDisplay({
       setBrushEndIndex(brushData.endIndex);
     }
   };
+
+  const handleHeatmapRefresh = useCallback(() => {
+    setIsRefreshing(true);
+
+    try {
+      console.log('[Heatmap Refresh] Starting validation checks...');
+
+      // Get visible species for validation
+      const visibleSpecies = speciesColumns.filter(species => parameterStates[species]?.visible);
+
+      // 1. Validation Checks (log warnings/errors)
+      const validationResults = {
+        totalSeries: visibleSpecies.length,
+        ranksDetected: new Set<string>(),
+        orphanedTaxa: [] as string[],
+        duplicates: [] as string[],
+        missingData: [] as string[]
+      };
+
+      // Check for taxonomic rank detection
+      visibleSpecies.forEach(series => {
+        const match = series.match(/\((phyl|infraclass|class|ord|fam|gen|sp)\.\)/);
+        if (match) {
+          validationResults.ranksDetected.add(match[1]);
+        }
+      });
+
+      // Check for duplicates
+      const nameMap = new Map<string, number>();
+      visibleSpecies.forEach(name => {
+        nameMap.set(name, (nameMap.get(name) || 0) + 1);
+      });
+      nameMap.forEach((count, name) => {
+        if (count > 1) validationResults.duplicates.push(name);
+      });
+
+      console.log('[Heatmap Refresh] Validation results:', {
+        totalSeries: validationResults.totalSeries,
+        ranksDetected: Array.from(validationResults.ranksDetected),
+        duplicatesCount: validationResults.duplicates.length,
+        duplicates: validationResults.duplicates
+      });
+
+      // Show validation warnings if needed
+      if (validationResults.duplicates.length > 0) {
+        console.warn('[Heatmap Refresh] Found duplicate taxa:', validationResults.duplicates);
+      }
+
+      // 2. Force recalculation by incrementing key
+      // This causes React to unmount/remount HeatmapDisplay with fresh memoization
+      setRefreshKey(prev => prev + 1);
+
+      // 3. Reset brush to full range to show all data
+      if (timeAxisMode === 'separate') {
+        setBrushStartIndex(0);
+        setBrushEndIndex(data.length - 1);
+      }
+
+      console.log('[Heatmap Refresh] Heatmap structure refreshed successfully');
+
+      // Show success toast
+      toast({
+        title: 'Heatmap Refreshed',
+        description: `Processed ${validationResults.totalSeries} taxa with ${validationResults.ranksDetected.size} taxonomic rank${validationResults.ranksDetected.size !== 1 ? 's' : ''}`,
+      });
+
+    } catch (error) {
+      console.error('[Heatmap Refresh] Error during refresh:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Refresh Failed',
+        description: 'Failed to refresh heatmap structure. Check console for details.',
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [speciesColumns, parameterStates, data, toast, timeAxisMode]);
 
   const handleStyleRuleToggle = (suffix: string, enabled: boolean) => {
     setStyleRules(prev => {
@@ -1333,7 +1871,6 @@ export function PinChartDisplay({
   };
 
   const handleStyleRuleUpdate = (suffix: string, properties: Partial<import('./StylingRulesDialog').StyleProperties>) => {
-    console.log('🔧 handleStyleRuleUpdate called:', { suffix, properties });
     setStyleRules(prev => {
       const updated = prev.map(rule => {
         if (rule.suffix !== suffix) return rule;
@@ -1369,17 +1906,16 @@ export function PinChartDisplay({
         return { ...rule, properties: updatedProperties };
       });
 
-      console.log('📋 Updated style rules:', updated.find(r => r.suffix === suffix));
-
-      // Save to localStorage with version
+      // Save to localStorage asynchronously (use queueMicrotask to avoid blocking the main thread)
       if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('pinChartStyleRules', JSON.stringify(updated));
-          localStorage.setItem('pinChartStyleRulesVersion', String(STYLE_RULES_VERSION));
-          console.log('✅ Style rules saved to localStorage');
-        } catch (error) {
-          console.error('❌ Failed to save style rules to localStorage:', error);
-        }
+        queueMicrotask(() => {
+          try {
+            localStorage.setItem('pinChartStyleRules', JSON.stringify(updated));
+            localStorage.setItem('pinChartStyleRulesVersion', String(STYLE_RULES_VERSION));
+          } catch (error) {
+            console.error('Failed to save style rules:', error);
+          }
+        });
       }
 
       return updated;
@@ -1533,13 +2069,18 @@ export function PinChartDisplay({
   };
 
   const updateYAxisRange = (parameter: string, min?: number, max?: number) => {
-    setParameterStates(prev => ({
-      ...prev,
-      [parameter]: {
-        ...prev[parameter],
-        yAxisRange: (min !== undefined || max !== undefined) ? { min, max } : undefined
-      }
-    }));
+    console.log('[Y-AXIS DEBUG] updateYAxisRange called:', { parameter, min, max });
+    setParameterStates(prev => {
+      const updated = {
+        ...prev,
+        [parameter]: {
+          ...prev[parameter],
+          yAxisRange: (min !== undefined || max !== undefined) ? { min, max } : undefined
+        }
+      };
+      console.log('[Y-AXIS DEBUG] Updated parameterStates:', updated[parameter]);
+      return updated;
+    });
   };
 
   const updateMovingAverage = (parameter: string, enabled: boolean, windowDays?: number, showLine?: boolean) => {
@@ -2239,6 +2780,15 @@ export function PinChartDisplay({
 
   // Format parameter label with source
   const formatParameterWithSource = (parameter: string, includeSource: boolean = true): string => {
+    // Check if this is a moving average parameter
+    if (parameter.endsWith('_ma')) {
+      const baseParam = parameter.replace('_ma', '');
+      const baseParamState = parameterStates[baseParam];
+      const windowDays = baseParamState?.movingAverage?.windowDays || 1;
+      const daysText = windowDays === 1 ? '1day' : `${windowDays}days`;
+      return `Moving average (${daysText})`;
+    }
+
     const baseLabel = getParameterLabelWithUnit(parameter);
 
     // Check if parameter already has a source label (e.g., "IR [GP]")
@@ -2337,28 +2887,19 @@ export function PinChartDisplay({
   // Detect discrete/spot-sample files (CROP, CHEM, WQ, EDNA, _Cred)
   const isDiscreteFile = useMemo(() => {
     if (!fileName) return false;
-    const result = /(crop|chemsw|chemwq|edna|_cred)/i.test(fileName);
-    console.log('[PIN-CHART-DISPLAY] File pattern check:', fileName, '-> isDiscreteFile:', result);
-    return result;
+    return /(crop|chemsw|chemwq|edna|_cred)/i.test(fileName);
   }, [fileName]);
 
   // Check if this is a _Cred file (doesn't need Sample ID column)
   const isCredFile = useMemo(() => {
     if (!fileName) return false;
-    const result = /_cred\.csv$/i.test(fileName);
-    console.log('[PIN-CHART-DISPLAY] _Cred file check:', fileName, '-> isCredFile:', result);
-    return result;
+    return /_cred\.csv$/i.test(fileName);
   }, [fileName]);
 
   // If discrete file detected and we have the necessary data, use spot-sample component
   // _Cred files don't need detectedSampleIdColumn
   // Accept empty strings as valid sample ID columns (for files with unnamed columns)
   if (isDiscreteFile && headers && ((detectedSampleIdColumn !== null && detectedSampleIdColumn !== undefined) || isCredFile)) {
-    console.log('[PIN-CHART-DISPLAY] ✓ Routing to spot-sample component');
-    console.log('[PIN-CHART-DISPLAY]   - isDiscreteFile:', isDiscreteFile);
-    console.log('[PIN-CHART-DISPLAY]   - isCredFile:', isCredFile);
-    console.log('[PIN-CHART-DISPLAY]   - detectedSampleIdColumn:', detectedSampleIdColumn);
-    console.log('[PIN-CHART-DISPLAY]   - headers count:', headers?.length);
     return (
       <PinChartDisplaySpotSample
         data={data}
@@ -2371,12 +2912,6 @@ export function PinChartDisplay({
     );
   }
 
-  console.log('[PIN-CHART-DISPLAY] ❌ Not routing to spot-sample - using timeseries instead');
-  console.log('[PIN-CHART-DISPLAY]   - isDiscreteFile:', isDiscreteFile);
-  console.log('[PIN-CHART-DISPLAY]   - isCredFile:', isCredFile);
-  console.log('[PIN-CHART-DISPLAY]   - detectedSampleIdColumn:', detectedSampleIdColumn);
-  console.log('[PIN-CHART-DISPLAY]   - headers:', headers ? 'exists' : 'missing');
-
   return (
     <div className="space-y-3">
       {/* Toggle Switches - at the top */}
@@ -2388,147 +2923,150 @@ export function PinChartDisplay({
           </div>
         )}
 
-        {/* View Toggles - always right-aligned */}
+        {/* View Controls - always consistent layout */}
         <div className="flex items-center gap-4 ml-auto">
-          {/* Chart/Table Toggle */}
+          {/* Unified View Mode Selector - always shows all 4 options */}
           <div className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Chart</span>
-            <Switch
-              checked={showTable}
-              onCheckedChange={setShowTable}
-              className="h-5 w-9"
-            />
-            <span className="text-xs text-muted-foreground">Table</span>
-            <TableIcon className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground font-medium">View:</span>
+            <div className="flex items-center gap-1 border rounded-md p-1 bg-gray-50">
+              <Button
+                variant={viewMode === 'chart' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => handleViewModeChange('chart')}
+                className="h-7 px-2 text-xs"
+              >
+                <BarChart3 className="h-3 w-3 mr-1" />
+                Chart
+              </Button>
+              <Button
+                variant={viewMode === 'table' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => handleViewModeChange('table')}
+                className="h-7 px-2 text-xs"
+              >
+                <TableIcon className="h-3 w-3 mr-1" />
+                Table
+              </Button>
+              <Button
+                variant={viewMode === 'heatmap' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => handleViewModeChange('heatmap')}
+                className="h-7 px-2 text-xs"
+                disabled={!isSubcamNmaxFile && !isHaplotypeFile}
+                title={!isSubcamNmaxFile && !isHaplotypeFile ? 'Heatmap view only available for nmax and hapl files' : ''}
+              >
+                <Grid3x3 className="h-3 w-3 mr-1" />
+                Heatmap
+              </Button>
+              <Button
+                variant={viewMode === 'tree' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => handleViewModeChange('tree')}
+                className="h-7 px-2 text-xs"
+                disabled={!isSubcamNmaxFile}
+                title={!isSubcamNmaxFile ? 'Tree view only available for nmax files' : ''}
+              >
+                <Network className="h-3 w-3 mr-1" />
+                Tree
+              </Button>
+            </div>
           </div>
 
-          {/* Heatmap Toggle - only show for Subcam nmax files in chart mode */}
-          {!showTable && isSubcamNmaxFile && (
-            <div className="flex items-center gap-2 pl-4 border-l">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Line</span>
-              <Switch
-                checked={showHeatmap}
-                onCheckedChange={handleHeatmapToggle}
-                className="h-5 w-9"
-              />
-              <span className="text-xs text-muted-foreground">Heatmap</span>
-              <Grid3x3 className="h-4 w-4 text-muted-foreground" />
-            </div>
-          )}
-
-          {/* Heatmap Settings - only show in heatmap mode for nmax files */}
-          {!showTable && showHeatmap && isSubcamNmaxFile && (
-            <div className="flex items-center gap-2 pl-4 border-l">
-              <StylingRulesDialog
-                open={showStylingRules}
-                onOpenChange={setShowStylingRules}
-                styleRules={styleRules}
-                onStyleRuleToggle={handleStyleRuleToggle}
-                onStyleRuleUpdate={handleStyleRuleUpdate}
-                currentFileName={fileName}
-              >
+          {/* Refresh & Settings - always in same position, shown only for Chart and Heatmap views */}
+          {(viewMode === 'chart' || viewMode === 'heatmap') && (
+            <div className="flex items-center gap-1">
+              {/* Refresh Button - shown only for Heatmap view on NMAX/Hapl files */}
+              {viewMode === 'heatmap' && (isSubcamNmaxFile || (isHaplotypeFile && haplotypeData)) && (
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7"
-                  title="Heatmap settings (row height)"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowStylingRules(true);
-                  }}
+                  title="Refresh heatmap structure and recalculate hierarchy"
+                  onClick={handleHeatmapRefresh}
+                  disabled={isRefreshing}
                 >
-                  <Settings className="h-4 w-4 text-muted-foreground" />
+                  <RefreshCw
+                    className={cn(
+                      "h-4 w-4 text-muted-foreground",
+                      isRefreshing && "animate-spin"
+                    )}
+                  />
                 </Button>
-              </StylingRulesDialog>
-            </div>
-          )}
+              )}
 
-          {/* Haplotype Heatmap Toggle - only show for EDNA hapl files in chart mode */}
-          {!showTable && isHaplotypeFile && haplotypeData && (
-            <div className="flex items-center gap-2 pl-4 border-l">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Table</span>
-              <Switch
-                checked={showHaplotypeHeatmap}
-                onCheckedChange={setShowHaplotypeHeatmap}
-                className="h-5 w-9"
-              />
-              <span className="text-xs text-muted-foreground">Heatmap</span>
-              <Grid3x3 className="h-4 w-4 text-muted-foreground" />
-            </div>
-          )}
-
-          {/* Haplotype Heatmap Settings - only show in haplotype heatmap mode */}
-          {!showTable && showHaplotypeHeatmap && isHaplotypeFile && haplotypeData && (
-            <div className="flex items-center gap-2 pl-4 border-l">
-              <StylingRulesDialog
-                open={showStylingRules}
-                onOpenChange={setShowStylingRules}
-                styleRules={styleRules}
-                onStyleRuleToggle={handleStyleRuleToggle}
-                onStyleRuleUpdate={handleStyleRuleUpdate}
-                currentFileName={fileName}
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  title="Haplotype heatmap settings (row height)"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowStylingRules(true);
-                  }}
+              {/* Chart/Heatmap Settings */}
+              {viewMode === 'heatmap' && (isSubcamNmaxFile || (isHaplotypeFile && haplotypeData)) ? (
+                <StylingRulesDialog
+                  open={showStylingRules}
+                  onOpenChange={setShowStylingRules}
+                  styleRules={styleRules}
+                  onStyleRuleToggle={handleStyleRuleToggle}
+                  onStyleRuleUpdate={handleStyleRuleUpdate}
+                  currentFileName={fileName}
                 >
-                  <Settings className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </StylingRulesDialog>
-            </div>
-          )}
-
-          {/* Compact View Toggle - only show in chart mode and not in heatmap mode */}
-          {!showTable && !showHeatmap && !showHaplotypeHeatmap && (
-            <>
-              <div className="flex items-center gap-2 pl-4 border-l">
-                <span className="text-xs text-muted-foreground">Compact</span>
-                <Switch
-                  checked={compactView}
-                  onCheckedChange={setCompactView}
-                  className="h-5 w-9"
-                />
-              </div>
-            </>
-          )}
-
-          {/* Single/Multi Axis Toggle - only show in chart mode and not in heatmap mode */}
-          {!showTable && !showHeatmap && !showHaplotypeHeatmap && (
-            <>
-              <div className="flex items-center gap-2 pl-4 border-l">
-                <span className="text-xs text-muted-foreground">Single</span>
-                <Switch
-                  checked={axisMode === 'multi'}
-                  onCheckedChange={(checked) => setAxisMode(checked ? 'multi' : 'single')}
-                  className="h-5 w-9"
-                />
-                <span className="text-xs text-muted-foreground">Multi</span>
-              </div>
-
-              {/* X-Axis Settings - cog button with popover */}
-              <Popover>
-                <PopoverTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 ml-2"
-                    title="X-axis settings"
+                    className="h-7 w-7"
+                    title="Heatmap settings"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowStylingRules(true);
+                    }}
                   >
                     <Settings className="h-4 w-4 text-muted-foreground" />
                   </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-56 p-3" align="end">
-                  <div className="space-y-3">
-                    <p className="text-xs font-semibold border-b pb-2">X-Axis Settings</p>
+                </StylingRulesDialog>
+              ) : (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      title="Chart settings"
+                    >
+                      <Settings className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-3" align="end">
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold border-b pb-2">Chart Settings</p>
+
+                      {/* Compact View Toggle */}
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="compact-view" className="text-xs cursor-pointer">
+                          Compact View
+                        </Label>
+                        <Switch
+                          id="compact-view"
+                          checked={compactView}
+                          onCheckedChange={setCompactView}
+                          className="h-4 w-7"
+                        />
+                      </div>
+                      <p className="text-[0.65rem] text-muted-foreground">
+                        Show only selected parameters without borders
+                      </p>
+
+                      {/* Single/Multi Axis Toggle */}
+                      <div className="flex items-center justify-between pt-2 border-t">
+                        <Label htmlFor="axis-mode" className="text-xs cursor-pointer">
+                          Multi-Axis Mode
+                        </Label>
+                        <Switch
+                          id="axis-mode"
+                          checked={axisMode === 'multi'}
+                          onCheckedChange={(checked) => setAxisMode(checked ? 'multi' : 'single')}
+                          className="h-4 w-7"
+                        />
+                      </div>
+                      <p className="text-[0.65rem] text-muted-foreground">
+                        {axisMode === 'multi' ? 'Separate Y-axis for each parameter' : 'Shared Y-axis for all parameters'}
+                      </p>
+
+                      {/* X-Axis Settings Section */}
+                      <p className="text-xs font-semibold border-b pb-2 pt-2">X-Axis Settings</p>
                     <div className="flex items-center justify-between">
                       <Label htmlFor="show-year" className="text-xs cursor-pointer">
                         Show year (/YY)
@@ -2543,6 +3081,46 @@ export function PinChartDisplay({
                     <p className="text-[0.65rem] text-muted-foreground">
                       {showYearInXAxis ? 'Format: DD/MM/YY' : 'Format: DD/MM'}
                     </p>
+
+                    {/* Days from start toggle - only show for nmax files */}
+                    {isSubcamNmaxFile && (
+                      <>
+                        <div className="flex items-center justify-between pt-2 border-t">
+                          <Label htmlFor="show-days" className="text-xs cursor-pointer">
+                            Show days from start
+                          </Label>
+                          <Switch
+                            id="show-days"
+                            checked={showDaysFromStart}
+                            onCheckedChange={setShowDaysFromStart}
+                            className="h-4 w-7"
+                          />
+                        </div>
+                        <p className="text-[0.65rem] text-muted-foreground">
+                          {showDaysFromStart ? 'X-axis: Day 0, 1, 2...' : 'X-axis: Dates'}
+                        </p>
+                        {/* Max days input - only show when days from start is enabled */}
+                        {showDaysFromStart && (
+                          <div className="space-y-2">
+                            <Label htmlFor="max-days" className="text-xs font-medium">
+                              Max Days to Show
+                            </Label>
+                            <Input
+                              id="max-days"
+                              type="number"
+                              min="1"
+                              value={maxDaysToShow}
+                              onChange={(e) => setMaxDaysToShow(e.target.value === '' ? '' : Number(e.target.value))}
+                              placeholder="All days"
+                              className="h-8 text-xs"
+                            />
+                            <p className="text-[0.65rem] text-muted-foreground">
+                              Leave empty to show all days
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
 
                     {/* Custom Y-Axis Label */}
                     <div className="pt-2 border-t space-y-2">
@@ -2618,7 +3196,8 @@ export function PinChartDisplay({
                   </div>
                 </PopoverContent>
               </Popover>
-            </>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -2748,56 +3327,116 @@ export function PinChartDisplay({
             )}
           </div>
         </div>
+      ) : nmaxViewMode === 'tree' && isSubcamNmaxFile ? (
+        // Tree View for Subcam nmax files
+        <div className="flex-1">
+          {isFetchingNmaxTaxonomy ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+                <p className="text-sm text-muted-foreground">Fetching taxonomy data...</p>
+              </div>
+            </div>
+          ) : nmaxTaxonomicTree ? (
+            <TaxonomicTreeView
+              tree={nmaxTaxonomicTree}
+              containerHeight={dynamicChartHeight}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-sm text-muted-foreground">No taxonomy data available</p>
+            </div>
+          )}
+        </div>
       ) : showHeatmap && isSubcamNmaxFile ? (
         // Heatmap View for Subcam nmax files
         <div className="flex" style={{ gap: `${appliedStyleRule?.properties.plotToParametersGap ?? 12}px` }}>
           {/* Main Heatmap - Takes up most space */}
           <div className="flex-1">
             <HeatmapDisplay
-              data={displayData}
-              series={speciesColumns.filter(species => parameterStates[species]?.visible)}
+              key={refreshKey}
+              data={finalDisplayData}
+              series={taxonomicallyOrderedSpecies.filter(species => parameterStates[species]?.visible)}
+              speciesIndentMap={speciesIndentMap}
+              speciesRankMap={speciesRankMap}
+              filteredFlattenedTree={filteredFlattenedTree}
+              parentChildRelationships={parentChildRelationships}
               containerHeight={dynamicChartHeight}
               brushStartIndex={activeBrushStart}
               brushEndIndex={activeBrushEnd}
               onBrushChange={timeAxisMode === 'separate' ? handleBrushChange : undefined}
               timeFormat={showYearInXAxis ? 'full' : 'short'}
               customColor={heatmapColor}
+              customMaxValue={appliedStyleRule?.properties.heatmapMaxValue}
             />
           </div>
 
-          {/* Species Selection Panel - Right sidebar */}
-          <div className="w-64 border rounded-md bg-card">
-            <div className="p-3 border-b">
-              <h3 className="text-sm font-semibold">Species Selection</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                {speciesColumns.filter(s => parameterStates[s]?.visible).length} of {speciesColumns.length} visible
-              </p>
-            </div>
-            <div className="p-2 max-h-[600px] overflow-y-auto space-y-1">
-              {speciesColumns.map((species) => (
-                <div key={species} className="flex items-center gap-2 p-2 rounded hover:bg-accent/50 transition-colors">
-                  <Checkbox
-                    id={`species-${species}`}
-                    checked={parameterStates[species]?.visible ?? false}
-                    onCheckedChange={(checked) => {
-                      setParameterStates(prev => ({
-                        ...prev,
-                        [species]: {
-                          ...prev[species],
-                          visible: checked as boolean
-                        }
-                      }));
-                    }}
-                  />
-                  <Label
-                    htmlFor={`species-${species}`}
-                    className="text-xs cursor-pointer flex-1"
+          {/* Species Selection Panel - Right sidebar - Collapsible */}
+          <div className={cn(
+            "border rounded-md bg-card transition-all duration-300 ease-in-out",
+            isSpeciesPanelExpanded ? "w-64" : "w-12"
+          )}>
+            {isSpeciesPanelExpanded ? (
+              <>
+                <div className="p-3 border-b flex items-center justify-between">
+                  <div className="flex-1">
+                    <h3 className="text-sm font-semibold">Species Selection</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {taxonomicallyOrderedSpecies.filter(s => parameterStates[s]?.visible).length} of {taxonomicallyOrderedSpecies.length} visible
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => setIsSpeciesPanelExpanded(false)}
+                    title="Collapse panel"
                   >
-                    {species}
-                  </Label>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
                 </div>
-              ))}
-            </div>
+                <div className="p-2 max-h-[600px] overflow-y-auto space-y-1">
+                  {taxonomicallyOrderedSpecies.map((species) => (
+                    <div key={species} className="flex items-center gap-2 p-2 rounded hover:bg-accent/50 transition-colors">
+                      <Checkbox
+                        id={`species-${species}`}
+                        checked={parameterStates[species]?.visible ?? false}
+                        onCheckedChange={(checked) => {
+                          setParameterStates(prev => ({
+                            ...prev,
+                            [species]: {
+                              ...prev[species],
+                              visible: checked as boolean
+                            }
+                          }));
+                        }}
+                      />
+                      <Label
+                        htmlFor={`species-${species}`}
+                        className="text-xs cursor-pointer flex-1"
+                      >
+                        {species}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center py-3">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setIsSpeciesPanelExpanded(true)}
+                  title={`Show taxa selection (${taxonomicallyOrderedSpecies.filter(s => parameterStates[s]?.visible).length}/${taxonomicallyOrderedSpecies.length} visible)`}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <div className="mt-2 -rotate-90 whitespace-nowrap text-xs text-muted-foreground font-medium origin-center">
+                  Taxa
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : showHaplotypeHeatmap && isHaplotypeFile && haplotypeData ? (
@@ -2810,6 +3449,15 @@ export function PinChartDisplay({
             cellWidth={appliedStyleRule?.properties.heatmapCellWidth ?? 30}
             spotSampleStyles={appliedStyleRule?.properties.spotSample}
             onStyleRuleUpdate={handleStyleRuleUpdate}
+            rawFileId={rawFileInfo?.id}
+            rawFileName={rawFileInfo?.name}
+            pinId={pinId}
+            onOpenRawEditor={(fileId, fileName, speciesName) => {
+              console.log('[OPEN RAW EDITOR] Called with:', { fileId, fileName, speciesName });
+              setSelectedFileForRaw({ id: fileId, name: fileName, highlightSpecies: speciesName });
+              setShowRawViewer(true);
+              console.log('[OPEN RAW EDITOR] State updated, showRawViewer should be true');
+            }}
           />
         </div>
       ) : (
@@ -2826,7 +3474,7 @@ export function PinChartDisplay({
           {axisMode === 'single' && (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
-                data={displayData}
+                data={finalDisplayData}
                 margin={{
                   top: 5,
                   right: axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled
@@ -2839,11 +3487,13 @@ export function PinChartDisplay({
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
 
                 <XAxis
-                  dataKey="time"
+                  dataKey={showDaysFromStart ? "dayNumber" : "time"}
                   tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 8 }}
                   stroke="hsl(var(--border))"
                   tickFormatter={(value) =>
-                    appliedStyleRule?.properties.xAxisRange
+                    showDaysFromStart
+                      ? `Day ${Math.round(value)}`
+                      : appliedStyleRule?.properties.xAxisRange
                       ? format24HourTick(value)
                       : formatDateTick(value, dataSource, showYearInXAxis)
                   }
@@ -2866,6 +3516,7 @@ export function PinChartDisplay({
                   stroke="hsl(var(--border))"
                   width={(showYAxisLabels || appliedStyleRule?.properties.yAxisTitle) ? (appliedStyleRule?.properties.yAxisWidth || 80) : 50}
                   domain={yAxisDomain}
+                  allowDataOverflow={true}
                   ticks={yAxisTickInterval ? (() => {
                     const ticks = [];
                     for (let i = yAxisDomain[0]; i <= yAxisDomain[1]; i += yAxisTickInterval) {
@@ -2918,6 +3569,7 @@ export function PinChartDisplay({
                       (yAxisDomain[0] / appliedStyleRule.properties.secondaryYAxis.divideBy) * 100,
                       (yAxisDomain[1] / appliedStyleRule.properties.secondaryYAxis.divideBy) * 100
                     ]}
+                    allowDataOverflow={true}
                     ticks={yAxisTickInterval ? (() => {
                       const ticks = [];
                       const divideBy = appliedStyleRule.properties.secondaryYAxis.divideBy;
@@ -2939,8 +3591,8 @@ export function PinChartDisplay({
 
                 {/* Frame lines - top and right edges */}
                 <ReferenceLine {...(axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? { yAxisId: "left" } : {})} y={yAxisDomain[1]} stroke="hsl(var(--border))" strokeWidth={1} strokeOpacity={0.3} />
-                {displayData.length > 0 && (
-                  <ReferenceLine {...(axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? { yAxisId: "left" } : {})} x={displayData[displayData.length - 1].time} stroke="hsl(var(--border))" strokeWidth={1} strokeOpacity={0.3} />
+                {finalDisplayData.length > 0 && (
+                  <ReferenceLine {...(axisMode === 'single' && appliedStyleRule?.properties.secondaryYAxis?.enabled ? { yAxisId: "left" } : {})} x={showDaysFromStart ? finalDisplayData[finalDisplayData.length - 1].dayNumber : finalDisplayData[finalDisplayData.length - 1].time} stroke="hsl(var(--border))" strokeWidth={1} strokeOpacity={0.3} />
                 )}
 
                 <RechartsTooltip
@@ -3026,7 +3678,7 @@ export function PinChartDisplay({
           {axisMode === 'multi' && (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
-                data={displayData}
+                data={finalDisplayData}
                 margin={{
                   top: 5,
                   right: Math.ceil(visibleParameters.length / 2) * 50,
@@ -3037,11 +3689,13 @@ export function PinChartDisplay({
                 <CartesianGrid strokeDasharray="2 2" stroke="hsl(var(--border))" vertical={false} />
 
                 <XAxis
-                  dataKey="time"
+                  dataKey={showDaysFromStart ? "dayNumber" : "time"}
                   tick={{ fontSize: '0.65rem', fill: 'hsl(var(--muted-foreground))', angle: -45, textAnchor: 'end', dy: 8 }}
                   stroke="hsl(var(--border))"
                   tickFormatter={(value) =>
-                    appliedStyleRule?.properties.xAxisRange
+                    showDaysFromStart
+                      ? `Day ${Math.round(value)}`
+                      : appliedStyleRule?.properties.xAxisRange
                       ? format24HourTick(value)
                       : formatDateTick(value, dataSource, showYearInXAxis)
                   }
@@ -3068,7 +3722,19 @@ export function PinChartDisplay({
                   // Add gap between left axes: 3rd axis (index 2) gets +10px width
                   const axisWidth = (index === 2) ? 42 : 32;
                   const labelText = formatParameterWithSource(parameter);
-                  const labelOffset = getMultiAxisLabelOffset(domain, paramRange, paramMax);
+
+                  // Calculate base offset and apply custom offsets from style rules
+                  let labelOffset = getMultiAxisLabelOffset(domain, paramRange, paramMax);
+
+                  // Apply custom Y-axis title offsets for _nmax files in multi-axis mode
+                  if (appliedStyleRule?.properties.leftYAxisTitleOffset !== undefined ||
+                      appliedStyleRule?.properties.rightYAxisTitleOffset !== undefined) {
+                    const customOffset = orientation === 'left'
+                      ? (appliedStyleRule.properties.leftYAxisTitleOffset ?? 0)
+                      : (appliedStyleRule.properties.rightYAxisTitleOffset ?? 0);
+                    labelOffset += customOffset;
+                  }
+
                   const labelStyle = {
                     textAnchor: 'middle',
                     fontSize: '0.55rem',
@@ -3110,6 +3776,7 @@ export function PinChartDisplay({
                       tickFormatter={(value) => formatYAxisTick(value, paramRange, paramMax)}
                       label={labelConfig}
                       domain={domain}
+                      allowDataOverflow={true}
                     />
                   );
                 })}
@@ -3131,9 +3798,9 @@ export function PinChartDisplay({
                 })}
 
                 {/* Frame lines - right edge (using first axis) */}
-                {displayData.length > 0 && visibleParameters.length > 0 && (
+                {finalDisplayData.length > 0 && visibleParameters.length > 0 && (
                   <ReferenceLine
-                    x={displayData[displayData.length - 1].time}
+                    x={showDaysFromStart ? finalDisplayData[finalDisplayData.length - 1].dayNumber : finalDisplayData[finalDisplayData.length - 1].time}
                     yAxisId={`axis-${visibleParameters[0]}`}
                     stroke="hsl(var(--border))"
                     strokeWidth={1}
@@ -3229,7 +3896,7 @@ export function PinChartDisplay({
 
       {/* Time Range Brush - only show in separate mode OR if last plot in common mode */}
       {data.length > 10 && (timeAxisMode === 'separate' || isLastPlot) && (
-        <div className="h-10 w-full border rounded-md bg-card p-1">
+        <div className="relative h-16 w-full border rounded-md bg-card p-1">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 2, right: 15, left: 15, bottom: 0 }}>
               <XAxis
@@ -3254,6 +3921,15 @@ export function PinChartDisplay({
               />
             </LineChart>
           </ResponsiveContainer>
+
+          {/* Pan Handle Overlay */}
+          <BrushPanHandle
+            dataLength={data.length}
+            startIndex={activeBrushStart}
+            endIndex={activeBrushEnd}
+            onChange={handleBrushChange}
+            containerMargin={15}
+          />
         </div>
       )}
 
@@ -3687,25 +4363,6 @@ export function PinChartDisplay({
                           />
                         )}
                       </div>
-
-                      {/* Y-axis settings button - only show for column charts */}
-                      {plotType === 'column' && !isMA && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-4 w-4 p-0 opacity-60 hover:opacity-100"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setYAxisRangeParameter(parameter);
-                            setYAxisRangeMin(state.yAxisRange?.min?.toString() || '');
-                            setYAxisRangeMax(state.yAxisRange?.max?.toString() || '');
-                            setShowYAxisRangeDialog(true);
-                          }}
-                          title="Set custom Y-axis range for column chart"
-                        >
-                          <Settings className="h-3 w-3" />
-                        </Button>
-                      )}
                     </div>
 
                     {/* Right side controls */}
@@ -4095,9 +4752,19 @@ export function PinChartDisplay({
                                     if (checked) {
                                       // Enable with current domain as defaults
                                       const currentDomain = parameterDomains[parameter] || [0, 100];
+                                      // Initialize pending values
+                                      setPendingYAxisRanges(prev => ({
+                                        ...prev,
+                                        [parameter]: { min: String(currentDomain[0]), max: String(currentDomain[1]) }
+                                      }));
                                       updateYAxisRange(parameter, currentDomain[0], currentDomain[1]);
                                     } else {
                                       // Disable by clearing range
+                                      setPendingYAxisRanges(prev => {
+                                        const updated = { ...prev };
+                                        delete updated[parameter];
+                                        return updated;
+                                      });
                                       updateYAxisRange(parameter, undefined, undefined);
                                     }
                                   }}
@@ -4114,12 +4781,15 @@ export function PinChartDisplay({
                                     <Input
                                       type="number"
                                       step="any"
-                                      value={state.yAxisRange?.min ?? ''}
+                                      value={pendingYAxisRanges[parameter]?.min ?? state.yAxisRange?.min ?? ''}
                                       onChange={(e) => {
-                                        const newMin = parseFloat(e.target.value);
-                                        if (!isNaN(newMin)) {
-                                          updateYAxisRange(parameter, newMin, state.yAxisRange?.max);
-                                        }
+                                        setPendingYAxisRanges(prev => ({
+                                          ...prev,
+                                          [parameter]: {
+                                            min: e.target.value,
+                                            max: prev[parameter]?.max ?? String(state.yAxisRange?.max ?? '')
+                                          }
+                                        }));
                                       }}
                                       className="h-7 text-xs"
                                       placeholder="Min value"
@@ -4130,19 +4800,116 @@ export function PinChartDisplay({
                                     <Input
                                       type="number"
                                       step="any"
-                                      value={state.yAxisRange?.max ?? ''}
+                                      value={pendingYAxisRanges[parameter]?.max ?? state.yAxisRange?.max ?? ''}
                                       onChange={(e) => {
-                                        const newMax = parseFloat(e.target.value);
-                                        if (!isNaN(newMax)) {
-                                          updateYAxisRange(parameter, state.yAxisRange?.min, newMax);
-                                        }
+                                        setPendingYAxisRanges(prev => ({
+                                          ...prev,
+                                          [parameter]: {
+                                            min: prev[parameter]?.min ?? String(state.yAxisRange?.min ?? ''),
+                                            max: e.target.value
+                                          }
+                                        }));
                                       }}
                                       className="h-7 text-xs"
                                       placeholder="Max value"
                                     />
                                   </div>
+                                  {pendingYAxisRanges[parameter] && (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const pending = pendingYAxisRanges[parameter];
+                                        const newMin = parseFloat(pending.min);
+                                        const newMax = parseFloat(pending.max);
+                                        if (!isNaN(newMin) && !isNaN(newMax)) {
+                                          updateYAxisRange(parameter, newMin, newMax);
+                                          // Clear pending state after applying
+                                          setPendingYAxisRanges(prev => {
+                                            const updated = { ...prev };
+                                            delete updated[parameter];
+                                            return updated;
+                                          });
+                                        }
+                                      }}
+                                      className="h-7 text-xs w-full"
+                                    >
+                                      Apply
+                                    </Button>
+                                  )}
                                 </div>
                               )}
+                            </div>
+
+                            {/* Include Zero Values Section - Only show for subtracted plots */}
+                            {isSubtractedPlot && (
+                              <div className="space-y-2 border-t pt-3">
+                                <div className="flex items-center gap-2">
+                                  <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <span className="text-xs font-medium">Data Filtering</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Checkbox
+                                    id="include-zero-values"
+                                    checked={includeZeroValues}
+                                    onCheckedChange={(checked) => {
+                                      if (onIncludeZeroValuesChange) {
+                                        onIncludeZeroValuesChange(checked as boolean);
+                                      }
+                                    }}
+                                    className="h-3 w-3"
+                                  />
+                                  <Label htmlFor="include-zero-values" className="text-xs cursor-pointer">
+                                    Include zero values
+                                  </Label>
+                                </div>
+                                <p className="text-[0.65rem] text-muted-foreground pl-5">
+                                  When unchecked, shows zero for data points where only one of the two source plots has data (the other is zero). This preserves the timeline.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Custom Parameter Name Section - available for all plots */}
+                            <div className="space-y-1.5 border-t pt-3">
+                              <Label htmlFor={`custom-name-${parameter}`} className="text-xs font-medium">
+                                Custom Display Name
+                              </Label>
+                              <div className="flex gap-1.5">
+                                <Input
+                                  id={`custom-name-${parameter}`}
+                                  type="text"
+                                  placeholder={getParameterLabelWithUnit(parameter)}
+                                  value={customParameterNames[parameter] || ''}
+                                  onChange={(e) => {
+                                    setCustomParameterNames(prev => ({
+                                      ...prev,
+                                      [parameter]: e.target.value
+                                    }));
+                                  }}
+                                  className="h-7 text-xs"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                                {customParameterNames[parameter] && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-xs"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCustomParameterNames(prev => {
+                                        const updated = { ...prev };
+                                        delete updated[parameter];
+                                        return updated;
+                                      });
+                                    }}
+                                    title="Reset to default"
+                                  >
+                                    Reset
+                                  </Button>
+                                )}
+                              </div>
+                              <p className="text-[0.65rem] text-muted-foreground">
+                                Leave empty to use auto-formatted name
+                              </p>
                             </div>
 
                             {/* Display Options Section - only show in compact view */}
@@ -4196,50 +4963,6 @@ export function PinChartDisplay({
                                     <Label htmlFor="hide-parameter-name" className="text-xs cursor-pointer">
                                       Hide parameter name (Dolphin, etc.)
                                     </Label>
-                                  </div>
-
-                                  {/* Custom parameter name input */}
-                                  <div className="space-y-1.5 pt-2 border-t">
-                                    <Label htmlFor={`custom-name-${parameter}`} className="text-xs font-medium">
-                                      Custom Display Name
-                                    </Label>
-                                    <div className="flex gap-1.5">
-                                      <Input
-                                        id={`custom-name-${parameter}`}
-                                        type="text"
-                                        placeholder={formatParameterName(parameter)}
-                                        value={customParameterNames[parameter] || ''}
-                                        onChange={(e) => {
-                                          setCustomParameterNames(prev => ({
-                                            ...prev,
-                                            [parameter]: e.target.value
-                                          }));
-                                        }}
-                                        className="h-7 text-xs"
-                                        onClick={(e) => e.stopPropagation()}
-                                      />
-                                      {customParameterNames[parameter] && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-7 px-2 text-xs"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setCustomParameterNames(prev => {
-                                              const updated = { ...prev };
-                                              delete updated[parameter];
-                                              return updated;
-                                            });
-                                          }}
-                                          title="Reset to default"
-                                        >
-                                          Reset
-                                        </Button>
-                                      )}
-                                    </div>
-                                    <p className="text-[0.65rem] text-muted-foreground">
-                                      Leave empty to use auto-formatted name
-                                    </p>
                                   </div>
                                 </div>
                               </div>
@@ -4590,7 +5313,7 @@ export function PinChartDisplay({
               Set Y-Axis Range
             </DialogTitle>
             <DialogDescription>
-              Customize the Y-axis range for <strong>{yAxisRangeParameter}</strong> in column chart view.
+              Customize the Y-axis range for <strong>{yAxisRangeParameter}</strong>.
               Leave blank for automatic scaling.
             </DialogDescription>
           </DialogHeader>
@@ -4676,6 +5399,19 @@ export function PinChartDisplay({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Raw CSV Viewer for editing unrecognized species */}
+      {selectedFileForRaw && (
+        <RawCsvViewer
+          fileId={selectedFileForRaw.id}
+          fileName={selectedFileForRaw.name}
+          isOpen={showRawViewer}
+          onClose={() => {
+            setShowRawViewer(false);
+            setSelectedFileForRaw(null);
+          }}
+        />
+      )}
     </div>
   );
 }
