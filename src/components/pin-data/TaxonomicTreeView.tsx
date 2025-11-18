@@ -32,10 +32,6 @@ function TreeNodeComponent({ node, level, onSpeciesClick }: TreeNodeComponentPro
   // Check if this entry exists in CSV (either as leaf or marked with csvEntry flag)
   const isCSVEntry = node.csvEntry;
 
-  // A CSV entry with children that are also CSV entries should appear like non-CSV nodes (faded)
-  const isParentWithCSVChildren = isCSVEntry && hasChildren &&
-    node.children.some(child => child.csvEntry);
-
   // Detect unrecognized species (not found in WoRMS/GBIF database)
   // Only apply to actual species (rank === 'species'), not to higher-level taxa that happen to be leaf nodes
   const isUnrecognizedSpecies = node.rank === 'species' && node.isLeaf && (
@@ -66,10 +62,8 @@ function TreeNodeComponent({ node, level, onSpeciesClick }: TreeNodeComponentPro
       <div
         className={cn(
           "flex items-center gap-1 py-0 px-1 hover:bg-gray-100 rounded cursor-pointer transition-colors",
-          // CSV entry that is a parent with CSV children: appear faded like non-CSV nodes
-          isParentWithCSVChildren && "opacity-25",
-          // Regular CSV entry nodes (leaf nodes or no CSV children): emerald background
-          isCSVEntry && !isParentWithCSVChildren && "bg-emerald-50 opacity-100",
+          // CSV entry nodes: emerald background, full opacity
+          isCSVEntry && "bg-emerald-50 opacity-100",
           // Parent-only nodes (not in CSV): semi-transparent
           !isCSVEntry && "opacity-25"
         )}
@@ -104,10 +98,8 @@ function TreeNodeComponent({ node, level, onSpeciesClick }: TreeNodeComponentPro
         <span
           className={cn(
             "flex-1 truncate",
-            // CSV entry that is a parent with CSV children: appear like non-CSV nodes (gray text)
-            isParentWithCSVChildren && "text-gray-700",
-            // Regular CSV entry nodes (leaf nodes): emerald color
-            isCSVEntry && !isParentWithCSVChildren && "font-semibold text-emerald-700",
+            // CSV entry nodes: emerald color, bold
+            isCSVEntry && "font-semibold text-emerald-700",
             // Non-CSV nodes: gray
             !isCSVEntry && "text-gray-700",
             // ALL CSV entry nodes are clickable
@@ -126,22 +118,22 @@ function TreeNodeComponent({ node, level, onSpeciesClick }: TreeNodeComponentPro
           {node.originalName || node.name}
         </span>
 
-        {/* Species Count Badge - show for non-CSV parents OR CSV parents with CSV children */}
-        {hasChildren && (!isCSVEntry || isParentWithCSVChildren) && (
+        {/* Species Count Badge - show only for structural parent nodes (not CSV entries) */}
+        {hasChildren && !isCSVEntry && (
           <span className="text-[8px] bg-blue-100 text-blue-700 px-1 py-0 rounded-full font-semibold flex-shrink-0">
             {node.speciesCount} {node.speciesCount === 1 ? 'sp.' : 'spp.'}
           </span>
         )}
 
-        {/* Haplotype Count for CSV Entries - only show for leaf CSV entries (not parents with CSV children) */}
-        {isCSVEntry && !isParentWithCSVChildren && node.siteOccurrences && (
+        {/* Haplotype Count for CSV Entries - show for all CSV entries with data */}
+        {isCSVEntry && node.siteOccurrences && (
           <span className="text-[8px] bg-purple-100 text-purple-700 px-1 py-0 rounded-full font-semibold flex-shrink-0">
             {totalHaplotypes} hapl.
           </span>
         )}
 
-        {/* Taxonomy Source and Confidence for CSV Entries - only show for leaf CSV entries */}
-        {isCSVEntry && !isParentWithCSVChildren && node.source && (
+        {/* Taxonomy Source and Confidence for CSV Entries - show for all CSV entries */}
+        {isCSVEntry && node.source && (
           <div className="flex items-center gap-0.5 flex-shrink-0">
             <span className="text-[8px] text-gray-500">
               {node.source.toUpperCase()}
