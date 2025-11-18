@@ -83,38 +83,57 @@ export async function setupTestDataWithUpload(
       // Wait for upload to complete and pin selector dialog
       await page.waitForTimeout(2000);
 
-      // Look for pin selector dialog and select the first pin
-      const firstPinOption = page.getByText(/Pin|Area/).first();
-      if (await firstPinOption.count() > 0) {
-        await firstPinOption.click();
-        console.log('✓ Pin selected');
+      // Look for the "Assign Files" dialog
+      const assignDialogTitle = page.getByText('Assign Files');
+      if (await assignDialogTitle.count() > 0) {
+        console.log('✓ Assign Files dialog opened');
 
-        // Wait a bit for the selection to register
-        await page.waitForTimeout(500);
+        // Click on the Select trigger to open the pin dropdown
+        const selectTrigger = page.getByRole('combobox').first();
+        if (await selectTrigger.count() > 0) {
+          await selectTrigger.click();
+          console.log('✓ Pin selector opened');
 
-        // Click Upload button in the dialog - wait for it to be enabled first
-        const uploadDialogButton = page.getByRole('button', { name: /upload files/i }).or(
-          page.getByRole('button', { name: /^upload$/i })
-        );
+          // Wait for dropdown to appear
+          await page.waitForTimeout(500);
 
-        if (await uploadDialogButton.count() > 0) {
-          // Wait for button to be enabled (not disabled)
-          await page.waitForTimeout(1000);
+          // Click on the first pin option in the dropdown
+          // SelectItems have role="option"
+          const firstPinOption = page.getByRole('option').first();
+          if (await firstPinOption.count() > 0) {
+            await firstPinOption.click();
+            console.log('✓ Pin selected');
 
-          // Try to click it, but set force:true to skip the enabled check
-          await uploadDialogButton.click({ force: true });
-          console.log('✓ Upload confirmed');
+            // Wait for selection to register
+            await page.waitForTimeout(500);
 
-          // Wait for upload to complete
-          await page.waitForTimeout(5000);
+            // Click Upload Files button
+            const uploadFilesButton = page.locator('[data-testid="upload-files-confirm-button"]').or(
+              page.getByRole('button', { name: 'Upload Files' })
+            );
+            if (await uploadFilesButton.count() > 0) {
+              // Wait for button to be enabled (check it's not disabled)
+              await page.waitForTimeout(1000);
 
-          console.log('✅ [TEST SETUP] Test data setup complete!');
-          return true;
+              await uploadFilesButton.click();
+              console.log('✓ Upload confirmed');
+
+              // Wait for upload to complete
+              await page.waitForTimeout(5000);
+
+              console.log('✅ [TEST SETUP] Test data setup complete!');
+              return true;
+            } else {
+              console.log('⚠️ Upload Files button not found');
+            }
+          } else {
+            console.log('⚠️ No pin options found in dropdown');
+          }
         } else {
-          console.log('⚠️ Upload dialog button not found');
+          console.log('⚠️ Pin selector trigger not found');
         }
       } else {
-        console.log('⚠️ Pin selector not found');
+        console.log('⚠️ Assign Files dialog not found');
       }
 
       console.log('⚠️ Could not complete upload flow');

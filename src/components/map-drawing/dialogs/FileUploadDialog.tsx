@@ -204,6 +204,7 @@ export function FileUploadDialog({
               size="sm"
               onClick={handleUploadClick}
               disabled={(!selectedUploadPinId && !selectedUploadAreaId) || isUploadingFiles}
+              data-testid="upload-files-confirm-button"
             >
               {isUploadingFiles ? (
                 <>
