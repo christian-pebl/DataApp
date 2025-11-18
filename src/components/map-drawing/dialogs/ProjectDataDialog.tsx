@@ -155,6 +155,7 @@ export function ProjectDataDialog({
                 className="flex items-center gap-1.5 h-7 px-2.5"
                 disabled={isUploadingFiles}
                 onClick={handleInitiateFileUpload}
+                data-testid="upload-file-button"
               >
                 {isUploadingFiles ? (
                   <>

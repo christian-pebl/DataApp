@@ -3025,6 +3025,7 @@ export function PinChartDisplay({
                       size="icon"
                       className="h-7 w-7"
                       title="Chart settings"
+                      data-testid="chart-settings-button"
                     >
                       <Settings className="h-4 w-4 text-muted-foreground" />
                     </Button>
@@ -5291,7 +5292,7 @@ export function PinChartDisplay({
             <Button variant="outline" onClick={() => setShowModifiedCSV(false)}>
               Cancel
             </Button>
-            <Button variant="secondary" onClick={handleDownloadModifiedCSV}>
+            <Button variant="secondary" onClick={handleDownloadModifiedCSV} data-testid="export-csv-button">
               Download CSV
             </Button>
             {pinId && (

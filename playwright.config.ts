@@ -79,7 +79,7 @@ export default defineConfig({
     command: 'npm run dev',
     url: 'http://localhost:9002',
     timeout: 120 * 1000,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: true, // Always reuse existing server
     stdout: 'ignore',
     stderr: 'pipe',
   },

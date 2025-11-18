@@ -3762,6 +3762,7 @@ function MapDrawingPageContent() {
     input.type = 'file';
     input.accept = '.csv';
     input.multiple = true;
+    input.setAttribute('data-testid', 'file-upload-input');
 
     input.onchange = async (e) => {
       const files = Array.from((e.target as HTMLInputElement).files || []);

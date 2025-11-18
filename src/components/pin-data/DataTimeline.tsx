@@ -1756,6 +1756,7 @@ export function DataTimeline({ files, getFileDateRange, onFileClick, onDeleteFil
                               <button
                                 onClick={() => onFileClick(fileWithDate.file)}
                                 className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+                                data-testid="open-chart-button"
                               >
                                 <FileText className="h-4 w-4" />
                                 <span>Open</span>
