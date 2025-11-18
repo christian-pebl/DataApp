@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 import TopNavigation from '@/components/layout/TopNavigation';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { NavigationErrorBoundary } from '@/components/layout/NavigationErrorBoundary';
+import { PageTracker } from '@/components/analytics/PageTracker';
 
 // PEBL Brand Typography: Roboto for body text
 const roboto = Roboto({
@@ -74,6 +75,8 @@ export default async function RootLayout({
           <NavigationErrorBoundary>
             <TopNavigation user={user} />
           </NavigationErrorBoundary>
+          {/* Analytics page tracking */}
+          <PageTracker />
           {children}
           <Toaster />
         </ErrorBoundary>

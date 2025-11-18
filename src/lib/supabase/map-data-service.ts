@@ -1,6 +1,7 @@
 import { createClient } from './client'
 import { Database, Project, Tag, Pin, Line, Area } from './types'
 import { SupabaseClient } from '@supabase/supabase-js'
+import { analyticsService } from '@/lib/analytics/analytics-service'
 
 type SupabaseClientType = SupabaseClient<Database>
 
@@ -34,6 +35,7 @@ export class MapDataService {
   }
 
   async createProject(project: Omit<Project, 'id' | 'createdAt'>): Promise<Project> {
+    const startTime = Date.now();
     // Get current user ID
     const { data: { user } } = await this.supabase.auth.getUser()
     if (!user) throw new Error('Please log in to create projects. User authentication is required.')
@@ -49,7 +51,17 @@ export class MapDataService {
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      analyticsService.trackError('createProject', error, { project_name: project.name }).catch(err => console.error('Analytics tracking error:', err));
+      throw error;
+    }
+
+    // Track successful project creation
+    analyticsService.trackAction('project_created', 'project', {
+      project_id: data.id,
+      project_name: data.name,
+      has_description: !!data.description,
+    }, startTime).catch(err => console.error('Analytics tracking error:', err));
 
     return {
       id: data.id,
@@ -82,12 +94,19 @@ export class MapDataService {
   }
 
   async deleteProject(id: string): Promise<void> {
+    const startTime = Date.now();
     const { error } = await this.supabase
       .from('projects')
       .delete()
       .eq('id', id)
 
-    if (error) throw error
+    if (error) {
+      analyticsService.trackError('deleteProject', error, { project_id: id }).catch(err => console.error('Analytics tracking error:', err));
+      throw error;
+    }
+
+    // Track successful project deletion
+    analyticsService.trackAction('project_deleted', 'project', { project_id: id }, startTime).catch(err => console.error('Analytics tracking error:', err));
   }
 
   // Tag operations
@@ -195,9 +214,10 @@ export class MapDataService {
   }
 
   async createPin(pin: Omit<Pin, 'id'>): Promise<Pin> {
+    const startTime = Date.now();
     console.log('MapDataService: Creating pin with data:', pin)
     console.log('MapDataService: Enhanced error handling - timestamp:', Date.now())
-    
+
     // Validate input data
     if (!pin || typeof pin.lat !== 'number' || typeof pin.lng !== 'number' || !pin.label) {
       throw new Error('Invalid pin data: lat, lng, and label are required')
@@ -271,6 +291,13 @@ export class MapDataService {
       console.error('Full error object:', error)
       console.error('Error stringified:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
       
+      // Track error
+      analyticsService.trackError('createPin', error.message, {
+        error_code: errorInfo.code,
+        error_details: errorInfo.details,
+        project_id: insertData.project_id,
+      }).catch(err => console.error('Analytics tracking error:', err));
+
       // Also throw the error with full details visible
       const fullErrorMessage = `Database error creating pin: ${errorInfo.message}. Details: ${errorInfo.details}. Hint: ${errorInfo.hint}. Code: ${errorInfo.code}. Insert data: ${JSON.stringify(errorInfo.insertData)}`
       console.error('MapDataService: Throwing error:', fullErrorMessage)
@@ -291,6 +318,14 @@ export class MapDataService {
       if (tagError) throw tagError
     }
 
+    // Track successful pin creation
+    analyticsService.trackAction('pin_created', 'data_object', {
+      project_id: data.project_id,
+      has_tags: (pin.tagIds?.length || 0) > 0,
+      tag_count: pin.tagIds?.length || 0,
+      has_notes: !!pin.notes,
+    }, startTime).catch(err => console.error('Analytics tracking error:', err));
+
     return {
       id: data.id,
       lat: data.lat,
@@ -304,8 +339,9 @@ export class MapDataService {
   }
 
   async updatePin(id: string, updates: Partial<Omit<Pin, 'id'>>): Promise<Pin> {
+    const startTime = Date.now();
     console.log('MapDataService: updatePin called with:', { id, updates })
-    
+
     // Get current user to verify access
     const { data: { user } } = await this.supabase.auth.getUser()
     if (!user) {
@@ -519,6 +555,14 @@ export class MapDataService {
       }
     }
 
+    // Track successful pin update
+    analyticsService.trackAction('pin_updated', 'data_object', {
+      pin_id: id,
+      project_id: updatedPin.project_id,
+      fields_updated: Object.keys(updates),
+      has_tag_updates: updates.tagIds !== undefined,
+    }, startTime).catch(err => console.error('Analytics tracking error:', err));
+
     return {
       id: updatedPin.id,
       lat: updatedPin.lat,
@@ -532,13 +576,20 @@ export class MapDataService {
   }
 
   async deletePin(id: string): Promise<void> {
+    const startTime = Date.now();
     // Don't add .eq('user_id', user.id) - RLS policies handle user ownership
     const { error } = await this.supabase
       .from('pins')
       .delete()
       .eq('id', id)
 
-    if (error) throw error
+    if (error) {
+      analyticsService.trackError('deletePin', error, { pin_id: id }).catch(err => console.error('Analytics tracking error:', err));
+      throw error;
+    }
+
+    // Track successful deletion
+    analyticsService.trackAction('pin_deleted', 'data_object', { pin_id: id }, startTime).catch(err => console.error('Analytics tracking error:', err));
   }
 
   // Line operations

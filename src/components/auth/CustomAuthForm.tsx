@@ -21,6 +21,7 @@ import {
   getPasswordStrengthLabel,
 } from '@/lib/password-validation'
 import { logger } from '@/lib/logger'
+import { analyticsService } from '@/lib/analytics/analytics-service'
 
 type AuthMode = 'sign-in' | 'sign-up'
 
@@ -40,6 +41,7 @@ export default function CustomAuthForm() {
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
+    const startTime = Date.now()
     setLoading(true)
     setError(null)
 
@@ -56,11 +58,16 @@ export default function CustomAuthForm() {
         data: { email },
       })
 
+      // Track successful login
+      analyticsService.trackSessionStart('email_password').catch(err => console.error('Analytics tracking error:', err))
+
       router.push('/map-drawing')
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to sign in'
       setError(errorMessage)
       logger.error('Sign in failed', err, { context: 'CustomAuthForm' })
+      // Track login error
+      analyticsService.trackError('login', err as Error, { email }).catch(err => console.error('Analytics tracking error:', err))
     } finally {
       setLoading(false)
     }
@@ -68,6 +75,7 @@ export default function CustomAuthForm() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
+    const startTime = Date.now()
     setLoading(true)
     setError(null)
     setSuccess(null)
@@ -76,6 +84,8 @@ export default function CustomAuthForm() {
     if (!passwordValidation?.isValid) {
       setError(passwordValidation?.errors[0] || 'Invalid password')
       setLoading(false)
+      // Track validation error
+      analyticsService.trackError('signup', 'Password validation failed', { email }).catch(err => console.error('Analytics tracking error:', err))
       return
     }
 
@@ -83,6 +93,8 @@ export default function CustomAuthForm() {
     if (!checkPasswordsMatch(password, confirmPassword)) {
       setError('Passwords do not match')
       setLoading(false)
+      // Track validation error
+      analyticsService.trackError('signup', 'Passwords do not match', { email }).catch(err => console.error('Analytics tracking error:', err))
       return
     }
 
@@ -102,6 +114,9 @@ export default function CustomAuthForm() {
         data: { email },
       })
 
+      // Track successful signup
+      analyticsService.trackAction('signup', 'authentication', { email }, startTime).catch(err => console.error('Analytics tracking error:', err))
+
       setSuccess(
         'Account created! Please check your email to confirm your account.'
       )
@@ -112,6 +127,8 @@ export default function CustomAuthForm() {
       const errorMessage = err instanceof Error ? err.message : 'Failed to sign up'
       setError(errorMessage)
       logger.error('Sign up failed', err, { context: 'CustomAuthForm' })
+      // Track signup error
+      analyticsService.trackError('signup', err as Error, { email }).catch(err => console.error('Analytics tracking error:', err))
     } finally {
       setLoading(false)
     }

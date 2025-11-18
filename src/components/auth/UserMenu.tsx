@@ -14,7 +14,7 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { SunMoon, Settings, LogOut, Ruler, Map, BarChart3, Loader2, Save, Lock, Check, X, FolderOpen } from 'lucide-react'
+import { SunMoon, Settings, LogOut, Ruler, Map, BarChart3, Loader2, Save, Lock, Check, X, FolderOpen, LineChart } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { useSettings } from '@/hooks/use-settings'
@@ -37,6 +37,7 @@ import { LoadPlotViewDialog } from '@/components/pin-data/LoadPlotViewDialog'
 import type { SavedPlotView, PlotViewValidationResult } from '@/lib/supabase/plot-view-types'
 import { isFeatureEnabled } from '@/lib/feature-flags'
 import { Database } from 'lucide-react'
+import { analyticsService } from '@/lib/analytics/analytics-service'
 
 interface UserMenuProps {
   user: User
@@ -52,6 +53,9 @@ export default function UserMenu({ user, projectId }: UserMenuProps) {
   const { settings, setSettings } = useSettings()
   const { notifications, showNotification, updateNotification, removeNotification } = useSyncNotifications()
   
+  // Admin check state
+  const [isAdmin, setIsAdmin] = useState(false)
+
   // Account Settings state
   const [showAccountSettings, setShowAccountSettings] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
@@ -85,6 +89,23 @@ export default function UserMenu({ user, projectId }: UserMenuProps) {
       localStorage.setItem("theme", theme)
     }
   }, [theme])
+
+  // Check if user is admin
+  useEffect(() => {
+    async function checkAdminStatus() {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('is_admin')
+        .eq('id', user.id)
+        .single()
+
+      if (profile?.is_admin) {
+        setIsAdmin(true)
+      }
+    }
+
+    checkAdminStatus()
+  }, [user.id, supabase])
 
   const toggleTheme = () => {
     setTheme(prevTheme => (prevTheme === "light" ? "dark" : "light"))
@@ -192,6 +213,9 @@ export default function UserMenu({ user, projectId }: UserMenuProps) {
   };
 
   const handleSignOut = async () => {
+    // Track logout event
+    await analyticsService.trackLogout()
+
     // Show backup notification
     const backupNotificationId = showNotification({
       type: 'backup',
@@ -368,18 +392,29 @@ export default function UserMenu({ user, projectId }: UserMenuProps) {
         )}
 
         <DropdownMenuSeparator />
-        
+
         {/* Account Settings */}
-        <DropdownMenuItem 
+        <DropdownMenuItem
           className="cursor-pointer"
           onClick={() => setShowAccountSettings(true)}
         >
           <Settings className="mr-2 h-4 w-4" />
           <span>Account Settings</span>
         </DropdownMenuItem>
-        
+
+        {/* Analytics Dashboard - Admin Only */}
+        {isAdmin && (
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onClick={() => router.push('/usage-dashboard')}
+          >
+            <LineChart className="mr-2 h-4 w-4" />
+            <span>Analytics Dashboard</span>
+          </DropdownMenuItem>
+        )}
+
         <DropdownMenuSeparator />
-        
+
         {/* Sign Out */}
         <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer text-destructive focus:text-destructive">
           <LogOut className="mr-2 h-4 w-4" />

@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useFileViewTracking } from "@/hooks/use-analytics";
 import { ChevronUp, ChevronDown, BarChart3, Info, TableIcon, ChevronRight, ChevronLeft, Settings, Circle, Filter, AlertCircle, Database, Clock, Palette, Eye, Grid3x3, Ruler, Network, RefreshCw } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { getParameterLabelWithUnit } from '@/lib/units';
@@ -452,6 +453,15 @@ export function PinChartDisplay({
       });
     }
   }, []);
+
+  // Track file viewing for analytics
+  useFileViewTracking(fileName, fileType, {
+    pin_id: pinId,
+    data_source: dataSource,
+    is_haplotype: isHaplotypeFile,
+    is_subtracted: isSubtractedPlot,
+    data_points: data.length
+  });
 
   // Unified view mode for all file types
   type ViewMode = 'chart' | 'table' | 'heatmap' | 'tree';

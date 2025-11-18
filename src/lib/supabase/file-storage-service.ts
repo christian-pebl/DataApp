@@ -1,6 +1,7 @@
 import { createClient } from './client'
 import { v4 as uuidv4 } from 'uuid'
 import { perfLogger } from '../perf-logger'
+import { analyticsService } from '@/lib/analytics/analytics-service'
 
 // Upload target: either a pin or an area
 export type UploadTarget =
@@ -37,6 +38,7 @@ class FileStorageService {
     file: File,
     projectId: string = 'default'
   ): Promise<PinFile | null> {
+    const startTime = Date.now();
     try {
       // Get current user and verify authentication
       console.log('🔐 Checking authentication for file upload...');
@@ -165,6 +167,16 @@ class FileStorageService {
 
       console.log('✅ Database insert successful:', data);
 
+      // Track successful file upload
+      analyticsService.trackAction('file_uploaded', 'file', {
+        file_size: file.size,
+        file_type: file.type || 'text/csv',
+        file_name: file.name,
+        target_type: target.type,
+        target_id: target.id,
+        project_id: projectId,
+      }, startTime).catch(err => console.error('Analytics tracking error:', err));
+
       // Transform snake_case to camelCase for return
       return {
         id: data.id,
@@ -180,6 +192,12 @@ class FileStorageService {
 
     } catch (error) {
       console.error('Upload file error:', error)
+      // Track upload error
+      analyticsService.trackError('uploadFile', error as Error, {
+        file_size: file.size,
+        file_name: file.name,
+        target_type: target.type,
+      }).catch(err => console.error('Analytics tracking error:', err));
       return null
     }
   }
