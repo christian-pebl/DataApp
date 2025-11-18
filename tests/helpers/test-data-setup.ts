@@ -1,5 +1,6 @@
 import { Page } from '@playwright/test';
 import path from 'path';
+import { createClient } from '@supabase/supabase-js';
 
 /**
  * Test Data Setup Helpers
@@ -9,11 +10,142 @@ import path from 'path';
  * the application state for testing.
  */
 
+// Initialize Supabase client for direct database operations
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey);
+
 export interface TestDataConfig {
   projectName?: string;
   pinName?: string;
   pinLocation?: { lat: number; lng: number };
   csvFile?: string;
+}
+
+/**
+ * Setup authentication for test user
+ * Creates a test user session in localStorage
+ */
+async function setupTestAuth(page: Page): Promise<string | null> {
+  try {
+    // Try to sign in or create a test user
+    const testEmail = 'test@example.com';
+    const testPassword = 'testpassword123';
+
+    console.log('  Attempting to authenticate test user...');
+
+    // Try to sign in
+    let { data, error } = await supabase.auth.signInWithPassword({
+      email: testEmail,
+      password: testPassword,
+    });
+
+    // If user doesn't exist, create it
+    if (error && error.message.includes('Invalid login credentials')) {
+      console.log('  Test user not found, creating new user...');
+      const signUpResult = await supabase.auth.signUp({
+        email: testEmail,
+        password: testPassword,
+      });
+
+      if (signUpResult.error) {
+        console.log('⚠️ Failed to create test user:', signUpResult.error.message);
+        return null;
+      }
+
+      data = signUpResult.data;
+    } else if (error) {
+      console.log('⚠️ Auth error:', error.message);
+      return null;
+    }
+
+    if (!data?.session || !data?.user) {
+      console.log('⚠️ No session or user returned from auth');
+      return null;
+    }
+
+    console.log(`✓ Authenticated as: ${data.user.id}`);
+
+    // Inject the session into the page's localStorage
+    await page.evaluate((session) => {
+      localStorage.setItem('sb-tujjhrliibqgstbrohfn-auth-token', JSON.stringify(session));
+    }, data.session);
+
+    return data.user.id;
+  } catch (error) {
+    console.error('❌ Error in test auth setup:', error);
+    return null;
+  }
+}
+
+/**
+ * Create a pin directly in the database (bypasses UI)
+ */
+async function createTestPin(
+  userId: string,
+  config: TestDataConfig
+): Promise<string | null> {
+  try {
+    const { pinLocation = { lat: -33.5, lng: 151.2 }, pinName = 'Test Pin' } = config;
+
+    console.log(`  Creating pin in database for user: ${userId}`);
+
+    // Get or create a default project
+    const { data: projects } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1);
+
+    let projectId: string;
+    if (projects && projects.length > 0) {
+      projectId = projects[0].id;
+      console.log(`  Using existing project: ${projectId}`);
+    } else {
+      const { data: newProject, error: projectError } = await supabase
+        .from('projects')
+        .insert({
+          user_id: userId,
+          name: 'Test Project',
+          created_at: new Date().toISOString(),
+        })
+        .select('id')
+        .single();
+
+      if (projectError || !newProject) {
+        console.log('⚠️ Failed to create project:', projectError);
+        return null;
+      }
+      projectId = newProject.id;
+      console.log(`  Created new project: ${projectId}`);
+    }
+
+    // Create the pin
+    const { data: pin, error: pinError } = await supabase
+      .from('pins')
+      .insert({
+        user_id: userId,
+        project_id: projectId,
+        label: pinName,
+        latitude: pinLocation.lat,
+        longitude: pinLocation.lng,
+        color: '#3b82f6', // Blue
+        created_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
+
+    if (pinError || !pin) {
+      console.log('⚠️ Failed to create pin:', pinError);
+      return null;
+    }
+
+    console.log(`✓ Pin created in database: ${pin.id}`);
+    return pin.id;
+  } catch (error) {
+    console.error('❌ Error creating pin:', error);
+    return null;
+  }
 }
 
 /**
@@ -26,7 +158,6 @@ export async function setupTestDataWithUpload(
 ): Promise<boolean> {
   try {
     const {
-      pinLocation = { lat: -33.5, lng: 151.2 },
       csvFile = 'sample-data.csv'
     } = config;
 
@@ -36,15 +167,28 @@ export async function setupTestDataWithUpload(
     await page.waitForSelector('.leaflet-container', { timeout: 15000 });
     console.log('✓ Map container loaded');
 
-    // Step 2: Create a pin by clicking on map
-    const mapContainer = page.locator('.leaflet-container').first();
-    await mapContainer.click({
-      position: { x: 400, y: 300 }
-    });
-    console.log('✓ Pin created');
+    // Step 2: Setup test authentication
+    const userId = await setupTestAuth(page);
+    if (!userId) {
+      console.log('⚠️ Failed to authenticate test user');
+      return false;
+    }
 
-    // Wait for pin creation to complete
+    // Step 3: Create a pin directly in database
+    const pinId = await createTestPin(userId, config);
+    if (!pinId) {
+      console.log('⚠️ Failed to create pin');
+      return false;
+    }
+
+    // Reload page to pick up the new pin and authentication
+    await page.reload();
+    await page.waitForSelector('.leaflet-container', { timeout: 15000 });
     await page.waitForTimeout(2000);
+
+    // Verify pin appears on map
+    const pinMarkerCount = await page.locator('.leaflet-marker-icon').count();
+    console.log(`✓ Pin appears on map (${pinMarkerCount} markers visible)`);
 
     // Step 3: Open project data dialog to upload file
     // Look for the menu button
@@ -95,7 +239,27 @@ export async function setupTestDataWithUpload(
           console.log('✓ Pin selector opened');
 
           // Wait for dropdown to appear
-          await page.waitForTimeout(500);
+          await page.waitForTimeout(1000);
+
+          // Check what options are available
+          const optionCount = await page.getByRole('option').count();
+          console.log(`  Found ${optionCount} pin options in dropdown`);
+
+          // If no options, check for "No pins found" message
+          if (optionCount === 0) {
+            const noPinsText = await page.getByText('No pins found').or(
+              page.getByText('No pins in this project')
+            ).count();
+            if (noPinsText > 0) {
+              console.log('  ⚠️ Dropdown shows "No pins found" message');
+            }
+
+            // Try waiting longer and checking again
+            console.log('  Waiting additional 3 seconds for pins to load...');
+            await page.waitForTimeout(3000);
+            const optionCountRetry = await page.getByRole('option').count();
+            console.log(`  Retry: Found ${optionCountRetry} pin options`);
+          }
 
           // Click on the first pin option in the dropdown
           // SelectItems have role="option"

@@ -605,3 +605,263 @@ const state = await browser_evaluate({ function: `() => ({ loaded: !!document.qu
 ```
 
 ---
+
+## Performance Tracking & Admin Dashboard
+
+### Admin Dashboard Access
+
+**Command:** Use the Claude skill `admin dashboard` to open the performance tracking dashboard.
+
+**Dashboard URL:** `http://localhost:9002/admin-dashboard`
+
+**Purpose:** Monitor test results, track performance metrics, and identify optimization opportunities across the entire application.
+
+---
+
+### Performance Tracking Standards
+
+**IMPORTANT:** All future performance testing and optimization work must follow these standards to ensure measurable, trackable improvements.
+
+#### 1. **Test Results Documentation**
+
+All performance tests must be documented in `test-reports/` with the following information:
+
+```markdown
+# [Feature] Performance Analysis
+
+**Date:** YYYY-MM-DD
+**Test Duration:** X minutes
+**Tests Run:** X tests (Y passed, Z failed)
+**Status:** ⚠️ Performance Issues Identified / ✅ All Passing
+
+## Test Results
+
+### Test Name: [Descriptive Name]
+
+**Status:** ✅ Passing / ⚠️ Warning / ❌ Failing
+
+**Metrics:**
+- Current Performance: XXms
+- Target Performance: XXms
+- Delta: ±XX% (over/under target)
+- Date Tested: YYYY-MM-DD
+
+**Analysis:**
+- [Detailed analysis of performance]
+- [Bottlenecks identified]
+- [Impact on user experience]
+
+**Optimization Opportunity:**
+- **Name:** [Short descriptive name]
+- **Expected Improvement:** XX% faster or XXms saved
+- **Implementation Effort:** X hours
+- **ROI:** XX.X (improvement% / effort hours)
+- **Priority:** Critical / High / Medium / Low
+- **Tier:** 1 (Quick Win) / 2 (Core) / 3 (Advanced)
+- **File Location:** `path/to/file.ts:line-numbers`
+```
+
+#### 2. **Performance Metrics Schema**
+
+All performance metrics must be structured as `PerformanceMetric` objects (see `src/lib/performance-metrics-parser.ts`):
+
+```typescript
+interface PerformanceMetric {
+  // Identification
+  testName: string;
+  category: 'rendering' | 'parsing' | 'network' | 'interaction' | 'architecture';
+  component: string;
+  file?: string;
+  lineNumbers?: string;
+
+  // Timing
+  timestamp: string;  // ISO 8601
+  currentValue: number;  // milliseconds
+  targetValue: number;  // milliseconds
+
+  // Analysis
+  status: 'passing' | 'warning' | 'failing';
+  deltaFromTarget: number;
+  deltaPercentage: number;
+
+  // Optimization
+  hasOptimization: boolean;
+  optimizationName?: string;
+  estimatedImprovement?: number;
+  improvementPercentage?: number;
+  implementationEffort?: number;  // hours
+  roi?: number;
+  priority?: 'critical' | 'high' | 'medium' | 'low';
+  tier?: 1 | 2 | 3;
+
+  // Implementation
+  implemented: boolean;
+  implementedDate?: string;
+  actualImprovement?: number;
+}
+```
+
+#### 3. **Optimization Opportunities Tracking**
+
+All identified optimizations must be tracked with:
+
+- **Name:** Short, descriptive name (e.g., "Rarefaction: Reduce iterations 1000→200")
+- **Description:** Technical explanation of the issue and fix
+- **Affected Metrics:** List of test names that will improve
+- **Tier Classification:**
+  - **Tier 1 (Quick Wins):** 0.5-2 hours effort, 50-60% cumulative gain
+  - **Tier 2 (Core Improvements):** 4-8 hours effort, 70-75% cumulative gain
+  - **Tier 3 (Advanced):** 6-12 hours effort, 80-85% cumulative gain
+- **Priority:** Critical / High / Medium / Low
+- **Estimated Improvement:** Percentage or absolute time (e.g., "60-70% faster" or "100ms saved")
+- **Implementation Effort:** Hours
+- **ROI:** improvement% / effort hours
+- **File Location:** Exact file path and line numbers
+- **Implementation Status:** Pending / In Progress / Implemented
+- **Actual Results:** After implementation, document actual improvement vs estimated
+
+#### 4. **Visual Performance Tracking**
+
+The admin dashboard provides visual tracking through:
+
+- **Performance Score Cards:** Current vs potential performance scores
+- **Test Results Table:** Complete list of all performance tests with status indicators
+- **Optimization Opportunities List:** Sortable by ROI, priority, or tier
+- **Implementation Roadmap:** Phased approach with effort and gain projections
+- **ROI Rankings:** Top opportunities ordered by return on investment
+
+#### 5. **Before/After Measurements**
+
+When implementing optimizations:
+
+1. **Document Baseline:**
+   - Run performance test 3 times
+   - Record average, min, max
+   - Note test conditions (data size, browser, etc.)
+
+2. **Implement Optimization:**
+   - Make code changes
+   - Update `implemented: true` in metrics parser
+   - Set `implementedDate`
+
+3. **Measure Actual Impact:**
+   - Run same performance test 3 times
+   - Calculate actual improvement
+   - Update `actualImprovement` field
+   - Compare to `estimatedImprovement`
+
+4. **Update Documentation:**
+   - Add results to test report
+   - Update dashboard data
+   - Note any unexpected results
+
+#### 6. **Performance Test Automation**
+
+All performance tests should be automated with Playwright:
+
+```typescript
+test('measure [feature] performance', async ({ page }) => {
+  const metrics = {
+    setupTime: 0,
+    renderTime: 0,
+    interactionTime: 0,
+    totalTime: 0,
+  };
+
+  const startTime = Date.now();
+
+  // Setup
+  const setupStart = Date.now();
+  await setupTestData(page);
+  metrics.setupTime = Date.now() - setupStart;
+
+  // Render
+  const renderStart = Date.now();
+  await page.waitForSelector('[data-testid="component"]', { timeout: 20000 });
+  metrics.renderTime = Date.now() - renderStart;
+
+  // Interaction
+  const interactionStart = Date.now();
+  await page.click('[data-testid="trigger"]');
+  await page.waitForSelector('[data-testid="result"]');
+  metrics.interactionTime = Date.now() - interactionStart;
+
+  metrics.totalTime = Date.now() - startTime;
+
+  // Log for documentation
+  console.log('Performance Metrics:', JSON.stringify(metrics, null, 2));
+
+  // Assert against targets
+  expect(metrics.renderTime).toBeLessThan(TARGET_MS);
+});
+```
+
+#### 7. **Continuous Monitoring**
+
+- Run performance test suite weekly
+- Compare results to baseline
+- Flag any regressions (>10% slower than baseline)
+- Update admin dashboard with latest metrics
+- Review optimization priorities quarterly
+
+#### 8. **Dashboard Updates**
+
+When adding new performance tests:
+
+1. Add test to appropriate test file
+2. Update `performance-metrics-parser.ts` with new metric
+3. If optimization identified, add to `parseOptimizationOpportunities()`
+4. Dashboard will automatically reflect new data
+5. Document in relevant test report markdown file
+
+---
+
+### Admin Dashboard Features
+
+#### Overview Tab
+- **Summary Cards:** Current performance, potential performance, test results, quick wins
+- **Critical Issues:** Tests failing to meet performance targets
+- **Top Opportunities:** Best ROI optimizations
+
+#### Test Results Tab
+- **Complete Test List:** All performance tests with current/target/delta
+- **Status Indicators:** ✅ Passing / ⚠️ Warning / ❌ Failing
+- **Optimization Info:** Expected improvements and effort
+
+#### Optimizations Tab
+- **Tier Filtering:** Filter by Tier 1, 2, 3, or all
+- **ROI Sorting:** Automatically sorted by return on investment
+- **Detailed Cards:** Full description, affected metrics, file locations
+- **Implementation Status:** Pending vs Implemented tracking
+
+#### Roadmap Tab
+- **Phased Implementation:** Tier 1 → Tier 2 → Tier 3
+- **Effort Projections:** Total hours per tier
+- **Expected Gains:** Cumulative performance improvements
+- **Timeline Estimates:** Week-by-week implementation plan
+
+---
+
+### Example Usage
+
+```bash
+# User asks to see performance status
+User: "admin dashboard"
+
+# Claude uses the admin-dashboard skill
+Claude: [Opens http://localhost:9002/admin-dashboard]
+Claude: [Reports summary of current performance metrics]
+Claude: [Highlights critical issues and top optimization opportunities]
+```
+
+---
+
+### File Locations
+
+- **Dashboard Page:** `src/app/admin-dashboard/page.tsx`
+- **Metrics Parser:** `src/lib/performance-metrics-parser.ts`
+- **Claude Skill:** `.claude/skills/admin-dashboard.md`
+- **Test Reports:** `test-reports/`
+- **Performance Tests:** `tests/e2e/*-performance.spec.ts`
+
+---
