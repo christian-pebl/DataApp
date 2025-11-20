@@ -1,5 +1,5 @@
 import { createClient } from './client';
-import { notificationService } from './notification-service';
+// import { notificationService } from './notification-service'; // Commented out - notification-service doesn't exist
 
 export interface CopyProgress {
   step: string;
@@ -132,9 +132,10 @@ class PinCopyService {
 
       // Step 5: Send success notification to target user
       logStep('notify-user', 'in-progress', 'Sending notification to target user...');
-      
+
       try {
-        await notificationService.createNotification({
+        // Notification service disabled - service doesn't exist
+        /* await notificationService.createNotification({
           user_id: targetUser.id,
           title: 'Pin Copied to Your Account',
           message: `"${originalPin.label}" has been copied to your account.`,
@@ -145,7 +146,7 @@ class PinCopyService {
             copied_pin_id: newPin.id,
             from_user: await this.getCurrentUserEmail()
           }
-        });
+        }); */
         
         logStep('notify-user', 'success', 'Notification sent successfully');
       } catch (notifyError) {

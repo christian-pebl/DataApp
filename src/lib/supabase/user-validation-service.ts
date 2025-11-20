@@ -30,7 +30,7 @@ export async function checkUserExists(email: string): Promise<UserValidationResu
     // First try the database function
     const { data, error } = await supabase
       .rpc('check_user_exists', { email_address: email })
-      .single();
+      .single<{ user_exists: boolean; user_id?: string; full_name?: string }>();
 
     if (!error) {
       return {

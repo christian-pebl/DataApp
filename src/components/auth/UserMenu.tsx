@@ -344,33 +344,14 @@ export default function UserMenu({ user, projectId }: UserMenuProps) {
         <DropdownMenuSeparator />
 
         {/* Navigation Items */}
-        {/* Data Explorer - Smart behavior based on context */}
-        {pathname === '/map-drawing' && isFeatureEnabled('DATA_EXPLORER_PANEL') ? (
-          <DropdownMenuItem
-            className="cursor-pointer"
-            onClick={() => {
-              // Trigger panel to open via custom event
-              window.dispatchEvent(new CustomEvent('open-data-explorer-panel'))
-              toast({
-                title: "Data Explorer",
-                description: "Opening data explorer panel...",
-                duration: 1500
-              })
-            }}
-          >
+        {/* Data Processing - Integrated Ocean-ML */}
+        <Link href="/data-processing">
+          <DropdownMenuItem className="cursor-pointer">
             <Database className="mr-2 h-4 w-4" />
-            <span>Data Explorer</span>
-            <div className="ml-auto w-2 h-2 bg-primary rounded-full" />
+            <span>Data Processing</span>
+            {pathname === '/data-processing' && <div className="ml-auto w-2 h-2 bg-primary rounded-full" />}
           </DropdownMenuItem>
-        ) : (
-          <Link href="/data-explorer">
-            <DropdownMenuItem className="cursor-pointer">
-              <BarChart3 className="mr-2 h-4 w-4" />
-              <span>Data Explorer</span>
-              {pathname === '/data-explorer' && <div className="ml-auto w-2 h-2 bg-primary rounded-full" />}
-            </DropdownMenuItem>
-          </Link>
-        )}
+        </Link>
         
         <Link href="/map-drawing">
           <DropdownMenuItem className="cursor-pointer">

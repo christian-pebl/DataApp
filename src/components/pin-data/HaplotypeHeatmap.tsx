@@ -167,7 +167,7 @@ export function HaplotypeHeatmap({
       try {
         const taxonomyMap = await lookupSpeciesBatch(
           enrichedData.species,
-          5, // maxConcurrent
+          15, // maxConcurrent - increased from 5 for faster parallel processing
           (current, total) => setTaxonomyFetchProgress({ current, total })
         );
 

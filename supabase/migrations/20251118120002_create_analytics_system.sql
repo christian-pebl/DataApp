@@ -25,17 +25,17 @@ CREATE TABLE IF NOT EXISTS analytics_events (
 );
 
 -- Indexes for fast queries
-CREATE INDEX idx_analytics_events_user_id ON analytics_events(user_id);
-CREATE INDEX idx_analytics_events_timestamp ON analytics_events(timestamp DESC);
-CREATE INDEX idx_analytics_events_event_type ON analytics_events(event_type);
-CREATE INDEX idx_analytics_events_event_category ON analytics_events(event_category);
-CREATE INDEX idx_analytics_events_session_id ON analytics_events(session_id);
-CREATE INDEX idx_analytics_events_success ON analytics_events(success) WHERE success = false;
+CREATE INDEX IF NOT EXISTS idx_analytics_events_user_id ON analytics_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_timestamp ON analytics_events(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_event_type ON analytics_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_event_category ON analytics_events(event_category);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_session_id ON analytics_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_success ON analytics_events(success) WHERE success = false;
 
 -- Composite indexes for common query patterns
-CREATE INDEX idx_analytics_events_user_time ON analytics_events(user_id, timestamp DESC);
-CREATE INDEX idx_analytics_events_category_time ON analytics_events(event_category, timestamp DESC);
-CREATE INDEX idx_analytics_events_type_time ON analytics_events(event_type, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_user_time ON analytics_events(user_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_category_time ON analytics_events(event_category, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_type_time ON analytics_events(event_type, timestamp DESC);
 
 -- =============================================
 -- USER DAILY METRICS TABLE
@@ -71,8 +71,8 @@ CREATE TABLE IF NOT EXISTS user_daily_metrics (
   UNIQUE(user_id, date)
 );
 
-CREATE INDEX idx_user_daily_metrics_user_date ON user_daily_metrics(user_id, date DESC);
-CREATE INDEX idx_user_daily_metrics_date ON user_daily_metrics(date DESC);
+CREATE INDEX IF NOT EXISTS idx_user_daily_metrics_user_date ON user_daily_metrics(user_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_user_daily_metrics_date ON user_daily_metrics(date DESC);
 
 -- =============================================
 -- FEATURE USAGE METRICS TABLE
@@ -99,9 +99,9 @@ CREATE TABLE IF NOT EXISTS feature_usage_metrics (
   UNIQUE(feature_name, date)
 );
 
-CREATE INDEX idx_feature_usage_date ON feature_usage_metrics(date DESC);
-CREATE INDEX idx_feature_usage_feature ON feature_usage_metrics(feature_name);
-CREATE INDEX idx_feature_usage_total_events ON feature_usage_metrics(total_events DESC);
+CREATE INDEX IF NOT EXISTS idx_feature_usage_date ON feature_usage_metrics(date DESC);
+CREATE INDEX IF NOT EXISTS idx_feature_usage_feature ON feature_usage_metrics(feature_name);
+CREATE INDEX IF NOT EXISTS idx_feature_usage_total_events ON feature_usage_metrics(total_events DESC);
 
 -- =============================================
 -- USER ANALYTICS PROFILES TABLE
@@ -148,11 +148,11 @@ CREATE TABLE IF NOT EXISTS user_analytics_profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_user_analytics_last_activity ON user_analytics_profiles(last_activity DESC);
-CREATE INDEX idx_user_analytics_signup_date ON user_analytics_profiles(signup_date DESC);
-CREATE INDEX idx_user_analytics_is_active ON user_analytics_profiles(is_active);
-CREATE INDEX idx_user_analytics_is_power_user ON user_analytics_profiles(is_power_user);
-CREATE INDEX idx_user_analytics_days_active ON user_analytics_profiles(days_active DESC);
+CREATE INDEX IF NOT EXISTS idx_user_analytics_last_activity ON user_analytics_profiles(last_activity DESC);
+CREATE INDEX IF NOT EXISTS idx_user_analytics_signup_date ON user_analytics_profiles(signup_date DESC);
+CREATE INDEX IF NOT EXISTS idx_user_analytics_is_active ON user_analytics_profiles(is_active);
+CREATE INDEX IF NOT EXISTS idx_user_analytics_is_power_user ON user_analytics_profiles(is_power_user);
+CREATE INDEX IF NOT EXISTS idx_user_analytics_days_active ON user_analytics_profiles(days_active DESC);
 
 -- =============================================
 -- ADD is_admin FLAG TO user_profiles
@@ -171,12 +171,15 @@ ALTER TABLE feature_usage_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_analytics_profiles ENABLE ROW LEVEL SECURITY;
 
 -- Analytics Events Policies
+DROP POLICY IF EXISTS "Users can insert their own analytics events" ON analytics_events;
 CREATE POLICY "Users can insert their own analytics events" ON analytics_events
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can view their own analytics events" ON analytics_events;
 CREATE POLICY "Users can view their own analytics events" ON analytics_events
   FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Admins can view all analytics events" ON analytics_events;
 CREATE POLICY "Admins can view all analytics events" ON analytics_events
   FOR SELECT USING (
     EXISTS (
@@ -187,9 +190,11 @@ CREATE POLICY "Admins can view all analytics events" ON analytics_events
   );
 
 -- User Daily Metrics Policies
+DROP POLICY IF EXISTS "Users can view their own daily metrics" ON user_daily_metrics;
 CREATE POLICY "Users can view their own daily metrics" ON user_daily_metrics
   FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Admins can view all daily metrics" ON user_daily_metrics;
 CREATE POLICY "Admins can view all daily metrics" ON user_daily_metrics
   FOR SELECT USING (
     EXISTS (
@@ -199,13 +204,16 @@ CREATE POLICY "Admins can view all daily metrics" ON user_daily_metrics
     )
   );
 
+DROP POLICY IF EXISTS "System can insert daily metrics" ON user_daily_metrics;
 CREATE POLICY "System can insert daily metrics" ON user_daily_metrics
   FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "System can update daily metrics" ON user_daily_metrics;
 CREATE POLICY "System can update daily metrics" ON user_daily_metrics
   FOR UPDATE USING (true);
 
 -- Feature Usage Metrics Policies
+DROP POLICY IF EXISTS "Admins can view feature metrics" ON feature_usage_metrics;
 CREATE POLICY "Admins can view feature metrics" ON feature_usage_metrics
   FOR SELECT USING (
     EXISTS (
@@ -215,16 +223,20 @@ CREATE POLICY "Admins can view feature metrics" ON feature_usage_metrics
     )
   );
 
+DROP POLICY IF EXISTS "System can insert feature metrics" ON feature_usage_metrics;
 CREATE POLICY "System can insert feature metrics" ON feature_usage_metrics
   FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "System can update feature metrics" ON feature_usage_metrics;
 CREATE POLICY "System can update feature metrics" ON feature_usage_metrics
   FOR UPDATE USING (true);
 
 -- User Analytics Profiles Policies
+DROP POLICY IF EXISTS "Users can view their own analytics profile" ON user_analytics_profiles;
 CREATE POLICY "Users can view their own analytics profile" ON user_analytics_profiles
   FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Admins can view all analytics profiles" ON user_analytics_profiles;
 CREATE POLICY "Admins can view all analytics profiles" ON user_analytics_profiles
   FOR SELECT USING (
     EXISTS (
@@ -234,9 +246,11 @@ CREATE POLICY "Admins can view all analytics profiles" ON user_analytics_profile
     )
   );
 
+DROP POLICY IF EXISTS "System can insert analytics profiles" ON user_analytics_profiles;
 CREATE POLICY "System can insert analytics profiles" ON user_analytics_profiles
   FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "System can update analytics profiles" ON user_analytics_profiles;
 CREATE POLICY "System can update analytics profiles" ON user_analytics_profiles
   FOR UPDATE USING (true);
 
@@ -411,16 +425,19 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_user_daily_metrics_updated_at ON user_daily_metrics;
 CREATE TRIGGER update_user_daily_metrics_updated_at
     BEFORE UPDATE ON user_daily_metrics
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_feature_usage_metrics_updated_at ON feature_usage_metrics;
 CREATE TRIGGER update_feature_usage_metrics_updated_at
     BEFORE UPDATE ON feature_usage_metrics
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_user_analytics_profiles_updated_at ON user_analytics_profiles;
 CREATE TRIGGER update_user_analytics_profiles_updated_at
     BEFORE UPDATE ON user_analytics_profiles
     FOR EACH ROW

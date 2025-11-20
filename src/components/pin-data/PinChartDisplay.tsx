@@ -1129,17 +1129,21 @@ export function PinChartDisplay({
     handleViewModeChange(enabled ? 'heatmap' : 'chart');
   };
 
-  // Fetch taxonomy data for nmax species when file loads (needed for both tree and heatmap views)
+  // Fetch taxonomy data for nmax species ONLY when in heatmap or tree view (lazy loading for performance)
   React.useEffect(() => {
-    if (isSubcamNmaxFile && speciesColumns.length > 0 && !isFetchingNmaxTaxonomy) {
+    // Only fetch taxonomy if user is viewing heatmap or tree mode
+    const needsTaxonomy = nmaxViewMode === 'heatmap' || nmaxViewMode === 'tree';
+
+    if (isSubcamNmaxFile && speciesColumns.length > 0 && needsTaxonomy && !isFetchingNmaxTaxonomy) {
       const currentSpeciesList = speciesColumns.join(',');
 
       // Only fetch if we haven't fetched this exact species list before
       if (currentSpeciesList !== nmaxFetchedSpeciesList) {
-        console.log('🔬 Fetching taxonomy for nmax species (new species list detected):', speciesColumns);
+        console.log('🔬 Fetching taxonomy for nmax species (lazy load on view mode change):', speciesColumns);
         setIsFetchingNmaxTaxonomy(true);
 
-        lookupSpeciesBatch(speciesColumns, 5)
+        // Increased concurrency from 5 to 15 for faster parallel processing
+        lookupSpeciesBatch(speciesColumns, 15)
           .then(taxonomyMap => {
             setNmaxTaxonomyData(taxonomyMap);
             setNmaxFetchedSpeciesList(currentSpeciesList); // Mark this species list as fetched
@@ -1156,12 +1160,20 @@ export function PinChartDisplay({
     }
   }, [nmaxViewMode, isSubcamNmaxFile, speciesColumns.join(','), nmaxFetchedSpeciesList, isFetchingNmaxTaxonomy]);
 
-  // Build taxonomic tree for nmax species
+  // Build taxonomic tree for nmax species (only when in heatmap or tree view for performance)
   const nmaxTaxonomicTree = useMemo(() => {
+    // Skip tree building if not in heatmap or tree view mode
+    const needsTree = nmaxViewMode === 'heatmap' || nmaxViewMode === 'tree';
+
+    if (!needsTree) {
+      return null; // Early return for performance
+    }
+
     console.log('[NMAX TREE BUILD] Conditions check:', {
       isSubcamNmaxFile,
       speciesColumnsLength: speciesColumns.length,
-      nmaxTaxonomyDataSize: nmaxTaxonomyData.size
+      nmaxTaxonomyDataSize: nmaxTaxonomyData.size,
+      viewMode: nmaxViewMode
     });
 
     if (!isSubcamNmaxFile || speciesColumns.length === 0 || nmaxTaxonomyData.size === 0) {
@@ -1192,7 +1204,7 @@ export function PinChartDisplay({
     });
 
     return buildTaxonomicTree(cellData);
-  }, [isSubcamNmaxFile, speciesColumns, nmaxTaxonomyData]);
+  }, [isSubcamNmaxFile, speciesColumns, nmaxTaxonomyData, nmaxViewMode]);
 
   // Create taxonomically ordered species list (CSV entries + their parent nodes for hierarchy visualization)
   const taxonomicallyOrderedSpecies = useMemo(() => {
@@ -3379,6 +3391,8 @@ export function PinChartDisplay({
               timeFormat={showYearInXAxis ? 'full' : 'short'}
               customColor={heatmapColor}
               customMaxValue={appliedStyleRule?.properties.heatmapMaxValue}
+              cellWidth={appliedStyleRule?.properties.heatmapCellWidth ?? 10}
+              rowHeight={appliedStyleRule?.properties.heatmapRowHeight ?? 35}
             />
           </div>
 

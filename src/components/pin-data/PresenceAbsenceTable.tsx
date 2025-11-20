@@ -19,6 +19,7 @@ interface PresenceAbsenceTableProps {
 type FilterMode = 'all' | 'shared-only' | 'unique-only';
 type SortMode = 'alphabetical' | 'most-common' | 'most-unique';
 type DensityMode = 'normal' | 'compact' | 'very-compact' | 'ultra-compact';
+type ViewMode = 'taxa' | 'species';
 
 interface MergedColumn {
   id: string;
@@ -33,6 +34,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
   const [sortMode, setSortMode] = useState<SortMode>('alphabetical');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [densityMode, setDensityMode] = useState<DensityMode>('very-compact');
+  const [viewMode, setViewMode] = useState<ViewMode>('taxa');
 
   // Merge functionality state
   const [isMergeMode, setIsMergeMode] = useState(false);
@@ -172,6 +174,14 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
   const filteredData = useMemo(() => {
     let filtered = data.matrix;
 
+    // Apply view mode filter (taxa vs species)
+    if (viewMode === 'species') {
+      // Only show entries with "(sp.)" in the name
+      filtered = filtered.filter(row =>
+        row.species.toLowerCase().includes('(sp.)')
+      );
+    }
+
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -212,9 +222,9 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
     });
 
     return filtered;
-  }, [data.matrix, searchQuery, filterMode, sortMode]);
+  }, [data.matrix, searchQuery, filterMode, sortMode, viewMode]);
 
-  // Statistics (updated to work with merged columns)
+  // Statistics (updated to work with merged columns and viewMode filter)
   const stats = useMemo(() => {
     const uniqueToFiles: Record<string, number> = {};
     const totalPresencePerFile: Record<string, number> = {};
@@ -231,7 +241,15 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
 
     let sharedSpecies = 0;
 
-    for (const row of data.matrix) {
+    // Apply viewMode filter to data before calculating stats
+    let dataToAnalyze = data.matrix;
+    if (viewMode === 'species') {
+      dataToAnalyze = dataToAnalyze.filter(row =>
+        row.species.toLowerCase().includes('(sp.)')
+      );
+    }
+
+    for (const row of dataToAnalyze) {
       // Calculate presence for each column (considering merged columns)
       const columnPresence: Record<string, boolean> = {};
 
@@ -269,9 +287,10 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
       sharedSpecies,
       totalPresencePerFile,
       uniqueCountPerFile,
-      sharedCountPerFile
+      sharedCountPerFile,
+      totalCount: dataToAnalyze.length
     };
-  }, [data, allColumns]);
+  }, [data, allColumns, viewMode]);
 
   // Export to CSV (updated to work with merged columns)
   const handleExportCSV = () => {
@@ -389,7 +408,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
           <CardTitle className="text-lg font-semibold flex items-center gap-2">
             Presence-Absence Comparison
             <span className="text-sm font-normal text-muted-foreground">
-              ({data.totalSpecies} species × {data.fileCount} files)
+              ({stats.totalCount} {viewMode === 'taxa' ? 'taxa' : 'species'} × {data.fileCount} files)
             </span>
           </CardTitle>
         </div>
@@ -404,25 +423,54 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* View Mode Toggle */}
+        <div className="flex items-center justify-center gap-2 p-3 bg-muted/30 rounded-lg border">
+          <span className="text-sm font-semibold mr-2">View:</span>
+          <div className="flex gap-1 bg-background rounded-md p-1">
+            <Button
+              variant={viewMode === 'taxa' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('taxa')}
+              className={cn(
+                "text-xs",
+                viewMode === 'taxa' && "bg-purple-600 hover:bg-purple-700 text-white"
+              )}
+            >
+              Taxa (All Entries)
+            </Button>
+            <Button
+              variant={viewMode === 'species' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('species')}
+              className={cn(
+                "text-xs",
+                viewMode === 'species' && "bg-green-600 hover:bg-green-700 text-white"
+              )}
+            >
+              Species (sp. only)
+            </Button>
+          </div>
+        </div>
+
         {/* Statistics Summary */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-muted/50 rounded-lg">
           <div className="text-center">
             <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-              {data.totalSpecies}
+              {stats.totalCount}
             </p>
-            <p className="text-xs text-muted-foreground">Total Species</p>
+            <p className="text-xs text-muted-foreground">Total {viewMode === 'taxa' ? 'Taxa' : 'Species'}</p>
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
               {stats.sharedSpecies}
             </p>
-            <p className="text-xs text-muted-foreground">Shared Species</p>
+            <p className="text-xs text-muted-foreground">Shared {viewMode === 'taxa' ? 'Taxa' : 'Species'}</p>
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">
               {Object.values(stats.uniqueToFiles).reduce((sum, count) => sum + count, 0)}
             </p>
-            <p className="text-xs text-muted-foreground">Unique Species</p>
+            <p className="text-xs text-muted-foreground">Unique {viewMode === 'taxa' ? 'Taxa' : 'Species'}</p>
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold text-green-600 dark:text-green-400">
@@ -439,7 +487,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               type="text"
-              placeholder="Search species..."
+              placeholder={`Search ${viewMode === 'taxa' ? 'taxa' : 'species'}...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -453,7 +501,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Species</SelectItem>
+              <SelectItem value="all">All {viewMode === 'taxa' ? 'Taxa' : 'Species'}</SelectItem>
               <SelectItem value="shared-only">Shared Only</SelectItem>
               <SelectItem value="unique-only">Unique Only</SelectItem>
             </SelectContent>
@@ -556,7 +604,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
         {/* Results Count */}
         <div className="text-xs text-muted-foreground flex items-center gap-1">
           <Info className="w-3 h-3" />
-          Showing {filteredData.length} of {data.matrix.length} species
+          Showing {filteredData.length} of {stats.totalCount} {viewMode === 'taxa' ? 'taxa' : 'species'}
         </div>
 
         {/* Table */}
@@ -586,7 +634,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                 )}
                 <tr className="border-b bg-muted">
                   <th className="text-left px-3 py-2 font-semibold border-r sticky left-0 bg-muted z-20 min-w-[200px]">
-                    Species
+                    {viewMode === 'taxa' ? 'Taxa' : 'Species'}
                   </th>
                   <th className="text-center px-3 py-2 font-semibold border-r bg-muted min-w-[80px]">
                     <div className="flex flex-col leading-tight">
@@ -654,7 +702,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                       colSpan={allColumns.length + 2}
                       className="text-center py-8 text-muted-foreground"
                     >
-                      No species found matching your criteria
+                      No {viewMode === 'taxa' ? 'taxa' : 'species'} found matching your criteria
                     </td>
                   </tr>
                 ) : (
@@ -784,16 +832,16 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                     </td>
                   ))}
                 </tr>
-                {/* Total Species Across All Samples Row */}
+                {/* Total Taxa/Species Across All Samples Row */}
                 <tr className="border-t-2">
                   <td className="px-3 py-1 font-bold text-xs border-r sticky left-0 bg-muted/90 z-20">
-                    Total Species (All)
+                    Total {viewMode === 'taxa' ? 'Taxa' : 'Species'} (All)
                   </td>
                   <td
                     colSpan={allColumns.length + 1}
                     className="px-3 py-1 text-center text-xs font-bold bg-green-100 dark:bg-green-900/30 border-r"
                   >
-                    {data.totalSpecies} species across all samples
+                    {stats.totalCount} {viewMode === 'taxa' ? 'taxa' : 'species'} across all samples
                   </td>
                 </tr>
               </tfoot>
@@ -844,7 +892,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
         {/* Per-File Unique Counts */}
         {Object.keys(stats.uniqueToFiles).length > 0 && (
           <div className="border-t pt-3">
-            <h4 className="text-xs font-semibold mb-2">Unique Species per Column</h4>
+            <h4 className="text-xs font-semibold mb-2">Unique {viewMode === 'taxa' ? 'Taxa' : 'Species'} per Column</h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
               {Object.entries(stats.uniqueToFiles).map(([columnId, count]) => {
                 const displayName = getColumnDisplayName(columnId).replace(/\n/g, ' ');

@@ -30,6 +30,8 @@ interface HeatmapDisplayProps {
   timeFormat?: 'short' | 'full';
   customColor?: string; // Custom color for heatmap (hex format)
   customMaxValue?: number; // Custom max value for color scale saturation
+  cellWidth?: number; // Width of each cell/column (default: 10)
+  rowHeight?: number; // Height of each row (default: 35)
 }
 
 interface ProcessedCell {
@@ -44,7 +46,7 @@ interface OverviewDataPoint {
     value: number;
 }
 
-export function HeatmapDisplay({
+const HeatmapDisplayComponent = ({
     data,
     series,
     speciesIndentMap,
@@ -57,8 +59,10 @@ export function HeatmapDisplay({
     onBrushChange,
     timeFormat = 'short',
     customColor,
-    customMaxValue
-}: HeatmapDisplayProps) {
+    customMaxValue,
+    cellWidth = 10,
+    rowHeight = 35
+}: HeatmapDisplayProps) => {
   // Debug: Check if filteredFlattenedTree is being passed
   console.log('[HEATMAP DISPLAY] filteredFlattenedTree prop:', filteredFlattenedTree ? `${filteredFlattenedTree.length} items` : 'undefined/null');
 
@@ -176,7 +180,7 @@ export function HeatmapDisplay({
 
   // Dynamic left margin to accommodate all labels without truncation
   const leftMargin = maxLabelWidth;
-  const margin = { top: 50, right: 20, bottom: 60, left: leftMargin };
+  const margin = { top: 50, right: 20, bottom: 100, left: leftMargin };
 
   useEffect(() => {
     const resizeObserver = new ResizeObserver(entries => {
@@ -309,16 +313,10 @@ export function HeatmapDisplay({
 
   const { width, height } = svgDimensions;
 
-  // Default cell width for data columns
-  const DEFAULT_CELL_WIDTH = 10;
-
-  // Calculate minimum plot width needed to accommodate all days at default cell width
-  const minPlotWidth = uniqueDays.length * (DEFAULT_CELL_WIDTH / 0.95); // Account for 0.05 padding
-
-  // Use the larger of available width or minimum width to ensure cells are at least DEFAULT_CELL_WIDTH
-  const availablePlotWidth = width > 0 ? width - margin.left - margin.right : 0;
-  const plotWidth = Math.max(availablePlotWidth, minPlotWidth);
-  const plotHeight = height > 0 ? height - margin.top - margin.bottom : 0;
+  // Calculate plot dimensions based on fixed cell width and row height
+  // This ensures consistent cell sizes across different data volumes
+  const plotWidth = uniqueDays.length * cellWidth;
+  const plotHeight = visibleSeries.length * rowHeight;
 
   const xScale = scaleBand<string>().domain(uniqueDays).range([0, plotWidth]).padding(0.05);
   const yScale = scaleBand<string>().domain(visibleSeries).range([0, plotHeight]).padding(0.05);
@@ -332,6 +330,17 @@ export function HeatmapDisplay({
       return String(timeValue);
     }
   };
+
+  // Pre-compute taxon info map for performance (avoid repeated finds in render loop)
+  const taxonInfoMap = useMemo(() => {
+    if (!filteredFlattenedTree) return new Map();
+    const map = new Map<string, typeof filteredFlattenedTree[0]>();
+    filteredFlattenedTree.forEach(taxon => {
+      const name = taxon.node.originalName || taxon.name;
+      map.set(name, taxon);
+    });
+    return map;
+  }, [filteredFlattenedTree]);
 
   // Get unique ranks present in the data
   const ranksPresent = useMemo(() => {
@@ -354,7 +363,7 @@ export function HeatmapDisplay({
         <div
           ref={containerRef}
           style={{ height: `${heatmapHeight}px` }}
-          className="relative w-full h-full border rounded-md p-2 bg-white overflow-x-auto"
+          className="relative w-full h-full border rounded-md p-2 bg-white overflow-x-auto overflow-y-visible"
         >
           {/* Taxonomic Rank Legend - Top Right */}
           <div className="absolute top-[6px] right-2 px-3 py-2 bg-white/95 backdrop-blur-sm rounded-md shadow-sm z-10">
@@ -400,7 +409,7 @@ export function HeatmapDisplay({
             </div>
           </div>
           <TooltipProvider>
-            <svg width={Math.max(width, plotWidth + margin.left + margin.right)} height="100%">
+            <svg width={Math.max(width, plotWidth + margin.left + margin.right)} height={plotHeight + margin.top + margin.bottom}>
               {plotWidth > 0 && plotHeight > 0 && (
               <g transform={`translate(${margin.left},${margin.top})`}>
                 {/* Y-axis */}
@@ -414,7 +423,7 @@ export function HeatmapDisplay({
                     const cleanName = stripRankSuffix(seriesName);
 
                     // Check if this is a parent node (not a leaf in the tree)
-                    const taxonInfo = filteredFlattenedTree?.find(t => (t.node.originalName || t.name) === seriesName);
+                    const taxonInfo = taxonInfoMap.get(seriesName);
                     const isParentNode = taxonInfo && !taxonInfo.node.isLeaf;
 
                     // Position badges and text based on indentation level
@@ -578,7 +587,7 @@ export function HeatmapDisplay({
                 <g className="cells">
                   {visibleSeries.map(s => {
                     // Check if this is a parent node (not a leaf in the tree)
-                    const taxonInfo = filteredFlattenedTree?.find(t => (t.node.originalName || t.name) === s);
+                    const taxonInfo = taxonInfoMap.get(s);
                     const isParentNode = taxonInfo && !taxonInfo.node.isLeaf;
 
                     return (
@@ -705,5 +714,8 @@ export function HeatmapDisplay({
         )}
     </div>
   );
-}
+};
+
+// Memoize component to prevent unnecessary re-renders
+export const HeatmapDisplay = React.memo(HeatmapDisplayComponent);
 

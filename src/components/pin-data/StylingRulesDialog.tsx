@@ -217,7 +217,7 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
   {
     suffix: "_nmax.csv",
     styleName: "nmax_style",
-    description: "Subcam maximum values data styling with multi-line Y-axis titles for long parameter names and configurable heatmap row height",
+    description: "Subcam maximum values data styling with multi-line Y-axis titles, configurable heatmap dimensions, and fixed cell widths",
     enabled: true,
     properties: {
       xAxisTitle: "Time",
@@ -234,7 +234,9 @@ export const DEFAULT_STYLE_RULES: StyleRule[] = [
       chartBottomMargin: 10,
       chartHeight: 208,
       xAxisTitleFontSize: 10,
-      heatmapRowHeight: 15 // Default heatmap row height in pixels (compact for nmax files)
+      heatmapRowHeight: 15, // Default heatmap row height in pixels (compact for nmax files)
+      heatmapCellWidth: 10, // Default heatmap cell width in pixels (fixed, ensures consistent x-axis across files)
+      heatmapMaxValue: 0 // 0 = auto-detect max value for color scale
     }
   },
   // Spot-sample / Discrete sampling files styling (CROP, CHEM, WQ, EDNA)
@@ -2034,6 +2036,43 @@ export function StylingRulesDialog({
                           Apply
                         </Button>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Heatmap Cell Width - show for nmax files only */}
+                {selectedRule.suffix === "_nmax.csv" && (
+                  <div className="space-y-1.5 p-3 bg-muted/30 rounded-md">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Label className="text-xs font-semibold">Heatmap Cell Width</Label>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-xs text-xs">
+                            <p>Width of each day/time column in heatmap view (range: 5 to 150px, default: 10px). Larger values create wider plots for easier reading, smaller values create more compact displays. Plot will scroll horizontally if data exceeds window width.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground min-w-[40px] text-right">
+                          {selectedRule.properties.heatmapCellWidth ?? 10}px
+                        </span>
+                      </div>
+                    </div>
+                    <Slider
+                      value={[selectedRule.properties.heatmapCellWidth ?? 10]}
+                      min={5}
+                      max={150}
+                      step={1}
+                      onValueChange={(value) => handlePropertyChange('heatmapCellWidth', value[0])}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-[0.65rem] text-muted-foreground px-0.5">
+                      <span>Compact (5px)</span>
+                      <span>Default (10px)</span>
+                      <span>Spacious (150px)</span>
                     </div>
                   </div>
                 )}

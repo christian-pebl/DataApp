@@ -10,7 +10,7 @@ import { getInvitationByToken, acceptInvitation } from '@/lib/supabase/user-vali
 import { toast } from 'sonner';
 import { Loader2, MapPin, Eye, Edit, UserPlus, CheckCircle, XCircle } from 'lucide-react';
 
-export default function InvitePage({ params }: { params: { token: string } }) {
+export default function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
@@ -18,19 +18,23 @@ export default function InvitePage({ params }: { params: { token: string } }) {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [status, setStatus] = useState<'loading' | 'valid' | 'invalid' | 'expired' | 'accepted'>('loading');
   const [supabase] = useState(() => createClient());
+  const [token, setToken] = useState<string>('');
 
   useEffect(() => {
-    checkInvitation();
-  }, [params.token]);
+    params.then(p => {
+      setToken(p.token);
+      checkInvitation(p.token);
+    });
+  }, []);
 
-  const checkInvitation = async () => {
+  const checkInvitation = async (tokenValue: string) => {
     try {
       // Check if user is logged in
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
 
       // Get invitation details
-      const invitationData = await getInvitationByToken(params.token);
+      const invitationData = await getInvitationByToken(tokenValue);
       
       if (!invitationData) {
         setStatus('invalid');
@@ -60,7 +64,7 @@ export default function InvitePage({ params }: { params: { token: string } }) {
   const handleAcceptInvitation = async () => {
     if (!currentUser) {
       // Redirect to login with return URL
-      const returnUrl = `/invite/${params.token}`;
+      const returnUrl = `/invite/${token}`;
       router.push(`/login?returnUrl=${encodeURIComponent(returnUrl)}`);
       return;
     }
@@ -71,9 +75,9 @@ export default function InvitePage({ params }: { params: { token: string } }) {
     }
 
     setAccepting(true);
-    
+
     try {
-      const result = await acceptInvitation(params.token, currentUser.email);
+      const result = await acceptInvitation(token, currentUser.email);
       
       if (result.success) {
         toast.success('Invitation accepted successfully!');
@@ -282,10 +286,10 @@ export default function InvitePage({ params }: { params: { token: string } }) {
                       You are currently signed in as <strong>{currentUser.email}</strong>.
                     </p>
                   </div>
-                  <Button 
+                  <Button
                     onClick={() => {
                       supabase.auth.signOut();
-                      router.push(`/login?returnUrl=${encodeURIComponent(`/invite/${params.token}`)}`);
+                      router.push(`/login?returnUrl=${encodeURIComponent(`/invite/${token}`)}`);
                     }}
                     variant="outline"
                     className="w-full"
