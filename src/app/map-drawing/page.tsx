@@ -4516,33 +4516,46 @@ function MapDrawingPageContent() {
         }
       }
 
-      // Download ALL files
+      // Download ALL files in parallel for better performance
+      const startTime = Date.now();
       toast({
         title: "Loading Stacked Plots",
-        description: `Downloading ${filesToOpen.length} files...`
+        description: `Downloading ${filesToOpen.length} files in parallel...`
       });
 
-      const downloadedFiles: File[] = [];
-      for (const file of filesToOpen) {
-        const downloadedFile = await handleDownloadFileForPlot(
-          file.pinId || null,
-          file.fileName,
-          file.areaId || null,
-          file
-        );
+      // Create download promises for parallel execution
+      const downloadPromises = filesToOpen.map(async (file, index) => {
+        try {
+          const downloadedFile = await handleDownloadFileForPlot(
+            file.pinId || null,
+            file.fileName,
+            file.areaId || null,
+            file
+          );
 
-        if (downloadedFile) {
-          downloadedFiles.push(downloadedFile);
-        } else {
-          console.warn('⚠️ Failed to download file:', file.fileName);
+          if (downloadedFile) {
+            console.log(`✅ [${index + 1}/${filesToOpen.length}] Downloaded: ${file.fileName}`);
+            return downloadedFile;
+          } else {
+            console.warn(`⚠️ [${index + 1}/${filesToOpen.length}] Failed to download: ${file.fileName}`);
+            return null;
+          }
+        } catch (error) {
+          console.error(`❌ [${index + 1}/${filesToOpen.length}] Error downloading ${file.fileName}:`, error);
+          return null;
         }
-      }
+      });
+
+      // Wait for all downloads to complete in parallel
+      const downloadResults = await Promise.all(downloadPromises);
+      const downloadedFiles = downloadResults.filter((file): file is File => file !== null);
+      const downloadTime = Date.now() - startTime;
 
       if (downloadedFiles.length === 0) {
         throw new Error('All file downloads failed');
       }
 
-      console.log(`✅ Downloaded ${downloadedFiles.length}/${filesToOpen.length} files for stacked plots`);
+      console.log(`✅ Downloaded ${downloadedFiles.length}/${filesToOpen.length} files for stacked plots in ${downloadTime}ms (${Math.round(downloadTime / filesToOpen.length)}ms avg per file)`);
 
       // Open in marine device modal with ALL files
       setSelectedFileType(fileType);
@@ -4552,7 +4565,7 @@ function MapDrawingPageContent() {
 
       toast({
         title: "Stacked Plots Loaded",
-        description: `Successfully loaded ${downloadedFiles.length} files`
+        description: `Successfully loaded ${downloadedFiles.length} files in ${(downloadTime / 1000).toFixed(1)}s`
       });
 
       console.log('✅ [DATA EXPLORER PANEL] Opened stacked plots in marine device modal');

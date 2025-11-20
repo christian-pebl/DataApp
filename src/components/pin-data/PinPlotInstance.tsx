@@ -1,6 +1,6 @@
 "use client";
 // Force reload - fixed FileIcon import
-import React, { useState, useEffect, useId, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useId, useMemo, useCallback, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,7 +72,7 @@ interface PinPlotInstanceProps {
 }
 
 
-export function PinPlotInstance({
+function PinPlotInstanceComponent({
   instanceId,
   initialPlotTitle,
   onRemovePlot,
@@ -421,3 +421,54 @@ export function PinPlotInstance({
     </Card>
   );
 }
+
+// Custom comparison function for React.memo to prevent unnecessary re-renders
+const arePropsEqual = (prevProps: PinPlotInstanceProps, nextProps: PinPlotInstanceProps): boolean => {
+  // Always re-render if these critical props change
+  if (
+    prevProps.instanceId !== nextProps.instanceId ||
+    prevProps.files !== nextProps.files ||
+    prevProps.preParsedData !== nextProps.preParsedData ||
+    prevProps.fileType !== nextProps.fileType ||
+    prevProps.timeAxisMode !== nextProps.timeAxisMode
+  ) {
+    return false;
+  }
+
+  // Compare initial state props for restoration
+  if (
+    prevProps.initialVisibleParameters !== nextProps.initialVisibleParameters ||
+    prevProps.initialParameterColors !== nextProps.initialParameterColors ||
+    prevProps.initialParameterSettings !== nextProps.initialParameterSettings ||
+    prevProps.initialAxisMode !== nextProps.initialAxisMode ||
+    prevProps.initialCompactView !== nextProps.initialCompactView
+  ) {
+    return false;
+  }
+
+  // Compare time synchronization props (only if in common mode)
+  if (nextProps.timeAxisMode === 'common') {
+    if (
+      prevProps.globalTimeRange?.min !== nextProps.globalTimeRange?.min ||
+      prevProps.globalTimeRange?.max !== nextProps.globalTimeRange?.max ||
+      prevProps.globalBrushRange?.startIndex !== nextProps.globalBrushRange?.startIndex ||
+      prevProps.globalBrushRange?.endIndex !== nextProps.globalBrushRange?.endIndex
+    ) {
+      return false;
+    }
+  }
+
+  // Subtracted plot settings
+  if (
+    prevProps.isSubtractedPlot !== nextProps.isSubtractedPlot ||
+    prevProps.includeZeroValues !== nextProps.includeZeroValues
+  ) {
+    return false;
+  }
+
+  // Props are equal, skip re-render
+  return true;
+};
+
+// Export memoized component for better performance in stacked plots
+export const PinPlotInstance = memo(PinPlotInstanceComponent, arePropsEqual);
