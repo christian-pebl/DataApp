@@ -2584,12 +2584,16 @@ function MapDrawingPageContent() {
                              fileName.includes('chemsw') || fileName.includes('chemwq') ||
                              fileName.includes('wq') || fileName.includes('edna');
 
+      // Detect if this is a UK logger file that uses DD/MM/YYYY format (GP files)
+      const isUKLoggerFile = fileName.includes('_gp_') || fileName.startsWith('gp_');
+
       // Convert Blob to File object for csvParser
       const fileObject = new File([fileData], file.fileName, { type: 'text/csv' });
 
       // Use the intelligent csvParser with auto-detection (supports DD/MM/YYYY, MM/DD/YYYY, and YYYY-MM-DD formats)
+      // Force DD/MM/YYYY for known UK data files (discrete sampling and GP logger files)
       const { parseCSVFile } = await import('@/components/pin-data/csvParser');
-      const dateFormatOverride = undefined; // Let csvParser auto-detect the format
+      const dateFormatOverride = (isDiscreteFile || isUKLoggerFile) ? 'DD/MM/YYYY' as const : undefined;
 
       const parseResult = await parseCSVFile(fileObject, 'GP', dateFormatOverride);
 
@@ -2619,8 +2623,9 @@ function MapDrawingPageContent() {
 
       // SANITY CHECK: Extract expected date range from filename
       // E.g., "ALGA_CROP_F_L_2503-2506" means March 2025 (2503) to June 2025 (2506)
-      const filenameMatch = file.fileName.match(/(\d{2})(\d{2})-(\d{2})(\d{2})/);
-      if (filenameMatch && isDiscreteFile) {
+      // Support both hyphen and underscore separators (e.g., 2503-2506 or 2504_2506)
+      const filenameMatch = file.fileName.match(/(\d{2})(\d{2})[-_](\d{2})(\d{2})/);
+      if (filenameMatch && (isDiscreteFile || isUKLoggerFile)) {
         const [, startYY, startMM, endYY, endMM] = filenameMatch;
         const expectedStartMonth = parseInt(startMM);
         const expectedEndMonth = parseInt(endMM);
