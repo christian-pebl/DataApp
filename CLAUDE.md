@@ -45,6 +45,43 @@ ALTER TABLE areas ADD COLUMN color TEXT;
 
 ---
 
+## Active Projects
+
+### 🌊 Underwater Video CV/ML Platform (NEW - 2025-01-21)
+
+**Status:** Planning & Setup Phase
+**Full Documentation:** [UNDERWATER_CV_ML_PLATFORM.md](./UNDERWATER_CV_ML_PLATFORM.md)
+
+**Quick Summary:**
+Notebook-style experimentation platform for processing HD 1080p underwater videos to detect and classify marine organisms (fish, snails, crabs, shellfish) using computer vision and machine learning.
+
+**Architecture:**
+- **Layer 1:** Jupyter Notebooks (Local PC) - Experimentation, preprocessing, visualization
+- **Layer 2:** Modal.com (Cloud GPU) - Model training, heavy inference, parallel experiments
+- **Layer 3:** Supabase + Next.js - Experiment tracking, results dashboard, model registry
+
+**Technology Stack:**
+- Local: Jupyter Lab, Python 3.11, OpenCV, PyTorch, Ultralytics YOLO
+- Cloud: Modal.com (T4 GPU, pay-per-second billing)
+- Tracking: PostgreSQL (Supabase), Next.js dashboard
+
+**Cost Estimate:** $15-30/month (pay only for GPU usage)
+
+**Next Steps:**
+1. Set up local Jupyter environment
+2. Create Modal account and test GPU access
+3. Implement experiment tracking database schema
+4. Build web dashboard for experiment visualization
+5. Begin underwater video preprocessing experiments
+
+**Related Files:**
+- Project spec: `UNDERWATER_CV_ML_PLATFORM.md`
+- Notebooks (to be created): `ocean-ml-notebooks/`
+- Dashboard (to be created): `src/app/cv-experiments/`
+- Database migration (to be created): `supabase/migrations/YYYYMMDD_cv_experiments.sql`
+
+---
+
 ## Task 1: TODO Implementation Details
 
 ### TODO #1: File Opening Functionality

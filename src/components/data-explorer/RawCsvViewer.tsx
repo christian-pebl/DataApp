@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Loader2, X, Download, Edit, Sparkles, Save, Check, FileText, ChevronDown, ChevronUp, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Loader2, X, Download, Edit, Sparkles, Save, Check, FileText, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { logger } from '@/lib/logger';
 import { fetchRawCsvAction, transformSingleCellAction, updateCsvFileAction } from '@/app/data-explorer/actions';
@@ -339,6 +339,128 @@ export function RawCsvViewer({ fileId, fileName, isOpen, onClose }: RawCsvViewer
     setEditingCell(null);
     setEditingHeader(null);
     setEditValue('');
+  };
+
+  // Handle deleting selected columns
+  const handleDeleteColumns = () => {
+    // Get unique column indices from selected cells
+    const columnIndices = new Set<number>();
+
+    selectedCells.forEach(cellKey => {
+      if (cellKey.startsWith('header-')) {
+        // Header cell selected
+        const colIdx = parseInt(cellKey.split('-')[1]);
+        columnIndices.add(colIdx);
+      } else {
+        // Regular cell selected - extract column index
+        const [_, colIdx] = cellKey.split('-').map(Number);
+        columnIndices.add(colIdx);
+      }
+    });
+
+    if (columnIndices.size === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No Columns Selected',
+        description: 'Please select at least one column to delete'
+      });
+      return;
+    }
+
+    // Confirm deletion
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${columnIndices.size} column${columnIndices.size !== 1 ? 's' : ''}? This cannot be undone until you save.`
+    );
+
+    if (!confirmed) return;
+
+    // Sort indices in descending order to delete from right to left
+    const sortedIndices = Array.from(columnIndices).sort((a, b) => b - a);
+
+    // Delete columns from headers
+    const newHeaders = [...headers];
+    sortedIndices.forEach(colIdx => {
+      newHeaders.splice(colIdx, 1);
+    });
+    setHeaders(newHeaders);
+
+    // Delete columns from rows
+    const newRows = rows.map(row => {
+      const newRow = [...row];
+      sortedIndices.forEach(colIdx => {
+        newRow.splice(colIdx, 1);
+      });
+      return newRow;
+    });
+    setRows(newRows);
+
+    // Clear selection and mark as changed
+    setSelectedCells(new Set());
+    setHasUnsavedChanges(true);
+
+    toast({
+      title: 'Columns Deleted',
+      description: `Deleted ${columnIndices.size} column${columnIndices.size !== 1 ? 's' : ''}. Remember to save your changes.`
+    });
+
+    logger.info('Columns deleted', {
+      context: 'RawCsvViewer',
+      data: { fileId, deletedColumns: Array.from(columnIndices) }
+    });
+  };
+
+  // Handle deleting selected rows
+  const handleDeleteRows = () => {
+    // Get unique row indices from selected cells
+    const rowIndices = new Set<number>();
+
+    selectedCells.forEach(cellKey => {
+      if (!cellKey.startsWith('header-')) {
+        // Regular cell - extract row index
+        const [rowIdx, _] = cellKey.split('-').map(Number);
+        rowIndices.add(rowIdx);
+      }
+    });
+
+    if (rowIndices.size === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No Rows Selected',
+        description: 'Please select at least one row to delete'
+      });
+      return;
+    }
+
+    // Confirm deletion
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${rowIndices.size} row${rowIndices.size !== 1 ? 's' : ''}? This cannot be undone until you save.`
+    );
+
+    if (!confirmed) return;
+
+    // Sort indices in descending order to delete from bottom to top
+    const sortedIndices = Array.from(rowIndices).sort((a, b) => b - a);
+
+    // Delete rows
+    const newRows = [...rows];
+    sortedIndices.forEach(rowIdx => {
+      newRows.splice(rowIdx, 1);
+    });
+    setRows(newRows);
+
+    // Clear selection and mark as changed
+    setSelectedCells(new Set());
+    setHasUnsavedChanges(true);
+
+    toast({
+      title: 'Rows Deleted',
+      description: `Deleted ${rowIndices.size} row${rowIndices.size !== 1 ? 's' : ''}. Remember to save your changes.`
+    });
+
+    logger.info('Rows deleted', {
+      context: 'RawCsvViewer',
+      data: { fileId, deletedRows: Array.from(rowIndices) }
+    });
   };
 
   // Global mouse up listener to handle selection outside table
@@ -903,20 +1025,40 @@ export function RawCsvViewer({ fileId, fileName, isOpen, onClose }: RawCsvViewer
                         Select All
                       </Button>
                       {selectedCells.size > 0 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedCells(new Set());
-                            toast({
-                              title: 'Selection Cleared',
-                              description: 'All cells deselected'
-                            });
-                          }}
-                          className="text-xs"
-                        >
-                          Deselect All
-                        </Button>
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedCells(new Set());
+                              toast({
+                                title: 'Selection Cleared',
+                                description: 'All cells deselected'
+                              });
+                            }}
+                            className="text-xs"
+                          >
+                            Deselect All
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleDeleteRows}
+                            className="text-xs gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Delete Rows
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleDeleteColumns}
+                            className="text-xs gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Delete Columns
+                          </Button>
+                        </>
                       )}
                     </>
                   )}

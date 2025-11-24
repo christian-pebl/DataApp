@@ -2,8 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
-import OceanMLDashboard from '@/components/ocean-ml/OceanMLDashboard'
-import BackendStatusBar from '@/components/ocean-ml/BackendStatusBar'
+import ExperimentsDashboard from '@/components/ocean-ml/ExperimentsDashboard'
 
 export default function DataProcessingPage() {
   // Create a query client for this page
@@ -22,12 +21,9 @@ export default function DataProcessingPage() {
   return (
     <QueryClientProvider client={queryClient}>
       <div className="min-h-screen bg-background">
-        {/* Backend Status Bar */}
-        <BackendStatusBar />
-
         {/* Main content */}
         <main className="flex-grow">
-          <OceanMLDashboard />
+          <ExperimentsDashboard />
         </main>
 
         {/* Footer */}

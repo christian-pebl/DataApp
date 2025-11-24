@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { X, Download, Search, Filter, CheckCircle2, Info, Maximize2, Minimize2, ChevronsUpDown, Merge } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { X, Download, Search, Filter, CheckCircle2, Info, Maximize2, Minimize2, ChevronsUpDown, Merge, Split, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PresenceAbsenceResult, PresenceAbsenceRow } from "./PresenceAbsenceDialog";
 
@@ -36,12 +37,28 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
   const [densityMode, setDensityMode] = useState<DensityMode>('very-compact');
   const [viewMode, setViewMode] = useState<ViewMode>('taxa');
 
+  // Taxa selection state (for including/excluding from calculations)
+  const [selectedTaxa, setSelectedTaxa] = useState<Set<string>>(() => {
+    // Initialize with all taxa selected
+    return new Set(data.matrix.map(row => row.species));
+  });
+
   // Merge functionality state
   const [isMergeMode, setIsMergeMode] = useState(false);
   const [selectedColumnsForMerge, setSelectedColumnsForMerge] = useState<Set<string>>(new Set());
   const [mergedColumns, setMergedColumns] = useState<MergedColumn[]>([]);
   const [editingColumn, setEditingColumn] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+
+  // Unmerge functionality state
+  const [isUnmergeMode, setIsUnmergeMode] = useState(false);
+  const [selectedColumnsForUnmerge, setSelectedColumnsForUnmerge] = useState<Set<string>>(new Set());
+
+  // Column visibility state
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
+    // Initialize with all original files visible
+    return new Set(data.selectedFiles);
+  });
 
   // Density settings
   const getDensitySettings = (mode: DensityMode) => {
@@ -59,8 +76,8 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
 
   const densitySettings = getDensitySettings(densityMode);
 
-  // Get all columns (original + merged)
-  const allColumns = useMemo(() => {
+  // Get all columns (original + merged), including hidden ones
+  const allColumnsIncludingHidden = useMemo(() => {
     const columns: Array<{ id: string; name: string; isOriginal: boolean; sourceColumns?: string[] }> = [];
 
     // Add original columns that haven't been merged
@@ -83,6 +100,20 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
 
     return columns;
   }, [data.selectedFiles, mergedColumns]);
+
+  // Get only visible columns
+  const allColumns = useMemo(() => {
+    return allColumnsIncludingHidden.filter(column => {
+      if (column.isOriginal) {
+        // Original column - check if visible
+        return visibleColumns.has(column.id);
+      } else if (column.sourceColumns) {
+        // Merged column - visible if ANY source column is visible
+        return column.sourceColumns.some(sourceCol => visibleColumns.has(sourceCol));
+      }
+      return false;
+    });
+  }, [allColumnsIncludingHidden, visibleColumns]);
 
   // Column name mapping (for custom names)
   const [columnNames, setColumnNames] = useState<Record<string, string>>({});
@@ -149,6 +180,37 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
     setIsMergeMode(false);
   };
 
+  // Handle column selection for unmerging
+  const handleColumnSelectForUnmerge = (columnId: string) => {
+    // Only allow selecting merged columns
+    const column = allColumns.find(c => c.id === columnId);
+    if (!column || column.isOriginal) return;
+
+    const newSelection = new Set(selectedColumnsForUnmerge);
+    if (newSelection.has(columnId)) {
+      newSelection.delete(columnId);
+    } else {
+      newSelection.add(columnId);
+    }
+    setSelectedColumnsForUnmerge(newSelection);
+  };
+
+  // Perform unmerge
+  const handleUnmergeColumns = () => {
+    if (selectedColumnsForUnmerge.size === 0) return;
+
+    const columnsToUnmerge = Array.from(selectedColumnsForUnmerge);
+
+    // Remove the selected merged columns
+    const updatedMergedColumns = mergedColumns.filter(
+      mc => !columnsToUnmerge.includes(mc.id)
+    );
+
+    setMergedColumns(updatedMergedColumns);
+    setSelectedColumnsForUnmerge(new Set());
+    setIsUnmergeMode(false);
+  };
+
   // Handle double-click to edit column name
   const handleColumnDoubleClick = (columnId: string) => {
     setEditingColumn(columnId);
@@ -168,6 +230,46 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
   const handleCancelEdit = () => {
     setEditingColumn(null);
     setEditingName('');
+  };
+
+  // Toggle column visibility
+  const handleToggleColumnVisibility = (fileName: string) => {
+    const newVisible = new Set(visibleColumns);
+    if (newVisible.has(fileName)) {
+      newVisible.delete(fileName);
+    } else {
+      newVisible.add(fileName);
+    }
+    setVisibleColumns(newVisible);
+  };
+
+  // Select/deselect all columns
+  const handleSelectAllColumns = (select: boolean) => {
+    if (select) {
+      setVisibleColumns(new Set(data.selectedFiles));
+    } else {
+      setVisibleColumns(new Set());
+    }
+  };
+
+  // Toggle taxa selection
+  const handleToggleTaxaSelection = (species: string) => {
+    const newSelection = new Set(selectedTaxa);
+    if (newSelection.has(species)) {
+      newSelection.delete(species);
+    } else {
+      newSelection.add(species);
+    }
+    setSelectedTaxa(newSelection);
+  };
+
+  // Select/deselect all taxa
+  const handleSelectAllTaxa = (select: boolean) => {
+    if (select) {
+      setSelectedTaxa(new Set(data.matrix.map(row => row.species)));
+    } else {
+      setSelectedTaxa(new Set());
+    }
   };
 
   // Filtered and sorted data
@@ -241,13 +343,15 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
 
     let sharedSpecies = 0;
 
-    // Apply viewMode filter to data before calculating stats
+    // Apply viewMode filter and selectedTaxa filter to data before calculating stats
     let dataToAnalyze = data.matrix;
     if (viewMode === 'species') {
       dataToAnalyze = dataToAnalyze.filter(row =>
         row.species.toLowerCase().includes('(sp.)')
       );
     }
+    // Only include selected taxa in calculations
+    dataToAnalyze = dataToAnalyze.filter(row => selectedTaxa.has(row.species));
 
     for (const row of dataToAnalyze) {
       // Calculate presence for each column (considering merged columns)
@@ -290,7 +394,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
       sharedCountPerFile,
       totalCount: dataToAnalyze.length
     };
-  }, [data, allColumns, viewMode]);
+  }, [data, allColumns, viewMode, selectedTaxa]);
 
   // Export to CSV (updated to work with merged columns)
   const handleExportCSV = () => {
@@ -408,7 +512,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
           <CardTitle className="text-lg font-semibold flex items-center gap-2">
             Presence-Absence Comparison
             <span className="text-sm font-normal text-muted-foreground">
-              ({stats.totalCount} {viewMode === 'taxa' ? 'taxa' : 'species'} × {data.fileCount} files)
+              ({stats.totalCount} {viewMode === 'taxa' ? 'taxa' : 'species'} × {allColumns.length} visible files)
             </span>
           </CardTitle>
         </div>
@@ -519,6 +623,71 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
             </SelectContent>
           </Select>
 
+          {/* Column Selection */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2 w-full sm:w-[180px]">
+                <Eye className="w-4 h-4" />
+                Selection ({visibleColumns.size}/{data.selectedFiles.length})
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-4" align="start">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b">
+                  <h4 className="text-sm font-semibold">Column Visibility</h4>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSelectAllColumns(true)}
+                      className="h-7 text-xs"
+                    >
+                      All
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSelectAllColumns(false)}
+                      className="h-7 text-xs"
+                    >
+                      None
+                    </Button>
+                  </div>
+                </div>
+                <div className="max-h-[400px] overflow-y-auto space-y-2">
+                  {data.selectedFiles.map((fileName) => {
+                    const { line1, line2 } = getSplitFileName(fileName);
+                    const displayName = line2 ? `${line1} ${line2}` : line1;
+                    const isVisible = visibleColumns.has(fileName);
+
+                    return (
+                      <div
+                        key={fileName}
+                        className="flex items-start gap-2 p-2 hover:bg-muted/50 rounded cursor-pointer"
+                        onClick={() => handleToggleColumnVisibility(fileName)}
+                      >
+                        <Checkbox
+                          checked={isVisible}
+                          onCheckedChange={() => handleToggleColumnVisibility(fileName)}
+                          className="mt-0.5"
+                        />
+                        <div className="flex-1 text-xs">
+                          <div className="font-medium">{line1}</div>
+                          {line2 && <div className="text-muted-foreground">{line2}</div>}
+                        </div>
+                        {isVisible ? (
+                          <Eye className="w-4 h-4 text-green-600 mt-0.5" />
+                        ) : (
+                          <EyeOff className="w-4 h-4 text-muted-foreground mt-0.5" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+
           {/* Export */}
           <Button variant="outline" size="sm" onClick={handleExportCSV} className="gap-2">
             <Download className="w-4 h-4" />
@@ -526,7 +695,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
           </Button>
 
           {/* Merge Button */}
-          {!isMergeMode ? (
+          {!isMergeMode && !isUnmergeMode ? (
             <Button
               variant="outline"
               size="sm"
@@ -536,7 +705,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
               <Merge className="w-4 h-4" />
               Merge
             </Button>
-          ) : (
+          ) : isMergeMode ? (
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -563,7 +732,47 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                 Merge Selected ({selectedColumnsForMerge.size})
               </Button>
             </div>
-          )}
+          ) : null}
+
+          {/* Unmerge Button */}
+          {!isMergeMode && !isUnmergeMode && mergedColumns.length > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsUnmergeMode(true)}
+              className="gap-2"
+            >
+              <Split className="w-4 h-4" />
+              Unmerge
+            </Button>
+          ) : isUnmergeMode ? (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsUnmergeMode(false);
+                  setSelectedColumnsForUnmerge(new Set());
+                }}
+                className="gap-2"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleUnmergeColumns}
+                disabled={selectedColumnsForUnmerge.size === 0}
+                className={cn(
+                  "gap-2",
+                  selectedColumnsForUnmerge.size > 0 && "bg-orange-500 hover:bg-orange-600 text-white"
+                )}
+              >
+                <Split className="w-4 h-4" />
+                Unmerge Selected ({selectedColumnsForUnmerge.size})
+              </Button>
+            </div>
+          ) : null}
 
           {/* Fullscreen Toggle */}
           <Button
@@ -618,11 +827,11 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                 {/* Checkbox row for merge mode */}
                 {isMergeMode && (
                   <tr className="border-b bg-blue-50 dark:bg-blue-950/20">
-                    <th className="text-center px-3 py-2 border-r sticky left-0 bg-blue-50 dark:bg-blue-950/20 z-20" colSpan={2}>
-                      <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">Select columns to merge</span>
+                    <th className="text-center px-3 py-2 border-r sticky left-0 bg-blue-50 dark:bg-blue-950/20 z-20" colSpan={3}>
+                      <span className="text-[0.56rem] font-semibold text-blue-700 dark:text-blue-300">Select columns to merge</span>
                     </th>
                     {allColumns.map((column, idx) => (
-                      <th key={idx} className="text-center px-3 py-2 border-r bg-blue-50 dark:bg-blue-950/20 min-w-[100px]">
+                      <th key={idx} className="text-center px-2 py-2 border-r bg-blue-50 dark:bg-blue-950/20 min-w-[75px]">
                         <Checkbox
                           checked={selectedColumnsForMerge.has(column.id)}
                           onCheckedChange={() => handleColumnSelectForMerge(column.id)}
@@ -632,14 +841,42 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                     ))}
                   </tr>
                 )}
+                {/* Checkbox row for unmerge mode */}
+                {isUnmergeMode && (
+                  <tr className="border-b bg-orange-50 dark:bg-orange-950/20">
+                    <th className="text-center px-3 py-2 border-r sticky left-0 bg-orange-50 dark:bg-orange-950/20 z-20" colSpan={3}>
+                      <span className="text-[0.56rem] font-semibold text-orange-700 dark:text-orange-300">Select merged columns to unmerge</span>
+                    </th>
+                    {allColumns.map((column, idx) => (
+                      <th key={idx} className="text-center px-2 py-2 border-r bg-orange-50 dark:bg-orange-950/20 min-w-[75px]">
+                        {!column.isOriginal ? (
+                          <Checkbox
+                            checked={selectedColumnsForUnmerge.has(column.id)}
+                            onCheckedChange={() => handleColumnSelectForUnmerge(column.id)}
+                            className="mx-auto"
+                          />
+                        ) : (
+                          <span className="text-[0.56rem] text-muted-foreground">—</span>
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                )}
                 <tr className="border-b bg-muted">
+                  <th className="text-center px-2 py-2 font-semibold border-r bg-muted min-w-[40px]">
+                    <Checkbox
+                      checked={selectedTaxa.size === data.matrix.length && data.matrix.length > 0}
+                      onCheckedChange={(checked) => handleSelectAllTaxa(!!checked)}
+                      title="Select/Deselect All"
+                    />
+                  </th>
                   <th className="text-left px-3 py-2 font-semibold border-r sticky left-0 bg-muted z-20 min-w-[200px]">
                     {viewMode === 'taxa' ? 'Taxa' : 'Species'}
                   </th>
-                  <th className="text-center px-3 py-2 font-semibold border-r bg-muted min-w-[80px]">
+                  <th className="text-center px-2 py-2 font-semibold border-r bg-muted min-w-[60px]">
                     <div className="flex flex-col leading-tight">
-                      <span className="text-xs whitespace-nowrap">Shared</span>
-                      <span className="text-xs whitespace-nowrap">Count</span>
+                      <span className="text-[0.56rem] whitespace-nowrap">Shared</span>
+                      <span className="text-[0.56rem] whitespace-nowrap">Count</span>
                     </div>
                   </th>
                   {allColumns.map((column, idx) => {
@@ -658,7 +895,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                     return (
                       <th
                         key={idx}
-                        className="text-center px-3 py-2 font-semibold border-r min-w-[100px]"
+                        className="text-center px-2 py-2 font-semibold border-r min-w-[75px]"
                         title={column.isOriginal ? column.id : `Merged: ${column.sourceColumns?.join(', ')}`}
                         onDoubleClick={() => !isEditing && handleColumnDoubleClick(column.id)}
                       >
@@ -671,14 +908,14 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                                 if (e.key === 'Enter') handleSaveColumnName();
                                 if (e.key === 'Escape') handleCancelEdit();
                               }}
-                              className="h-6 text-xs"
+                              className="h-6 text-[0.56rem]"
                               autoFocus
                             />
                             <div className="flex gap-1">
-                              <Button size="sm" variant="outline" onClick={handleSaveColumnName} className="h-5 text-[0.65rem] px-1">
+                              <Button size="sm" variant="outline" onClick={handleSaveColumnName} className="h-5 text-[0.5rem] px-1">
                                 Save
                               </Button>
-                              <Button size="sm" variant="outline" onClick={handleCancelEdit} className="h-5 text-[0.65rem] px-1">
+                              <Button size="sm" variant="outline" onClick={handleCancelEdit} className="h-5 text-[0.5rem] px-1">
                                 Cancel
                               </Button>
                             </div>
@@ -686,7 +923,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                         ) : (
                           <div className="flex flex-col leading-tight cursor-pointer hover:bg-muted/50" title="Double-click to edit">
                             {headerLines.map((line, i) => (
-                              <span key={i} className="text-xs whitespace-nowrap">{line}</span>
+                              <span key={i} className="text-[0.56rem] whitespace-nowrap">{line}</span>
                             ))}
                           </div>
                         )}
@@ -699,7 +936,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                 {filteredData.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={allColumns.length + 2}
+                      colSpan={allColumns.length + 3}
                       className="text-center py-8 text-muted-foreground"
                     >
                       No {viewMode === 'taxa' ? 'taxa' : 'species'} found matching your criteria
@@ -719,15 +956,28 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                       return false;
                     }).length;
 
+                    const isSelected = selectedTaxa.has(row.species);
+
                     return (
                       <tr key={rowIdx} className={cn(
                         "border-b hover:bg-muted/30 transition-colors",
-                        densitySettings.rowHeight
+                        densitySettings.rowHeight,
+                        !isSelected && "opacity-40 bg-muted/50"
                       )}>
+                        <td className={cn(
+                          "px-2 text-center border-r bg-background z-10",
+                          densitySettings.padding
+                        )}>
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => handleToggleTaxaSelection(row.species)}
+                          />
+                        </td>
                         <td className={cn(
                           "px-3 font-mono border-r sticky left-0 bg-background z-10",
                           densitySettings.padding,
-                          densitySettings.fontSize
+                          densitySettings.fontSize,
+                          !isSelected && "opacity-40"
                         )}>
                           {row.species}
                         </td>
@@ -798,6 +1048,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
               <tfoot className="sticky bottom-0 z-10 bg-muted/90 backdrop-blur-sm">
                 {/* Total Presence Row */}
                 <tr className="border-t-2 border-b">
+                  <td className="px-3 py-1 font-semibold text-xs border-r bg-muted/90"></td>
                   <td className="px-3 py-1 font-semibold text-xs border-r sticky left-0 bg-muted/90 z-20">
                     Total Presence
                   </td>
@@ -810,6 +1061,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                 </tr>
                 {/* Total Unique Row */}
                 <tr className="border-b">
+                  <td className="px-3 py-1 font-semibold text-xs border-r bg-muted/90"></td>
                   <td className="px-3 py-1 font-semibold text-xs border-r sticky left-0 bg-muted/90 z-20">
                     Total Unique
                   </td>
@@ -822,6 +1074,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                 </tr>
                 {/* Total Shared Row */}
                 <tr className="border-b">
+                  <td className="px-3 py-1 font-semibold text-xs border-r bg-muted/90"></td>
                   <td className="px-3 py-1 font-semibold text-xs border-r sticky left-0 bg-muted/90 z-20">
                     Total Shared
                   </td>
@@ -834,6 +1087,7 @@ export function PresenceAbsenceTable({ data, plotId, onClose }: PresenceAbsenceT
                 </tr>
                 {/* Total Taxa/Species Across All Samples Row */}
                 <tr className="border-t-2">
+                  <td className="px-3 py-1 font-bold text-xs border-r bg-muted/90"></td>
                   <td className="px-3 py-1 font-bold text-xs border-r sticky left-0 bg-muted/90 z-20">
                     Total {viewMode === 'taxa' ? 'Taxa' : 'Species'} (All)
                   </td>

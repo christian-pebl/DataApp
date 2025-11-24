@@ -1,0 +1,331 @@
+#!/usr/bin/env python3
+"""
+Batch Processing Script for Underwater Video Analysis
+=====================================================
+
+This script automates the pipeline of:
+1. Background subtraction on raw videos
+2. Motion analysis on background-subtracted videos
+3. Compilation of results into a comparison report
+
+Usage:
+    python cv_scripts/batch_process_videos.py --input <video_dir> --output <output_dir>
+    python cv_scripts/batch_process_videos.py --input "Labeled_Datasets/04_Algapelago_Test_Nov2024/ML test sample From Alga Nov24/input raw" --duration 30 --subsample 6
+"""
+
+import os
+import sys
+import json
+import glob
+import argparse
+import subprocess
+from pathlib import Path
+from datetime import datetime
+import numpy as np
+
+def find_videos(input_dir, pattern="*.mp4"):
+    """Find all video files in the input directory."""
+    video_paths = glob.glob(os.path.join(input_dir, pattern))
+    video_paths.sort()
+    return video_paths
+
+def run_background_subtraction(video_path, output_dir, duration=30, subsample=6):
+    """Run background subtraction script on a single video."""
+    print(f"\n{'='*80}")
+    print(f"Processing Background Subtraction: {os.path.basename(video_path)}")
+    print(f"{'='*80}")
+
+    cmd = [
+        "python", "cv_scripts/background_subtraction.py",
+        "--input", video_path,
+        "--output", output_dir,
+        "--duration", str(duration),
+        "--subsample", str(subsample)
+    ]
+
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print(result.stdout)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: Background subtraction failed for {video_path}")
+        print(e.stderr)
+        return False
+
+def run_motion_analysis(bg_subtracted_video, output_dir):
+    """Run motion analysis script on a background-subtracted video."""
+    print(f"\n{'='*80}")
+    print(f"Processing Motion Analysis: {os.path.basename(bg_subtracted_video)}")
+    print(f"{'='*80}")
+
+    cmd = [
+        "python", "cv_scripts/motion_analysis.py",
+        "--input", bg_subtracted_video,
+        "--output", output_dir,
+        "--no-viz"  # Skip visualization to avoid errors
+    ]
+
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print(result.stdout)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: Motion analysis failed for {bg_subtracted_video}")
+        print(e.stderr)
+        return False
+
+def load_motion_analysis_results(results_dir):
+    """Load all motion analysis JSON files from results directory."""
+    results = []
+
+    # Find all motion_analysis JSON files (both in root and subdirectories)
+    json_files = []
+    json_files.extend(glob.glob(os.path.join(results_dir, "*_motion_analysis.json")))
+    json_files.extend(glob.glob(os.path.join(results_dir, "*", "*_motion_analysis.json")))
+    json_files.sort()
+
+    for json_file in json_files:
+        try:
+            with open(json_file, 'r') as f:
+                data = json.load(f)
+                results.append({
+                    'file': os.path.basename(json_file),
+                    'video': data['video_info']['filename'],
+                    'data': data
+                })
+        except Exception as e:
+            print(f"Warning: Could not load {json_file}: {e}")
+
+    return results
+
+def extract_time_from_filename(filename):
+    """Extract time from filename like SUBCAM_ALG_2020-01-26_09-00-40.mp4"""
+    try:
+        # Extract time portion (09-00-40)
+        parts = filename.split('_')
+        time_str = parts[-1].replace('.mp4', '').replace('_background_subtracted', '')
+        hour = time_str.split('-')[0]
+        return f"{hour}:00"
+    except:
+        return "Unknown"
+
+def generate_comparison_report(results, output_file):
+    """Generate a markdown comparison report from all motion analysis results."""
+
+    with open(output_file, 'w') as f:
+        f.write("# Batch Motion Analysis Comparison - Algapelago Videos\n\n")
+        f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"**Total Videos Analyzed:** {len(results)}\n\n")
+
+        f.write("---\n\n")
+        f.write("## Quick Summary Table\n\n")
+        f.write("| Video | Time | Duration | Activity Score | Organisms | Avg Density | Peak Density |\n")
+        f.write("|-------|------|----------|----------------|-----------|-------------|---------------|\n")
+
+        # Sort by activity score descending
+        sorted_results = sorted(results, key=lambda x: x['data']['activity_score']['overall_score'], reverse=True)
+
+        for result in sorted_results:
+            data = result['data']
+            video_name = os.path.basename(data['video_info']['filename']).replace('_background_subtracted.mp4', '')
+            time = extract_time_from_filename(data['video_info']['filename'])
+            duration = f"{data['video_info']['duration_seconds']:.1f}s"
+            activity = f"{data['activity_score']['overall_score']:.1f}/100"
+            organisms = data['organisms']['total_detections']
+            avg_density = f"{data['density']['avg_density']:.2f}%"
+            peak_density = f"{data['density']['max_density']:.2f}%"
+
+            # Highlight interesting values
+            if organisms > 0:
+                organisms = f"**{organisms}**"
+            if data['density']['avg_density'] > 0.1:
+                avg_density = f"**{avg_density}**"
+            if data['density']['max_density'] > 10.0:
+                peak_density = f"**{peak_density}**"
+
+            f.write(f"| {video_name} | {time} | {duration} | {activity} | {organisms} | {avg_density} | {peak_density} |\n")
+
+        f.write("\n---\n\n")
+        f.write("## Key Findings\n\n")
+
+        # Calculate statistics
+        all_scores = [r['data']['activity_score']['overall_score'] for r in results]
+        all_organisms = [r['data']['organisms']['total_detections'] for r in results]
+        all_densities = [r['data']['density']['avg_density'] for r in results]
+        all_peak_densities = [r['data']['density']['max_density'] for r in results]
+
+        f.write(f"- **Average Activity Score:** {np.mean(all_scores):.1f}/100 (range: {min(all_scores):.1f} - {max(all_scores):.1f})\n")
+        f.write(f"- **Total Organisms Detected:** {sum(all_organisms)} across all videos\n")
+        f.write(f"- **Videos with Detections:** {sum(1 for x in all_organisms if x > 0)}/{len(results)}\n")
+        f.write(f"- **Average Motion Density:** {np.mean(all_densities):.3f}% (peak: {max(all_densities):.3f}%)\n")
+        f.write(f"- **Highest Peak Density:** {max(all_peak_densities):.2f}%\n")
+
+        # Find best video
+        best_idx = np.argmax(all_scores)
+        best_video = os.path.basename(sorted_results[best_idx]['data']['video_info']['filename'])
+        f.write(f"\n**Most Active Video:** {best_video} (score: {all_scores[best_idx]:.1f})\n")
+
+        # Find video with most organisms
+        most_organisms_idx = np.argmax(all_organisms)
+        if all_organisms[most_organisms_idx] > 0:
+            org_video = os.path.basename(results[most_organisms_idx]['data']['video_info']['filename'])
+            f.write(f"**Most Organisms:** {org_video} ({all_organisms[most_organisms_idx]} detections)\n")
+
+        f.write("\n---\n\n")
+        f.write("## Detailed Results\n\n")
+
+        for i, result in enumerate(sorted_results, 1):
+            data = result['data']
+            video_name = os.path.basename(data['video_info']['filename'])
+
+            f.write(f"### {i}. {video_name}\n\n")
+            f.write(f"**Time:** {extract_time_from_filename(video_name)}\n")
+            f.write(f"**Duration:** {data['video_info']['duration_seconds']:.1f}s ({data['video_info']['total_frames']} frames @ {data['video_info']['fps']:.2f} fps)\n\n")
+
+            f.write("**Activity Metrics:**\n")
+            f.write(f"- Overall Score: **{data['activity_score']['overall_score']:.1f}/100**\n")
+            f.write(f"- Motion Energy: {data['motion']['avg_energy']:.0f} avg (max: {data['motion']['max_energy']:.0f})\n")
+            f.write(f"- Motion Density: {data['density']['avg_density']:.3f}% avg (peak: {data['density']['max_density']:.2f}%)\n")
+            f.write(f"- Organisms Detected: {data['organisms']['total_detections']}\n")
+
+            if data['organisms']['total_detections'] > 0:
+                size_dist = data['organisms']['size_distribution']
+                f.write(f"  - Small: {size_dist['small']}, Medium: {size_dist['medium']}, Large: {size_dist['large']}\n")
+                f.write(f"  - Mean size: {size_dist['mean_size']:.1f} pixels\n")
+
+            f.write(f"\n**Component Scores:**\n")
+            comp_scores = data['activity_score']['component_scores']
+            f.write(f"- Energy: {comp_scores['energy']:.1f}/100\n")
+            f.write(f"- Density: {comp_scores['density']:.1f}/100\n")
+            f.write(f"- Count: {comp_scores['count']:.1f}/100\n")
+            f.write(f"- Size: {comp_scores['size']:.1f}/100\n")
+
+            f.write(f"\n**Processing:** {data['processing_time_seconds']:.1f}s\n\n")
+            f.write("---\n\n")
+
+        f.write("## Metrics Explanation\n\n")
+        f.write("### Activity Score (0-100)\n")
+        f.write("Combined metric weighted as: Energy (30%), Density (20%), Count (30%), Size (20%).\n")
+        f.write("Higher scores indicate more movement and organism activity.\n\n")
+
+        f.write("### Motion Energy\n")
+        f.write("Sum of absolute pixel deviations from neutral gray (128).\n")
+        f.write("Higher values = more intense or widespread movement.\n\n")
+
+        f.write("### Motion Density (%)\n")
+        f.write("Percentage of pixels actively moving above threshold.\n")
+        f.write("Shows what portion of the frame contains movement.\n\n")
+
+        f.write("### Organism Count\n")
+        f.write("Number of distinct moving blobs detected using connected components analysis.\n")
+        f.write("Current parameters: min_size=50px, max_size=50000px, threshold=20.\n\n")
+
+        f.write("---\n\n")
+        f.write("## Use Cases\n\n")
+        f.write("1. **Time-of-day comparison** - Identify optimal sampling times\n")
+        f.write("2. **Video prioritization** - Process high-activity videos with YOLO first\n")
+        f.write("3. **Seasonal patterns** - Track activity changes over time\n")
+        f.write("4. **Site comparison** - Compare different farm locations\n")
+        f.write("5. **Quality control** - Flag videos with unusual activity patterns\n\n")
+
+        f.write("---\n\n")
+        f.write("## Next Steps\n\n")
+        f.write("- [ ] Tune detection parameters for better organism detection\n")
+        f.write("- [ ] Process longer clips (60-120s) for better baseline\n")
+        f.write("- [ ] Integrate with Data Processing UI\n")
+        f.write("- [ ] Combine with YOLO detection pipeline\n")
+        f.write("- [ ] Add temporal analysis (activity over time within video)\n")
+        f.write("- [ ] Export results to CSV for further analysis\n")
+
+def main():
+    parser = argparse.ArgumentParser(description='Batch process underwater videos for motion analysis')
+    parser.add_argument('--input', type=str, required=True, help='Directory containing input videos')
+    parser.add_argument('--output', type=str, default='results', help='Output directory for results')
+    parser.add_argument('--duration', type=int, default=30, help='Duration in seconds to process from each video')
+    parser.add_argument('--subsample', type=int, default=6, help='Process every Nth frame')
+    parser.add_argument('--skip-bg', action='store_true', help='Skip background subtraction (use existing bg-subtracted videos)')
+    parser.add_argument('--skip-motion', action='store_true', help='Skip motion analysis')
+    parser.add_argument('--report-only', action='store_true', help='Only generate comparison report from existing results')
+
+    args = parser.parse_args()
+
+    # Create output directory
+    os.makedirs(args.output, exist_ok=True)
+
+    if not args.report_only:
+        # Find all videos
+        print(f"\n{'='*80}")
+        print(f"BATCH PROCESSING PIPELINE")
+        print(f"{'='*80}")
+        print(f"Input directory: {args.input}")
+        print(f"Output directory: {args.output}")
+        print(f"Duration: {args.duration}s, Subsample: every {args.subsample} frames")
+        print(f"{'='*80}\n")
+
+        video_files = find_videos(args.input)
+        print(f"Found {len(video_files)} videos to process\n")
+
+        if len(video_files) == 0:
+            print("ERROR: No videos found in input directory")
+            return 1
+
+        # Process each video
+        bg_subtracted_videos = []
+
+        if not args.skip_bg:
+            print(f"\n{'#'*80}")
+            print(f"PHASE 1: BACKGROUND SUBTRACTION ({len(video_files)} videos)")
+            print(f"{'#'*80}\n")
+
+            for i, video_path in enumerate(video_files, 1):
+                print(f"\n[{i}/{len(video_files)}] {os.path.basename(video_path)}")
+                success = run_background_subtraction(video_path, args.output, args.duration, args.subsample)
+
+                if success:
+                    # Find the generated background-subtracted video
+                    base_name = os.path.splitext(os.path.basename(video_path))[0]
+                    bg_video = os.path.join(args.output, f"{base_name}_background_subtracted.mp4")
+                    if os.path.exists(bg_video):
+                        bg_subtracted_videos.append(bg_video)
+        else:
+            # Find existing background-subtracted videos
+            bg_subtracted_videos = glob.glob(os.path.join(args.output, "*_background_subtracted.mp4"))
+            bg_subtracted_videos.sort()
+            print(f"Found {len(bg_subtracted_videos)} existing background-subtracted videos")
+
+        if not args.skip_motion and len(bg_subtracted_videos) > 0:
+            print(f"\n{'#'*80}")
+            print(f"PHASE 2: MOTION ANALYSIS ({len(bg_subtracted_videos)} videos)")
+            print(f"{'#'*80}\n")
+
+            for i, bg_video in enumerate(bg_subtracted_videos, 1):
+                print(f"\n[{i}/{len(bg_subtracted_videos)}] {os.path.basename(bg_video)}")
+                run_motion_analysis(bg_video, args.output)
+
+    # Generate comparison report
+    print(f"\n{'#'*80}")
+    print(f"PHASE 3: GENERATING COMPARISON REPORT")
+    print(f"{'#'*80}\n")
+
+    results = load_motion_analysis_results(args.output)
+
+    if len(results) == 0:
+        print("ERROR: No motion analysis results found")
+        return 1
+
+    print(f"Loaded {len(results)} motion analysis results")
+
+    report_file = os.path.join(args.output, "BATCH_MOTION_ANALYSIS_COMPARISON.md")
+    generate_comparison_report(results, report_file)
+
+    print(f"\n{'='*80}")
+    print(f"BATCH PROCESSING COMPLETE!")
+    print(f"{'='*80}")
+    print(f"Results directory: {args.output}")
+    print(f"Comparison report: {report_file}")
+    print(f"{'='*80}\n")
+
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
