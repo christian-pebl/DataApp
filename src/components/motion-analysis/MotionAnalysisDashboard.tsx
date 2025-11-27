@@ -818,12 +818,6 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                 <th className="pb-1.5 text-xs font-medium">Status</th>
                 <th
                   className="pb-1.5 text-xs font-medium cursor-help"
-                  title="Activity Score (0-100): Combines motion energy (40%), motion density (30%), organism count (20%), and organism size (10%) to measure overall video activity"
-                >
-                  Score
-                </th>
-                <th
-                  className="pb-1.5 text-xs font-medium cursor-help"
                   title="Motion Density Over Time: Shows the percentage of pixels with motion detected in each frame, indicating how much of the frame contains moving organisms"
                 >
                   Activity Timeline
@@ -842,9 +836,9 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                 </th>
                 <th
                   className="pb-1.5 text-xs font-medium"
-                  title="Avg Count"
+                  title="Total detections (sum of all frame counts)"
                 >
-                  Count
+                  Total
                 </th>
                 <th className="pb-1.5 text-xs font-medium w-12" title="Processing History">
                   History
@@ -934,7 +928,6 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                         {statusConfig.label}
                       </span>
                     </td>
-                    <td className="py-2 text-gray-400 text-xs">—</td>
                     <td className="py-2 text-gray-400 text-xs">
                       <span className={isFailed ? 'text-red-500 font-medium' : 'italic'}>{statusConfig.subtitle}</span>
                     </td>
@@ -1017,22 +1010,6 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                       </span>
                     </td>
                     <td className="py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm" style={{ color: scoreColor }}>
-                          {video.activity_score.overall_score.toFixed(1)}
-                        </span>
-                        <div className="w-14 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                          <div
-                            className="h-full"
-                            style={{
-                              width: `${video.activity_score.overall_score}%`,
-                              backgroundColor: scoreColor,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-2">
                       <div className="w-36">
                         <Sparkline
                           data={parseArrayData(
@@ -1059,7 +1036,9 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                       </div>
                     </td>
                     <td className="py-2 text-xs text-gray-600 font-medium whitespace-nowrap">
-                      {video.organisms.avg_count.toFixed(1)}
+                      {Array.isArray(yoloDetectionData)
+                        ? yoloDetectionData.reduce((sum, count) => sum + count, 0).toFixed(1)
+                        : '0.0'}
                     </td>
                     <td className="py-2">
                       <button
