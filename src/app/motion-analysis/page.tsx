@@ -387,20 +387,28 @@ export default function MotionAnalysisPage() {
         {(processedVideos.length > 0 || pendingVideos.length > 0) && data.length > 0 && (
           <MotionAnalysisDashboard
             data={processedVideos.map(v => {
-              // Unified pipeline JSON structure:
-              // Root: { video_info, motion_analysis: { activity_score, motion, density, organisms }, ... }
-              // Dashboard expects: { video_info, activity_score, motion, density, organisms, ... }
+              // Unified pipeline JSON structure from database:
+              // v.motion_analysis = {
+              //   video_info: {...},
+              //   motion_analysis: { activity_score, motion, density, organisms },
+              //   yolo_detection: { detections: [...] },
+              //   processing: {...}
+              // }
               const motionData = v.motion_analysis || {};
+              const nestedMotionAnalysis = motionData.motion_analysis || {};
+
               return {
-                // Spread root-level fields (video_info, etc.)
+                // Root-level fields
                 video_info: motionData.video_info,
-                // Spread nested motion_analysis fields (activity_score, motion, etc.)
-                activity_score: motionData.motion_analysis?.activity_score || motionData.activity_score,
-                motion: motionData.motion_analysis?.motion || motionData.motion,
-                density: motionData.motion_analysis?.density || motionData.density,
-                organisms: motionData.motion_analysis?.organisms || motionData.organisms,
-                processing_time_seconds: motionData.processing_time_seconds || motionData.motion_analysis?.processing_time_seconds,
-                timestamp: motionData.timestamp || new Date().toISOString(),
+                // Nested motion_analysis fields
+                activity_score: nestedMotionAnalysis.activity_score,
+                motion: nestedMotionAnalysis.motion,
+                density: nestedMotionAnalysis.density,
+                organisms: nestedMotionAnalysis.organisms,
+                // YOLO detections array
+                yolo_detections: motionData.yolo_detection?.detections || [],
+                processing_time_seconds: nestedMotionAnalysis.processing_time_seconds,
+                timestamp: motionData.processing?.timestamp || new Date().toISOString(),
                 processing_history: v.processing_history || [],
               };
             })}
