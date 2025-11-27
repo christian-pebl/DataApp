@@ -11,18 +11,32 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   Legend,
   ResponsiveContainer,
   ScatterChart,
   Scatter,
   Cell,
 } from 'recharts';
-import { ArrowUpDown, Play, Download, Filter, TrendingUp, Upload, Trash2, Pencil, X, Zap, Clock, History } from 'lucide-react';
+import { ArrowUpDown, Play, Download, Filter, TrendingUp, Upload, Trash2, Pencil, X, Zap, Clock, History, Settings } from 'lucide-react';
 import VideoComparisonModal from './VideoComparisonModal';
 import VideoValidationDialog from './VideoValidationDialog';
 import ProcessingEstimationModal from './ProcessingEstimationModal';
 import ProcessingHistoryDialog from './ProcessingHistoryDialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { toast } from '@/hooks/use-toast';
 
 // Type definitions
 interface VideoInfo {
@@ -68,6 +82,13 @@ interface Motion {
   motion_energies: number[];
 }
 
+interface CrabDetections {
+  total_tracks: number;
+  valid_tracks: number;
+  avg_count_per_frame: number;
+  frame_counts?: number[];
+}
+
 interface MotionAnalysisResult {
   video_info: VideoInfo;
   activity_score: ActivityScore;
@@ -77,6 +98,8 @@ interface MotionAnalysisResult {
   processing_time_seconds: number;
   timestamp: string;
   processing_history?: ProcessingRun[];
+  crab_detections?: CrabDetections;
+  has_crab_detection?: boolean;
 }
 
 interface ProcessingRun {
@@ -101,6 +124,12 @@ interface PendingVideo {
   total_frames: number | null;
   processing_status?: 'pending' | 'processing' | 'failed';
   processing_history?: ProcessingRun[];
+  prescreen_brightness?: number | null;
+  prescreen_focus?: number | null;
+  prescreen_quality?: number | null;
+  prescreen_completed?: boolean;
+  prescreen_samples?: number;
+  prescreen_error?: string | null;
 }
 
 interface MotionAnalysisDashboardProps {
@@ -191,6 +220,75 @@ function SummaryCard({ title, value, unit, icon, color, subtext }: SummaryCardPr
   );
 }
 
+// Quality Badge Component
+interface QualityBadgeProps {
+  score: number | null | undefined;
+  type: 'light' | 'focus' | 'quality';
+}
+
+function QualityBadge({ score, type }: QualityBadgeProps) {
+  if (score === null || score === undefined) {
+    return <span className="text-gray-400 text-xs">—</span>;
+  }
+
+  const getColor = (s: number, t: string) => {
+    // Enhanced 6-tier gradient from red → orange → yellow → lime → green → emerald
+    if (t === 'quality') {
+      if (s < 0.15) return 'bg-red-500/30 text-red-700 border-red-500/50';
+      if (s < 0.30) return 'bg-orange-500/30 text-orange-700 border-orange-500/50';
+      if (s < 0.45) return 'bg-yellow-500/30 text-yellow-700 border-yellow-500/50';
+      if (s < 0.60) return 'bg-lime-500/30 text-lime-700 border-lime-500/50';
+      if (s < 0.75) return 'bg-green-500/30 text-green-700 border-green-500/50';
+      return 'bg-emerald-500/30 text-emerald-700 border-emerald-500/50';
+    }
+    // Light: use brightness-appropriate colors
+    if (t === 'light') {
+      if (s < 0.20) return 'bg-red-500/30 text-red-700 border-red-500/50';
+      if (s < 0.35) return 'bg-orange-500/30 text-orange-700 border-orange-500/50';
+      if (s < 0.50) return 'bg-yellow-500/30 text-yellow-700 border-yellow-500/50';
+      if (s < 0.65) return 'bg-lime-500/30 text-lime-700 border-lime-500/50';
+      if (s < 0.80) return 'bg-green-500/30 text-green-700 border-green-500/50';
+      return 'bg-emerald-500/30 text-emerald-700 border-emerald-500/50';
+    }
+    // Focus: use sharpness-appropriate colors (adjusted for generous underwater scoring)
+    if (s < 0.25) return 'bg-red-500/30 text-red-700 border-red-500/50';
+    if (s < 0.40) return 'bg-orange-500/30 text-orange-700 border-orange-500/50';
+    if (s < 0.55) return 'bg-yellow-500/30 text-yellow-700 border-yellow-500/50';
+    if (s < 0.70) return 'bg-lime-500/30 text-lime-700 border-lime-500/50';
+    if (s < 0.85) return 'bg-green-500/30 text-green-700 border-green-500/50';
+    return 'bg-emerald-500/30 text-emerald-700 border-emerald-500/50';
+  };
+
+  const formatValue = (s: number, t: string) => {
+    if (t === 'light') return `${Math.round(s * 100)}`;
+    if (t === 'focus') return s.toFixed(2);
+    return s.toFixed(2);
+  };
+
+  const getTooltipContent = () => {
+    if (type === 'light') {
+      return `Brightness: ${Math.round(score * 100)}%\nScale: 0 (dark) to 100 (bright)\nMeasured from average luminance across 10 sampled frames`;
+    }
+    if (type === 'focus') {
+      return `Clarity: ${score.toFixed(2)}\nScale: 0.0 (poor) to 1.0 (excellent)\nComposite metric: edge sharpness, gradient strength, local contrast, and texture detail`;
+    }
+    return `Quality: ${(score * 100).toFixed(0)}%\nCombined metric: 88% brightness + 12% clarity\nSampled across 10 frames`;
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={`px-2 py-1 text-xs font-medium rounded border cursor-help ${getColor(score, type)}`}>
+          {formatValue(score, type)}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="whitespace-pre-line text-xs max-w-xs">
+        {getTooltipContent()}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 // Sparkline Component
 interface SparklineProps {
   data: number[];
@@ -247,8 +345,8 @@ function SmallMultipleChart({
       case 'density':
         return parseArrayData(
           video.density.motion_densities,
-          video.density.avg_density,
-          video.density.max_density,
+          video.density.avg_density * 100, // Convert ratio to percentage
+          video.density.max_density * 100,
           30
         );
       case 'energy':
@@ -318,7 +416,7 @@ function SmallMultipleChart({
 
       <div className="flex justify-between mt-1.5 text-xs text-gray-600">
         <span>{video.organisms.total_detections} org</span>
-        <span>{video.density.avg_density.toFixed(2)}%</span>
+        <span>{(video.density.avg_density * 100).toFixed(2)}%</span>
       </div>
     </div>
   );
@@ -336,6 +434,7 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadFileCount, setUploadFileCount] = useState<number>(0);
+  const [isQualityChecking, setIsQualityChecking] = useState(false);
 
   // Video validation state
   const [isValidationDialogOpen, setIsValidationDialogOpen] = useState(false);
@@ -346,8 +445,8 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
   // Edit mode state for multi-select deletion
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedVideos, setSelectedVideos] = useState<Set<string>>(new Set());
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
 
   // Processing estimation modal state
   const [isProcessingModalOpen, setIsProcessingModalOpen] = useState(false);
@@ -359,6 +458,18 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
 
   // Quick action menu state
   const [quickActionVideo, setQuickActionVideo] = useState<{ filename: string; x: number; y: number; history: ProcessingRun[] } | null>(null);
+
+  // Video action popup state
+  const [videoActionPopup, setVideoActionPopup] = useState<{
+    video: PendingVideo | MotionAnalysisResult;
+    x: number;
+    y: number;
+    hasProcessed: boolean;
+  } | null>(null);
+
+  // Prescreen settings state
+  const [prescreenEnabled, setPrescreenEnabled] = useState(true);
+  const [showPrescreenSettings, setShowPrescreenSettings] = useState(false);
 
   // Handle file upload
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -376,6 +487,7 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
 
     const formData = new FormData();
     videoFiles.forEach((f) => formData.append('videos', f));
+    formData.append('enablePrescreen', prescreenEnabled.toString());
 
     const xhr = new XMLHttpRequest();
 
@@ -383,6 +495,10 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
       if (event.lengthComputable) {
         const percentage = Math.round((event.loaded / event.total) * 100);
         setUploadProgress(percentage);
+        // When upload reaches 100%, switch to quality checking phase
+        if (percentage === 100 && prescreenEnabled) {
+          setIsQualityChecking(true);
+        }
       }
     });
 
@@ -394,6 +510,7 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
             console.log(`Successfully uploaded ${result.uploaded} videos`);
             setUploadProgress(0);
             setUploadFileCount(0);
+            setIsQualityChecking(false);
             if (onUploadComplete) {
               onUploadComplete();
             }
@@ -415,6 +532,7 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
       setIsUploading(false);
       setUploadProgress(0);
       setUploadFileCount(0);
+      setIsQualityChecking(false);
     });
 
     xhr.addEventListener('error', () => {
@@ -423,6 +541,7 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
       setIsUploading(false);
       setUploadProgress(0);
       setUploadFileCount(0);
+      setIsQualityChecking(false);
     });
 
     xhr.open('POST', '/api/motion-analysis/upload');
@@ -504,8 +623,14 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
     }
   };
 
-  // Handle delete confirmation
-  const handleDeleteVideos = async () => {
+  // Open delete confirmation dialog
+  const handleDeleteVideos = () => {
+    setShowDeleteConfirmation(true);
+  };
+
+  // Perform the actual deletion after confirmation
+  const confirmDeleteVideos = async () => {
+    setShowDeleteConfirmation(false);
     const filenames = Array.from(selectedVideos);
     console.log('='.repeat(50));
     console.log('[DELETE-UI] Starting delete request');
@@ -538,11 +663,11 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
         console.log('[DELETE-UI]   - Files deleted:', result.summary.filesDeleted);
         console.log('[DELETE-UI]   - DB records deleted:', result.summary.dbRecordsDeleted);
 
-        // Show detailed success message
-        const detailMsg = result.results
-          .map((r: any) => `${r.filename}: ${r.filesDeleted} files, DB=${r.dbDeleted}`)
-          .join('\n');
-        alert(`✓ ${result.message}\n\nDetails:\n${detailMsg}`);
+        // Show success toast
+        toast({
+          title: 'Videos deleted successfully',
+          description: `${result.summary.succeeded} video${result.summary.succeeded > 1 ? 's' : ''} deleted (${result.summary.filesDeleted} files, ${result.summary.dbRecordsDeleted} DB records)`,
+        });
       } else if (result.summary && (result.summary.succeeded > 0 || result.summary.partial > 0)) {
         // Partial success
         console.warn('[DELETE-UI] ⚠ Partial deletion:', result.message);
@@ -550,7 +675,11 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
           .map((r: any) => `${r.filename}: success=${r.success}, files=${r.filesDeleted}, DB=${r.dbDeleted}${r.error ? ', error=' + r.error : ''}`)
           .join('\n');
 
-        alert(`⚠ ${result.message}\n\nDetails:\n${details}`);
+        toast({
+          title: 'Partial deletion',
+          description: `${result.summary.succeeded} succeeded, ${result.summary.partial} partial, ${result.summary.failed} failed`,
+          variant: 'destructive',
+        });
       } else {
         // Complete failure - show details
         const details = result.results
@@ -569,10 +698,13 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
 
     } catch (error: any) {
       console.error('[DELETE-UI] ✗ Error deleting videos:', error);
-      alert(`✗ Failed to delete videos:\n${error.message || 'Unknown error'}\n\nPlease try again or contact support.`);
+      toast({
+        title: 'Failed to delete videos',
+        description: error.message || 'Unknown error. Please try again or contact support.',
+        variant: 'destructive',
+      });
     } finally {
       setIsDeleting(false);
-      setShowDeleteConfirm(false);
       setSelectedVideos(new Set());
       setIsEditMode(false);
     }
@@ -589,6 +721,78 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
     setPendingVideoData(video);
     setValidationVideoFilename(video.video_info.filename);
     setIsValidationDialogOpen(true);
+  };
+
+  // Handle video row click - show action popup
+  const handleVideoRowClick = (e: React.MouseEvent, video: PendingVideo | MotionAnalysisResult, hasProcessed: boolean) => {
+    if (isEditMode) {
+      const filename = 'video_info' in video ? video.video_info.filename : video.filename;
+      toggleVideoSelection(filename);
+      return;
+    }
+
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setVideoActionPopup({
+      video,
+      x: rect.left + 60, // Position near the left side of the row for dropdown effect
+      y: rect.bottom + 2, // Just 2px below the row
+      hasProcessed,
+    });
+  };
+
+  // Open original video (unprocessed) - bypass validation dialog
+  const openOriginalVideo = (video: PendingVideo | MotionAnalysisResult) => {
+    const filename = 'video_info' in video ? video.video_info.filename : video.filename;
+    const fps = 'video_info' in video ? video.video_info.fps : (video.fps || 30);
+    const width = 'video_info' in video ? video.video_info.resolution.width : (video.width || 1920);
+    const height = 'video_info' in video ? video.video_info.resolution.height : (video.height || 1080);
+    const totalFrames = 'video_info' in video ? video.video_info.total_frames : (video.total_frames || 0);
+    const duration = 'video_info' in video ? video.video_info.duration_seconds : (video.duration_seconds || 0);
+
+    const videoResult: MotionAnalysisResult = {
+      video_info: {
+        filename,
+        fps,
+        resolution: { width, height },
+        total_frames: totalFrames,
+        duration_seconds: duration,
+      },
+      activity_score: {
+        overall_score: 0,
+        component_scores: { energy: 0, density: 0, count: 0, size: 0 },
+      },
+      organisms: {
+        total_detections: 0,
+        avg_count: 0,
+        max_count: 0,
+        size_distribution: { small: 0, medium: 0, large: 0, mean_size: 0 },
+      },
+      density: {
+        avg_density: 0,
+        max_density: 0,
+        motion_densities: [],
+      },
+      motion: {
+        total_energy: 0,
+        avg_energy: 0,
+        max_energy: 0,
+        motion_energies: [],
+      },
+      processing_time_seconds: 0,
+      timestamp: new Date().toISOString(),
+      processing_history: 'processing_history' in video ? video.processing_history : [],
+    };
+
+    // Skip validation dialog and go directly to video modal
+    setVideoModalData(videoResult);
+    setIsVideoModalOpen(true);
+    setVideoActionPopup(null);
+  };
+
+  // Open processed video
+  const openProcessedVideo = (video: MotionAnalysisResult) => {
+    openVideoModal(video);
+    setVideoActionPopup(null);
   };
 
   // Called when validation passes and user wants to proceed
@@ -729,7 +933,8 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
   }, [validData]);
 
   return (
-    <div className="w-full space-y-4 p-4 bg-gray-50">
+    <TooltipProvider>
+      <div className="w-full space-y-4 p-4 bg-gray-50">
       {/* Header */}
       <div className="flex items-center justify-end">
         <div className="flex gap-2">
@@ -741,18 +946,66 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
             onChange={handleFileSelect}
             className="hidden"
           />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-          >
-            <Upload size={14} className={isUploading ? 'animate-pulse' : ''} />
-            {isUploading
-              ? uploadFileCount > 1
-                ? `Uploading ${uploadFileCount} files (${uploadProgress}%)`
-                : `Uploading (${uploadProgress}%)`
-              : 'Upload Video'}
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Upload Button with Settings Cog */}
+            <div className="relative flex items-center">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="flex items-center gap-2 pl-3 pr-12 py-2 text-sm bg-emerald-500 text-white font-medium rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm min-w-[180px]"
+              >
+                <Upload size={16} className={isUploading ? 'animate-pulse' : ''} />
+                <span>
+                  {isQualityChecking
+                    ? uploadFileCount > 1
+                      ? `QC (${uploadFileCount} files)...`
+                      : 'QC...'
+                    : isUploading
+                    ? uploadFileCount > 1
+                      ? `Uploading ${uploadFileCount} files (${uploadProgress}%)`
+                      : `Uploading (${uploadProgress}%)`
+                    : 'Upload Video'}
+                </span>
+              </button>
+
+              {/* Settings Cog - positioned inside button on right */}
+              <Popover open={showPrescreenSettings} onOpenChange={setShowPrescreenSettings}>
+                <PopoverTrigger asChild>
+                  <button
+                    disabled={isUploading}
+                    className="absolute right-0 top-0 bottom-0 px-3 rounded-r-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all border-l border-emerald-400"
+                    title="Upload Settings"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Settings size={16} className="text-white" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-3 bg-white border-gray-200" align="end">
+                  <div className="space-y-3">
+                    <h4 className="font-medium text-sm text-gray-900">Upload Settings</h4>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <label className="text-sm text-gray-700 font-medium">Video Prescreening</label>
+                        <p className="text-xs text-gray-500">Analyze brightness & clarity on upload</p>
+                      </div>
+                      <Switch
+                        checked={prescreenEnabled}
+                        onCheckedChange={setPrescreenEnabled}
+                      />
+                    </div>
+                    <div className="text-xs text-gray-500 pt-2 border-t border-gray-200">
+                      <p>Prescreening samples 10 frames to evaluate:</p>
+                      <ul className="list-disc list-inside mt-1 space-y-0.5">
+                        <li>Brightness (lighting quality)</li>
+                        <li>Clarity (edge detail & texture)</li>
+                        <li>Overall quality score</li>
+                      </ul>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
           {pendingVideos.length > 0 && (
             <button
               onClick={() => setIsProcessingModalOpen(true)}
@@ -816,6 +1069,15 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                 )}
                 <th className="pb-1.5 text-xs font-medium">Filename</th>
                 <th className="pb-1.5 text-xs font-medium">Status</th>
+                <th className="pb-1.5 text-xs font-medium cursor-help w-16" title="Brightness (0-100): Average luminance across sampled frames">
+                  Light
+                </th>
+                <th className="pb-1.5 text-xs font-medium cursor-help w-16" title="Clarity (0.0-1.0): Composite metric measuring edge sharpness, gradient strength, local contrast, and texture detail - represents human-perceivable detail">
+                  Clarity
+                </th>
+                <th className="pb-1.5 text-xs font-medium cursor-help w-20" title="Quality Score (0-1): Combined metric of brightness and clarity">
+                  Quality
+                </th>
                 <th
                   className="pb-1.5 text-xs font-medium cursor-help"
                   title="Motion Density Over Time: Shows the percentage of pixels with motion detected in each frame, indicating how much of the frame contains moving organisms"
@@ -833,6 +1095,12 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                   title="YOLOv8 object detection results showing organisms detected over time"
                 >
                   YOLO Detections
+                </th>
+                <th
+                  className="pb-1.5 text-xs font-medium cursor-help"
+                  title="Crab detection tracking results showing blob movements over time"
+                >
+                  Crab Detections
                 </th>
                 <th
                   className="pb-1.5 text-xs font-medium"
@@ -901,12 +1169,8 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                     className={`border-b hover:bg-gray-50 cursor-pointer ${
                       selectedVideos.has(video.filename) ? 'bg-red-50' : statusConfig.rowBg
                     }`}
-                    onClick={() => {
-                      if (isEditMode) {
-                        toggleVideoSelection(video.filename);
-                      }
-                    }}
-                    title={isEditMode ? 'Click to select' : statusConfig.subtitle}
+                    onClick={(e) => handleVideoRowClick(e, video, false)}
+                    title={isEditMode ? 'Click to select' : 'Click to view video options'}
                   >
                     {isEditMode && (
                       <td className="py-2 w-8">
@@ -927,6 +1191,24 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                         <span className={`w-1.5 h-1.5 ${statusConfig.dot} rounded-full ${statusConfig.animate ? 'animate-pulse' : ''}`}></span>
                         {statusConfig.label}
                       </span>
+                    </td>
+                    <td className="py-2 text-sm text-gray-700">
+                      <QualityBadge
+                        score={(video as any).prescreen_brightness}
+                        type="light"
+                      />
+                    </td>
+                    <td className="py-2 text-sm text-gray-700">
+                      <QualityBadge
+                        score={(video as any).prescreen_focus}
+                        type="focus"
+                      />
+                    </td>
+                    <td className="py-2 text-sm">
+                      <QualityBadge
+                        score={(video as any).prescreen_quality}
+                        type="quality"
+                      />
                     </td>
                     <td className="py-2 text-gray-400 text-xs">
                       <span className={isFailed ? 'text-red-500 font-medium' : 'italic'}>{statusConfig.subtitle}</span>
@@ -981,13 +1263,8 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                     className={`border-b hover:bg-gray-50 cursor-pointer ${
                       selectedVideos.has(video.video_info.filename) ? 'bg-red-50' : ''
                     }`}
-                    onClick={() => {
-                      if (isEditMode) {
-                        toggleVideoSelection(video.video_info.filename);
-                      }
-                    }}
-                    onDoubleClick={() => !isEditMode && openVideoModal(video)}
-                    title={isEditMode ? 'Click to select' : 'Double-click to play video'}
+                    onClick={(e) => handleVideoRowClick(e, video, true)}
+                    title={isEditMode ? 'Click to select' : 'Click to view video options'}
                   >
                     {isEditMode && (
                       <td className="py-2 w-8">
@@ -1009,13 +1286,31 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                         {formattedDate}
                       </span>
                     </td>
+                    <td className="py-2 text-sm text-gray-700">
+                      <QualityBadge
+                        score={(video as any).prescreen_brightness}
+                        type="light"
+                      />
+                    </td>
+                    <td className="py-2 text-sm text-gray-700">
+                      <QualityBadge
+                        score={(video as any).prescreen_focus}
+                        type="focus"
+                      />
+                    </td>
+                    <td className="py-2 text-sm">
+                      <QualityBadge
+                        score={(video as any).prescreen_quality}
+                        type="quality"
+                      />
+                    </td>
                     <td className="py-2">
                       <div className="w-36">
                         <Sparkline
                           data={parseArrayData(
                             video.density.motion_densities,
-                            video.density.avg_density,
-                            video.density.max_density,
+                            video.density.avg_density * 100, // Convert ratio to percentage
+                            video.density.max_density * 100,
                             30
                           )}
                           color={scoreColor}
@@ -1024,7 +1319,7 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                       </div>
                     </td>
                     <td className="py-2 text-xs text-gray-600 font-medium whitespace-nowrap">
-                      {video.density.avg_density.toFixed(1)}%
+                      {(video.density.avg_density * 100).toFixed(1)}%
                     </td>
                     <td className="py-2">
                       <div className="w-36">
@@ -1035,8 +1330,23 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                         />
                       </div>
                     </td>
+                    <td className="py-2">
+                      {video.crab_detections && video.crab_detections.frame_counts ? (
+                        <div className="w-36">
+                          <Sparkline
+                            data={video.crab_detections.frame_counts}
+                            color="#f97316"
+                            height={24}
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">Not processed</span>
+                      )}
+                    </td>
                     <td className="py-2 text-xs text-gray-600 font-medium whitespace-nowrap">
-                      {Array.isArray(yoloDetectionData)
+                      {video.crab_detections
+                        ? `${video.crab_detections.valid_tracks} tracks`
+                        : Array.isArray(yoloDetectionData)
                         ? yoloDetectionData.reduce((sum, count) => sum + count, 0).toFixed(1)
                         : '0.0'}
                     </td>
@@ -1095,90 +1405,49 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
       {isEditMode && selectedVideos.size > 0 && (
         <div className="fixed bottom-8 right-8 z-50 animate-in slide-in-from-bottom-5 duration-300">
           <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="group flex items-center gap-2.5 px-5 py-3.5 bg-red-600 text-white rounded-full shadow-xl hover:bg-red-700 transition-all hover:scale-105 hover:shadow-2xl active:scale-95"
+            onClick={handleDeleteVideos}
+            disabled={isDeleting}
+            className="group flex items-center gap-2.5 px-5 py-3.5 bg-red-600 text-white rounded-full shadow-xl hover:bg-red-700 transition-all hover:scale-105 hover:shadow-2xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             title="Delete selected videos"
           >
-            <Trash2 size={20} className="group-hover:animate-pulse" />
-            <span className="font-semibold">
-              Delete {selectedVideos.size} video{selectedVideos.size > 1 ? 's' : ''}
-            </span>
+            {isDeleting ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <span className="font-semibold">Deleting...</span>
+              </>
+            ) : (
+              <>
+                <Trash2 size={20} className="group-hover:animate-pulse" />
+                <span className="font-semibold">
+                  Delete {selectedVideos.size} video{selectedVideos.size > 1 ? 's' : ''}
+                </span>
+              </>
+            )}
           </button>
         </div>
       )}
 
       {/* Delete Confirmation Dialog */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full shadow-xl">
-            <div className="flex items-center justify-center mb-4">
-              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                <Trash2 size={32} className="text-red-600" />
-              </div>
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 text-center mb-2">
-              Delete Videos?
-            </h3>
-            <p className="text-gray-600 text-center mb-4">
-              Are you sure you want to delete {selectedVideos.size} video{selectedVideos.size > 1 ? 's' : ''}?
-            </p>
-
-            {/* Warning box */}
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-              <p className="text-sm text-amber-900 font-medium mb-2">⚠️ This will delete:</p>
-              <ul className="text-xs text-amber-800 space-y-1 ml-4">
-                <li>• Original video files</li>
-                <li>• Background-subtracted videos</li>
-                <li>• Motion analysis results</li>
-                <li>• YOLOv8 annotations (if any)</li>
-                <li>• Database records</li>
-              </ul>
-              <p className="text-xs text-amber-900 font-semibold mt-2">
-                This action cannot be undone.
-              </p>
-            </div>
-
-            {/* Selected files preview */}
-            {selectedVideos.size <= 5 && (
-              <div className="bg-gray-50 rounded-lg p-3 mb-4 max-h-32 overflow-y-auto">
-                <p className="text-xs font-medium text-gray-700 mb-1">Selected videos:</p>
-                <ul className="text-xs text-gray-600 space-y-0.5">
-                  {Array.from(selectedVideos).map((filename) => (
-                    <li key={filename} className="truncate">• {filename}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                disabled={isDeleting}
-                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium disabled:opacity-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteVideos}
-                disabled={isDeleting}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-              >
-                {isDeleting ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Deleting...
-                  </>
-                ) : (
-                  <>
-                    <Trash2 size={16} />
-                    Delete
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AlertDialog open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {selectedVideos.size} video{selectedVideos.size > 1 ? 's' : ''} and all associated files.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteVideos}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Processing Estimation Modal */}
       <ProcessingEstimationModal
@@ -1248,6 +1517,62 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
         filename={historyFilename}
         history={historyData}
       />
-    </div>
+
+      {/* Video Action Popup */}
+      {videoActionPopup && (
+        <>
+          {/* Backdrop to close popup */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setVideoActionPopup(null)}
+          />
+          {/* Popup Menu */}
+          <div
+            className="fixed z-50 bg-white rounded-lg shadow-2xl border border-gray-200 py-2 min-w-64"
+            style={{
+              left: Math.min(videoActionPopup.x, window.innerWidth - 280),
+              top: videoActionPopup.y,
+            }}
+          >
+            <div className="px-3 py-2 border-b border-gray-100">
+              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                Video Options
+              </p>
+            </div>
+            <button
+              onClick={() => openOriginalVideo(videoActionPopup.video)}
+              className="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-50 flex items-center gap-3 transition-colors"
+            >
+              <Play size={18} className="text-blue-600" />
+              <div>
+                <div className="font-medium text-gray-900">Open Original Video</div>
+                <div className="text-xs text-gray-500">View unprocessed video file</div>
+              </div>
+            </button>
+            {videoActionPopup.hasProcessed ? (
+              <button
+                onClick={() => openProcessedVideo(videoActionPopup.video as MotionAnalysisResult)}
+                className="w-full px-4 py-2.5 text-left text-sm hover:bg-green-50 flex items-center gap-3 transition-colors"
+              >
+                <TrendingUp size={18} className="text-green-600" />
+                <div>
+                  <div className="font-medium text-gray-900">Open Processed Videos</div>
+                  <div className="text-xs text-gray-500">View with motion analysis & YOLO</div>
+                </div>
+              </button>
+            ) : (
+              <div className="px-4 py-2.5 text-sm text-gray-400 italic flex items-center gap-3 cursor-not-allowed">
+                <TrendingUp size={18} className="text-gray-300" />
+                <div>
+                  <div className="font-medium">Open Processed Videos</div>
+                  <div className="text-xs">Not yet processed</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+      </div>
+    </TooltipProvider>
   );
 }
