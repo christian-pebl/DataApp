@@ -24,7 +24,7 @@ import time
 
 app = modal.App("underwater-yolo-processor")
 
-# GPU image with YOLO dependencies
+# GPU image with YOLO and crab detection dependencies
 gpu_image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("libgl1-mesa-glx", "libglib2.0-0")  # OpenCV dependencies
@@ -34,6 +34,7 @@ gpu_image = (
         "numpy>=1.24.0",
         "torch>=2.0.0",
         "torchvision>=0.15.0",
+        "scipy>=1.10.0",  # For crab detection (distance calculations)
     )
 )
 
@@ -524,6 +525,116 @@ def process_video_unified_pipeline(
                     print(f"[Unified Pipeline] Annotated video: {annotated_size_mb:.1f} MB in {annotated_time:.1f}s")
 
         # =====================================================================
+        # STEP 4: CRAB DETECTION (on subtracted frames)
+        # =====================================================================
+        enable_crab = settings.get('enableCrabDetection', False)
+        if enable_crab:
+            crab_start = time.time()
+            print("[Unified Pipeline] Step 4: Crab Detection")
+
+            crab_params = settings.get('crabDetectionParams', {})
+
+            from crab_detection import DetectionParams, TrackingParams, ValidationParams
+            from crab_detection import detect_blobs, match_blobs_to_tracks, validate_track, Track
+
+            detection_params = DetectionParams(
+                threshold=crab_params.get('threshold', 30),
+                min_area=crab_params.get('min_area', 30),
+                max_area=crab_params.get('max_area', 2000),
+                min_circularity=crab_params.get('min_circularity', 0.3),
+                max_aspect_ratio=crab_params.get('max_aspect_ratio', 3.0),
+                morph_kernel_size=crab_params.get('morph_kernel_size', 5)
+            )
+
+            tracking_params = TrackingParams(
+                max_distance=crab_params.get('max_distance', 50.0),
+                max_skip_frames=crab_params.get('max_skip_frames', 5)
+            )
+
+            validation_params = ValidationParams(
+                min_track_length=crab_params.get('min_track_length', 15),
+                min_displacement=crab_params.get('min_displacement', 20.0),
+                min_speed=crab_params.get('min_speed', 0.5),
+                max_speed=crab_params.get('max_speed', 30.0)
+            )
+
+            active_tracks = []
+            completed_tracks = []
+            next_track_id = 1
+
+            for frame_idx, frame in enumerate(subtracted_frames):
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                blobs = detect_blobs(gray, frame_idx, detection_params)
+
+                active_tracks, unmatched_blobs = match_blobs_to_tracks(
+                    blobs, active_tracks, frame_idx, tracking_params
+                )
+
+                for blob in unmatched_blobs:
+                    new_track = Track(
+                        track_id=next_track_id,
+                        frames=[frame_idx],
+                        bboxes=[blob.bbox],
+                        centroids=[blob.centroid],
+                        areas=[blob.area],
+                        confidences=[blob.confidence]
+                    )
+                    active_tracks.append(new_track)
+                    next_track_id += 1
+
+                if (frame_idx + 1) % 50 == 0:
+                    print(f"[Unified Pipeline] Crab detection progress: {frame_idx+1}/{len(subtracted_frames)} frames")
+
+            for track in active_tracks:
+                track.is_valid = validate_track(track, validation_params)
+                completed_tracks.append(track)
+
+            valid_tracks = [t for t in completed_tracks if t.is_valid]
+
+            crab_time = time.time() - crab_start
+            print(f"[Unified Pipeline] Crab detection: {crab_time:.1f}s, {len(valid_tracks)} valid tracks")
+
+            results['crab_detection'] = {
+                'total_tracks': len(completed_tracks),
+                'valid_tracks': len(valid_tracks),
+                'total_detections': sum(t.length for t in completed_tracks),
+                'tracks': [
+                    {
+                        'track_id': t.track_id,
+                        'frames': t.frames,
+                        'bboxes': t.bboxes,
+                        'centroids': t.centroids,
+                        'is_valid': t.is_valid,
+                        'length': t.length,
+                        'displacement': t.displacement,
+                        'avg_speed': t.avg_speed
+                    }
+                    for t in completed_tracks
+                ],
+                'parameters': {
+                    'detection': {
+                        'threshold': detection_params.threshold,
+                        'min_area': detection_params.min_area,
+                        'max_area': detection_params.max_area,
+                        'min_circularity': detection_params.min_circularity,
+                        'max_aspect_ratio': detection_params.max_aspect_ratio,
+                        'morph_kernel_size': detection_params.morph_kernel_size,
+                    },
+                    'tracking': {
+                        'max_distance': tracking_params.max_distance,
+                        'max_skip_frames': tracking_params.max_skip_frames,
+                    },
+                    'validation': {
+                        'min_track_length': validation_params.min_track_length,
+                        'min_displacement': validation_params.min_displacement,
+                        'min_speed': validation_params.min_speed,
+                        'max_speed': validation_params.max_speed,
+                    }
+                },
+                'processing_time_seconds': crab_time,
+            }
+
+        # =====================================================================
         # FINALIZE RESULTS
         # =====================================================================
         pipeline_time = time.time() - pipeline_start
@@ -543,6 +654,7 @@ def process_video_unified_pipeline(
             'bg_subtraction_seconds': results.get('background_subtraction', {}).get('processing_time_seconds', 0),
             'motion_analysis_seconds': results.get('motion_analysis', {}).get('processing_time_seconds', 0),
             'yolo_detection_seconds': results.get('yolo_detection', {}).get('inference_time_seconds', 0),
+            'crab_detection_seconds': results.get('crab_detection', {}).get('processing_time_seconds', 0),
             'frames_processed': len(original_frames),
             'sample_rate': sample_rate,
             'timestamp': datetime.now().isoformat(),
