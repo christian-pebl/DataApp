@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { X, Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Info, ChevronDown, ChevronUp, Minus, Plus } from 'lucide-react';
 import { ComposedChart, Bar, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // Inline debounce function to avoid lodash dependency
@@ -77,20 +77,30 @@ export default function VideoComparisonModal({
   const [duration, setDuration] = useState(0);
   const [motionVideoLoaded, setMotionVideoLoaded] = useState(false);
   const [yolov8VideoLoaded, setYolov8VideoLoaded] = useState(false);
+  const [crabDetectionVideoLoaded, setCrabDetectionVideoLoaded] = useState(false);
   const [motionVideoError, setMotionVideoError] = useState(false);
   const [yolov8VideoError, setYolov8VideoError] = useState(false);
+  const [crabDetectionVideoError, setCrabDetectionVideoError] = useState(false);
   const [yolov8Detections, setYolov8Detections] = useState<YOLOv8Detection[]>([]);
   const [showInfoPopup, setShowInfoPopup] = useState(false);
   const [originalVideoDuration, setOriginalVideoDuration] = useState<number>(0);
   const [motionVideoDuration, setMotionVideoDuration] = useState<number>(0);
   const [yolov8VideoDuration, setYolov8VideoDuration] = useState<number>(0);
+  const [crabDetectionVideoDuration, setCrabDetectionVideoDuration] = useState<number>(0);
   const [isMotionIncomplete, setIsMotionIncomplete] = useState(false);
   const [isYolov8Incomplete, setIsYolov8Incomplete] = useState(false);
+  const [isCrabDetectionIncomplete, setIsCrabDetectionIncomplete] = useState(false);
+  const [showCrabDetectionInTopPanel, setShowCrabDetectionInTopPanel] = useState(true); // Try crab detection first, fall back to motion if not available
   const [isReprocessing, setIsReprocessing] = useState(false);
   const [reprocessLogs, setReprocessLogs] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
   const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
+
+  // Playback speed state
+  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+  const [speedInputValue, setSpeedInputValue] = useState('1.0');
+  const [isEditingSpeed, setIsEditingSpeed] = useState(false);
 
   // Estimation state
   const [showEstimation, setShowEstimation] = useState(false);
@@ -100,6 +110,7 @@ export default function VideoComparisonModal({
 
   const motionVideoRef = useRef<HTMLVideoElement>(null);
   const yolov8VideoRef = useRef<HTMLVideoElement>(null);
+  const crabDetectionVideoRef = useRef<HTMLVideoElement>(null);
   const originalVideoRef = useRef<HTMLVideoElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -124,6 +135,7 @@ export default function VideoComparisonModal({
     ? videoFilename
     : originalFilename.replace('.mp4', '_background_subtracted.mp4');
   const yolov8Filename = originalFilename.replace('.mp4', '_yolov8.mp4');
+  const crabDetectionFilename = originalFilename.replace('.mp4', '_crab_detections.mp4');
 
   // Video paths - motion video can be in either location
   const originalVideoPath = `/videos/${originalFilename}`;
@@ -131,6 +143,9 @@ export default function VideoComparisonModal({
 
   // Motion video path state - check both old and new structure
   const [motionVideoPath, setMotionVideoPath] = useState(`/videos/${motionFilename}`);
+
+  // Crab detection video path state - check both old and new structure
+  const [crabDetectionVideoPath, setCrabDetectionVideoPath] = useState(`/videos/${crabDetectionFilename}`);
 
   // Check which motion video path exists
   useEffect(() => {
@@ -156,6 +171,30 @@ export default function VideoComparisonModal({
       });
   }, [isOpen, baseName, motionFilename]);
 
+  // Check which crab detection video path exists
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Try new structure first (motion-analysis-results subdirectory)
+    const newPath = `/motion-analysis-results/${baseName}/${crabDetectionFilename}`;
+    const oldPath = `/videos/${crabDetectionFilename}`;
+
+    fetch(newPath, { method: 'HEAD' })
+      .then(res => {
+        if (res.ok) {
+          setCrabDetectionVideoPath(newPath);
+          console.log('✅ Crab detection video found at new path:', newPath);
+        } else {
+          setCrabDetectionVideoPath(oldPath);
+          console.log('📍 Using old crab detection video path:', oldPath);
+        }
+      })
+      .catch(() => {
+        setCrabDetectionVideoPath(oldPath);
+        console.log('📍 Falling back to old crab detection video path:', oldPath);
+      });
+  }, [isOpen, baseName, crabDetectionFilename]);
+
   // Load YOLOv8 detection JSON data
   useEffect(() => {
     if (isOpen) {
@@ -176,12 +215,25 @@ export default function VideoComparisonModal({
           const detections = Array.isArray(data.detections) ? data.detections : [];
 
           // Validate each detection has required fields
-          const validDetections = detections.filter((d: YOLOv8Detection) =>
+          let validDetections = detections.filter((d: YOLOv8Detection) =>
             d &&
             typeof d.frame === 'number' &&
             typeof d.timestamp === 'number' &&
             typeof d.count === 'number'
           );
+
+          // CRITICAL FIX: Recalculate timestamps based on actual video FPS
+          // The JSON timestamps are calculated as frame/fps, but the actual encoded video
+          // might have slightly different timestamps due to codec behavior
+          // We need to use the video's actual FPS for accurate synchronization
+          const actualFPS = videoInfo.fps;
+          if (actualFPS && actualFPS > 0) {
+            console.log(`🔧 Recalculating timestamps using actual FPS: ${actualFPS}`);
+            validDetections = validDetections.map((d: YOLOv8Detection) => ({
+              ...d,
+              timestamp: d.frame / actualFPS  // Recalculate timestamp
+            }));
+          }
 
           setYolov8Detections(validDetections);
           console.log('✅ YOLOV8 DETECTION DATA LOADED:', validDetections.length, 'frames');
@@ -194,7 +246,7 @@ export default function VideoComparisonModal({
       // Reset when modal closes
       setYolov8Detections([]);
     }
-  }, [isOpen, originalFilename]);
+  }, [isOpen, originalFilename, videoInfo.fps]);
 
   // Validation logging when modal opens
   useEffect(() => {
@@ -202,12 +254,14 @@ export default function VideoComparisonModal({
       console.group('🎬 VIDEO MODAL OPENED');
       console.log('📂 Motion filename:', motionFilename);
       console.log('📂 YOLOv8 filename:', yolov8Filename);
+      console.log('📂 Crab Detection filename:', crabDetectionFilename);
       console.log('🔗 Motion path:', motionVideoPath);
       console.log('🔗 YOLOv8 path:', yolov8VideoPath);
+      console.log('🔗 Crab Detection path:', crabDetectionVideoPath);
       console.log('📊 Video info:', videoInfo);
       console.groupEnd();
     }
-  }, [isOpen, motionFilename, yolov8Filename, motionVideoPath, yolov8VideoPath, videoInfo]);
+  }, [isOpen, motionFilename, yolov8Filename, crabDetectionFilename, motionVideoPath, yolov8VideoPath, crabDetectionVideoPath, videoInfo]);
 
   // Video load/error event handlers
   useEffect(() => {
@@ -257,6 +311,27 @@ export default function VideoComparisonModal({
       setYolov8VideoError(true);
     };
 
+    const handleCrabDetectionLoad = () => {
+      console.log('✅ CRAB DETECTION VIDEO LOADED:', crabDetectionVideoPath);
+      console.log('   Duration:', crabDetectionVideoRef.current?.duration, 'seconds');
+      console.log('   Video width:', crabDetectionVideoRef.current?.videoWidth);
+      console.log('   Video height:', crabDetectionVideoRef.current?.videoHeight);
+      setCrabDetectionVideoLoaded(true);
+      setCrabDetectionVideoError(false);
+      setShowCrabDetectionInTopPanel(true); // Show crab detection since it loaded successfully
+      if (crabDetectionVideoRef.current?.duration) {
+        setCrabDetectionVideoDuration(crabDetectionVideoRef.current.duration);
+      }
+    };
+
+    const handleCrabDetectionError = (e: Event) => {
+      console.warn('⚠️ CRAB DETECTION VIDEO FAILED TO LOAD:', crabDetectionVideoPath);
+      console.warn('   Falling back to motion video in top panel');
+      setCrabDetectionVideoLoaded(false);
+      setCrabDetectionVideoError(true);
+      setShowCrabDetectionInTopPanel(false); // Fall back to showing motion video
+    };
+
     const handleOriginalLoad = () => {
       console.log('✅ ORIGINAL VIDEO LOADED (for duration check):', originalVideoPath);
       console.log('   Duration:', originalVideo?.duration, 'seconds');
@@ -270,6 +345,8 @@ export default function VideoComparisonModal({
       // Not critical - we can still show the processed videos
     };
 
+    const crabDetectionVideo = crabDetectionVideoRef.current;
+
     if (motionVideo) {
       motionVideo.addEventListener('loadeddata', handleMotionLoad);
       motionVideo.addEventListener('error', handleMotionError);
@@ -278,6 +355,11 @@ export default function VideoComparisonModal({
     if (yolov8Video) {
       yolov8Video.addEventListener('loadeddata', handleYolov8Load);
       yolov8Video.addEventListener('error', handleYolov8Error);
+    }
+
+    if (crabDetectionVideo) {
+      crabDetectionVideo.addEventListener('loadeddata', handleCrabDetectionLoad);
+      crabDetectionVideo.addEventListener('error', handleCrabDetectionError);
     }
 
     if (originalVideo) {
@@ -294,12 +376,16 @@ export default function VideoComparisonModal({
         yolov8Video.removeEventListener('loadeddata', handleYolov8Load);
         yolov8Video.removeEventListener('error', handleYolov8Error);
       }
+      if (crabDetectionVideo) {
+        crabDetectionVideo.removeEventListener('loadeddata', handleCrabDetectionLoad);
+        crabDetectionVideo.removeEventListener('error', handleCrabDetectionError);
+      }
       if (originalVideo) {
         originalVideo.removeEventListener('loadeddata', handleOriginalLoad);
         originalVideo.removeEventListener('error', handleOriginalError);
       }
     };
-  }, [isOpen, motionVideoPath, yolov8VideoPath, originalVideoPath]);
+  }, [isOpen, motionVideoPath, yolov8VideoPath, crabDetectionVideoPath, originalVideoPath]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -308,15 +394,35 @@ export default function VideoComparisonModal({
       setCurrentTime(0);
       setMotionVideoLoaded(false);
       setYolov8VideoLoaded(false);
+      setCrabDetectionVideoLoaded(false);
       setMotionVideoError(false);
       setYolov8VideoError(false);
+      setCrabDetectionVideoError(false);
+      setShowCrabDetectionInTopPanel(true); // Reset to trying crab detection first for next open
       setYolov8Detections([]);
       setReprocessLogs([]);
       setShowLogs(false);
+      setPlaybackSpeed(1.0);
+      setSpeedInputValue('1.0');
+      setIsEditingSpeed(false);
       if (motionVideoRef.current) motionVideoRef.current.currentTime = 0;
       if (yolov8VideoRef.current) yolov8VideoRef.current.currentTime = 0;
+      if (crabDetectionVideoRef.current) crabDetectionVideoRef.current.currentTime = 0;
     }
   }, [isOpen]);
+
+  // Apply playback speed to videos when they load or speed changes
+  useEffect(() => {
+    if (motionVideoRef.current && motionVideoLoaded) {
+      motionVideoRef.current.playbackRate = playbackSpeed;
+    }
+    if (yolov8VideoRef.current && yolov8VideoLoaded) {
+      yolov8VideoRef.current.playbackRate = playbackSpeed;
+    }
+    if (crabDetectionVideoRef.current && crabDetectionVideoLoaded) {
+      crabDetectionVideoRef.current.playbackRate = playbackSpeed;
+    }
+  }, [playbackSpeed, motionVideoLoaded, yolov8VideoLoaded, crabDetectionVideoLoaded]);
 
   // Auto-scroll log viewer to bottom when new logs are added
   useEffect(() => {
@@ -327,14 +433,15 @@ export default function VideoComparisonModal({
 
   // Check for incomplete video processing
   useEffect(() => {
-    // Only check once all three durations have been captured (or videos failed to load)
-    if (originalVideoDuration === 0 && motionVideoDuration === 0 && yolov8VideoDuration === 0) {
+    // Only check once all durations have been captured (or videos failed to load)
+    if (originalVideoDuration === 0 && motionVideoDuration === 0 && yolov8VideoDuration === 0 && crabDetectionVideoDuration === 0) {
       return; // Wait for videos to load
     }
 
     console.log('🔍 COMPLETENESS CHECK:');
     console.log('   Original duration:', originalVideoDuration, 'seconds');
     console.log('   Motion duration:', motionVideoDuration, 'seconds');
+    console.log('   Crab Detection duration:', crabDetectionVideoDuration, 'seconds');
     console.log('   YOLOv8 duration:', yolov8VideoDuration, 'seconds');
 
     const TOLERANCE = 5; // Allow 5 second difference (to handle encoding variations)
@@ -356,6 +463,23 @@ export default function VideoComparisonModal({
       setIsMotionIncomplete(true); // If video failed to load, it needs reprocessing
     }
 
+    // Check crab detection video completeness
+    if (originalVideoDuration > 0 && crabDetectionVideoDuration > 0) {
+      const crabDetectionDiff = originalVideoDuration - crabDetectionVideoDuration;
+      const isCrabDetectionShort = crabDetectionDiff > TOLERANCE;
+
+      if (isCrabDetectionShort) {
+        console.warn('⚠️ CRAB DETECTION VIDEO INCOMPLETE:');
+        console.warn(`   Original: ${originalVideoDuration}s, Crab Detection: ${crabDetectionVideoDuration}s`);
+        console.warn(`   Missing: ${crabDetectionDiff.toFixed(1)}s`);
+        setIsCrabDetectionIncomplete(true);
+      } else {
+        setIsCrabDetectionIncomplete(false);
+      }
+    } else if (crabDetectionVideoError) {
+      setIsCrabDetectionIncomplete(true); // If video failed to load, it needs reprocessing
+    }
+
     // Check YOLOv8 video completeness
     if (originalVideoDuration > 0 && yolov8VideoDuration > 0) {
       const yolov8Diff = originalVideoDuration - yolov8VideoDuration;
@@ -372,18 +496,39 @@ export default function VideoComparisonModal({
     } else if (yolov8VideoError) {
       setIsYolov8Incomplete(true); // If video failed to load, it needs processing
     }
-  }, [originalVideoDuration, motionVideoDuration, yolov8VideoDuration, motionVideoError, yolov8VideoError]);
+  }, [originalVideoDuration, motionVideoDuration, crabDetectionVideoDuration, yolov8VideoDuration, motionVideoError, crabDetectionVideoError, yolov8VideoError]);
 
   useEffect(() => {
     // Sync video time updates with high-frequency updates for smooth animation
     const updateTime = () => {
-      if (motionVideoRef.current && !isNaN(motionVideoRef.current.currentTime)) {
-        const newTime = motionVideoRef.current.currentTime;
-        const newDuration = motionVideoRef.current.duration;
+      // Use the video shown in top panel as primary time source
+      const topPanelVideoRef = showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef;
+      if (topPanelVideoRef.current && !isNaN(topPanelVideoRef.current.currentTime)) {
+        const newTime = topPanelVideoRef.current.currentTime;
+        const newDuration = topPanelVideoRef.current.duration;
 
         // Only update if values are valid
         if (!isNaN(newTime)) {
           setCurrentTime(newTime);
+
+          // Log when we're near a detection time (for debugging sync issues)
+          if (yolov8Detections.length > 0 && isPlaying) {
+            // Check both original timestamp and corrected time
+            const nearbyDetection = yolov8Detections.find(d => d.count > 0 && (
+              Math.abs(d.timestamp - newTime) < 0.3 ||
+              Math.abs((d.frame / videoInfo.total_frames) * videoInfo.duration_seconds - newTime) < 0.3
+            ));
+            if (nearbyDetection) {
+              const calculatedTime = nearbyDetection.timestamp;
+              const proportionalTime = (nearbyDetection.frame / videoInfo.total_frames) * videoInfo.duration_seconds;
+              const offset = newTime - calculatedTime;
+              console.log(`🎯 SYNC CHECK - Current video time: ${newTime.toFixed(3)}s`);
+              console.log(`   Frame ${nearbyDetection.frame} detections: ${nearbyDetection.count} objects`);
+              console.log(`   Calculated timestamp: ${calculatedTime.toFixed(3)}s (frame/fps)`);
+              console.log(`   Proportional time: ${proportionalTime.toFixed(3)}s (frame position)`);
+              console.log(`   Offset from calc: ${offset.toFixed(3)}s (${(offset * 1000).toFixed(0)}ms)`);
+            }
+          }
         }
         if (!isNaN(newDuration) && newDuration > 0) {
           setDuration(newDuration);
@@ -391,7 +536,7 @@ export default function VideoComparisonModal({
       }
     };
 
-    // Also update duration from yolov8 video if motion video duration is invalid
+    // Also update duration from yolov8 video if top panel video duration is invalid
     const updateDurationFromYolov8 = () => {
       if (yolov8VideoRef.current && !isNaN(yolov8VideoRef.current.duration)) {
         const yolov8Duration = yolov8VideoRef.current.duration;
@@ -401,15 +546,15 @@ export default function VideoComparisonModal({
       }
     };
 
-    const motionVideo = motionVideoRef.current;
+    const topPanelVideo = showCrabDetectionInTopPanel ? crabDetectionVideoRef.current : motionVideoRef.current;
     const yolov8Video = yolov8VideoRef.current;
 
-    if (motionVideo) {
+    if (topPanelVideo) {
       // Use multiple events to ensure we catch duration as soon as possible
-      motionVideo.addEventListener('timeupdate', updateTime);
-      motionVideo.addEventListener('loadedmetadata', updateTime);
-      motionVideo.addEventListener('loadeddata', updateTime);
-      motionVideo.addEventListener('durationchange', updateTime);
+      topPanelVideo.addEventListener('timeupdate', updateTime);
+      topPanelVideo.addEventListener('loadedmetadata', updateTime);
+      topPanelVideo.addEventListener('loadeddata', updateTime);
+      topPanelVideo.addEventListener('durationchange', updateTime);
     }
 
     if (yolov8Video) {
@@ -419,11 +564,11 @@ export default function VideoComparisonModal({
     }
 
     return () => {
-      if (motionVideo) {
-        motionVideo.removeEventListener('timeupdate', updateTime);
-        motionVideo.removeEventListener('loadedmetadata', updateTime);
-        motionVideo.removeEventListener('loadeddata', updateTime);
-        motionVideo.removeEventListener('durationchange', updateTime);
+      if (topPanelVideo) {
+        topPanelVideo.removeEventListener('timeupdate', updateTime);
+        topPanelVideo.removeEventListener('loadedmetadata', updateTime);
+        topPanelVideo.removeEventListener('loadeddata', updateTime);
+        topPanelVideo.removeEventListener('durationchange', updateTime);
       }
       if (yolov8Video) {
         yolov8Video.removeEventListener('loadedmetadata', updateDurationFromYolov8);
@@ -431,29 +576,40 @@ export default function VideoComparisonModal({
         yolov8Video.removeEventListener('durationchange', updateDurationFromYolov8);
       }
     };
-  }, [isOpen, duration]);
+  }, [isOpen, duration, showCrabDetectionInTopPanel, yolov8Detections, isPlaying]);
 
   const togglePlayPause = () => {
+    // Use the appropriate video ref based on what's shown in top panel
+    const topPanelVideoRef = showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef;
+
     if (isPlaying) {
-      motionVideoRef.current?.pause();
+      topPanelVideoRef.current?.pause();
       yolov8VideoRef.current?.pause();
     } else {
       // Sync time before playing
-      if (motionVideoRef.current) {
-        const targetTime = motionVideoRef.current.currentTime;
+      if (topPanelVideoRef.current) {
+        const targetTime = topPanelVideoRef.current.currentTime;
         if (yolov8VideoRef.current) {
           yolov8VideoRef.current.currentTime = targetTime;
         }
       }
-      motionVideoRef.current?.play();
-      yolov8VideoRef.current?.play();
+      // Handle play promises to avoid "interrupted by pause" errors
+      topPanelVideoRef.current?.play()?.catch(() => {
+        // Ignore - play was interrupted, which is normal during rapid toggling
+      });
+      yolov8VideoRef.current?.play()?.catch(() => {
+        // Ignore - play was interrupted, which is normal during rapid toggling
+      });
     }
     setIsPlaying(!isPlaying);
   };
 
   const toggleMute = () => {
-    if (motionVideoRef.current) {
-      motionVideoRef.current.muted = !isMuted;
+    // Use the appropriate video ref based on what's shown in top panel
+    const topPanelVideoRef = showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef;
+
+    if (topPanelVideoRef.current) {
+      topPanelVideoRef.current.muted = !isMuted;
     }
     if (yolov8VideoRef.current) {
       yolov8VideoRef.current.muted = !isMuted;
@@ -464,20 +620,24 @@ export default function VideoComparisonModal({
   // Debounced video seeking - only seek videos at ~30fps max to avoid overwhelming the decoder
   const debouncedVideoSeek = useMemo(
     () => debounce((time: number) => {
-      if (motionVideoRef.current) motionVideoRef.current.currentTime = time;
+      // Use the appropriate video ref based on what's shown in top panel
+      const topPanelVideoRef = showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef;
+      if (topPanelVideoRef.current) topPanelVideoRef.current.currentTime = time;
       if (yolov8VideoRef.current) yolov8VideoRef.current.currentTime = time;
       lastVideoSeekRef.current = time;
     }, 32), // ~30fps
-    []
+    [showCrabDetectionInTopPanel]
   );
 
   // Immediate video seek (for final position on drag end or button clicks)
   const immediateVideoSeek = useCallback((time: number) => {
     debouncedVideoSeek.cancel(); // Cancel any pending debounced seek
-    if (motionVideoRef.current) motionVideoRef.current.currentTime = time;
+    // Use the appropriate video ref based on what's shown in top panel
+    const topPanelVideoRef = showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef;
+    if (topPanelVideoRef.current) topPanelVideoRef.current.currentTime = time;
     if (yolov8VideoRef.current) yolov8VideoRef.current.currentTime = time;
     lastVideoSeekRef.current = time;
-  }, [debouncedVideoSeek]);
+  }, [debouncedVideoSeek, showCrabDetectionInTopPanel]);
 
   // Cleanup debounce on unmount
   useEffect(() => {
@@ -497,6 +657,48 @@ export default function VideoComparisonModal({
     const newTime = Math.min(duration, currentTime + 5);
     immediateVideoSeek(newTime); // Use immediate for button clicks
     setCurrentTime(newTime);
+  };
+
+  // Playback speed controls
+  const applyPlaybackSpeed = (speed: number) => {
+    const clampedSpeed = Math.max(0.1, Math.min(3.0, speed));
+    setPlaybackSpeed(clampedSpeed);
+    setSpeedInputValue(clampedSpeed.toFixed(1));
+    if (motionVideoRef.current) motionVideoRef.current.playbackRate = clampedSpeed;
+    if (yolov8VideoRef.current) yolov8VideoRef.current.playbackRate = clampedSpeed;
+  };
+
+  const increaseSpeed = () => {
+    const newSpeed = Math.min(3.0, playbackSpeed + 0.1);
+    applyPlaybackSpeed(newSpeed);
+  };
+
+  const decreaseSpeed = () => {
+    const newSpeed = Math.max(0.1, playbackSpeed - 0.1);
+    applyPlaybackSpeed(newSpeed);
+  };
+
+  const handleSpeedInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSpeedInputValue(e.target.value);
+  };
+
+  const handleSpeedInputBlur = () => {
+    const numericValue = parseFloat(speedInputValue);
+    if (!isNaN(numericValue)) {
+      applyPlaybackSpeed(numericValue);
+    } else {
+      setSpeedInputValue(playbackSpeed.toFixed(1));
+    }
+    setIsEditingSpeed(false);
+  };
+
+  const handleSpeedInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSpeedInputBlur();
+    } else if (e.key === 'Escape') {
+      setSpeedInputValue(playbackSpeed.toFixed(1));
+      setIsEditingSpeed(false);
+    }
   };
 
   // Track if slider is being dragged
@@ -520,10 +722,12 @@ export default function VideoComparisonModal({
     // THROTTLED: Seek videos at sustainable rate (~15fps) during drag
     if (now - lastSeekTimeRef.current >= SEEK_THROTTLE_MS) {
       lastSeekTimeRef.current = now;
-      if (motionVideoRef.current) motionVideoRef.current.currentTime = clampedTime;
+      // Use the appropriate video ref based on what's shown in top panel
+      const topPanelVideoRef = showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef;
+      if (topPanelVideoRef.current) topPanelVideoRef.current.currentTime = clampedTime;
       if (yolov8VideoRef.current) yolov8VideoRef.current.currentTime = clampedTime;
     }
-  }, [duration]);
+  }, [duration, showCrabDetectionInTopPanel]);
 
   // Handle slider drag start/end for optimized seeking
   const handleSliderMouseDown = useCallback(() => {
@@ -860,17 +1064,47 @@ export default function VideoComparisonModal({
   }, [motionDensities, duration, videoInfo.duration_seconds]);
 
   // Parse YOLOv8 detection data for chart
+  // CRITICAL FIX: Use frame-based timing to match video player's actual timestamps
   const yolov8Data = useMemo(() => {
     if (!yolov8Detections || yolov8Detections.length === 0) {
       return [];
     }
 
-    return yolov8Detections.map(detection => ({
-      frame: detection.frame,
-      time: detection.timestamp,
-      count: detection.count,
-    }));
-  }, [yolov8Detections]);
+    console.group('📊 YOLOV8 TIMING ANALYSIS');
+    console.log('Total detections:', yolov8Detections.length);
+    console.log('First detection:', yolov8Detections[0]);
+    console.log('Last detection:', yolov8Detections[yolov8Detections.length - 1]);
+    console.log('Video FPS:', videoInfo.fps);
+    console.log('Video duration:', videoInfo.duration_seconds);
+
+    // Map detections to timeline using video player's actual frame timing
+    // Instead of using JSON timestamps (frame/fps), convert frame numbers to time
+    // using the actual video duration to account for encoding variations
+    const actualFPS = videoInfo.fps;
+    const actualDuration = videoInfo.duration_seconds || duration || 120;
+
+    const mappedData = yolov8Detections.map(detection => {
+      // Calculate time based on frame position in total frames
+      // This accounts for variable frame rate encoding
+      const framePosition = detection.frame / videoInfo.total_frames;
+      const actualTime = framePosition * actualDuration;
+
+      return {
+        frame: detection.frame,
+        time: actualTime,  // Use proportional time instead of calculated timestamp
+        originalTimestamp: detection.timestamp,  // Keep for debugging
+        count: detection.count,
+      };
+    });
+
+    // Log comparison for first few frames
+    mappedData.slice(0, 5).forEach((det, idx) => {
+      console.log(`Frame ${det.frame}: Original=${det.originalTimestamp.toFixed(3)}s, Corrected=${det.time.toFixed(3)}s, Diff=${(det.time - det.originalTimestamp).toFixed(3)}s`);
+    });
+    console.groupEnd();
+
+    return mappedData;
+  }, [yolov8Detections, videoInfo.fps, videoInfo.duration_seconds, videoInfo.total_frames, duration]);
 
   // Combine both datasets for dual-axis chart
   const combinedTimelineData = useMemo(() => {
@@ -911,9 +1145,12 @@ export default function VideoComparisonModal({
       }
 
       // Find yolov8 detections at this time
+      // Use tighter tolerance based on FPS for more accurate matching
       let count = 0;
       if (yolov8Data.length > 0) {
-        const yolov8Point = yolov8Data.find(d => Math.abs(d.time - time) < 0.5);
+        const frameDuration = 1 / (videoInfo.fps || 30);
+        const tolerance = frameDuration * 2;  // Allow 2-frame tolerance
+        const yolov8Point = yolov8Data.find(d => Math.abs(d.time - time) < tolerance);
         count = yolov8Point?.count || 0;
       }
 
@@ -923,7 +1160,7 @@ export default function VideoComparisonModal({
         count,
       };
     });
-  }, [activityData, yolov8Data, duration]);
+  }, [activityData, yolov8Data, duration, videoInfo.fps]);
 
   // Handle click on activity chart to seek (immediate seek for single clicks)
   const handleChartClick = useCallback((data: any) => {
@@ -994,11 +1231,13 @@ export default function VideoComparisonModal({
       // THROTTLED: Seek videos at sustainable rate (~15fps)
       if (now - lastSeekTimeRef.current >= SEEK_THROTTLE_MS) {
         lastSeekTimeRef.current = now;
-        if (motionVideoRef.current) motionVideoRef.current.currentTime = pendingTime;
+        // Use the appropriate video ref based on what's shown in top panel
+        const topPanelVideoRef = showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef;
+        if (topPanelVideoRef.current) topPanelVideoRef.current.currentTime = pendingTime;
         if (yolov8VideoRef.current) yolov8VideoRef.current.currentTime = pendingTime;
       }
     });
-  }, [isDraggingTimeline, calculateTimeFromMouseEvent]);
+  }, [isDraggingTimeline, calculateTimeFromMouseEvent, showCrabDetectionInTopPanel]);
 
   // Handle drag end - seek to final position immediately
   const handleChartMouseUp = useCallback(() => {
@@ -1043,6 +1282,60 @@ export default function VideoComparisonModal({
 
   if (!isOpen) return null;
 
+  // Check if this is an original video (unprocessed) - no motion data
+  const isOriginalVideoOnly = activityScore === 0 && (!motionDensities || motionDensities.length === 0);
+
+  // Simple original video player
+  if (isOriginalVideoOnly) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90">
+        <div className="bg-gray-900 rounded-lg shadow-2xl w-[90vw] max-w-[1200px] max-h-[90vh] overflow-hidden flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-gray-700 bg-gray-800">
+            <div>
+              <h2 className="text-xl font-bold text-white">Original Video</h2>
+              <p className="text-sm text-gray-300">{originalFilename}</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-700 rounded-full transition-colors"
+              aria-label="Close modal"
+            >
+              <X size={24} className="text-white" />
+            </button>
+          </div>
+
+          {/* Video Player */}
+          <div className="flex-1 flex items-center justify-center bg-black p-4">
+            <video
+              ref={originalVideoRef}
+              src={originalVideoPath}
+              className="w-full h-full max-h-[75vh]"
+              controls
+              autoPlay
+              muted={isMuted}
+              preload="auto"
+              playsInline
+              style={{ objectFit: 'contain' }}
+            />
+          </div>
+
+          {/* Simple Controls */}
+          <div className="p-3 bg-gray-800 border-t border-gray-700 flex items-center justify-center gap-4">
+            <button
+              onClick={() => setIsMuted(!isMuted)}
+              className="p-2 hover:bg-gray-700 rounded-full transition-colors"
+              aria-label={isMuted ? 'Unmute' : 'Mute'}
+            >
+              {isMuted ? <VolumeX size={20} className="text-white" /> : <Volume2 size={20} className="text-white" />}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Full comparison view for processed videos
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
       {/* Invisible original video for duration check */}
@@ -1337,23 +1630,44 @@ export default function VideoComparisonModal({
 
         {/* Video Players - Vertical Stack */}
         <div className="flex-1 flex flex-col gap-3 p-3 bg-gray-900 overflow-auto">
-          {/* Motion Video */}
+          {/* Top Panel: Crab Detection Video (with fallback to Motion Video) */}
           <div className="flex flex-col">
             <div className="bg-gray-800 rounded-t-lg p-2">
-              <h3 className="text-white font-semibold text-center text-sm">Motion Analysis</h3>
+              <h3 className="text-white font-semibold text-center text-sm">
+                {showCrabDetectionInTopPanel ? 'Crab Detection (with bounding boxes)' : 'Motion Analysis'}
+              </h3>
             </div>
             <div className="bg-black rounded-b-lg overflow-hidden flex items-center justify-center min-h-[300px] relative">
-              <video
-                ref={motionVideoRef}
-                src={motionVideoPath}
-                className="w-full h-auto max-h-[45vh]"
-                muted={isMuted}
-                preload="auto"
-                playsInline
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-              />
-              {motionVideoError && (
+              {/* Crab Detection Video - shown if available */}
+              {showCrabDetectionInTopPanel && (
+                <video
+                  ref={crabDetectionVideoRef}
+                  src={crabDetectionVideoPath}
+                  className="w-full h-auto max-h-[45vh]"
+                  muted={isMuted}
+                  preload="auto"
+                  playsInline
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                />
+              )}
+
+              {/* Motion Video - shown as fallback when crab detection is not available */}
+              {!showCrabDetectionInTopPanel && (
+                <video
+                  ref={motionVideoRef}
+                  src={motionVideoPath}
+                  className="w-full h-auto max-h-[45vh]"
+                  muted={isMuted}
+                  preload="auto"
+                  playsInline
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                />
+              )}
+
+              {/* Error overlay - only show if BOTH videos failed */}
+              {crabDetectionVideoError && motionVideoError && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-90 text-white p-4 text-center">
                   <X size={40} className="text-red-500 mb-3" />
                   <p className="font-bold mb-2 text-sm">Video Not Available</p>
@@ -1546,6 +1860,47 @@ export default function VideoComparisonModal({
             >
               <SkipForward size={16} />
             </button>
+
+            {/* Playback Speed Controls */}
+            <div className="flex items-center gap-1 ml-3 px-2 py-1 bg-white border rounded-lg">
+              <button
+                onClick={decreaseSpeed}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                aria-label="Decrease playback speed"
+                title="Decrease speed (0.1x steps)"
+              >
+                <Minus size={14} className="text-gray-600" />
+              </button>
+
+              {isEditingSpeed ? (
+                <input
+                  type="text"
+                  value={speedInputValue}
+                  onChange={handleSpeedInputChange}
+                  onBlur={handleSpeedInputBlur}
+                  onKeyDown={handleSpeedInputKeyDown}
+                  className="w-12 text-center text-xs font-semibold border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  autoFocus
+                />
+              ) : (
+                <button
+                  onClick={() => setIsEditingSpeed(true)}
+                  className="w-12 text-center text-xs font-semibold text-gray-700 hover:bg-gray-50 rounded px-1 py-0.5 transition-colors"
+                  title="Click to enter custom speed (0.1x - 3.0x)"
+                >
+                  {playbackSpeed.toFixed(1)}x
+                </button>
+              )}
+
+              <button
+                onClick={increaseSpeed}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                aria-label="Increase playback speed"
+                title="Increase speed (0.1x steps)"
+              >
+                <Plus size={14} className="text-gray-600" />
+              </button>
+            </div>
 
             {/* Video Info Button - Inline */}
             <div className="relative ml-3">

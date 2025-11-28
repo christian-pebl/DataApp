@@ -166,6 +166,19 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true, // TODO: Fix linting errors and set to false
   },
 
+  // Reduce hot reload logging noise
+  logging: {
+    fetches: {
+      fullUrl: false, // Don't log full URLs for fetches
+    },
+  },
+
+  // Disable Turbopack telemetry and verbose logging
+  devIndicators: {
+    buildActivity: false, // Hide build activity indicator
+    buildActivityPosition: 'bottom-right',
+  },
+
   // Security headers
   async headers() {
     const isDev = process.env.NODE_ENV === 'development';

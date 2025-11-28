@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack -p 9002",
+    "dev:quiet": "node scripts/dev-quiet.js",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

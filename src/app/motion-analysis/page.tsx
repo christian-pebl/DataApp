@@ -265,7 +265,7 @@ export default function MotionAnalysisPage() {
   const processedVideos = data.filter((v) => v.processing_status === 'completed' && v.motion_analysis);
   const pendingVideos = data.filter((v) => v.processing_status !== 'completed' || !v.motion_analysis);
 
-  // Map pending videos to dashboard format (include processing_status for display)
+  // Map pending videos to dashboard format (include processing_status and prescreen data for display)
   const pendingVideosList = pendingVideos.map((v) => ({
     id: v.id,
     filename: v.filename,
@@ -275,13 +275,17 @@ export default function MotionAnalysisPage() {
     duration_seconds: v.duration_seconds,
     total_frames: v.total_frames,
     processing_status: v.processing_status as 'pending' | 'processing' | 'failed' | undefined,
+    prescreen_brightness: v.prescreen_brightness,
+    prescreen_focus: v.prescreen_focus,
+    prescreen_quality: v.prescreen_quality,
+    prescreen_completed: v.prescreen_completed,
+    prescreen_samples: v.prescreen_samples,
+    prescreen_error: v.prescreen_error,
   }));
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">Motion Analysis</h1>
-
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
             <p className="text-red-800">{error}</p>
@@ -349,17 +353,6 @@ export default function MotionAnalysisPage() {
           </div>
         )}
 
-        {/* Show pending videos message */}
-        {pendingVideos.length > 0 && !currentRunId && stuckVideos.length === 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <p className="text-blue-800 font-medium">
-              {pendingVideos.length} video{pendingVideos.length > 1 ? 's' : ''} awaiting processing
-            </p>
-            <p className="text-sm text-blue-600 mt-1">
-              Upload complete! Click "Run Processing" to process videos.
-            </p>
-          </div>
-        )}
 
         {/* Show processing status panel */}
         {currentRunId && (
@@ -410,6 +403,13 @@ export default function MotionAnalysisPage() {
                 processing_time_seconds: nestedMotionAnalysis.processing_time_seconds,
                 timestamp: motionData.processing?.timestamp || new Date().toISOString(),
                 processing_history: v.processing_history || [],
+                // Prescreen quality metrics (preserved from upload)
+                prescreen_brightness: v.prescreen_brightness,
+                prescreen_focus: v.prescreen_focus,
+                prescreen_quality: v.prescreen_quality,
+                prescreen_completed: v.prescreen_completed,
+                prescreen_samples: v.prescreen_samples,
+                prescreen_error: v.prescreen_error,
               };
             })}
             pendingVideos={pendingVideosList.map(v => ({

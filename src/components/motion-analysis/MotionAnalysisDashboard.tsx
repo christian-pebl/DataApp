@@ -100,6 +100,12 @@ interface MotionAnalysisResult {
   processing_history?: ProcessingRun[];
   crab_detections?: CrabDetections;
   has_crab_detection?: boolean;
+  prescreen_brightness?: number | null;
+  prescreen_focus?: number | null;
+  prescreen_quality?: number | null;
+  prescreen_completed?: boolean;
+  prescreen_samples?: number;
+  prescreen_error?: string | null;
 }
 
 interface ProcessingRun {
@@ -1080,33 +1086,27 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                 </th>
                 <th
                   className="pb-1.5 text-xs font-medium cursor-help"
-                  title="Motion Density Over Time: Shows the percentage of pixels with motion detected in each frame, indicating how much of the frame contains moving organisms"
+                  title="YOLOv8 object detection results showing organisms detected over time"
                 >
-                  Activity Timeline
+                  Pelagic Activity
                 </th>
                 <th
                   className="pb-1.5 text-xs font-medium"
-                  title="Density %"
+                  title="Pelagic Activity Index (total detections)"
                 >
-                  Density
-                </th>
-                <th
-                  className="pb-1.5 text-xs font-medium cursor-help"
-                  title="YOLOv8 object detection results showing organisms detected over time"
-                >
-                  YOLO Detections
+                  PAI
                 </th>
                 <th
                   className="pb-1.5 text-xs font-medium cursor-help"
                   title="Crab detection tracking results showing blob movements over time"
                 >
-                  Crab Detections
+                  Benthic Activity
                 </th>
                 <th
                   className="pb-1.5 text-xs font-medium"
-                  title="Total detections (sum of all frame counts)"
+                  title="Benthic Activity Index (to be calculated)"
                 >
-                  Total
+                  BAI
                 </th>
                 <th className="pb-1.5 text-xs font-medium w-12" title="Processing History">
                   History
@@ -1210,9 +1210,7 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                         type="quality"
                       />
                     </td>
-                    <td className="py-2 text-gray-400 text-xs">
-                      <span className={isFailed ? 'text-red-500 font-medium' : 'italic'}>{statusConfig.subtitle}</span>
-                    </td>
+                    <td className="py-2 text-gray-400 text-xs">—</td>
                     <td className="py-2 text-gray-400 text-xs">—</td>
                     <td className="py-2 text-gray-400 text-xs">—</td>
                     <td className="py-2 text-gray-400 text-xs">—</td>
@@ -1307,28 +1305,16 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                     <td className="py-2">
                       <div className="w-36">
                         <Sparkline
-                          data={parseArrayData(
-                            video.density.motion_densities,
-                            video.density.avg_density * 100, // Convert ratio to percentage
-                            video.density.max_density * 100,
-                            30
-                          )}
-                          color={scoreColor}
-                          height={24}
-                        />
-                      </div>
-                    </td>
-                    <td className="py-2 text-xs text-gray-600 font-medium whitespace-nowrap">
-                      {(video.density.avg_density * 100).toFixed(1)}%
-                    </td>
-                    <td className="py-2">
-                      <div className="w-36">
-                        <Sparkline
                           data={yoloDetectionData}
                           color="#3b82f6"
                           height={24}
                         />
                       </div>
+                    </td>
+                    <td className="py-2 text-xs text-gray-600 font-medium whitespace-nowrap">
+                      {Array.isArray(yoloDetectionData)
+                        ? yoloDetectionData.reduce((sum, count) => sum + count, 0).toFixed(1)
+                        : '0.0'}
                     </td>
                     <td className="py-2">
                       {video.crab_detections && video.crab_detections.frame_counts ? (
@@ -1346,9 +1332,7 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                     <td className="py-2 text-xs text-gray-600 font-medium whitespace-nowrap">
                       {video.crab_detections
                         ? `${video.crab_detections.valid_tracks} tracks`
-                        : Array.isArray(yoloDetectionData)
-                        ? yoloDetectionData.reduce((sum, count) => sum + count, 0).toFixed(1)
-                        : '0.0'}
+                        : '—'}
                     </td>
                     <td className="py-2">
                       <button

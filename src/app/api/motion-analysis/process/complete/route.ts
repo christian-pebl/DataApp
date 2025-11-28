@@ -102,6 +102,10 @@ export async function POST(request: NextRequest) {
       console.log(`  Status: ${currentVideo.processing_status}`);
       console.log(`  Has motion analysis: ${currentVideo.has_motion_analysis}`);
       console.log(`  Motion analysis path: ${currentVideo.motion_analysis || 'null'}`);
+      console.log(`  Prescreen scores BEFORE update:`);
+      console.log(`    brightness = ${currentVideo.prescreen_brightness !== null && currentVideo.prescreen_brightness !== undefined ? currentVideo.prescreen_brightness : 'NULL/UNDEFINED'}`);
+      console.log(`    focus = ${currentVideo.prescreen_focus !== null && currentVideo.prescreen_focus !== undefined ? currentVideo.prescreen_focus : 'NULL/UNDEFINED'}`);
+      console.log(`    quality = ${currentVideo.prescreen_quality !== null && currentVideo.prescreen_quality !== undefined ? currentVideo.prescreen_quality : 'NULL/UNDEFINED'}`);
     } else {
       console.warn('[DB-READ] Video not found in database!');
     }
@@ -111,11 +115,21 @@ export async function POST(request: NextRequest) {
     const videoUpdate: any = {
       processing_status: success ? 'completed' : 'failed',
       updated_at: new Date().toISOString(),
-      // Preserve prescreening scores
-      prescreen_brightness: currentVideo?.prescreen_brightness,
-      prescreen_focus: currentVideo?.prescreen_focus,
-      prescreen_quality: currentVideo?.prescreen_quality,
     };
+
+    // Only include prescreen fields if they exist and have values
+    // This prevents overwriting existing scores with undefined/null
+    if (currentVideo) {
+      if (currentVideo.prescreen_brightness !== null && currentVideo.prescreen_brightness !== undefined) {
+        videoUpdate.prescreen_brightness = currentVideo.prescreen_brightness;
+      }
+      if (currentVideo.prescreen_focus !== null && currentVideo.prescreen_focus !== undefined) {
+        videoUpdate.prescreen_focus = currentVideo.prescreen_focus;
+      }
+      if (currentVideo.prescreen_quality !== null && currentVideo.prescreen_quality !== undefined) {
+        videoUpdate.prescreen_quality = currentVideo.prescreen_quality;
+      }
+    }
 
     if (success && motionAnalysisPath) {
       videoUpdate.motion_analysis = motionAnalysisPath;
@@ -128,7 +142,13 @@ export async function POST(request: NextRequest) {
     console.log(`  New status: ${videoUpdate.processing_status}`);
     console.log(`  Motion analysis: ${videoUpdate.motion_analysis || 'null'}`);
     console.log(`  Has motion analysis: ${videoUpdate.has_motion_analysis || false}`);
-    console.log(`  Preserving prescreening: brightness=${videoUpdate.prescreen_brightness}, focus=${videoUpdate.prescreen_focus}, quality=${videoUpdate.prescreen_quality}`);
+    console.log(`  Preserving prescreening scores:`);
+    console.log(`    brightness = ${videoUpdate.prescreen_brightness !== undefined ? videoUpdate.prescreen_brightness : 'NOT INCLUDED (no value found)'}`);
+    console.log(`    focus = ${videoUpdate.prescreen_focus !== undefined ? videoUpdate.prescreen_focus : 'NOT INCLUDED (no value found)'}`);
+    console.log(`    quality = ${videoUpdate.prescreen_quality !== undefined ? videoUpdate.prescreen_quality : 'NOT INCLUDED (no value found)'}`);
+    if (!currentVideo) {
+      console.warn('[DB-UPDATE] ⚠️  WARNING: currentVideo is null/undefined - cannot preserve prescreen scores!');
+    }
 
     const { error: videoUpdateError } = await supabase
       .from('uploaded_videos')
@@ -149,7 +169,7 @@ export async function POST(request: NextRequest) {
     console.log('[DB-VERIFY] Reading video state after update...');
     const { data: updatedVideo, error: verifyError } = await supabase
       .from('uploaded_videos')
-      .select('id, filename, processing_status, has_motion_analysis, motion_analysis')
+      .select('id, filename, processing_status, has_motion_analysis, motion_analysis, prescreen_brightness, prescreen_focus, prescreen_quality')
       .eq('id', videoId)
       .single();
 
@@ -161,6 +181,25 @@ export async function POST(request: NextRequest) {
       console.log(`  Status: ${updatedVideo.processing_status}`);
       console.log(`  Has motion analysis: ${updatedVideo.has_motion_analysis}`);
       console.log(`  Motion analysis path: ${updatedVideo.motion_analysis || 'null'}`);
+      console.log(`  Prescreen scores AFTER update:`);
+      console.log(`    brightness = ${updatedVideo.prescreen_brightness !== null && updatedVideo.prescreen_brightness !== undefined ? updatedVideo.prescreen_brightness : 'NULL/UNDEFINED ⚠️'}`);
+      console.log(`    focus = ${updatedVideo.prescreen_focus !== null && updatedVideo.prescreen_focus !== undefined ? updatedVideo.prescreen_focus : 'NULL/UNDEFINED ⚠️'}`);
+      console.log(`    quality = ${updatedVideo.prescreen_quality !== null && updatedVideo.prescreen_quality !== undefined ? updatedVideo.prescreen_quality : 'NULL/UNDEFINED ⚠️'}`);
+
+      // Check if prescreen scores were lost
+      const scoresMissing = (
+        (currentVideo?.prescreen_brightness !== null && currentVideo?.prescreen_brightness !== undefined && (updatedVideo.prescreen_brightness === null || updatedVideo.prescreen_brightness === undefined)) ||
+        (currentVideo?.prescreen_focus !== null && currentVideo?.prescreen_focus !== undefined && (updatedVideo.prescreen_focus === null || updatedVideo.prescreen_focus === undefined)) ||
+        (currentVideo?.prescreen_quality !== null && currentVideo?.prescreen_quality !== undefined && (updatedVideo.prescreen_quality === null || updatedVideo.prescreen_quality === undefined))
+      );
+
+      if (scoresMissing) {
+        console.error('[DB-VERIFY] ❌ ERROR: Prescreen scores were LOST during update!');
+        console.error(`[DB-VERIFY] Before: brightness=${currentVideo?.prescreen_brightness}, focus=${currentVideo?.prescreen_focus}, quality=${currentVideo?.prescreen_quality}`);
+        console.error(`[DB-VERIFY] After:  brightness=${updatedVideo.prescreen_brightness}, focus=${updatedVideo.prescreen_focus}, quality=${updatedVideo.prescreen_quality}`);
+      } else if (currentVideo?.prescreen_quality !== null && currentVideo?.prescreen_quality !== undefined) {
+        console.log('[DB-VERIFY] ✓ Prescreen scores successfully preserved!');
+      }
     } else {
       console.warn('[DB-VERIFY] Video not found after update!');
     }
