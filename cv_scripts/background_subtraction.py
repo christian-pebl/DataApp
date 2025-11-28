@@ -25,9 +25,20 @@ from pathlib import Path
 import argparse
 import json
 from datetime import datetime
+import time
 
 # Additional runtime suppression for any remaining codec warnings
 cv2.setLogLevel(0)  # Disable OpenCV logging
+
+# Import logging utilities
+from logging_utils import (
+    set_verbosity, get_verbosity,
+    VERBOSITY_MINIMAL, VERBOSITY_NORMAL, VERBOSITY_DETAILED,
+    print_step_start, print_step_complete, print_step_error,
+    print_result_success, print_result_info, print_result_warning,
+    print_progress_bar, print_box_line, print_box_bottom,
+    STATUS_SUCCESS, STATUS_ERROR, STATUS_WARNING, STATUS_INFO
+)
 
 
 def get_video_writer(output_path: str, fps: float, width: int, height: int):
@@ -329,9 +340,10 @@ def compute_average_background_from_video(video_path, duration_seconds=None, sub
     if max_frames:
         frames_to_load = min(frames_to_load, max_frames)
 
-    print(f"\nComputing average background from video...")
-    print(f"  Video: {width}x{height} @ {fps:.2f} FPS")
-    print(f"  Total frames: {total_frames}, Processing: {frames_to_load} (every {subsample_rate}th frame)")
+    if get_verbosity() >= VERBOSITY_DETAILED:
+        print(f"\nComputing average background from video...")
+        print(f"  Video: {width}x{height} @ {fps:.2f} FPS")
+        print(f"  Total frames: {total_frames}, Processing: {frames_to_load} (every {subsample_rate}th frame)")
 
     avg_background = None
     frame_count = 0
@@ -356,7 +368,7 @@ def compute_average_background_from_video(video_path, duration_seconds=None, sub
 
             frame_indices.append(frame_count)
 
-            if processed_count % 500 == 0:
+            if processed_count % 500 == 0 and get_verbosity() >= VERBOSITY_DETAILED:
                 print(f"  Processed {processed_count} frames for background averaging")
 
         frame_count += 1
@@ -369,9 +381,10 @@ def compute_average_background_from_video(video_path, duration_seconds=None, sub
     # Convert to float32
     avg_background = avg_background.astype(np.float32)
 
-    print(f"  Background computed from {processed_count} frames")
-    print(f"  Shape: {avg_background.shape}, dtype: {avg_background.dtype}")
-    print(f"  Value range: [{avg_background.min():.1f}, {avg_background.max():.1f}]")
+    if get_verbosity() >= VERBOSITY_DETAILED:
+        print(f"  Background computed from {processed_count} frames")
+        print(f"  Shape: {avg_background.shape}, dtype: {avg_background.dtype}")
+        print(f"  Value range: [{avg_background.min():.1f}, {avg_background.max():.1f}]")
 
     metadata = {
         'fps': fps,
@@ -412,16 +425,15 @@ def main():
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print("="*80)
-    print("Background Subtraction - Temporal Averaging")
-    print("="*80)
-    print(f"Input: {input_path}")
-    print(f"Output: {output_dir}")
-    print()
+    # Use detailed mode when running standalone
+    if get_verbosity() == VERBOSITY_NORMAL:
+        set_verbosity(VERBOSITY_DETAILED)
 
     start_time = datetime.now()
 
     # Step 1: Compute average background (first pass - incremental, memory efficient)
+    print_step_start(1, 2, "Analyzing background")
+
     avg_background, fps, metadata = compute_average_background_from_video(
         input_path,
         duration_seconds=args.duration,
@@ -432,10 +444,16 @@ def main():
     # Save average background as image
     bg_path = output_dir / f"{input_path.stem}_average_background.jpg"
     cv2.imwrite(str(bg_path), avg_background.astype(np.uint8))
-    print(f"\n  Saved average background: {bg_path}")
+
+    if get_verbosity() >= VERBOSITY_NORMAL:
+        print_result_success(f"Created: {bg_path.name}")
+
+    step1_time = (datetime.now() - start_time).total_seconds()
+    print_step_complete(step1_time)
 
     # Step 2: Second pass - subtract background and write output video
-    print(f"\nSubtracting background and writing output video...")
+    step2_start = datetime.now()
+    print_step_start(2, 2, "Creating motion video")
 
     cap = cv2.VideoCapture(str(input_path))
 
@@ -464,11 +482,12 @@ def main():
     comparison_frames_subtracted = []
 
     if writer is None or not writer.isOpened():
-        print(f"  [X] WARNING: Failed to initialize VideoWriter with any codec")
-        print(f"  [!] Will continue processing but video will not be saved")
-        print(f"  [OK] Motion analysis JSON and background image will still be saved")
+        if get_verbosity() >= VERBOSITY_NORMAL:
+            print_box_line(f"{STATUS_WARNING} Failed to initialize VideoWriter")
+            print_box_line(f"{STATUS_INFO} Background image will still be saved")
     else:
-        print(f"  [OK] VideoWriter initialized successfully (codec: {successful_codec})")
+        if get_verbosity() >= VERBOSITY_DETAILED:
+            print_box_line(f"{STATUS_INFO} Using codec: {successful_codec}")
 
     while frame_count < frames_to_load:
         ret, frame = cap.read()
@@ -598,30 +617,31 @@ def main():
     with open(metadata_path, 'w') as f:
         json.dump(result_metadata, f, indent=2)
 
-    print(f"\n{'='*80}")
-    if video_write_success:
-        print("[OK] PROCESSING COMPLETE - ALL FILES SAVED")
-    else:
-        print("[!] PROCESSING PARTIALLY COMPLETE - VIDEO FAILED")
-    print(f"{'='*80}")
-    print(f"Processing time: {processing_time:.1f}s")
-    print(f"Processed frames: {processed_count}")
-    print(f"\nOutput files:")
-    if video_write_success:
-        print(f"  [OK] Video:      {output_video_path}")
-    else:
-        print(f"  [X] Video:      Failed (codec issue)")
-        print(f"      To fix: Install OpenH264 or use different codec")
-    print(f"  [OK] Background: {bg_path}")
-    print(f"  [OK] Metadata:   {metadata_path}")
-    if args.save_comparison:
-        print(f"  [OK] Comparisons: {comparison_dir}")
-    print(f"\n{'='*80}")
-    if not video_write_success:
-        print("[!] Note: Motion analysis data was saved successfully!")
-        print("   Video output failed due to codec issues.")
-        print("   Install OpenH264 codec or use a different video codec.")
-        print(f"{'='*80}")
+    step2_time = (datetime.now() - step2_start).total_seconds()
+
+    if get_verbosity() >= VERBOSITY_NORMAL:
+        if video_write_success:
+            print_result_success(f"Created: {output_video_path.name} ({processed_count} frames)")
+        else:
+            print_result_warning("Video creation failed (codec issue)")
+
+        print_result_success(f"Created: {metadata_path.name}")
+
+    print_step_complete(step2_time)
+
+    if get_verbosity() >= VERBOSITY_DETAILED:
+        print(f"\nProcessing time: {processing_time:.1f}s")
+        print(f"Processed frames: {processed_count}")
+        print(f"\nOutput files:")
+        if video_write_success:
+            print(f"  {STATUS_SUCCESS} Video:      {output_video_path}")
+        else:
+            print(f"  {STATUS_ERROR} Video:      Failed (codec issue)")
+        print(f"  {STATUS_SUCCESS} Background: {bg_path}")
+        print(f"  {STATUS_SUCCESS} Metadata:   {metadata_path}")
+        if args.save_comparison:
+            print(f"  {STATUS_SUCCESS} Comparisons: {comparison_dir}")
+        print()
 
 
 if __name__ == '__main__':

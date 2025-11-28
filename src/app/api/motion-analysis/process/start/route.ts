@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { spawn, exec } from 'child_process';
+import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -37,14 +37,31 @@ export async function POST(request: NextRequest) {
     // Default settings
     const processingSettings = {
       targetFps: settings?.targetFps || '10',
-      enableMotionAnalysis: settings?.enableMotionAnalysis ?? true,
+      enableMotionAnalysis: settings?.enableMotionAnalysis ?? false, // Disabled by default (replaced by BAv4)
       enableYolo: settings?.enableYolo ?? true,
       yoloModel: settings?.yoloModel || 'yolov8m',
 
-      // Crab detection settings
+      // Crab detection settings (legacy - may be deprecated)
       enableCrabDetection: settings?.enableCrabDetection ?? false,
       crabDetectionPreset: settings?.crabDetectionPreset || 'balanced',
       crabDetectionParams: settings?.crabDetectionParams || null,
+
+      // Benthic Activity V4 settings
+      enableBenthicActivityV4: settings?.enableBenthicActivityV4 ?? true, // Enabled by default
+      benthicActivityParams: settings?.benthicActivityParams || {
+        dark_threshold: 18,
+        bright_threshold: 40,
+        min_area: 75,
+        max_area: 2000,
+        coupling_distance: 100,
+        max_distance: 75.0,
+        max_skip_frames: 90,
+        rest_zone_radius: 120,
+        min_track_length: 4,
+        min_displacement: 8.0,
+        max_speed: 30.0,
+        min_speed: 0.1,
+      },
     };
 
     // Validate input
@@ -161,14 +178,7 @@ export async function POST(request: NextRequest) {
     const projectRoot = process.cwd();
     const logFile = path.join(projectRoot, `processing-${runId}.log`);
     const apiUrl = `http://localhost:${process.env.PORT || 9002}`;
-
-    // Escape JSON for command line - double-escape quotes for Windows
-    const videosJson = JSON.stringify(videoInfo).replace(/"/g, '\\"');
-
-    // Build the command - use shell for better Windows compatibility
-    // Use -u flag for unbuffered output so logs appear in real-time
-    const settingsJson = JSON.stringify(processingSettings).replace(/"/g, '\\"');
-    const pythonCmd = `python -u batch_process_videos.py --run-id "${runId}" --run-type "${runType}" --videos "${videosJson}" --api-url "${apiUrl}" --settings "${settingsJson}"`;
+    const batchScriptPath = path.join('cv_scripts', 'batch_process_videos.py');
 
     console.log(`\n${'='.repeat(80)}`);
     console.log(`Starting processing run: ${runId}`);
@@ -183,20 +193,38 @@ export async function POST(request: NextRequest) {
     fs.writeFileSync(logFile, `[${timestamp}] Starting processing run ${runId}\n`);
     fs.appendFileSync(logFile, `[${timestamp}] Run type: ${runType}\n`);
     fs.appendFileSync(logFile, `[${timestamp}] Videos to process: ${pendingVideos.length} (${alreadyCompleted.length} already completed)\n`);
-    fs.appendFileSync(logFile, `[${timestamp}] Command: ${pythonCmd}\n\n`);
+    fs.appendFileSync(logFile, `[${timestamp}] Python script: ${batchScriptPath}\n\n`);
 
-    // Use exec for better Windows shell compatibility
-    const childProcess = exec(pythonCmd, {
+    // Use spawn for better stream handling and real-time output
+    // Split command into executable and arguments
+    const args = [
+      '-u',  // Unbuffered output
+      batchScriptPath,
+      '--run-id', runId,
+      '--run-type', runType,
+      '--videos', JSON.stringify(videoInfo),
+      '--api-url', apiUrl,
+      '--settings', JSON.stringify(processingSettings)
+    ];
+
+    const childProcess = spawn('python', args, {
       cwd: projectRoot,
       windowsHide: true,
-    }, (error) => {
-      // This callback runs when process completes
-      // NOTE: stdout/stderr are already streamed in real-time below, so we only log errors here
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',  // Force Python to output UTF-8
+      },
+    });
+
+    // Handle process exit
+    childProcess.on('exit', (code, signal) => {
       const endTimestamp = new Date().toISOString();
-      if (error) {
-        fs.appendFileSync(logFile, `\n[${endTimestamp}] [ERROR] Process error: ${error.message}\n`);
-        fs.appendFileSync(logFile, `[${endTimestamp}] [ERROR] Exit code: ${error.code}\n`);
-        console.error(`Processing run ${runId} failed:`, error.message);
+      if (code !== 0) {
+        fs.appendFileSync(logFile, `\n[${endTimestamp}] [ERROR] Process exited with code: ${code}\n`);
+        if (signal) {
+          fs.appendFileSync(logFile, `[${endTimestamp}] [ERROR] Killed by signal: ${signal}\n`);
+        }
+        console.error(`Processing run ${runId} failed with exit code ${code}`);
       }
       fs.appendFileSync(logFile, `\n[${endTimestamp}] Process completed\n`);
     });
@@ -209,13 +237,15 @@ export async function POST(request: NextRequest) {
     });
 
     // Stream stdout to log file in real-time
+    childProcess.stdout?.setEncoding('utf8');
     childProcess.stdout?.on('data', (data) => {
-      fs.appendFileSync(logFile, data.toString());
+      fs.appendFileSync(logFile, data);
     });
 
     // Stream stderr to log file in real-time
+    childProcess.stderr?.setEncoding('utf8');
     childProcess.stderr?.on('data', (data) => {
-      fs.appendFileSync(logFile, `[STDERR] ${data.toString()}`);
+      fs.appendFileSync(logFile, `[STDERR] ${data}`);
     });
 
     console.log(`✓ Started processing run: ${runId}`);

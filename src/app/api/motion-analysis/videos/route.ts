@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getUploadedVideos } from '@/lib/supabase/motion-analysis-service';
-import { withTimeout, TIMEOUTS, API_ROUTE_CONFIG } from '@/lib/api-timeout';
+import { withTimeout, TIMEOUTS } from '@/lib/api-timeout';
 import fs from 'fs/promises';
 import path from 'path';
 
-export const dynamic = API_ROUTE_CONFIG.dynamic;
-export const revalidate = API_ROUTE_CONFIG.revalidate;
-export const maxDuration = API_ROUTE_CONFIG.maxDuration;
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const maxDuration = 30;
 
 export async function GET(request: NextRequest) {
   const requestStartTime = Date.now();
@@ -119,8 +119,19 @@ export async function GET(request: NextRequest) {
           `${filenameStem}_yolov8.json`
         );
 
+        // Path for Benthic Activity V4 JSON
+        const bav4JsonPaths = [
+          // New format with background_subtracted: subdirectory structure
+          path.join(process.cwd(), 'public', 'motion-analysis-results', filenameStem, `${filenameStem}_background_subtracted_benthic_activity_v4.json`),
+          // New format: subdirectory structure
+          path.join(process.cwd(), 'public', 'motion-analysis-results', filenameStem, `${filenameStem}_benthic_activity_v4.json`),
+          // Old format: flat structure (if needed)
+          path.join(process.cwd(), 'public', 'motion-analysis-results', `${filenameStem}_benthic_activity_v4.json`),
+        ];
+
         let motionData = null;
         let yoloData = null;
+        let bav4Data = null;
 
         // Try each motion path until we find one that exists
         for (const motionPath of possibleMotionPaths) {
@@ -144,12 +155,36 @@ export async function GET(request: NextRequest) {
           // YOLO analysis not yet available
         }
 
+        // Try to load BAv4 data
+        for (const bav4Path of bav4JsonPaths) {
+          try {
+            const bav4Content = await fs.readFile(bav4Path, 'utf-8');
+            bav4Data = JSON.parse(bav4Content);
+            break; // Found it, stop searching
+          } catch {
+            // Try next path
+          }
+        }
+
+        // Extract BAv4 summary for quick display
+        let bav4Summary = null;
+        if (bav4Data) {
+          bav4Summary = {
+            valid_tracks: bav4Data.summary?.valid_tracks || 0,
+            total_tracks: bav4Data.summary?.total_tracks || 0,
+            coupling_rate: bav4Data.summary?.overall_coupling_rate || 0,
+            processing_time: bav4Data.summary?.processing_time || 0,
+          };
+        }
+
         return {
           ...video,
           // Include processing_status for UI classification
           processing_status: video.processing_status,
           motion_analysis: motionData,
           yolo_analysis: yoloData,
+          benthic_activity_v4: bav4Summary,
+          bav4_frame_detections: bav4Data?.frame_detections || null,
           processing_history: videoHistory[video.id] || [],
         };
       })

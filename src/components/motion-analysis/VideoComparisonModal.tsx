@@ -60,6 +60,14 @@ interface YOLOv8Detection {
   }>;
 }
 
+interface BAv4Detection {
+  frame: number;
+  timestamp: number;
+  active_tracks: number;
+  blobs_detected: number;
+  coupled_blobs: number;
+}
+
 export default function VideoComparisonModal({
   isOpen,
   onClose,
@@ -78,10 +86,13 @@ export default function VideoComparisonModal({
   const [motionVideoLoaded, setMotionVideoLoaded] = useState(false);
   const [yolov8VideoLoaded, setYolov8VideoLoaded] = useState(false);
   const [crabDetectionVideoLoaded, setCrabDetectionVideoLoaded] = useState(false);
+  const [bav4VideoLoaded, setBav4VideoLoaded] = useState(false);
   const [motionVideoError, setMotionVideoError] = useState(false);
   const [yolov8VideoError, setYolov8VideoError] = useState(false);
   const [crabDetectionVideoError, setCrabDetectionVideoError] = useState(false);
+  const [bav4VideoError, setBav4VideoError] = useState(false);
   const [yolov8Detections, setYolov8Detections] = useState<YOLOv8Detection[]>([]);
+  const [bav4Detections, setBav4Detections] = useState<BAv4Detection[]>([]);
   const [showInfoPopup, setShowInfoPopup] = useState(false);
   const [originalVideoDuration, setOriginalVideoDuration] = useState<number>(0);
   const [motionVideoDuration, setMotionVideoDuration] = useState<number>(0);
@@ -111,6 +122,7 @@ export default function VideoComparisonModal({
   const motionVideoRef = useRef<HTMLVideoElement>(null);
   const yolov8VideoRef = useRef<HTMLVideoElement>(null);
   const crabDetectionVideoRef = useRef<HTMLVideoElement>(null);
+  const bav4VideoRef = useRef<HTMLVideoElement>(null);
   const originalVideoRef = useRef<HTMLVideoElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -136,6 +148,7 @@ export default function VideoComparisonModal({
     : originalFilename.replace('.mp4', '_background_subtracted.mp4');
   const yolov8Filename = originalFilename.replace('.mp4', '_yolov8.mp4');
   const crabDetectionFilename = originalFilename.replace('.mp4', '_crab_detections.mp4');
+  const bav4Filename = originalFilename.replace('.mp4', '_benthic_activity_v4.mp4');
 
   // Video paths - motion video can be in either location
   const originalVideoPath = `/videos/${originalFilename}`;
@@ -146,6 +159,9 @@ export default function VideoComparisonModal({
 
   // Crab detection video path state - check both old and new structure
   const [crabDetectionVideoPath, setCrabDetectionVideoPath] = useState(`/videos/${crabDetectionFilename}`);
+
+  // BAv4 video path state - check both old and new structure
+  const [bav4VideoPath, setBav4VideoPath] = useState(`/videos/${bav4Filename}`);
 
   // Check which motion video path exists
   useEffect(() => {
@@ -194,6 +210,30 @@ export default function VideoComparisonModal({
         console.log('📍 Falling back to old crab detection video path:', oldPath);
       });
   }, [isOpen, baseName, crabDetectionFilename]);
+
+  // Check which BAv4 video path exists
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Try new structure first (motion-analysis-results subdirectory)
+    const newPath = `/motion-analysis-results/${baseName}/${bav4Filename}`;
+    const oldPath = `/videos/${bav4Filename}`;
+
+    fetch(newPath, { method: 'HEAD' })
+      .then(res => {
+        if (res.ok) {
+          setBav4VideoPath(newPath);
+          console.log('✅ BAv4 video found at new path:', newPath);
+        } else {
+          setBav4VideoPath(oldPath);
+          console.log('📍 Using old BAv4 video path:', oldPath);
+        }
+      })
+      .catch(() => {
+        setBav4VideoPath(oldPath);
+        console.log('📍 Falling back to old BAv4 video path:', oldPath);
+      });
+  }, [isOpen, baseName, bav4Filename]);
 
   // Load YOLOv8 detection JSON data
   useEffect(() => {
@@ -247,6 +287,61 @@ export default function VideoComparisonModal({
       setYolov8Detections([]);
     }
   }, [isOpen, originalFilename, videoInfo.fps]);
+
+  // Load BAv4 detection JSON data
+  useEffect(() => {
+    if (isOpen) {
+      // Try both path formats
+      const possiblePaths = [
+        `/motion-analysis-results/${baseName}/${baseName}_benthic_activity_v4.json`,
+        `/motion-analysis-results/${baseName}_benthic_activity_v4.json`,
+      ];
+
+      const tryNextPath = (paths: string[]): Promise<any> => {
+        if (paths.length === 0) {
+          return Promise.reject(new Error('BAv4 detection data not found in any location'));
+        }
+
+        const [currentPath, ...remainingPaths] = paths;
+
+        return fetch(currentPath)
+          .then(res => {
+            if (!res.ok) throw new Error('Not found at ' + currentPath);
+            return res.json();
+          })
+          .catch(() => tryNextPath(remainingPaths));
+      };
+
+      tryNextPath(possiblePaths)
+        .then(data => {
+          // Validate data structure
+          if (!data || typeof data !== 'object') {
+            throw new Error('Invalid BAv4 data format');
+          }
+
+          // Extract frame_detections array
+          const detections = Array.isArray(data.frame_detections) ? data.frame_detections : [];
+
+          // Validate each detection has required fields
+          const validDetections = detections.filter((d: BAv4Detection) =>
+            d &&
+            typeof d.frame === 'number' &&
+            typeof d.timestamp === 'number' &&
+            typeof d.active_tracks === 'number'
+          );
+
+          setBav4Detections(validDetections);
+          console.log('✅ BAV4 DETECTION DATA LOADED:', validDetections.length, 'frames');
+        })
+        .catch(err => {
+          console.warn('⚠️ No BAv4 detection data found:', err.message);
+          setBav4Detections([]);
+        });
+    } else {
+      // Reset when modal closes
+      setBav4Detections([]);
+    }
+  }, [isOpen, baseName]);
 
   // Validation logging when modal opens
   useEffect(() => {
@@ -501,8 +596,10 @@ export default function VideoComparisonModal({
   useEffect(() => {
     // Sync video time updates with high-frequency updates for smooth animation
     const updateTime = () => {
-      // Use the video shown in top panel as primary time source
-      const topPanelVideoRef = showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef;
+      // Prioritize BAv4 video as primary time source if available, otherwise use fallback
+      const topPanelVideoRef = !bav4VideoError && bav4VideoPath
+        ? bav4VideoRef
+        : (showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef);
       if (topPanelVideoRef.current && !isNaN(topPanelVideoRef.current.currentTime)) {
         const newTime = topPanelVideoRef.current.currentTime;
         const newDuration = topPanelVideoRef.current.duration;
@@ -546,7 +643,9 @@ export default function VideoComparisonModal({
       }
     };
 
-    const topPanelVideo = showCrabDetectionInTopPanel ? crabDetectionVideoRef.current : motionVideoRef.current;
+    const topPanelVideo = !bav4VideoError && bav4VideoPath
+      ? bav4VideoRef.current
+      : (showCrabDetectionInTopPanel ? crabDetectionVideoRef.current : motionVideoRef.current);
     const yolov8Video = yolov8VideoRef.current;
 
     if (topPanelVideo) {
@@ -576,11 +675,13 @@ export default function VideoComparisonModal({
         yolov8Video.removeEventListener('durationchange', updateDurationFromYolov8);
       }
     };
-  }, [isOpen, duration, showCrabDetectionInTopPanel, yolov8Detections, isPlaying]);
+  }, [isOpen, duration, showCrabDetectionInTopPanel, bav4VideoError, bav4VideoPath, yolov8Detections, isPlaying]);
 
   const togglePlayPause = () => {
-    // Use the appropriate video ref based on what's shown in top panel
-    const topPanelVideoRef = showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef;
+    // Prioritize BAv4 video as primary if available, otherwise use fallback
+    const topPanelVideoRef = !bav4VideoError && bav4VideoPath
+      ? bav4VideoRef
+      : (showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef);
 
     if (isPlaying) {
       topPanelVideoRef.current?.pause();
@@ -605,8 +706,10 @@ export default function VideoComparisonModal({
   };
 
   const toggleMute = () => {
-    // Use the appropriate video ref based on what's shown in top panel
-    const topPanelVideoRef = showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef;
+    // Prioritize BAv4 video as primary if available, otherwise use fallback
+    const topPanelVideoRef = !bav4VideoError && bav4VideoPath
+      ? bav4VideoRef
+      : (showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef);
 
     if (topPanelVideoRef.current) {
       topPanelVideoRef.current.muted = !isMuted;
@@ -620,24 +723,28 @@ export default function VideoComparisonModal({
   // Debounced video seeking - only seek videos at ~30fps max to avoid overwhelming the decoder
   const debouncedVideoSeek = useMemo(
     () => debounce((time: number) => {
-      // Use the appropriate video ref based on what's shown in top panel
-      const topPanelVideoRef = showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef;
+      // Prioritize BAv4 video as primary if available, otherwise use fallback
+      const topPanelVideoRef = !bav4VideoError && bav4VideoPath
+        ? bav4VideoRef
+        : (showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef);
       if (topPanelVideoRef.current) topPanelVideoRef.current.currentTime = time;
       if (yolov8VideoRef.current) yolov8VideoRef.current.currentTime = time;
       lastVideoSeekRef.current = time;
     }, 32), // ~30fps
-    [showCrabDetectionInTopPanel]
+    [showCrabDetectionInTopPanel, bav4VideoError, bav4VideoPath]
   );
 
   // Immediate video seek (for final position on drag end or button clicks)
   const immediateVideoSeek = useCallback((time: number) => {
     debouncedVideoSeek.cancel(); // Cancel any pending debounced seek
-    // Use the appropriate video ref based on what's shown in top panel
-    const topPanelVideoRef = showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef;
+    // Prioritize BAv4 video as primary if available, otherwise use fallback
+    const topPanelVideoRef = !bav4VideoError && bav4VideoPath
+      ? bav4VideoRef
+      : (showCrabDetectionInTopPanel ? crabDetectionVideoRef : motionVideoRef);
     if (topPanelVideoRef.current) topPanelVideoRef.current.currentTime = time;
     if (yolov8VideoRef.current) yolov8VideoRef.current.currentTime = time;
     lastVideoSeekRef.current = time;
-  }, [debouncedVideoSeek, showCrabDetectionInTopPanel]);
+  }, [debouncedVideoSeek, showCrabDetectionInTopPanel, bav4VideoError, bav4VideoPath]);
 
   // Cleanup debounce on unmount
   useEffect(() => {
@@ -664,7 +771,9 @@ export default function VideoComparisonModal({
     const clampedSpeed = Math.max(0.1, Math.min(3.0, speed));
     setPlaybackSpeed(clampedSpeed);
     setSpeedInputValue(clampedSpeed.toFixed(1));
+    if (bav4VideoRef.current) bav4VideoRef.current.playbackRate = clampedSpeed;
     if (motionVideoRef.current) motionVideoRef.current.playbackRate = clampedSpeed;
+    if (crabDetectionVideoRef.current) crabDetectionVideoRef.current.playbackRate = clampedSpeed;
     if (yolov8VideoRef.current) yolov8VideoRef.current.playbackRate = clampedSpeed;
   };
 
@@ -1106,28 +1215,58 @@ export default function VideoComparisonModal({
     return mappedData;
   }, [yolov8Detections, videoInfo.fps, videoInfo.duration_seconds, videoInfo.total_frames, duration]);
 
-  // Combine both datasets for dual-axis chart
+  // Parse BAv4 detection data for chart
+  const bav4Data = useMemo(() => {
+    if (!bav4Detections || bav4Detections.length === 0) {
+      return [];
+    }
+
+    console.group('📊 BAV4 TIMING ANALYSIS');
+    console.log('Total BAv4 detections:', bav4Detections.length);
+    console.log('First BAv4 detection:', bav4Detections[0]);
+    console.log('Last BAv4 detection:', bav4Detections[bav4Detections.length - 1]);
+
+    const mappedData = bav4Detections.map(detection => ({
+      frame: detection.frame,
+      time: detection.timestamp,
+      tracks: detection.active_tracks,
+      blobs: detection.blobs_detected,
+      coupled: detection.coupled_blobs,
+    }));
+
+    console.log('BAv4 data points:', mappedData.length);
+    console.log('Sample BAv4 data:', mappedData.slice(0, 5));
+    console.groupEnd();
+
+    return mappedData;
+  }, [bav4Detections]);
+
+  // Combine BAv4 and YOLO datasets for dual-axis chart
   const combinedTimelineData = useMemo(() => {
     const videoDuration = duration || 120;
     const timePoints = new Set<number>();
 
+    // Prioritize BAv4 data, fallback to motion density if BAv4 is not available
+    const primaryData = bav4Data.length > 0 ? bav4Data : activityData;
+    const hasBav4 = bav4Data.length > 0;
+
     // Safety check - if both arrays are empty, create minimal data points
-    if (activityData.length === 0 && yolov8Data.length === 0) {
+    if (primaryData.length === 0 && yolov8Data.length === 0) {
       return [
-        { time: 0, density: 0, count: 0 },
-        { time: videoDuration, density: 0, count: 0 }
+        { time: 0, tracks: 0, density: 0, count: 0 },
+        { time: videoDuration, tracks: 0, density: 0, count: 0 }
       ];
     }
 
-    // Collect all unique time points
-    activityData.forEach(d => timePoints.add(Math.round(d.time * 10) / 10));
+    // Collect all unique time points from both datasets
+    primaryData.forEach(d => timePoints.add(Math.round(d.time * 10) / 10));
     yolov8Data.forEach(d => timePoints.add(Math.round(d.time * 10) / 10));
 
     // If no time points collected, create default ones
     if (timePoints.size === 0) {
       return [
-        { time: 0, density: 0, count: 0 },
-        { time: videoDuration, density: 0, count: 0 }
+        { time: 0, tracks: 0, density: 0, count: 0 },
+        { time: videoDuration, tracks: 0, density: 0, count: 0 }
       ];
     }
 
@@ -1135,17 +1274,24 @@ export default function VideoComparisonModal({
     const sortedTimes = Array.from(timePoints).sort((a, b) => a - b);
 
     return sortedTimes.map(time => {
-      // Find closest motion density point
+      let tracks = 0;
       let density = 0;
-      if (activityData.length > 0) {
-        const motionPoint = activityData.reduce((prev, curr) =>
-          Math.abs(curr.time - time) < Math.abs(prev.time - time) ? curr : prev
-        );
-        density = motionPoint?.density || 0;
+
+      if (hasBav4) {
+        // Use BAv4 active tracks data
+        const bav4Point = bav4Data.find(d => Math.abs(d.time - time) < 0.1);
+        tracks = bav4Point?.tracks || 0;
+      } else {
+        // Fallback to motion density
+        if (activityData.length > 0) {
+          const motionPoint = activityData.reduce((prev, curr) =>
+            Math.abs(curr.time - time) < Math.abs(prev.time - time) ? curr : prev
+          );
+          density = motionPoint?.density || 0;
+        }
       }
 
       // Find yolov8 detections at this time
-      // Use tighter tolerance based on FPS for more accurate matching
       let count = 0;
       if (yolov8Data.length > 0) {
         const frameDuration = 1 / (videoInfo.fps || 30);
@@ -1156,11 +1302,12 @@ export default function VideoComparisonModal({
 
       return {
         time,
+        tracks,
         density,
         count,
       };
     });
-  }, [activityData, yolov8Data, duration, videoInfo.fps]);
+  }, [bav4Data, activityData, yolov8Data, duration, videoInfo.fps]);
 
   // Handle click on activity chart to seek (immediate seek for single clicks)
   const handleChartClick = useCallback((data: any) => {
@@ -1289,7 +1436,7 @@ export default function VideoComparisonModal({
   if (isOriginalVideoOnly) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90">
-        <div className="bg-gray-900 rounded-lg shadow-2xl w-[90vw] max-w-[1200px] max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="bg-gray-900 rounded-lg shadow-2xl w-[98vw] h-[95vh] overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-gray-700 bg-gray-800">
             <div>
@@ -1306,29 +1453,116 @@ export default function VideoComparisonModal({
           </div>
 
           {/* Video Player */}
-          <div className="flex-1 flex items-center justify-center bg-black p-4">
+          <div className="flex-1 flex items-center justify-center bg-black p-2 min-h-0">
             <video
               ref={originalVideoRef}
               src={originalVideoPath}
-              className="w-full h-full max-h-[75vh]"
-              controls
+              className="w-full h-full"
               autoPlay
               muted={isMuted}
               preload="auto"
               playsInline
-              style={{ objectFit: 'contain' }}
+              style={{ objectFit: 'contain', maxHeight: '100%' }}
+              onTimeUpdate={() => {
+                if (originalVideoRef.current) {
+                  setCurrentTime(originalVideoRef.current.currentTime);
+                }
+              }}
+              onLoadedMetadata={() => {
+                if (originalVideoRef.current) {
+                  setDuration(originalVideoRef.current.duration);
+                }
+              }}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onClick={() => {
+                if (originalVideoRef.current) {
+                  if (originalVideoRef.current.paused) {
+                    originalVideoRef.current.play();
+                  } else {
+                    originalVideoRef.current.pause();
+                  }
+                }
+              }}
             />
           </div>
 
-          {/* Simple Controls */}
-          <div className="p-3 bg-gray-800 border-t border-gray-700 flex items-center justify-center gap-4">
-            <button
-              onClick={() => setIsMuted(!isMuted)}
-              className="p-2 hover:bg-gray-700 rounded-full transition-colors"
-              aria-label={isMuted ? 'Unmute' : 'Mute'}
-            >
-              {isMuted ? <VolumeX size={20} className="text-white" /> : <Volume2 size={20} className="text-white" />}
-            </button>
+          {/* Custom Controls */}
+          <div className="p-3 bg-gray-800 border-t border-gray-700 flex flex-col gap-2">
+            {/* Progress Bar */}
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-400 w-12 text-right font-mono">
+                {formatTime(currentTime)}
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={duration || 100}
+                value={currentTime}
+                onChange={(e) => {
+                  const newTime = parseFloat(e.target.value);
+                  if (originalVideoRef.current) {
+                    originalVideoRef.current.currentTime = newTime;
+                  }
+                  setCurrentTime(newTime);
+                }}
+                className="flex-1 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                style={{
+                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(currentTime / (duration || 1)) * 100}%, #4b5563 ${(currentTime / (duration || 1)) * 100}%, #4b5563 100%)`
+                }}
+              />
+              <span className="text-xs text-gray-400 w-12 font-mono">
+                {formatTime(duration)}
+              </span>
+            </div>
+
+            {/* Playback Controls */}
+            <div className="flex items-center justify-center gap-4">
+              <button
+                onClick={() => {
+                  if (originalVideoRef.current) {
+                    originalVideoRef.current.currentTime = Math.max(0, originalVideoRef.current.currentTime - 10);
+                  }
+                }}
+                className="p-2 hover:bg-gray-700 rounded-full transition-colors"
+                aria-label="Skip back 10 seconds"
+              >
+                <SkipBack size={20} className="text-white" />
+              </button>
+              <button
+                onClick={() => {
+                  if (originalVideoRef.current) {
+                    if (originalVideoRef.current.paused) {
+                      originalVideoRef.current.play();
+                    } else {
+                      originalVideoRef.current.pause();
+                    }
+                  }
+                }}
+                className="p-3 hover:bg-gray-700 rounded-full transition-colors bg-gray-700"
+                aria-label={isPlaying ? 'Pause' : 'Play'}
+              >
+                {isPlaying ? <Pause size={24} className="text-white" /> : <Play size={24} className="text-white" />}
+              </button>
+              <button
+                onClick={() => {
+                  if (originalVideoRef.current) {
+                    originalVideoRef.current.currentTime = Math.min(duration, originalVideoRef.current.currentTime + 10);
+                  }
+                }}
+                className="p-2 hover:bg-gray-700 rounded-full transition-colors"
+                aria-label="Skip forward 10 seconds"
+              >
+                <SkipForward size={20} className="text-white" />
+              </button>
+              <button
+                onClick={() => setIsMuted(!isMuted)}
+                className="p-2 hover:bg-gray-700 rounded-full transition-colors ml-4"
+                aria-label={isMuted ? 'Unmute' : 'Mute'}
+              >
+                {isMuted ? <VolumeX size={20} className="text-white" /> : <Volume2 size={20} className="text-white" />}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1630,16 +1864,36 @@ export default function VideoComparisonModal({
 
         {/* Video Players - Vertical Stack */}
         <div className="flex-1 flex flex-col gap-3 p-3 bg-gray-900 overflow-auto">
-          {/* Top Panel: Crab Detection Video (with fallback to Motion Video) */}
+          {/* Top Panel: BAv4 Track Trails Video (with fallback to Crab Detection/Motion) */}
           <div className="flex flex-col">
             <div className="bg-gray-800 rounded-t-lg p-2">
               <h3 className="text-white font-semibold text-center text-sm">
-                {showCrabDetectionInTopPanel ? 'Crab Detection (with bounding boxes)' : 'Motion Analysis'}
+                {!bav4VideoError && bav4VideoPath
+                  ? 'Benthic Activity V4 - Track Trails'
+                  : showCrabDetectionInTopPanel
+                    ? 'Crab Detection (with bounding boxes)'
+                    : 'Motion Analysis'}
               </h3>
             </div>
             <div className="bg-black rounded-b-lg overflow-hidden flex items-center justify-center min-h-[300px] relative">
-              {/* Crab Detection Video - shown if available */}
-              {showCrabDetectionInTopPanel && (
+              {/* BAv4 Video - shown as primary if available */}
+              {!bav4VideoError && bav4VideoPath && (
+                <video
+                  ref={bav4VideoRef}
+                  src={bav4VideoPath}
+                  className="w-full h-auto max-h-[45vh]"
+                  muted={isMuted}
+                  preload="auto"
+                  playsInline
+                  onLoadedData={() => setBav4VideoLoaded(true)}
+                  onError={() => setBav4VideoError(true)}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                />
+              )}
+
+              {/* Fallback: Crab Detection Video - shown if BAv4 not available */}
+              {bav4VideoError && showCrabDetectionInTopPanel && (
                 <video
                   ref={crabDetectionVideoRef}
                   src={crabDetectionVideoPath}
@@ -1652,8 +1906,8 @@ export default function VideoComparisonModal({
                 />
               )}
 
-              {/* Motion Video - shown as fallback when crab detection is not available */}
-              {!showCrabDetectionInTopPanel && (
+              {/* Fallback: Motion Video - shown when both BAv4 and crab detection are not available */}
+              {bav4VideoError && !showCrabDetectionInTopPanel && (
                 <video
                   ref={motionVideoRef}
                   src={motionVideoPath}
@@ -1666,13 +1920,13 @@ export default function VideoComparisonModal({
                 />
               )}
 
-              {/* Error overlay - only show if BOTH videos failed */}
-              {crabDetectionVideoError && motionVideoError && (
+              {/* Error overlay - only show if ALL videos failed */}
+              {bav4VideoError && crabDetectionVideoError && motionVideoError && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-90 text-white p-4 text-center">
                   <X size={40} className="text-red-500 mb-3" />
                   <p className="font-bold mb-2 text-sm">Video Not Available</p>
                   <p className="text-xs text-gray-300">{motionFilename}</p>
-                  <p className="text-xs text-gray-400 mt-1">Motion video incompatible with browser</p>
+                  <p className="text-xs text-gray-400 mt-1">No compatible video found (BAv4, crab, or motion)</p>
                   <p className="text-xs text-blue-400 mt-2">See FIX_VIDEO_CODECS.md</p>
                 </div>
               )}
@@ -1709,10 +1963,12 @@ export default function VideoComparisonModal({
 
         {/* Combined Timeline - Dual Axis with Integrated Scrubber */}
         <div className="bg-gray-50 border-t">
-          {(activityData.length > 0 || yolov8Data.length > 0) && (
+          {(bav4Data.length > 0 || activityData.length > 0 || yolov8Data.length > 0) && (
             <div className="px-4 py-3">
               <h3 className="text-xs font-semibold text-gray-700 mb-1">
-                Motion Density & YOLOv8 Detections (click or drag to scrub)
+                {bav4Data.length > 0
+                  ? 'BAv4 Active Tracks & YOLOv8 Detections (click or drag to scrub)'
+                  : 'Motion Density & YOLOv8 Detections (click or drag to scrub)'}
               </h3>
               <div
                 ref={chartContainerRef}
@@ -1746,14 +2002,20 @@ export default function VideoComparisonModal({
                       allowDataOverflow={false}
                       padding={{ left: 0, right: 0 }}
                     />
-                    {/* Left Y-axis for Motion Density */}
+                    {/* Left Y-axis for BAv4 Tracks or Motion Density */}
                     <YAxis
                       yAxisId="left"
                       stroke="#10b981"
                       style={{ fontSize: '10px' }}
                       width={50}
-                      tickFormatter={(value) => `${value.toFixed(0)}%`}
-                      label={{ value: 'Motion %', angle: -90, position: 'insideLeft', offset: -5, style: { fontSize: '10px', fill: '#10b981', fontWeight: 600 } }}
+                      tickFormatter={(value) => bav4Data.length > 0 ? `${value.toFixed(0)}` : `${value.toFixed(0)}%`}
+                      label={{
+                        value: bav4Data.length > 0 ? 'BAv4 Tracks' : 'Motion %',
+                        angle: -90,
+                        position: 'insideLeft',
+                        offset: -5,
+                        style: { fontSize: '10px', fill: '#10b981', fontWeight: 600 }
+                      }}
                     />
                     {/* Right Y-axis for YOLOv8 Count */}
                     <YAxis
@@ -1767,28 +2029,34 @@ export default function VideoComparisonModal({
                     <Tooltip
                       content={({ active, payload }) => {
                         if (active && payload && payload.length) {
-                          const density = typeof payload[0]?.value === 'number' ? payload[0].value : 0;
+                          const hasBav4 = bav4Data.length > 0;
+                          const primaryValue = typeof payload[0]?.value === 'number' ? payload[0].value : 0;
                           const detections = typeof payload[1]?.value === 'number' ? payload[1].value : 0;
                           return (
                             <div className="bg-white p-2 border rounded shadow-lg text-xs">
                               <p className="font-semibold">Time: {formatTime(payload[0]?.payload?.time || 0)}</p>
-                              <p className="text-green-600">Motion Density: {density.toFixed(2)}%</p>
-                              <p className="text-blue-600">Detections: {detections}</p>
+                              {hasBav4 ? (
+                                <p className="text-green-600">BAv4 Tracks: {primaryValue}</p>
+                              ) : (
+                                <p className="text-green-600">Motion Density: {primaryValue.toFixed(2)}%</p>
+                              )}
+                              <p className="text-blue-600">YOLO Detections: {detections}</p>
                             </div>
                           );
                         }
                         return null;
                       }}
                     />
-                    {/* Motion Density Area */}
+                    {/* BAv4 Tracks or Motion Density Area */}
                     <Area
                       yAxisId="left"
                       type="monotone"
-                      dataKey="density"
+                      dataKey={bav4Data.length > 0 ? "tracks" : "density"}
                       stroke="#10b981"
                       strokeWidth={2}
                       fillOpacity={1}
                       fill="url(#activityGradient)"
+                      name={bav4Data.length > 0 ? "BAv4 Tracks" : "Motion Density"}
                     />
                     {/* YOLOv8 Detection Bars */}
                     <Bar

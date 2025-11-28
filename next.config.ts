@@ -279,8 +279,33 @@ const nextConfig: NextConfig = {
     ],
   },
 
+  // Ignore files that trigger unnecessary rebuilds
+  onDemandEntries: {
+    // Period (in ms) where the server will keep pages in the buffer
+    maxInactiveAge: 60 * 1000,
+    // Number of pages that should be kept simultaneously without being disposed
+    pagesBufferLength: 5,
+  },
+
   // Webpack optimizations
   webpack: (config, { isServer, dev }) => {
+    // Ignore log files and temp files from file watching to reduce HMR noise
+    if (dev) {
+      config.watchOptions = {
+        ...config.watchOptions,
+        ignored: [
+          '**/node_modules/**',
+          '**/.git/**',
+          '**/.next/**',
+          '**/public/videos/**',
+          '**/*.log',
+          '**/processing-*.log',
+          '**/nul',
+          '**/*.ipynb_checkpoints/**',
+        ],
+      };
+    }
+
     // Only apply optimizations in production builds
     if (!dev && !isServer) {
       // Optimize chunk splitting for better caching

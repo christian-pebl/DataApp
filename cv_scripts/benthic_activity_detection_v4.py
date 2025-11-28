@@ -31,6 +31,16 @@ from dataclasses import dataclass, asdict, field
 from typing import List, Tuple, Optional
 from scipy.spatial.distance import cdist
 import argparse
+import time
+
+# Import logging utilities
+from logging_utils import (
+    set_verbosity, get_verbosity,
+    VERBOSITY_MINIMAL, VERBOSITY_NORMAL, VERBOSITY_DETAILED,
+    print_organisms_result, print_result_info, print_result_success,
+    print_box_line, print_box_top, print_box_bottom, print_progress_bar,
+    STATUS_SUCCESS, STATUS_ERROR, STATUS_WARNING, STATUS_INFO
+)
 
 
 @dataclass
@@ -664,22 +674,23 @@ def process_video(
     run_id: str = None
 ) -> dict:
     """Main processing pipeline for benthic activity detection V4."""
-    print(f"\n{'='*80}")
-    print("BENTHIC ACTIVITY DETECTION V4 - Shadow-Reflection Coupling & Track Trails")
-    print(f"{'='*80}")
-    print(f"Input: {video_path}")
-    print(f"Output: {output_dir}")
-    print(f"\nV4 Enhancements:")
-    print(f"  - Shadow-reflection coupling (max distance: {detection_params.coupling_distance}px)")
-    print(f"  - Complete track trails (entire path from start to current frame)")
-    print(f"  - Enhanced sensitivity (dark threshold: {detection_params.dark_threshold})")
-    print(f"\nV3 Features:")
-    print(f"  - Dual-threshold detection (dark: {detection_params.dark_threshold}, bright: {detection_params.bright_threshold})")
-    print(f"  - Dark + bright blob detection")
-    print(f"\nV2 Features:")
-    print(f"  - Extended skip frames: {tracking_params.max_skip_frames} (~7.5 seconds)")
-    print(f"  - Rest zone monitoring: {tracking_params.rest_zone_radius}px radius")
-    print(f"  - Spatial proximity matching")
+    if get_verbosity() >= VERBOSITY_DETAILED:
+        print(f"\n{'='*80}")
+        print("BENTHIC ACTIVITY DETECTION V4 - Shadow-Reflection Coupling & Track Trails")
+        print(f"{'='*80}")
+        print(f"Input: {video_path}")
+        print(f"Output: {output_dir}")
+        print(f"\nV4 Enhancements:")
+        print(f"  - Shadow-reflection coupling (max distance: {detection_params.coupling_distance}px)")
+        print(f"  - Complete track trails (entire path from start to current frame)")
+        print(f"  - Enhanced sensitivity (dark threshold: {detection_params.dark_threshold})")
+        print(f"\nV3 Features:")
+        print(f"  - Dual-threshold detection (dark: {detection_params.dark_threshold}, bright: {detection_params.bright_threshold})")
+        print(f"  - Dark + bright blob detection")
+        print(f"\nV2 Features:")
+        print(f"  - Extended skip frames: {tracking_params.max_skip_frames} (~7.5 seconds)")
+        print(f"  - Rest zone monitoring: {tracking_params.rest_zone_radius}px radius")
+        print(f"  - Spatial proximity matching")
 
     start_time = datetime.now()
 
@@ -692,10 +703,19 @@ def process_video(
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    print(f"\nVideo Info:")
-    print(f"  FPS: {fps:.2f}")
-    print(f"  Frames: {total_frames}")
-    print(f"  Resolution: {width}x{height}")
+    # Calculate video duration
+    duration_seconds = total_frames / fps if fps > 0 else 0
+
+    if get_verbosity() >= VERBOSITY_NORMAL:
+        print_box_line(f"{STATUS_INFO} Scanning {total_frames} frames at {fps:.0f} fps ({duration_seconds:.0f} second video)")
+        print_box_line(f"{STATUS_INFO} Using advanced tracking (shadows + reflections)")
+        print_box_line("")
+
+    if get_verbosity() >= VERBOSITY_DETAILED:
+        print(f"\nVideo Info:")
+        print(f"  FPS: {fps:.2f}")
+        print(f"  Frames: {total_frames}")
+        print(f"  Resolution: {width}x{height}")
 
     output_video_path = output_dir / f"{video_path.stem}_benthic_activity_v4.mp4"
     fourcc = cv2.VideoWriter_fourcc(*'avc1')
@@ -709,7 +729,11 @@ def process_video(
     total_coupled_detections = 0
     total_detections = 0
 
-    print(f"\nProcessing {total_frames} frames...")
+    # Track per-frame detection counts for timeline visualization
+    frame_detection_counts = []
+
+    if get_verbosity() >= VERBOSITY_DETAILED:
+        print(f"\nProcessing {total_frames} frames...")
 
     frame_idx = 0
     while True:
@@ -751,7 +775,20 @@ def process_video(
         annotated = render_annotated_frame(frame, active_tracks, frame_idx, show_history=True)
         writer.write(annotated)
 
-        if (frame_idx + 1) % 50 == 0:
+        # Track detection counts for timeline visualization
+        active_count = len([t for t in active_tracks if frame_idx in t.frames or
+                            (t.is_resting and frame_idx - t.last_seen_frame <= tracking_params.max_skip_frames)])
+        coupled_blobs_count = sum(1 for blob in blobs if blob.blob_type == 'coupled')
+
+        frame_detection_counts.append({
+            'frame': int(frame_idx),
+            'timestamp': float(frame_idx / fps),
+            'active_tracks': int(active_count),
+            'blobs_detected': int(len(blobs)),
+            'coupled_blobs': int(coupled_blobs_count),
+        })
+
+        if (frame_idx + 1) % 50 == 0 and get_verbosity() >= VERBOSITY_DETAILED:
             resting_count = sum(1 for t in active_tracks if t.is_resting)
             coupled_rate = (total_coupled_detections / total_detections * 100) if total_detections > 0 else 0
             print(f"  Frame {frame_idx+1}/{total_frames} - {len(active_tracks)} tracks ({resting_count} resting, {coupled_rate:.1f}% coupled)")
@@ -761,19 +798,22 @@ def process_video(
     cap.release()
     writer.release()
 
-    print(f"\nValidating {len(active_tracks)} tracks...")
+    if get_verbosity() >= VERBOSITY_DETAILED:
+        print(f"\nValidating {len(active_tracks)} tracks...")
+
     for track in active_tracks:
         track.is_valid = validate_track(track, validation_params)
         completed_tracks.append(track)
 
     valid_tracks = [t for t in completed_tracks if t.is_valid]
 
-    print(f"  Valid tracks: {len(valid_tracks)}/{len(completed_tracks)}")
+    if get_verbosity() >= VERBOSITY_DETAILED:
+        print(f"  Valid tracks: {len(valid_tracks)}/{len(completed_tracks)}")
 
-    # V4: Enhanced statistics with coupling info
-    for track in valid_tracks:
-        rest_periods = sum(1 for i in range(1, len(track.frames)) if track.frames[i] - track.frames[i-1] > 1)
-        print(f"  Track {track.track_id}: {track.length} detections, {track.total_duration} frame span, {rest_periods} rest periods, {track.coupling_rate:.1f}% coupled")
+        # V4: Enhanced statistics with coupling info
+        for track in valid_tracks:
+            rest_periods = sum(1 for i in range(1, len(track.frames)) if track.frames[i] - track.frames[i-1] > 1)
+            print(f"  Track {track.track_id}: {track.length} detections, {track.total_duration} frame span, {rest_periods} rest periods, {track.coupling_rate:.1f}% coupled")
 
     # Calculate overall coupling rate
     overall_coupling_rate = (total_coupled_detections / total_detections * 100) if total_detections > 0 else 0
@@ -810,6 +850,7 @@ def process_video(
             }
             for t in completed_tracks
         ],
+        'frame_detections': frame_detection_counts,
         'summary': {
             'total_tracks': len(completed_tracks),
             'valid_tracks': len(valid_tracks),
@@ -833,15 +874,25 @@ def process_video(
     with open(results_path, 'w') as f:
         json.dump(convert_to_native_types(results), f, indent=2)
 
-    print(f"\n{'='*80}")
-    print("DETECTION COMPLETE")
-    print(f"{'='*80}")
-    print(f"Processing time: {results['summary']['processing_time']:.1f}s")
-    print(f"Valid tracks: {len(valid_tracks)}")
-    print(f"Overall coupling rate: {overall_coupling_rate:.1f}%")
-    print(f"Annotated video: {output_video_path}")
-    print(f"Results JSON: {results_path}")
-    print(f"{'='*80}")
+    # Print organism results
+    if get_verbosity() >= VERBOSITY_NORMAL:
+        print_organisms_result(len(valid_tracks))
+        if get_verbosity() >= VERBOSITY_NORMAL:
+            print_result_success(f"Processing complete ({results['summary']['processing_time']:.0f}s)")
+            print_result_success(f"Created: {output_video_path.name}")
+            print_result_success(f"Created: {results_path.name}")
+        print_box_bottom()
+
+    if get_verbosity() >= VERBOSITY_DETAILED:
+        print(f"\n{'='*80}")
+        print("DETECTION COMPLETE")
+        print(f"{'='*80}")
+        print(f"Processing time: {results['summary']['processing_time']:.1f}s")
+        print(f"Valid tracks: {len(valid_tracks)}")
+        print(f"Overall coupling rate: {overall_coupling_rate:.1f}%")
+        print(f"Annotated video: {output_video_path}")
+        print(f"Results JSON: {results_path}")
+        print(f"{'='*80}")
 
     return results
 

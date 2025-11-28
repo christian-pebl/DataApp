@@ -176,12 +176,16 @@ def convert_to_native_types(obj):
 
 def compute_background(
     video_path: Path,
-    params: BackgroundParams
+    params: BackgroundParams,
+    max_frames_in_memory: int = 150
 ) -> Tuple[np.ndarray, dict]:
     """
-    V5: Compute MEDIAN background from video.
+    V5: Compute MEDIAN background from video (MEMORY-EFFICIENT VERSION).
     Uses temporal median (more robust to moving objects than mean).
     Returns background image and video metadata.
+
+    Memory optimization: Limits frames in memory to prevent OOM errors on large videos.
+    For HD 1080p videos, 150 frames ≈ 1.2GB RAM vs 21.9GB for 947 frames.
     """
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -192,10 +196,18 @@ def compute_background(
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    print(f"\n[1/3] Computing Background (Temporal Median)")
+    print(f"\n[1/3] Computing Background (Temporal Median - Memory Efficient)")
     print(f"  Video: {width}x{height} @ {fps:.2f} FPS")
     print(f"  Total frames: {total_frames}")
-    print(f"  Sampling every {params.sample_every_nth_frame} frames")
+
+    # Calculate effective sampling rate to stay within memory limit
+    naive_sample_count = total_frames // params.sample_every_nth_frame
+    if naive_sample_count > max_frames_in_memory:
+        effective_sample_rate = total_frames // max_frames_in_memory
+        print(f"  Memory limit: Using every {effective_sample_rate} frames (max {max_frames_in_memory} frames)")
+    else:
+        effective_sample_rate = params.sample_every_nth_frame
+        print(f"  Sampling every {effective_sample_rate} frames")
 
     # Accumulate frames for median computation
     frames_list = []
@@ -206,8 +218,12 @@ def compute_background(
         if not ret:
             break
 
-        if frame_idx % params.sample_every_nth_frame == 0:
+        if frame_idx % effective_sample_rate == 0:
             frames_list.append(frame.astype(np.float32))
+
+            # Safety check - should never exceed limit
+            if len(frames_list) >= max_frames_in_memory:
+                break
 
         frame_idx += 1
 
@@ -218,6 +234,7 @@ def compute_background(
     background = np.median(frames_list, axis=0).astype(np.float32)
 
     print(f"  Background computed from {len(frames_list)} frames")
+    print(f"  Memory usage: ~{(len(frames_list) * width * height * 3 * 4) / (1024**3):.1f} GB")
 
     metadata = {
         'original_fps': fps,

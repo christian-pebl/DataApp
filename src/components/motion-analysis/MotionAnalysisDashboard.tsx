@@ -23,6 +23,8 @@ import VideoComparisonModal from './VideoComparisonModal';
 import VideoValidationDialog from './VideoValidationDialog';
 import ProcessingEstimationModal from './ProcessingEstimationModal';
 import ProcessingHistoryDialog from './ProcessingHistoryDialog';
+import ProcessingPreflightDialog from './ProcessingPreflightDialog';
+import { getCachedDependencyCheck } from '@/lib/local-processing-checker-types';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -91,15 +93,23 @@ interface CrabDetections {
 
 interface MotionAnalysisResult {
   video_info: VideoInfo;
-  activity_score: ActivityScore;
-  organisms: Organisms;
-  density: Density;
-  motion: Motion;
-  processing_time_seconds: number;
+  activity_score?: ActivityScore; // Optional - only if motion analysis ran
+  organisms?: Organisms; // Optional - only if motion analysis ran
+  density?: Density; // Optional - only if motion analysis ran
+  motion?: Motion; // Optional - only if motion analysis ran
+  processing_time_seconds?: number;
   timestamp: string;
   processing_history?: ProcessingRun[];
   crab_detections?: CrabDetections;
   has_crab_detection?: boolean;
+  yolo_detections?: any[]; // YOLO detection results
+  benthic_activity_v4?: { // BAv4 summary data
+    valid_tracks: number;
+    total_tracks: number;
+    coupling_rate: number;
+    processing_time: number;
+  };
+  bav4_frame_detections?: any[]; // BAv4 frame-by-frame data
   prescreen_brightness?: number | null;
   prescreen_focus?: number | null;
   prescreen_quality?: number | null;
@@ -128,7 +138,7 @@ interface PendingVideo {
   fps: number | null;
   duration_seconds: number | null;
   total_frames: number | null;
-  processing_status?: 'pending' | 'processing' | 'failed';
+  processing_status?: 'pending' | 'processing' | 'failed' | 'needs_reprocessing';
   processing_history?: ProcessingRun[];
   prescreen_brightness?: number | null;
   prescreen_focus?: number | null;
@@ -144,6 +154,7 @@ interface MotionAnalysisDashboardProps {
   onDeleteVideos?: (filenames: string[]) => Promise<void>;
   onProcessingStarted?: (runId: string, estimatedTime?: string, estimatedCost?: string) => void;
   onUploadComplete?: () => void;
+  processingStatusPanel?: React.ReactNode;
 }
 
 // Helper functions
@@ -349,25 +360,28 @@ function SmallMultipleChart({
   const getData = () => {
     switch (metric) {
       case 'density':
+        if (!video.density) return [];
         return parseArrayData(
           video.density.motion_densities,
-          video.density.avg_density * 100, // Convert ratio to percentage
-          video.density.max_density * 100,
+          (video.density.avg_density ?? 0) * 100, // Convert ratio to percentage
+          (video.density.max_density ?? 0) * 100,
           30
         );
       case 'energy':
+        if (!video.motion) return [];
         return parseArrayData(
           video.motion.motion_energies,
-          video.motion.avg_energy,
-          video.motion.max_energy,
+          video.motion.avg_energy ?? 0,
+          video.motion.max_energy ?? 0,
           30
         );
       case 'count':
         // Generate synthetic count data
+        if (!video.organisms) return [];
         return parseArrayData(
           '<synthetic>',
-          video.organisms.avg_count,
-          video.organisms.max_count,
+          video.organisms.avg_count ?? 0,
+          video.organisms.max_count ?? 0,
           30
         );
       default:
@@ -382,7 +396,7 @@ function SmallMultipleChart({
 
   const chartData = sampledData.map((value, index) => ({ time: index, value }));
 
-  const scoreColor = getScoreColor(video.activity_score.overall_score);
+  const scoreColor = getScoreColor(video.activity_score?.overall_score ?? 0);
   const videoName = getVideoName(video.video_info.filename);
 
   return (
@@ -402,7 +416,7 @@ function SmallMultipleChart({
           className="text-xs font-bold px-1.5 py-0.5 rounded"
           style={{ backgroundColor: scoreColor, color: 'white' }}
         >
-          {video.activity_score.overall_score.toFixed(0)}
+          {(video.activity_score?.overall_score ?? 0).toFixed(0)}
         </span>
       </div>
 
@@ -421,15 +435,15 @@ function SmallMultipleChart({
       </ResponsiveContainer>
 
       <div className="flex justify-between mt-1.5 text-xs text-gray-600">
-        <span>{video.organisms.total_detections} org</span>
-        <span>{(video.density.avg_density * 100).toFixed(2)}%</span>
+        <span>{video.organisms?.total_detections ?? 0} org</span>
+        <span>{((video.density?.avg_density ?? 0) * 100).toFixed(2)}%</span>
       </div>
     </div>
   );
 }
 
 // Main Dashboard Component
-export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDeleteVideos, onProcessingStarted, onUploadComplete }: MotionAnalysisDashboardProps) {
+export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDeleteVideos, onProcessingStarted, onUploadComplete, processingStatusPanel }: MotionAnalysisDashboardProps) {
   const [sortBy, setSortBy] = useState<'score' | 'organisms' | 'density'>('score');
   const [metric, setMetric] = useState<'density' | 'energy' | 'count'>('density');
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
@@ -476,6 +490,10 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
   // Prescreen settings state
   const [prescreenEnabled, setPrescreenEnabled] = useState(true);
   const [showPrescreenSettings, setShowPrescreenSettings] = useState(false);
+
+  // Pre-flight check state
+  const [showPreflightCheck, setShowPreflightCheck] = useState(false);
+  const [pendingRunType, setPendingRunType] = useState<'local' | 'modal-t4' | 'modal-a10g' | null>(null);
 
   // Handle file upload
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -559,9 +577,55 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
 
   // Handle starting processing
   const handleStartProcessing = async (runType: 'local' | 'modal-t4' | 'modal-a10g') => {
-    console.log(`Starting ${runType} processing for ${pendingVideos.length} videos`);
-    // Modal will close itself after calling the API
-    // onProcessingStarted will be called by the parent with the runId
+    // For local processing, check if we can skip the preflight dialog
+    if (runType === 'local') {
+      setPendingRunType(runType);
+
+      // Check if user has successfully completed videos before
+      const hasCompletedVideos = data.some(
+        (video) => video.status === 'completed' && video.results
+      );
+
+      // Check if we have a valid cached dependency check
+      const cachedCheck = getCachedDependencyCheck();
+
+      // Skip preflight if:
+      // 1. User has successfully processed videos before (experienced user)
+      // 2. AND we have a valid cached dependency check that passed
+      if (hasCompletedVideos && cachedCheck?.canProcess) {
+        console.log('[PREFLIGHT] ⚡ Skipping preflight check - experienced user with valid cache');
+        console.log(`[PREFLIGHT] User has ${data.filter(v => v.status === 'completed').length} completed videos`);
+        console.log(`[PREFLIGHT] Cache age: ${Math.round((Date.now() - cachedCheck.timestamp) / 1000 / 60)}min`);
+
+        // Proceed directly without showing the dialog
+        handlePreflightProceed();
+        return;
+      }
+
+      // Otherwise, show the preflight check
+      console.log('[PREFLIGHT] Showing preflight check dialog');
+      if (!hasCompletedVideos) {
+        console.log('[PREFLIGHT] Reason: New user (no completed videos)');
+      } else if (!cachedCheck) {
+        console.log('[PREFLIGHT] Reason: No cached dependency check');
+      } else if (!cachedCheck.canProcess) {
+        console.log('[PREFLIGHT] Reason: Previous dependency check failed');
+      }
+
+      setShowPreflightCheck(true);
+      // Estimation modal will close itself after handling the processing
+    } else {
+      // For Modal.com processing, proceed directly (cloud-based, no local dependencies needed)
+      console.log(`Starting ${runType} processing for ${pendingVideos.length} videos`);
+      // Modal will close itself after calling the API
+      // onProcessingStarted will be called by the parent with the runId
+    }
+  };
+
+  const handlePreflightProceed = () => {
+    console.log(`Pre-flight check passed, starting ${pendingRunType} processing`);
+    // Pre-flight dialog will close itself
+    // Estimation modal already handles the API call
   };
 
   // Show quick action menu on click
@@ -583,6 +647,92 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
     setHistoryData(history);
     setIsHistoryDialogOpen(true);
     setQuickActionVideo(null);
+  };
+
+  // Delete a single processing run
+  const handleDeleteRun = async (runId: string) => {
+    try {
+      const response = await fetch(`/api/motion-analysis/process/delete?runId=${runId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete processing run');
+      }
+
+      toast({
+        title: 'Run Deleted',
+        description: 'Processing run has been deleted successfully',
+      });
+
+      // Update the history data to remove the deleted run
+      const updatedHistory = historyData.filter(run => run.run_id !== runId);
+      setHistoryData(updatedHistory);
+
+      // Trigger parent refresh if provided
+      if (onUploadComplete) {
+        onUploadComplete();
+      }
+    } catch (error) {
+      console.error('Error deleting processing run:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Delete Failed',
+        description: 'Failed to delete processing run. Please try again.',
+      });
+    }
+  };
+
+  // Delete all processing runs for the current video
+  const handleDeleteAllRuns = async () => {
+    try {
+      // Find the video ID by filename
+      const video = [...pendingVideos, ...data].find(
+        v => ('filename' in v ? v.filename : v.video_info?.filename) === historyFilename
+      );
+
+      if (!video) {
+        throw new Error('Video not found');
+      }
+
+      const videoId = 'id' in video ? video.id : undefined;
+      if (!videoId) {
+        throw new Error('Video ID not found');
+      }
+
+      const response = await fetch(`/api/motion-analysis/process/delete?videoId=${videoId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete processing runs');
+      }
+
+      const result = await response.json();
+
+      toast({
+        title: 'Runs Deleted',
+        description: `Deleted ${result.deletedCount} processing run(s)`,
+      });
+
+      // Clear the history data
+      setHistoryData([]);
+
+      // Close the dialog
+      setIsHistoryDialogOpen(false);
+
+      // Trigger parent refresh if provided
+      if (onUploadComplete) {
+        onUploadComplete();
+      }
+    } catch (error) {
+      console.error('Error deleting all processing runs:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Delete Failed',
+        description: 'Failed to delete processing runs. Please try again.',
+      });
+    }
   };
 
   // Get all video filenames (both pending and processed)
@@ -870,12 +1020,31 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
 
   // Filter to only include valid processed data for visualization
   // Also deduplicate by video_info.filename to prevent duplicate key errors
+  // IMPORTANT: Include videos that are completed even if they lack motion analysis data
+  // (e.g., only BAv4 or YOLO ran, or motion analysis files weren't found)
   const validData = useMemo(() => {
     const seen = new Set<string>();
     return data.filter(v => {
-      if (v?.activity_score?.overall_score === undefined || !v?.video_info?.filename) {
+      // Must have video_info.filename to display
+      if (!v?.video_info?.filename) {
+        console.warn('[validData] Filtering out video without filename:', v);
         return false;
       }
+
+      // Check if video has any meaningful data to display:
+      // - Has motion analysis scores
+      // - Has BAv4 crab detection data
+      // - Has YOLO detections
+      const hasMotionAnalysis = v?.activity_score?.overall_score !== undefined;
+      const hasBav4Data = v?.benthic_activity_v4 || v?.bav4_frame_detections;
+      const hasYoloDetections = v?.yolo_detections && v.yolo_detections.length > 0;
+
+      // Include video if it has any analysis data
+      if (!hasMotionAnalysis && !hasBav4Data && !hasYoloDetections) {
+        console.warn(`[validData] Filtering out video without any analysis data: ${v.video_info.filename}`);
+        return false;
+      }
+
       const filename = v.video_info.filename;
       if (seen.has(filename)) {
         console.warn(`Duplicate video entry found: ${filename}`);
@@ -887,6 +1056,7 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
   }, [data]);
 
   // Calculate summary statistics (only for processed videos with valid data)
+  // Note: Some videos may not have motion analysis data (only BAv4 or YOLO)
   const stats = useMemo(() => {
     if (validData.length === 0) {
       return {
@@ -898,43 +1068,45 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
       };
     }
 
-    const scores = validData.map((v) => v.activity_score.overall_score);
-    const organisms = validData.map((v) => v.organisms.total_detections);
-    const densities = validData.map((v) => v.density.avg_density);
+    // Only include videos with motion analysis data for these stats
+    const videosWithMotionAnalysis = validData.filter(v => v?.activity_score?.overall_score !== undefined);
+    const scores = videosWithMotionAnalysis.map((v) => v.activity_score?.overall_score ?? 0);
+    const organisms = videosWithMotionAnalysis.map((v) => v.organisms?.total_detections ?? 0);
+    const densities = videosWithMotionAnalysis.map((v) => v.density?.avg_density ?? 0);
 
     return {
-      avgScore: scores.reduce((a, b) => a + b, 0) / scores.length,
+      avgScore: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0,
       totalOrganisms: organisms.reduce((a, b) => a + b, 0),
       videosWithDetections: organisms.filter((o) => o > 0).length,
-      avgDensity: densities.reduce((a, b) => a + b, 0) / densities.length,
-      maxScore: Math.max(...scores),
+      avgDensity: densities.length > 0 ? densities.reduce((a, b) => a + b, 0) / densities.length : 0,
+      maxScore: scores.length > 0 ? Math.max(...scores) : 0,
     };
   }, [validData]);
 
-  // Sort videos
+  // Sort videos - handle cases where motion analysis data may be missing
   const sortedData = useMemo(() => {
     return [...validData].sort((a, b) => {
       switch (sortBy) {
         case 'score':
-          return b.activity_score.overall_score - a.activity_score.overall_score;
+          return (b.activity_score?.overall_score ?? 0) - (a.activity_score?.overall_score ?? 0);
         case 'organisms':
-          return b.organisms.total_detections - a.organisms.total_detections;
+          return (b.organisms?.total_detections ?? 0) - (a.organisms?.total_detections ?? 0);
         case 'density':
-          return b.density.avg_density - a.density.avg_density;
+          return (b.density?.avg_density ?? 0) - (a.density?.avg_density ?? 0);
         default:
           return 0;
       }
     });
   }, [validData, sortBy]);
 
-  // Scatter plot data
+  // Scatter plot data - handle optional motion analysis fields
   const scatterData = useMemo(() => {
     return validData.map((v) => ({
       name: getVideoName(v.video_info.filename),
-      score: v.activity_score.overall_score,
-      organisms: v.organisms.total_detections,
-      density: v.density.avg_density,
-      color: getScoreColor(v.activity_score.overall_score),
+      score: v.activity_score?.overall_score ?? 0,
+      organisms: v.organisms?.total_detections ?? 0,
+      density: v.density?.avg_density ?? 0,
+      color: getScoreColor(v.activity_score?.overall_score ?? 0),
     }));
   }, [validData]);
 
@@ -1022,13 +1194,34 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
             </button>
           )}
           {isEditMode ? (
-            <button
-              onClick={cancelEditMode}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-            >
-              <X size={14} />
-              Cancel
-            </button>
+            <>
+              {selectedVideos.size > 0 && (
+                <button
+                  onClick={handleDeleteVideos}
+                  disabled={isDeleting}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={14} />
+                      Delete {selectedVideos.size}
+                    </>
+                  )}
+                </button>
+              )}
+              <button
+                onClick={cancelEditMode}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
+                <X size={14} />
+                Cancel
+              </button>
+            </>
           ) : (
             <button
               onClick={() => setIsEditMode(true)}
@@ -1048,6 +1241,13 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
           </button>
         </div>
       </div>
+
+      {/* Processing Status Panel */}
+      {processingStatusPanel && (
+        <div className="mb-4">
+          {processingStatusPanel}
+        </div>
+      )}
 
       {/* Comparison Table */}
       <div className="bg-white rounded-lg shadow p-4">
@@ -1108,8 +1308,8 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                 >
                   BAI
                 </th>
-                <th className="pb-1.5 text-xs font-medium w-12" title="Processing History">
-                  History
+                <th className="pb-1.5 text-xs font-medium w-12" title="View processing logs and error details">
+                  Logs
                 </th>
               </tr>
             </thead>
@@ -1148,6 +1348,15 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                     animate: false,
                     rowBg: 'bg-red-50/50',
                     subtitle: 'Processing failed - check history',
+                  },
+                  needs_reprocessing: {
+                    bg: 'bg-orange-100',
+                    text: 'text-orange-700',
+                    dot: 'bg-orange-500',
+                    label: 'Needs Reprocessing',
+                    animate: false,
+                    rowBg: 'bg-orange-50/50',
+                    subtitle: 'Result files missing - run processing again',
                   },
                   completed: {
                     bg: 'bg-green-100',
@@ -1221,7 +1430,7 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                           openHistoryDialog(video.filename, video.processing_history || []);
                         }}
                         className="p-1.5 hover:bg-gray-200 rounded-full transition-colors"
-                        title="View processing history"
+                        title={isFailed ? 'View logs - Processing failed, click to see error details' : 'View processing logs'}
                       >
                         <History size={14} className={isFailed ? 'text-red-500' : 'text-gray-500'} />
                       </button>
@@ -1232,16 +1441,19 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
 
               {/* Processed videos */}
               {sortedData.map((video, index) => {
-                const scoreColor = getScoreColor(video.activity_score.overall_score);
+                const scoreColor = getScoreColor(video.activity_score?.overall_score ?? 0);
                 // Extract real YOLO detection counts from detections array
+                // Handle cases where motion analysis data may not exist (only BAv4 or YOLO ran)
                 const yoloDetectionData = video.yolo_detections && video.yolo_detections.length > 0
                   ? video.yolo_detections.map((d: any) => d.count || 0)
-                  : parseArrayData(
-                      '<synthetic>',
-                      video.organisms.avg_count,
-                      video.organisms.max_count,
-                      30
-                    );
+                  : video.organisms
+                    ? parseArrayData(
+                        '<synthetic>',
+                        video.organisms.avg_count ?? 0,
+                        video.organisms.max_count ?? 0,
+                        30
+                      )
+                    : [];
 
                 // Format upload date from timestamp
                 const uploadDate = new Date(video.timestamp);
@@ -1317,14 +1529,16 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                         : '0.0'}
                     </td>
                     <td className="py-2">
-                      {video.crab_detections && video.crab_detections.frame_counts ? (
+                      {video.crab_detections?.frame_counts || video.bav4_frame_detections ? (
                         <div className="w-36">
                           <Sparkline
-                            data={video.crab_detections.frame_counts}
+                            data={video.crab_detections?.frame_counts || video.bav4_frame_detections || []}
                             color="#f97316"
                             height={24}
                           />
                         </div>
+                      ) : video.benthic_activity_v4 ? (
+                        <span className="text-xs text-green-600 font-medium">{video.benthic_activity_v4.valid_tracks} detections</span>
                       ) : (
                         <span className="text-xs text-gray-400 italic">Not processed</span>
                       )}
@@ -1332,7 +1546,9 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                     <td className="py-2 text-xs text-gray-600 font-medium whitespace-nowrap">
                       {video.crab_detections
                         ? `${video.crab_detections.valid_tracks} tracks`
-                        : '—'}
+                        : video.benthic_activity_v4
+                          ? `${video.benthic_activity_v4.valid_tracks} tracks`
+                          : '—'}
                     </td>
                     <td className="py-2">
                       <button
@@ -1341,7 +1557,7 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
                           openHistoryDialog(originalFilename, video.processing_history || []);
                         }}
                         className="p-1.5 hover:bg-gray-200 rounded-full transition-colors"
-                        title="View processing history"
+                        title="View processing logs"
                       >
                         <History size={14} className="text-gray-500" />
                       </button>
@@ -1372,44 +1588,19 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
           onClose={closeVideoModal}
           videoFilename={videoModalData.video_info.filename}
           videoInfo={videoModalData.video_info}
-          activityScore={videoModalData.activity_score.overall_score}
-          organisms={videoModalData.organisms.total_detections}
-          motionDensities={parseArrayData(
+          activityScore={videoModalData.activity_score?.overall_score ?? 0}
+          organisms={videoModalData.organisms?.total_detections ?? 0}
+          motionDensities={videoModalData.density ? parseArrayData(
             videoModalData.density.motion_densities,
             videoModalData.density.avg_density,
             videoModalData.density.max_density,
             120
-          )}
-          avgDensity={videoModalData.density.avg_density}
-          maxDensity={videoModalData.density.max_density}
+          ) : []}
+          avgDensity={videoModalData.density?.avg_density ?? 0}
+          maxDensity={videoModalData.density?.max_density ?? 0}
         />
       )}
 
-      {/* Floating Delete Button - appears when videos are selected */}
-      {isEditMode && selectedVideos.size > 0 && (
-        <div className="fixed bottom-8 right-8 z-50 animate-in slide-in-from-bottom-5 duration-300">
-          <button
-            onClick={handleDeleteVideos}
-            disabled={isDeleting}
-            className="group flex items-center gap-2.5 px-5 py-3.5 bg-red-600 text-white rounded-full shadow-xl hover:bg-red-700 transition-all hover:scale-105 hover:shadow-2xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Delete selected videos"
-          >
-            {isDeleting ? (
-              <>
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                <span className="font-semibold">Deleting...</span>
-              </>
-            ) : (
-              <>
-                <Trash2 size={20} className="group-hover:animate-pulse" />
-                <span className="font-semibold">
-                  Delete {selectedVideos.size} video{selectedVideos.size > 1 ? 's' : ''}
-                </span>
-              </>
-            )}
-          </button>
-        </div>
-      )}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
@@ -1442,6 +1633,13 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
         onProcessingStarted={onProcessingStarted}
       />
 
+      {/* Pre-flight Check Dialog (for local processing) */}
+      <ProcessingPreflightDialog
+        isOpen={showPreflightCheck}
+        onClose={() => setShowPreflightCheck(false)}
+        onProceed={handlePreflightProceed}
+      />
+
       {/* Quick Action Menu */}
       {quickActionVideo && (
         <>
@@ -1465,7 +1663,7 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
               className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
             >
               <Clock size={16} className="text-gray-500" />
-              View Processing History
+              View Processing Logs
             </button>
             <button
               onClick={() => {
@@ -1500,6 +1698,8 @@ export default function MotionAnalysisDashboard({ data, pendingVideos = [], onDe
         onClose={() => setIsHistoryDialogOpen(false)}
         filename={historyFilename}
         history={historyData}
+        onDeleteRun={handleDeleteRun}
+        onDeleteAll={handleDeleteAllRuns}
       />
 
       {/* Video Action Popup */}

@@ -1,12 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Loader2, Clock, DollarSign, Cpu, Zap, Settings, ChevronDown, ChevronUp, Cloud, Sliders } from 'lucide-react';
+import { X, Loader2, Clock, DollarSign, Cpu, Zap, Settings, ChevronDown, ChevronUp, Cloud } from 'lucide-react';
 import {
   parseGPUName,
   type HardwareSpecs,
 } from '@/lib/yolo-inference-estimator';
-import BenthicActivitySettingsDialog, { type BenthicActivityParams } from './BenthicActivitySettingsDialog';
 
 interface PendingVideo {
   id: string;
@@ -28,6 +27,8 @@ interface ProcessingSettings {
   yoloModel: 'yolov8n' | 'yolov8m' | 'yolov8l';
   enableBenthicActivity: boolean;
   benthicActivityParams: BenthicActivityParams | null;
+  enableCrabDetection: boolean;
+  crabDetectionParams: CrabDetectionParams | null;
 }
 
 type RunType = 'local' | GpuType;
@@ -74,14 +75,33 @@ const DEFAULT_CRAB_PARAMS: CrabDetectionParams = {
   max_speed: 100.0,
 };
 
+const DEFAULT_BAV4_PARAMS: BenthicActivityParams = {
+  threshold: 30,
+  dark_threshold: 18,
+  bright_threshold: 40,
+  min_area: 75,
+  max_area: 2000,
+  min_circularity: 0.3,
+  max_aspect_ratio: 3.0,
+  morph_kernel_size: 5,
+  max_distance: 75.0,
+  max_skip_frames: 90,
+  min_track_length: 4,
+  min_displacement: 8.0,
+  min_speed: 0.1,
+  max_speed: 30.0,
+};
+
 const DEFAULT_SETTINGS: ProcessingSettings = {
   gpuType: 'modal-a10g',  // A10G is best value (faster than T4, same or lower cost per job)
   targetFps: '10',
-  enableMotionAnalysis: true,
+  enableMotionAnalysis: false,  // Legacy motion analysis (replaced by Benthic Activity V4)
   enableYolo: true,
   yoloModel: 'yolov8m',
-  enableCrabDetection: false,
+  enableCrabDetection: false,  // Removed
   crabDetectionParams: DEFAULT_CRAB_PARAMS,
+  enableBenthicActivity: true,  // Benthic Activity V4 enabled by default
+  benthicActivityParams: DEFAULT_BAV4_PARAMS,
 };
 
 export default function ProcessingEstimationModal({
@@ -95,14 +115,12 @@ export default function ProcessingEstimationModal({
   const [isStarting, setIsStarting] = useState(false);
   const [hardware, setHardware] = useState<HardwareSpecs | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [showLocalOption, setShowLocalOption] = useState(false);
   const [settings, setSettings] = useState<ProcessingSettings>(DEFAULT_SETTINGS);
   const [historicalBenchmarks, setHistoricalBenchmarks] = useState<{
     local?: { avgFps: number; sampleCount: number };
     'modal-t4'?: { avgFps: number; sampleCount: number };
     'modal-a10g'?: { avgFps: number; sampleCount: number };
   } | null>(null);
-  const [showCrabSettingsDialog, setShowCrabSettingsDialog] = useState(false);
 
   // Video selection state - all unprocessed videos selected by default
   const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set());
@@ -158,7 +176,7 @@ export default function ProcessingEstimationModal({
 
     const gpuSpeeds = PROCESSING_SPEEDS[settings.gpuType];
     let modalProcessingTime = 0;
-    if (settings.enableMotionAnalysis) {
+    if (settings.enableBenthicActivity) {
       const historicalFps = historicalBenchmarks?.[settings.gpuType]?.avgFps;
       modalProcessingTime += totalFramesToProcess / (historicalFps || gpuSpeeds.motionAnalysis);
     }
@@ -169,7 +187,7 @@ export default function ProcessingEstimationModal({
 
     const localSpeeds = PROCESSING_SPEEDS.local;
     let localProcessingTime = 0;
-    if (settings.enableMotionAnalysis) {
+    if (settings.enableBenthicActivity) {
       const historicalFps = historicalBenchmarks?.local?.avgFps;
       localProcessingTime += totalFramesToProcess / (historicalFps || localSpeeds.motionAnalysis);
     }
@@ -272,6 +290,8 @@ export default function ProcessingEstimationModal({
           yoloModel: settings.yoloModel,
           enableCrabDetection: settings.enableCrabDetection,
           crabDetectionParams: settings.crabDetectionParams,
+          enableBenthicActivityV4: settings.enableBenthicActivity,
+          benthicActivityParams: settings.benthicActivityParams,
         },
       };
       console.log('[ProcessingModal] Request body:', JSON.stringify(requestBody, null, 2));
@@ -316,74 +336,74 @@ export default function ProcessingEstimationModal({
 
   if (!isOpen) return null;
 
-  const isProcessingDisabled = (!settings.enableMotionAnalysis && !settings.enableYolo && !settings.enableCrabDetection) || selectedVideos.length === 0;
+  const isProcessingDisabled = (!settings.enableBenthicActivity && !settings.enableYolo) || selectedVideos.length === 0;
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#1a1a1a] rounded-lg w-full max-w-md shadow-xl border border-gray-800">
+    <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-md shadow-xl border border-gray-200">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <div className="flex items-center gap-2">
-            <Cloud size={16} className="text-blue-400" />
-            <span className="text-sm font-medium text-gray-200">Process Videos</span>
-            <span className="text-xs text-gray-500">
+            <Cloud size={16} className="text-blue-600" />
+            <span className="text-sm font-medium text-gray-900">Process Videos</span>
+            <span className="text-xs text-gray-600">
               {selectedVideos.length} of {pendingVideos.length} selected
             </span>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-gray-800 rounded transition-colors">
-            <X size={16} className="text-gray-500" />
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded transition-colors">
+            <X size={16} className="text-gray-600" />
           </button>
         </div>
 
         {isLoadingEstimates ? (
           <div className="px-4 py-8 flex flex-col items-center">
-            <Loader2 className="w-6 h-6 animate-spin text-blue-500 mb-2" />
-            <p className="text-xs text-gray-500">Calculating estimates...</p>
+            <Loader2 className="w-6 h-6 animate-spin text-blue-600 mb-2" />
+            <p className="text-xs text-gray-600">Calculating estimates...</p>
           </div>
         ) : (
           <div className="p-4 space-y-3">
             {/* Cloud Processing */}
-            <div className="border border-gray-700 rounded-lg p-3">
+            <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <Zap size={14} className="text-blue-400" />
-                  <span className="text-sm font-medium text-gray-200">Cloud GPU</span>
-                  <span className="text-[10px] bg-blue-600/20 text-blue-400 px-1.5 py-0.5 rounded">
+                  <Zap size={14} className="text-blue-600" />
+                  <span className="text-sm font-medium text-gray-900">Cloud GPU</span>
+                  <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
                     {GPU_LABELS[settings.gpuType]}
                   </span>
                 </div>
                 <button
                   onClick={() => setShowSettings(!showSettings)}
-                  className="p-1 hover:bg-gray-800 rounded transition-colors"
+                  className="p-1 hover:bg-gray-200 rounded transition-colors"
                 >
-                  <Settings size={14} className="text-gray-500" />
+                  <Settings size={14} className="text-gray-600" />
                 </button>
               </div>
 
               {/* Estimates */}
               <div className="flex items-center gap-4 mb-3 text-xs">
                 <div className="flex items-center gap-1.5">
-                  <Clock size={12} className="text-gray-500" />
-                  <span className="text-gray-400">Time</span>
-                  <span className="text-gray-200 font-medium">{formatTime(estimates.modal.timeSeconds)}</span>
+                  <Clock size={12} className="text-gray-600" />
+                  <span className="text-gray-600">Time</span>
+                  <span className="text-gray-900 font-medium">{formatTime(estimates.modal.timeSeconds)}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <DollarSign size={12} className="text-gray-500" />
-                  <span className="text-gray-400">Cost</span>
-                  <span className="text-green-400 font-medium">${estimates.modal.costUsd.toFixed(2)}</span>
+                  <DollarSign size={12} className="text-gray-600" />
+                  <span className="text-gray-600">Cost</span>
+                  <span className="text-green-700 font-medium">${estimates.modal.costUsd.toFixed(2)}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <Zap size={12} className="text-gray-500" />
-                  <span className="text-gray-200 font-medium">{estimates.modal.framesPerSecond.toFixed(0)} fps</span>
+                  <Zap size={12} className="text-gray-600" />
+                  <span className="text-gray-900 font-medium">{estimates.modal.framesPerSecond.toFixed(0)} fps</span>
                 </div>
               </div>
 
               {/* Settings Panel */}
               {showSettings && (
-                <div className="bg-[#151515] rounded p-3 mb-3 space-y-3 text-xs">
+                <div className="bg-white rounded p-3 mb-3 space-y-3 text-xs border border-gray-200">
                   {/* GPU */}
                   <div>
-                    <label className="text-gray-500 mb-1.5 block">GPU</label>
+                    <label className="text-gray-700 mb-1.5 block font-medium">GPU</label>
                     <div className="flex gap-1.5">
                       {(['modal-t4', 'modal-a10g', 'modal-a100'] as const).map((gpu) => (
                         <button
@@ -392,7 +412,7 @@ export default function ProcessingEstimationModal({
                           className={`flex-1 px-2 py-1.5 rounded text-xs transition-colors ${
                             settings.gpuType === gpu
                               ? 'bg-blue-600 text-white'
-                              : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                           }`}
                         >
                           {GPU_LABELS[gpu]}
@@ -408,7 +428,7 @@ export default function ProcessingEstimationModal({
 
                   {/* Frame Rate */}
                   <div>
-                    <label className="text-gray-500 mb-1.5 block">Frame Rate</label>
+                    <label className="text-gray-700 mb-1.5 block font-medium">Frame Rate</label>
                     <div className="flex gap-1.5">
                       {(['all', '15', '10', '5'] as const).map((fps) => (
                         <button
@@ -417,7 +437,7 @@ export default function ProcessingEstimationModal({
                           className={`flex-1 px-2 py-1.5 rounded text-xs transition-colors ${
                             settings.targetFps === fps
                               ? 'bg-blue-600 text-white'
-                              : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                           }`}
                         >
                           {fps === 'all' ? 'All' : `${fps}`}
@@ -428,53 +448,33 @@ export default function ProcessingEstimationModal({
 
                   {/* Analysis Types */}
                   <div>
-                    <label className="text-gray-500 mb-1.5 block">Analysis Types</label>
+                    <label className="text-gray-700 mb-1.5 block font-medium">Analysis Types</label>
                     <div className="space-y-2">
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={settings.enableMotionAnalysis}
-                          onChange={(e) => setSettings({ ...settings, enableMotionAnalysis: e.target.checked })}
-                          className="w-3 h-3 rounded border-gray-600 bg-gray-800 text-blue-600"
+                          checked={settings.enableBenthicActivity}
+                          onChange={(e) => setSettings({ ...settings, enableBenthicActivity: e.target.checked })}
+                          className="w-3 h-3 rounded border-gray-300 text-blue-600"
                         />
-                        <span className="text-gray-400">Motion Analysis</span>
+                        <span className="text-gray-700">Benthic Activity Detection</span>
                       </label>
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={settings.enableYolo}
                           onChange={(e) => setSettings({ ...settings, enableYolo: e.target.checked })}
-                          className="w-3 h-3 rounded border-gray-600 bg-gray-800 text-blue-600"
+                          className="w-3 h-3 rounded border-gray-300 text-blue-600"
                         />
-                        <span className="text-gray-400">YOLO Detection</span>
+                        <span className="text-gray-700">YOLO Detection</span>
                       </label>
-                      <div className="flex items-center gap-1.5">
-                        <label className="flex items-center gap-1.5 cursor-pointer flex-1">
-                          <input
-                            type="checkbox"
-                            checked={settings.enableCrabDetection}
-                            onChange={(e) => setSettings({ ...settings, enableCrabDetection: e.target.checked })}
-                            className="w-3 h-3 rounded border-gray-600 bg-gray-800 text-orange-600"
-                          />
-                          <span className="text-gray-400">Crab Detection</span>
-                        </label>
-                        {settings.enableCrabDetection && (
-                          <button
-                            onClick={() => setShowCrabSettingsDialog(true)}
-                            className="p-1 hover:bg-gray-700 rounded transition-colors"
-                            title="Configure crab detection settings"
-                          >
-                            <Sliders size={12} className="text-orange-400" />
-                          </button>
-                        )}
-                      </div>
                     </div>
                   </div>
 
                   {/* YOLO Model */}
                   {settings.enableYolo && (
                     <div>
-                      <label className="text-gray-500 mb-1.5 block">YOLO Model</label>
+                      <label className="text-gray-700 mb-1.5 block font-medium">YOLO Model</label>
                       <div className="flex gap-1.5">
                         {(['yolov8n', 'yolov8m', 'yolov8l'] as const).map((model) => (
                           <button
@@ -483,7 +483,7 @@ export default function ProcessingEstimationModal({
                             className={`flex-1 px-2 py-1.5 rounded text-xs transition-colors ${
                               settings.yoloModel === model
                                 ? 'bg-blue-600 text-white'
-                                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                           >
                             {model === 'yolov8n' ? 'Nano' : model === 'yolov8m' ? 'Medium' : 'Large'}
@@ -495,84 +495,78 @@ export default function ProcessingEstimationModal({
                 </div>
               )}
 
-              {/* Start Button */}
-              <button
-                onClick={() => handleStartProcessing(settings.gpuType)}
-                disabled={isStarting || isProcessingDisabled}
-                className="w-full px-3 py-2 rounded text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {isStarting ? 'Starting...' : 'Start Processing'}
-              </button>
-
               {isProcessingDisabled && (
-                <p className="text-[10px] text-red-400 text-center mt-1.5">
+                <p className="text-[10px] text-red-600 text-center mb-2">
                   {selectedVideos.length === 0 ? 'Select at least one video' : 'Select at least one analysis type'}
+                </p>
+              )}
+
+              {/* Start Buttons - Side by Side */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleStartProcessing(settings.gpuType)}
+                  disabled={isStarting || isProcessingDisabled}
+                  className="flex-1 px-3 py-2.5 rounded text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <Cloud size={14} />
+                    <span>{isStarting ? 'Starting...' : 'Cloud GPU'}</span>
+                  </div>
+                  <div className="text-[10px] opacity-80 mt-0.5">
+                    {formatTime(estimates.modal.timeSeconds)} • ${estimates.modal.costUsd.toFixed(2)}
+                  </div>
+                </button>
+                <button
+                  onClick={() => handleStartProcessing('local')}
+                  disabled={isStarting || isProcessingDisabled}
+                  className="flex-1 px-3 py-2.5 rounded text-xs font-medium bg-green-50 text-green-900 hover:bg-green-100 border border-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <Cpu size={14} className="text-green-700" />
+                    <span>{isStarting ? 'Starting...' : 'Local'}</span>
+                  </div>
+                  <div className="text-[10px] text-green-700 mt-0.5">
+                    {formatTime(estimates.local.timeSeconds)} • Free
+                  </div>
+                </button>
+              </div>
+              {hardware && (
+                <p className="text-[10px] text-gray-500 text-center mt-1.5">
+                  Local: {hardware.gpuName} • {hardware.cpuCores} cores
                 </p>
               )}
             </div>
 
-            {/* Local Processing */}
-            <button
-              onClick={() => setShowLocalOption(!showLocalOption)}
-              className="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-500 hover:text-gray-400 hover:bg-gray-800/50 rounded transition-colors"
-            >
-              <div className="flex items-center gap-1.5">
-                <Cpu size={12} />
-                <span>Local (Free)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span>{formatTime(estimates.local.timeSeconds)}</span>
-                {showLocalOption ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-              </div>
-            </button>
-
-            {showLocalOption && (
-              <div className="border border-gray-800 rounded p-3">
-                {hardware && (
-                  <p className="text-[10px] text-gray-500 mb-2">
-                    {hardware.gpuName} • {hardware.cpuCores} cores
-                  </p>
-                )}
-                <button
-                  onClick={() => handleStartProcessing('local')}
-                  disabled={isStarting || isProcessingDisabled}
-                  className="w-full px-3 py-1.5 rounded text-xs font-medium bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 disabled:opacity-50 transition-colors"
-                >
-                  {isStarting ? 'Starting...' : 'Start Local'}
-                </button>
-              </div>
-            )}
-
             {/* Videos */}
             <details className="text-xs" open>
-              <summary className="text-gray-500 cursor-pointer hover:text-gray-400 py-1">
+              <summary className="text-gray-600 cursor-pointer hover:text-gray-900 py-1">
                 {selectedVideos.length} of {pendingVideos.length} video{pendingVideos.length > 1 ? 's' : ''} selected • {estimates.totalFrames.toLocaleString()} frames
               </summary>
               <div className="mt-2 space-y-1">
                 {/* Select All */}
-                <label className="flex items-center gap-2 py-1 px-1 hover:bg-gray-800/50 rounded cursor-pointer border-b border-gray-800 pb-2 mb-1">
+                <label className="flex items-center gap-2 py-1 px-1 hover:bg-gray-100 rounded cursor-pointer border-b border-gray-200 pb-2 mb-1">
                   <input
                     type="checkbox"
                     checked={selectedVideoIds.size === pendingVideos.length}
                     onChange={toggleAllVideos}
-                    className="w-3 h-3 rounded border-gray-600 bg-gray-800 text-blue-600"
+                    className="w-3 h-3 rounded border-gray-300 text-blue-600"
                   />
-                  <span className="text-gray-400 font-medium">Select All</span>
+                  <span className="text-gray-700 font-medium">Select All</span>
                 </label>
                 {/* Video List */}
                 <div className="max-h-32 overflow-y-auto space-y-0.5">
                   {pendingVideos.map((video) => (
-                    <label key={video.id} className="flex items-center gap-2 py-1 px-1 hover:bg-gray-800/50 rounded cursor-pointer">
+                    <label key={video.id} className="flex items-center gap-2 py-1 px-1 hover:bg-gray-100 rounded cursor-pointer">
                       <input
                         type="checkbox"
                         checked={selectedVideoIds.has(video.id)}
                         onChange={() => toggleVideoSelection(video.id)}
-                        className="w-3 h-3 rounded border-gray-600 bg-gray-800 text-blue-600 flex-shrink-0"
+                        className="w-3 h-3 rounded border-gray-300 text-blue-600 flex-shrink-0"
                       />
-                      <span className={`truncate flex-1 ${selectedVideoIds.has(video.id) ? 'text-gray-300' : 'text-gray-600'}`}>
+                      <span className={`truncate flex-1 ${selectedVideoIds.has(video.id) ? 'text-gray-900' : 'text-gray-500'}`}>
                         {video.filename}
                       </span>
-                      <span className="ml-2 text-gray-600 text-[10px] flex-shrink-0">
+                      <span className="ml-2 text-gray-500 text-[10px] flex-shrink-0">
                         {video.total_frames?.toLocaleString()}
                       </span>
                     </label>
@@ -584,15 +578,6 @@ export default function ProcessingEstimationModal({
         )}
       </div>
 
-      {/* Crab Detection Settings Dialog */}
-      <CrabDetectionSettingsDialog
-        isOpen={showCrabSettingsDialog}
-        onClose={() => setShowCrabSettingsDialog(false)}
-        currentParams={settings.crabDetectionParams || DEFAULT_CRAB_PARAMS}
-        onParamsChange={(params) => {
-          setSettings({ ...settings, crabDetectionParams: params });
-        }}
-      />
     </div>
   );
 }
